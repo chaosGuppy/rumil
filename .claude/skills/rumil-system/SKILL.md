@@ -188,5 +188,5 @@ Schema gotchas:
   --budget N` — the orchestrator can spread budget across many calls,
   which `/rumil-dispatch` cannot.
 - For bulk batch work, use `main.py --batch`.
-- For A/B testing configs, use `scripts/run_call.py --ab` or
-  `main.py --ab`.
+- For A/B testing configs or branches, use `scripts/ab_branch.sh`,
+  which runs both arms in git worktrees and then kicks off an evaluation.

@@ -40,9 +40,7 @@ def make_load_page_tool(
         )
         detail: str = Field(
             default=default_detail,
-            description=(
-                "Level of detail: 'content' (full text) or 'abstract' (short summary)"
-            ),
+            description=("Level of detail: 'content' (full text) or 'abstract' (short summary)"),
         )
 
     async def fn(args: dict) -> str:
@@ -59,6 +57,8 @@ def make_load_page_tool(
             detail,
             db=db,
             highlight_run_id=highlight_run_id,
+            track=True,
+            track_tags={"source": "workspace_load_tool"},
         )
         await trace.record(
             LoadPageEvent(

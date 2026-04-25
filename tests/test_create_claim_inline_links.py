@@ -13,7 +13,8 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.moves.create_claim import CreateClaimPayload, execute as execute_create_claim
+from rumil.moves.create_claim import CreateClaimPayload
+from rumil.moves.create_claim import execute as execute_create_claim
 from rumil.moves.link_consideration import ConsiderationLinkFields
 
 
@@ -47,7 +48,9 @@ async def test_inline_link_to_question_creates_consideration(tmp_db, call, quest
         content="Rayleigh scattering explains the blue color.",
         headline="Rayleigh scattering",
         credence=6,
+        credence_reasoning="core physics explanation; evidence is strong but context-dependent",
         robustness=3,
+        robustness_reasoning="well-established textbook physics",
         workspace="research",
         supersedes=None,
         change_magnitude=None,
@@ -84,7 +87,9 @@ async def test_inline_link_to_non_question_target_is_skipped(tmp_db, call):
         content="Rayleigh scattering explains the blue color.",
         headline="Rayleigh scattering",
         credence=6,
+        credence_reasoning="core physics explanation; evidence is strong but context-dependent",
         robustness=3,
+        robustness_reasoning="well-established textbook physics",
         workspace="research",
         supersedes=None,
         change_magnitude=None,

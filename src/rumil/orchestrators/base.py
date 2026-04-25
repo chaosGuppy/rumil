@@ -3,23 +3,22 @@ BaseOrchestrator: abstract base class for all orchestrators.
 """
 
 import asyncio
+import functools
 import logging
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from rumil.available_calls import get_available_calls_preset
-from rumil.constants import compute_round_budget
 from rumil.calls.stages import CallRunner
-from rumil.constants import SMOKE_TEST_MAX_ROUNDS
+from rumil.constants import SMOKE_TEST_MAX_ROUNDS, compute_round_budget
 from rumil.database import DB
 from rumil.models import (
     AssessDispatchPayload,
     CallType,
+    CreateViewDispatchPayload,
     Dispatch,
 )
 from rumil.orchestrators.common import (
-    _consume_budget,
     _create_broadcaster,
 )
 from rumil.orchestrators.dispatch_handlers import (
@@ -27,20 +26,64 @@ from rumil.orchestrators.dispatch_handlers import (
     DispatchContext,
 )
 from rumil.settings import get_settings
+from rumil.tracing import observe, propagate_attributes
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import DispatchExecutedEvent
 from rumil.tracing.tracer import get_trace
-
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
 
+def _wrap_run_with_session(run, orch_name: str):
+    """Wrap an orchestrator's run() so its body runs inside a Langfuse session.
+
+    Sets session_id=db.run_id and tags the trace with the orchestrator name
+    so all child spans (CallRunner.run, agent loops, LLM calls) inherit it.
+    No-op when Langfuse is disabled — propagate_attributes is a cheap
+    contextvar manipulation either way.
+    """
+
+    @functools.wraps(run)
+    async def wrapper(self, *args, **kwargs):
+        with propagate_attributes(
+            session_id=self.db.run_id or None,
+            metadata={"orchestrator": orch_name},
+            tags=[f"orchestrator:{orch_name}"],
+        ):
+            return await run(self, *args, **kwargs)
+
+    return wrapper
+
+
 class BaseOrchestrator(ABC):
+    summarise_before_assess: bool = True
+
+    def __init_subclass__(cls, **kwargs):
+        """Auto-trace every concrete subclass's run() with a Langfuse span.
+
+        Wraps run() in propagate_attributes so the entire orchestrator
+        invocation appears as one Langfuse trace tagged with session_id=run_id
+        and the orchestrator class name. Subclasses that don't override run()
+        inherit the abstract decl and skip this.
+        """
+        super().__init_subclass__(**kwargs)
+        run = cls.__dict__.get("run")
+        if run is None or getattr(run, "__isabstractmethod__", False):
+            return
+        cls.run = observe(name=f"orchestrator.{cls.__name__}")(
+            _wrap_run_with_session(run, cls.__name__)
+        )
+
     def __init__(self, db: DB, broadcaster: Broadcaster | None = None):
         self.db = db
         self.broadcaster: Broadcaster | None = broadcaster
         self._owns_broadcaster: bool = False
         self.ingest_hint: str = ""
+        # Set by prio orchestrators to their root question ID. Sub-call
+        # budget consumption debits this question's pool. None for
+        # orchestrators outside a per-question prio cycle.
+        self.pool_question_id: str | None = None
 
     async def _pacing_params(self) -> tuple[int, int]:
         """Return (total, used) for budget pacing.
@@ -55,25 +98,26 @@ class BaseOrchestrator(ABC):
             return effective
         total, used = await self._pacing_params()
         paced = min(effective, compute_round_budget(total, used))
-        log.info('Budget pacing: effective=%d, round_allocation=%d', effective, paced)
+        log.info("Budget pacing: effective=%d, round_allocation=%d", effective, paced)
         return paced
 
     async def _setup(self) -> None:
         if not self.broadcaster:
             self.broadcaster = _create_broadcaster(self.db)
             self._owns_broadcaster = True
-        log.info('Orchestrator: run_id=%s', self.db.run_id)
+        log.info("Orchestrator: run_id=%s", self.db.run_id)
         total, used = await self.db.get_budget()
         log.info(
-            'Orchestrator.run starting: budget=%d (used=%d)',
-            total, used,
+            "Orchestrator.run starting: budget=%d (used=%d)",
+            total,
+            used,
         )
 
     async def _teardown(self) -> None:
         if self.broadcaster and self._owns_broadcaster:
             await self.broadcaster.close()
         total, used = await self.db.get_budget()
-        log.info('Orchestrator.run complete: budget used %d/%d', used, total)
+        log.info("Orchestrator.run complete: budget used %d/%d", used, total)
 
     async def _run_simple_call_dispatch(
         self,
@@ -108,10 +152,13 @@ class BaseOrchestrator(ABC):
             sequence_position=sequence_position,
         )
         instance = cls(
-            question_id, call, self.db,
+            question_id,
+            call,
+            self.db,
             broadcaster=self.broadcaster,
             max_rounds=max_rounds,
             fruit_threshold=fruit_threshold,
+            pool_question_id=self.pool_question_id,
         )
         await instance.run()
         return call.id
@@ -126,15 +173,39 @@ class BaseOrchestrator(ABC):
     ) -> bool:
         """Run dispatches in a sequence sequentially. Returns True if any executed.
 
+        Any dispatch targeting a *non-scope* question triggers a post-sequence
+        ``view.refresh(...)`` for that target (deduped), so the subquestion's
+        ever-evolving summary stays up-to-date with whatever the dispatch just
+        produced. ASSESS and CREATE_VIEW dispatches already update the view
+        themselves, so they don't double-fire.
+
         All dispatches in the sequence are guaranteed to run: if budget
         is exhausted mid-sequence, subsequent dispatches force-consume
-        so that trailing calls (e.g. auto-assess) are never skipped.
+        so that trailing calls (e.g. auto-refresh) are never skipped.
 
         Child call IDs are pre-generated so that DispatchExecutedEvents
         can be recorded before execution begins, making dispatch links
         clickable in the trace frontend immediately.
         """
-        is_multi_step = len(sequence) > 1
+        pre_ids = [str(uuid.uuid4()) for _ in sequence]
+        raw_qids = [d.payload.question_id for d in sequence]
+        resolved_map = await self.db.resolve_page_ids(raw_qids)
+        resolves = [resolved_map.get(qid) or scope_question_id for qid in raw_qids]
+        pages = await self.db.get_pages_by_ids([r for r in resolves if r is not None])
+        headlines = [pages[r].headline if r in pages else "" for r in resolves]
+
+        refresh_targets: list[str] = []
+        seen_targets: set[str] = set()
+        for i, dispatch in enumerate(sequence):
+            target = resolves[i]
+            if target == scope_question_id or target in seen_targets:
+                continue
+            if isinstance(dispatch.payload, (AssessDispatchPayload, CreateViewDispatchPayload)):
+                continue
+            seen_targets.add(target)
+            refresh_targets.append(target)
+
+        is_multi_step = (len(sequence) + len(refresh_targets)) > 1
         seq_id: str | None = None
         if is_multi_step:
             call_sequence = await self.db.create_call_sequence(
@@ -144,43 +215,52 @@ class BaseOrchestrator(ABC):
             )
             seq_id = call_sequence.id
 
-        pre_ids = [str(uuid.uuid4()) for _ in sequence]
-        raw_qids = [d.payload.question_id for d in sequence]
-        resolved_map = await self.db.resolve_page_ids(raw_qids)
-        resolves = [resolved_map.get(qid) or scope_question_id for qid in raw_qids]
-        pages = await self.db.get_pages_by_ids(
-            [r for r in resolves if r is not None]
-        )
-        headlines = [
-            pages[r].headline if r in pages else '' for r in resolves
-        ]
-
         trace = get_trace()
         if trace:
             for i, dispatch in enumerate(sequence):
-                await trace.record(DispatchExecutedEvent(
-                    index=base_index + i,
-                    child_call_type=dispatch.call_type.value,
-                    question_id=resolves[i],
-                    question_headline=headlines[i],
-                    child_call_id=pre_ids[i],
-                ))
+                await trace.record(
+                    DispatchExecutedEvent(
+                        index=base_index + i,
+                        child_call_type=dispatch.call_type.value,
+                        question_id=resolves[i],
+                        question_headline=headlines[i],
+                        child_call_id=pre_ids[i],
+                    )
+                )
 
         executed = False
         seq_pos = 0
         for i, dispatch in enumerate(sequence):
             force = i > 0 and await self.db.budget_remaining() <= 0
             await self._execute_dispatch(
-                dispatch, scope_question_id, parent_call_id,
-                force=force, call_id=pre_ids[i],
+                dispatch,
+                scope_question_id,
+                parent_call_id,
+                force=force,
+                call_id=pre_ids[i],
                 sequence_id=seq_id,
                 sequence_position=seq_pos if is_multi_step else None,
             )
             if isinstance(dispatch.payload, AssessDispatchPayload):
-                seq_pos += 2
+                seq_pos += 2 if self.summarise_before_assess else 1
             else:
                 seq_pos += 1
             executed = True
+
+        if refresh_targets:
+            view = get_active_view()
+            for target in refresh_targets:
+                await view.refresh(
+                    target,
+                    self.db,
+                    parent_call_id=parent_call_id,
+                    broadcaster=self.broadcaster,
+                    force=True,
+                    sequence_id=seq_id,
+                    sequence_position=seq_pos if is_multi_step else None,
+                    pool_question_id=self.pool_question_id,
+                )
+                seq_pos += 1
         return executed
 
     async def _execute_dispatch(
@@ -209,7 +289,7 @@ class BaseOrchestrator(ABC):
         resolved = await self.db.resolve_page_id(p.question_id)
         if not resolved:
             log.warning(
-                'Dispatch question ID not found: %s, falling back to scope',
+                "Dispatch question ID not found: %s, falling back to scope",
                 p.question_id[:8],
             )
             resolved = scope_question_id
@@ -219,7 +299,7 @@ class BaseOrchestrator(ABC):
         handler = DISPATCH_HANDLERS.get(type(p))
         if handler is None:
             log.warning(
-                'No dispatch handler registered for payload type %s',
+                "No dispatch handler registered for payload type %s",
                 type(p).__name__,
             )
             return resolved, None
@@ -247,11 +327,15 @@ class BaseOrchestrator(ABC):
         base_index = 0
         tasks = []
         for batch_pos, seq in enumerate(sequences):
-            tasks.append(self._run_dispatch_sequence(
-                seq, scope_question_id, call_id,
-                base_index,
-                position_in_batch=batch_pos,
-            ))
+            tasks.append(
+                self._run_dispatch_sequence(
+                    seq,
+                    scope_question_id,
+                    call_id,
+                    base_index,
+                    position_in_batch=batch_pos,
+                )
+            )
             base_index += len(seq)
 
         sequence_results = await asyncio.gather(*tasks)

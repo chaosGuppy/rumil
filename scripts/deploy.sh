@@ -3,11 +3,11 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHART_DIR="$REPO_ROOT/deploy/chart"
-SECRETS_FILE="$CHART_DIR/secrets.yaml"
+SECRETS_FILE="$CHART_DIR/secrets.enc.yaml"
 NAMESPACE="rumil"
 RELEASE="rumil"
-API_REPO="us-central1-docker.pkg.dev/varuna-400921/delphos/rumil-api"
-FRONTEND_REPO="us-central1-docker.pkg.dev/varuna-400921/delphos/rumil-frontend"
+API_REPO="us-central1-docker.pkg.dev/project-fe559f0f-d011-4af4-bf0/rumil/rumil-api"
+FRONTEND_REPO="us-central1-docker.pkg.dev/project-fe559f0f-d011-4af4-bf0/rumil/rumil-frontend"
 
 usage() {
     echo "Usage: $0 [--api] [--frontend] [--all] [--tag TAG]"
@@ -61,9 +61,22 @@ if $deploy_api; then
 fi
 
 if $deploy_frontend; then
+    # NEXT_PUBLIC_* vars must be set at build time — `next build` inlines them
+    # into the client bundle. NEXT_PUBLIC_API_URL is intentionally unset so
+    # client fetches go same-origin and the Next.js middleware can inject the
+    # Supabase JWT before proxying to the backend service.
+    FRONTEND_SUPABASE_URL="https://aesjaehibxrzearctiqp.supabase.co"
+    if [[ -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}" ]]; then
+        echo "error: NEXT_PUBLIC_SUPABASE_ANON_KEY is required for the frontend build." >&2
+        echo "       copy it from the Supabase dashboard → Settings → API → anon public." >&2
+        exit 1
+    fi
+
     echo "==> Building frontend (pnpm build)..."
     cd "$REPO_ROOT/frontend"
-    NEXT_PUBLIC_API_URL="" pnpm build
+    NEXT_PUBLIC_SUPABASE_URL="$FRONTEND_SUPABASE_URL" \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY="$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+        pnpm build
 
     echo "==> Building frontend image (linux/amd64)..."
     docker build --platform linux/amd64 \
@@ -77,8 +90,9 @@ if $deploy_frontend; then
 fi
 
 echo "==> Deploying with Helm (release=$RELEASE, namespace=$NAMESPACE, tag=$tag)..."
-helm upgrade "$RELEASE" "$CHART_DIR" \
+helm secrets upgrade --install "$RELEASE" "$CHART_DIR" \
     -n "$NAMESPACE" \
+    --create-namespace \
     --set "releaseId=$tag" \
     -f "$SECRETS_FILE"
 

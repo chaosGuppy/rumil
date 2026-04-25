@@ -21,25 +21,13 @@ export type AbEvalDimensionOut = {
      */
     preference: string;
     /**
-     * Report A
+     * Report
      */
-    report_a: string;
+    report?: string;
     /**
-     * Report B
+     * Call Id
      */
-    report_b: string;
-    /**
-     * Comparison
-     */
-    comparison: string;
-    /**
-     * Call Id A
-     */
-    call_id_a?: string;
-    /**
-     * Call Id B
-     */
-    call_id_b?: string;
+    call_id?: string;
 };
 
 /**
@@ -135,6 +123,14 @@ export type AbEvalReportOut = {
      */
     overall_assessment: string;
     /**
+     * Overall Assessment Call Id
+     */
+    overall_assessment_call_id?: string;
+    /**
+     * Eval Run Id
+     */
+    eval_run_id?: string;
+    /**
      * Dimension Reports
      */
     dimension_reports: Array<AbEvalDimensionOut>;
@@ -154,46 +150,6 @@ export type AbEvalReportOut = {
      * Created At
      */
     created_at: string;
-};
-
-/**
- * ABRunArmOut
- */
-export type AbRunArmOut = {
-    /**
-     * Run Id
-     */
-    run_id: string;
-    /**
-     * Name
-     */
-    name?: string;
-    /**
-     * Config
-     */
-    config?: {
-        [key: string]: unknown;
-    };
-    trace: RunTraceOut;
-};
-
-/**
- * ABRunTraceOut
- */
-export type AbRunTraceOut = {
-    /**
-     * Ab Run Id
-     */
-    ab_run_id: string;
-    /**
-     * Name
-     */
-    name?: string;
-    question?: Page | null;
-    /**
-     * Arms
-     */
-    arms: Array<AbRunArmOut>;
 };
 
 /**
@@ -244,6 +200,42 @@ export type AgentStartedEventOut = {
      * User Message
      */
     user_message: string;
+};
+
+/**
+ * AuthUserOut
+ */
+export type AuthUserOut = {
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Email
+     */
+    email: string;
+};
+
+/**
+ * AutocompactEventOut
+ */
+export type AutocompactEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'autocompact';
+    /**
+     * Agent Id
+     */
+    agent_id: string;
 };
 
 /**
@@ -339,24 +331,6 @@ export type CallNodeOut = {
 };
 
 /**
- * CallSequenceOut
- */
-export type CallSequenceOut = {
-    /**
-     * Id
-     */
-    id: string;
-    /**
-     * Position In Batch
-     */
-    position_in_batch: number;
-    /**
-     * Calls
-     */
-    calls: Array<CallTraceOut>;
-};
-
-/**
  * CallStatus
  */
 export type CallStatus = 'pending' | 'running' | 'complete' | 'failed';
@@ -417,90 +391,9 @@ export type CallSummary = {
 };
 
 /**
- * CallTraceOut
- */
-export type CallTraceOut = {
-    call: Call;
-    /**
-     * Scope Page Summary
-     */
-    scope_page_summary?: string | null;
-    /**
-     * Events
-     */
-    events: Array<({
-        event: 'context_built';
-    } & ContextBuiltEventOut) | ({
-        event: 'moves_executed';
-    } & MovesExecutedEventOut) | ({
-        event: 'review_complete';
-    } & ReviewCompleteEventOut) | ({
-        event: 'llm_exchange';
-    } & LlmExchangeEventOut) | ({
-        event: 'warning';
-    } & WarningEventOut) | ({
-        event: 'error';
-    } & ErrorEventOut) | ({
-        event: 'scoring_completed';
-    } & ScoringCompletedEventOut) | ({
-        event: 'dispatches_planned';
-    } & DispatchesPlannedEventOut) | ({
-        event: 'dispatch_executed';
-    } & DispatchExecutedEventOut) | ({
-        event: 'explore_page';
-    } & ExplorePageEventOut) | ({
-        event: 'subagent_started';
-    } & SubagentStartedEventOut) | ({
-        event: 'subagent_completed';
-    } & SubagentCompletedEventOut) | ({
-        event: 'agent_started';
-    } & AgentStartedEventOut) | ({
-        event: 'evaluation_complete';
-    } & EvaluationCompleteEventOut) | ({
-        event: 'tool_call';
-    } & ToolCallEventOut) | ({
-        event: 'reassess_triggered';
-    } & ReassessTriggeredEventOut) | ({
-        event: 'affected_pages_identified';
-    } & AffectedPagesIdentifiedEventOut) | ({
-        event: 'update_subgraph_computed';
-    } & UpdateSubgraphComputedEventOut) | ({
-        event: 'update_plan_created';
-    } & UpdatePlanCreatedEventOut) | ({
-        event: 'claim_reassessed';
-    } & ClaimReassessedEventOut) | ({
-        event: 'grounding_tasks_generated';
-    } & GroundingTasksGeneratedEventOut) | ({
-        event: 'web_research_complete';
-    } & WebResearchCompleteEventOut) | ({
-        event: 'render_question_subgraph';
-    } & RenderQuestionSubgraphEventOut) | ({
-        event: 'link_subquestions_complete';
-    } & LinkSubquestionsCompleteEventOut) | ({
-        event: 'view_created';
-    } & ViewCreatedEventOut) | ({
-        event: 'phase_skipped';
-    } & PhaseSkippedEventOut) | ({
-        event: 'update_view_phase_completed';
-    } & UpdateViewPhaseCompletedEventOut)>;
-    /**
-     * Children
-     */
-    children: Array<CallTraceOut>;
-    /**
-     * Sequences
-     */
-    sequences?: Array<CallSequenceOut> | null;
-    /**
-     * Cost Usd
-     */
-    cost_usd?: number | null;
-};
-
-/**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'create_view' | 'update_view' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'refine_spec' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -542,6 +435,18 @@ export type CallsForQuestion = {
      * Total
      */
     total: number;
+    /**
+     * Child Questions
+     */
+    child_questions: number;
+    /**
+     * Considerations
+     */
+    considerations: number;
+    /**
+     * Judgements
+     */
+    judgements: number;
 };
 
 /**
@@ -646,9 +551,61 @@ export type ContextBuiltEventOut = {
      */
     budget: number | null;
     /**
-     * Scout Mode
+     * Full Pages
      */
-    scout_mode: string | null;
+    full_pages: Array<PageRef>;
+    /**
+     * Abstract Pages
+     */
+    abstract_pages: Array<PageRef>;
+    /**
+     * Summary Pages
+     */
+    summary_pages: Array<PageRef>;
+    /**
+     * Distillation Pages
+     */
+    distillation_pages: Array<PageRef>;
+    /**
+     * Scope Linked Pages
+     */
+    scope_linked_pages: Array<PageRef>;
+    /**
+     * Budget Usage
+     */
+    budget_usage: {
+        [key: string]: number;
+    };
+    /**
+     * Context Text
+     */
+    context_text: string;
+    /**
+     * Context Text Chars
+     */
+    context_text_chars: number;
+};
+
+/**
+ * DedupeCandidateItem
+ */
+export type DedupeCandidateItem = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Similarity
+     */
+    similarity: number;
+    /**
+     * Kept By Filter
+     */
+    kept_by_filter?: boolean;
 };
 
 /**
@@ -785,6 +742,50 @@ export type EvaluationCompleteEventOut = {
 };
 
 /**
+ * ExperimentalScoringCompletedEventOut
+ */
+export type ExperimentalScoringCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'experimental_scoring_completed';
+    /**
+     * Subquestion Scores
+     */
+    subquestion_scores: Array<ExperimentalSubquestionScoreItem>;
+    /**
+     * Per Type Fruit
+     */
+    per_type_fruit: Array<CallTypeFruitScoreItem>;
+};
+
+/**
+ * ExperimentalSubquestionScoreItem
+ */
+export type ExperimentalSubquestionScoreItem = {
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Impact Curve
+     */
+    impact_curve?: string;
+};
+
+/**
  * ExplorePageEventOut
  */
 export type ExplorePageEventOut = {
@@ -812,6 +813,32 @@ export type ExplorePageEventOut = {
      * Response
      */
     response: string;
+};
+
+/**
+ * GlobalPhaseCompletedEventOut
+ */
+export type GlobalPhaseCompletedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'global_phase_completed';
+    /**
+     * Phase
+     */
+    phase: string;
+    /**
+     * Outcome
+     */
+    outcome: string;
 };
 
 /**
@@ -914,6 +941,10 @@ export type LlmExchangeEventOut = {
     tool_uses: Array<{
         [key: string]: unknown;
     }> | null;
+    /**
+     * Langfuse Trace Url
+     */
+    langfuse_trace_url: string | null;
 };
 
 /**
@@ -1050,7 +1081,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for' | 'spec_of' | 'artefact_of' | 'critique_of' | 'generated_from';
 
 /**
  * LinkedPageOut
@@ -1058,6 +1089,40 @@ export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'rela
 export type LinkedPageOut = {
     page: Page;
     link: PageLink;
+};
+
+/**
+ * LoadPageEventOut
+ */
+export type LoadPageEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'load_page';
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Headline
+     */
+    page_headline: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Response
+     */
+    response: string;
 };
 
 /**
@@ -1137,9 +1202,17 @@ export type Page = {
      */
     credence: number | null;
     /**
+     * Credence Reasoning
+     */
+    credence_reasoning: string | null;
+    /**
      * Robustness
      */
     robustness: number | null;
+    /**
+     * Robustness Reasoning
+     */
+    robustness_reasoning: string | null;
     /**
      * Provenance Model
      */
@@ -1190,6 +1263,10 @@ export type Page = {
      * Run Id
      */
     run_id: string;
+    /**
+     * Hidden
+     */
+    hidden: boolean;
 };
 
 /**
@@ -1266,6 +1343,10 @@ export type PageLink = {
      */
     position: number | null;
     /**
+     * Impact On Parent Question
+     */
+    impact_on_parent_question: number | null;
+    /**
      * Created At
      */
     created_at: string;
@@ -1273,6 +1354,50 @@ export type PageLink = {
      * Run Id
      */
     run_id: string;
+};
+
+/**
+ * PageLoadEventOut
+ */
+export type PageLoadEventOut = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Tags
+     */
+    tags: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * PageLoadStatsOut
+ */
+export type PageLoadStatsOut = {
+    /**
+     * Events
+     */
+    events: Array<PageLoadEventOut>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Total Unique
+     */
+    total_unique: number;
+    /**
+     * Question Headlines
+     */
+    question_headlines: {
+        [key: string]: string;
+    };
 };
 
 /**
@@ -1292,7 +1417,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta' | 'spec_item' | 'artefact';
 
 /**
  * PaginatedPagesOut
@@ -1362,6 +1487,10 @@ export type Project = {
      * Hidden
      */
     hidden: boolean;
+    /**
+     * Owner User Id
+     */
+    owner_user_id: string | null;
 };
 
 /**
@@ -1430,6 +1559,56 @@ export type ProposedSubquestion = {
      * Headline
      */
     headline?: string;
+};
+
+/**
+ * QuestionDedupeEventOut
+ */
+export type QuestionDedupeEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'question_dedupe';
+    /**
+     * Proposed Headline
+     */
+    proposed_headline: string;
+    /**
+     * Parent Id
+     */
+    parent_id: string;
+    /**
+     * Parent Headline
+     */
+    parent_headline: string;
+    /**
+     * Candidates
+     */
+    candidates: Array<DedupeCandidateItem>;
+    /**
+     * Outcome
+     */
+    outcome: string;
+    /**
+     * Matched Page Id
+     */
+    matched_page_id: string | null;
+    /**
+     * Matched Headline
+     */
+    matched_headline: string;
+    /**
+     * Decision Reasoning
+     */
+    decision_reasoning: string;
 };
 
 /**
@@ -1618,16 +1797,6 @@ export type RunListItemOut = {
      */
     question_summary?: string | null;
     /**
-     * Ab Run Id
-     */
-    ab_run_id?: string | null;
-    /**
-     * Arms
-     */
-    arms?: {
-        [key: string]: unknown;
-    } | null;
-    /**
      * Staged
      */
     staged?: boolean;
@@ -1649,25 +1818,6 @@ export type RunSummaryOut = {
      * Provenance Call Id
      */
     provenance_call_id?: string;
-};
-
-/**
- * RunTraceOut
- */
-export type RunTraceOut = {
-    /**
-     * Run Id
-     */
-    run_id: string;
-    question: Page | null;
-    /**
-     * Root Calls
-     */
-    root_calls: Array<CallTraceOut>;
-    /**
-     * Cost Usd
-     */
-    cost_usd?: number | null;
 };
 
 /**
@@ -2180,12 +2330,63 @@ export type HealthzHealthzGetResponses = {
 
 export type HealthzHealthzGetResponse = HealthzHealthzGetResponses[keyof HealthzHealthzGetResponses];
 
-export type ListProjectsApiProjectsGetData = {
+export type GetMeApiAuthMeGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: never;
+    url: '/api/auth/me';
+};
+
+export type GetMeApiAuthMeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMeApiAuthMeGetError = GetMeApiAuthMeGetErrors[keyof GetMeApiAuthMeGetErrors];
+
+export type GetMeApiAuthMeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthUserOut;
+};
+
+export type GetMeApiAuthMeGetResponse = GetMeApiAuthMeGetResponses[keyof GetMeApiAuthMeGetResponses];
+
+export type ListProjectsApiProjectsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/projects';
 };
+
+export type ListProjectsApiProjectsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListProjectsApiProjectsGetError = ListProjectsApiProjectsGetErrors[keyof ListProjectsApiProjectsGetErrors];
 
 export type ListProjectsApiProjectsGetResponses = {
     /**
@@ -2200,6 +2401,12 @@ export type ListProjectsApiProjectsGetResponse = ListProjectsApiProjectsGetRespo
 
 export type GetProjectApiProjectsProjectIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2230,6 +2437,12 @@ export type GetProjectApiProjectsProjectIdGetResponse = GetProjectApiProjectsPro
 
 export type ListProjectRunsApiProjectsProjectIdRunsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2262,6 +2475,12 @@ export type ListProjectRunsApiProjectsProjectIdRunsGetResponse = ListProjectRuns
 
 export type ListPagesApiProjectsProjectIdPagesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2282,10 +2501,6 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          */
         active_only?: boolean;
         /**
-         * Staged Run Id
-         */
-        staged_run_id?: string | null;
-        /**
          * Search
          */
         search?: string | null;
@@ -2297,6 +2512,14 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          * Limit
          */
         limit?: number;
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
     };
     url: '/api/projects/{project_id}/pages';
 };
@@ -2321,6 +2544,12 @@ export type ListPagesApiProjectsProjectIdPagesGetResponse = ListPagesApiProjects
 
 export type GetPageByShortIdApiPagesShortShortIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Short Id
@@ -2332,6 +2561,10 @@ export type GetPageByShortIdApiPagesShortShortIdGetData = {
          * Staged Run Id
          */
         staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
     };
     url: '/api/pages/short/{short_id}';
 };
@@ -2356,6 +2589,12 @@ export type GetPageByShortIdApiPagesShortShortIdGetResponse = GetPageByShortIdAp
 
 export type GetPageApiPagesPageIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2367,6 +2606,10 @@ export type GetPageApiPagesPageIdGetData = {
          * Staged Run Id
          */
         staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
     };
     url: '/api/pages/{page_id}';
 };
@@ -2391,13 +2634,24 @@ export type GetPageApiPagesPageIdGetResponse = GetPageApiPagesPageIdGetResponses
 
 export type GetLinksFromApiPagesPageIdLinksFromGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/links/from';
 };
 
@@ -2423,13 +2677,24 @@ export type GetLinksFromApiPagesPageIdLinksFromGetResponse = GetLinksFromApiPage
 
 export type GetLinksToApiPagesPageIdLinksToGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/links/to';
 };
 
@@ -2455,13 +2720,28 @@ export type GetLinksToApiPagesPageIdLinksToGetResponse = GetLinksToApiPagesPageI
 
 export type GetDependentsApiPagesPageIdDependentsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/dependents';
 };
 
@@ -2487,13 +2767,28 @@ export type GetDependentsApiPagesPageIdDependentsGetResponse = GetDependentsApiP
 
 export type GetDependenciesApiPagesPageIdDependenciesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/dependencies';
 };
 
@@ -2519,6 +2814,12 @@ export type GetDependenciesApiPagesPageIdDependenciesGetResponse = GetDependenci
 
 export type GetPageDetailApiPagesPageIdDetailGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2530,6 +2831,10 @@ export type GetPageDetailApiPagesPageIdDetailGetData = {
          * Staged Run Id
          */
         staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
     };
     url: '/api/pages/{page_id}/detail';
 };
@@ -2554,13 +2859,24 @@ export type GetPageDetailApiPagesPageIdDetailGetResponse = GetPageDetailApiPages
 
 export type GetPageCountsApiPagesPageIdCountsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/counts';
 };
 
@@ -2584,13 +2900,24 @@ export type GetPageCountsApiPagesPageIdCountsGetResponse = GetPageCountsApiPages
 
 export type GetProjectStatsApiProjectsProjectIdStatsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
          */
         project_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+    };
     url: '/api/projects/{project_id}/stats';
 };
 
@@ -2614,13 +2941,28 @@ export type GetProjectStatsApiProjectsProjectIdStatsGetResponse = GetProjectStat
 
 export type GetQuestionStatsApiPagesPageIdStatsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/stats';
 };
 
@@ -2644,6 +2986,12 @@ export type GetQuestionStatsApiPagesPageIdStatsGetResponse = GetQuestionStatsApi
 
 export type ListRootQuestionsApiProjectsProjectIdQuestionsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2652,6 +3000,10 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetData = {
     };
     query?: {
         workspace?: Workspace;
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
     };
     url: '/api/projects/{project_id}/questions';
 };
@@ -2678,6 +3030,12 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponse = ListRoot
 
 export type ListCallsApiProjectsProjectIdCallsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2715,13 +3073,24 @@ export type ListCallsApiProjectsProjectIdCallsGetResponse = ListCallsApiProjects
 
 export type GetCallApiCallsCallIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
          */
         call_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/calls/{call_id}';
 };
 
@@ -2745,13 +3114,24 @@ export type GetCallApiCallsCallIdGetResponse = GetCallApiCallsCallIdGetResponses
 
 export type GetChildCallsApiCallsCallIdChildrenGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
          */
         call_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/calls/{call_id}/children';
 };
 
@@ -2777,13 +3157,24 @@ export type GetChildCallsApiCallsCallIdChildrenGetResponse = GetChildCallsApiCal
 
 export type GetRunTraceTreeApiRunsRunIdTraceTreeGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Run Id
          */
         run_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/runs/{run_id}/trace-tree';
 };
 
@@ -2807,13 +3198,24 @@ export type GetRunTraceTreeApiRunsRunIdTraceTreeGetResponse = GetRunTraceTreeApi
 
 export type GetCallEventsApiCallsCallIdEventsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
          */
         call_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/calls/{call_id}/events';
 };
 
@@ -2847,6 +3249,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & ErrorEventOut) | ({
         event: 'scoring_completed';
     } & ScoringCompletedEventOut) | ({
+        event: 'experimental_scoring_completed';
+    } & ExperimentalScoringCompletedEventOut) | ({
         event: 'dispatches_planned';
     } & DispatchesPlannedEventOut) | ({
         event: 'dispatch_executed';
@@ -2879,50 +3283,34 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & WebResearchCompleteEventOut) | ({
         event: 'render_question_subgraph';
     } & RenderQuestionSubgraphEventOut) | ({
+        event: 'load_page';
+    } & LoadPageEventOut) | ({
         event: 'link_subquestions_complete';
     } & LinkSubquestionsCompleteEventOut) | ({
         event: 'view_created';
     } & ViewCreatedEventOut) | ({
+        event: 'autocompact';
+    } & AutocompactEventOut) | ({
         event: 'phase_skipped';
     } & PhaseSkippedEventOut) | ({
+        event: 'global_phase_completed';
+    } & GlobalPhaseCompletedEventOut) | ({
         event: 'update_view_phase_completed';
-    } & UpdateViewPhaseCompletedEventOut)>;
+    } & UpdateViewPhaseCompletedEventOut) | ({
+        event: 'question_dedupe';
+    } & QuestionDedupeEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];
 
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetData = {
-    body?: never;
-    path: {
-        /**
-         * Ab Run Id
-         */
-        ab_run_id: string;
-    };
-    query?: never;
-    url: '/api/ab-runs/{ab_run_id}/trace';
-};
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetError = GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors[keyof GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors];
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: AbRunTraceOut;
-};
-
-export type GetAbRunTraceApiAbRunsAbRunIdTraceGetResponse = GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses[keyof GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses];
-
 export type ListAbEvalsApiAbEvalsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -2955,6 +3343,12 @@ export type ListAbEvalsApiAbEvalsGetResponse = ListAbEvalsApiAbEvalsGetResponses
 
 export type GetAbEvalApiAbEvalsEvalIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Eval Id
@@ -2990,13 +3384,24 @@ export type GetAbEvalApiAbEvalsEvalIdGetResponse = GetAbEvalApiAbEvalsEvalIdGetR
 
 export type ListLlmExchangesApiCallsCallIdLlmExchangesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
          */
         call_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/calls/{call_id}/llm-exchanges';
 };
 
@@ -3022,13 +3427,24 @@ export type ListLlmExchangesApiCallsCallIdLlmExchangesGetResponse = ListLlmExcha
 
 export type GetLlmExchangeApiLlmExchangesExchangeIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Exchange Id
          */
         exchange_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/llm-exchanges/{exchange_id}';
 };
 
@@ -3052,10 +3468,25 @@ export type GetLlmExchangeApiLlmExchangesExchangeIdGetResponse = GetLlmExchangeA
 
 export type GetRealtimeConfigApiRealtimeConfigGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/realtime/config';
 };
+
+export type GetRealtimeConfigApiRealtimeConfigGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRealtimeConfigApiRealtimeConfigGetError = GetRealtimeConfigApiRealtimeConfigGetErrors[keyof GetRealtimeConfigApiRealtimeConfigGetErrors];
 
 export type GetRealtimeConfigApiRealtimeConfigGetResponses = {
     /**
@@ -3068,13 +3499,28 @@ export type GetRealtimeConfigApiRealtimeConfigGetResponse = GetRealtimeConfigApi
 
 export type GetPageRunApiPagesPageIdRunGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
          */
         page_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Staged Run Id
+         */
+        staged_run_id?: string | null;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/pages/{page_id}/run';
 };
 
@@ -3097,3 +3543,44 @@ export type GetPageRunApiPagesPageIdRunGetResponses = {
 };
 
 export type GetPageRunApiPagesPageIdRunGetResponse = GetPageRunApiPagesPageIdRunGetResponses[keyof GetPageRunApiPagesPageIdRunGetResponses];
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/runs/{run_id}/page-load-stats';
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetError = GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors[keyof GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors];
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PageLoadStatsOut;
+};
+
+export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponse = GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses[keyof GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses];

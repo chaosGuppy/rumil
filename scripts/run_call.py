@@ -11,7 +11,7 @@ Usage:
     uv run python scripts/run_call.py assess --question-id <UUID>
 
     # Override find-considerations params
-    uv run python scripts/run_call.py find-considerations "Why is water wet?" --mode concrete --max-rounds 3
+    uv run python scripts/run_call.py find-considerations "Why is water wet?" --max-rounds 3
 
     # Use smoke-test model (haiku)
     uv run python scripts/run_call.py find-considerations "Test question" --smoke-test
@@ -19,15 +19,17 @@ Usage:
     # Use a custom workspace
     uv run python scripts/run_call.py find-considerations "Test question" --workspace my-scratch
 
-    # A/B test a call (requires .a.env and .b.env)
-    uv run python scripts/run_call.py find-considerations "Test question" --ab --smoke-test
-
     # Run only up to a specific stage (build_context or update_workspace)
     uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
     uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage update_workspace
 
 All runs are staged by default (use --no-stage to disable). Workspace defaults to
 'default' but is auto-detected from --question-id when possible.
+
+If --question-id points at a question staged under another run, that run's run_id
+is adopted automatically so the call continues inside the staged lineage (budget
+is added to rather than clobbered; no new `runs` row is created). Passing
+--no-stage against a staged question is rejected.
 """
 
 import argparse
@@ -36,7 +38,9 @@ import logging
 import uuid
 
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_deep_questions import ScoutDeepQuestionsCall
 from rumil.calls.scout_estimates import ScoutEstimatesCall
@@ -46,14 +50,14 @@ from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
+from rumil.calls.update_view import UpdateViewCall
 from rumil.calls.web_research import WebResearchCall
 from rumil.database import DB
-from rumil.models import CallStage, CallType, FindConsiderationsMode
+from rumil.models import CallStage, CallType
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
-from rumil.calls.link_subquestions import LinkSubquestionsCall
-from rumil.settings import Settings, get_settings, _settings_var
-
+from rumil.settings import get_settings
+from rumil.tracing import get_langfuse
 
 _SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
     "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
@@ -75,7 +79,6 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
     up_to_stage = CallStage(args.up_to_stage) if args.up_to_stage else None
 
     if call_type == "find-considerations":
-        mode = FindConsiderationsMode(args.mode)
         call = await db.create_call(
             CallType.FIND_CONSIDERATIONS,
             scope_page_id=question_id,
@@ -86,7 +89,6 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             db,
             max_rounds=args.max_rounds,
             fruit_threshold=args.fruit_threshold,
-            mode=mode,
             up_to_stage=up_to_stage,
         )
         await scout.run()
@@ -143,6 +145,32 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         )
         await linker.run()
 
+    elif call_type == "create-view":
+        call = await db.create_call(
+            CallType.CREATE_VIEW,
+            scope_page_id=question_id,
+        )
+        create_view = CreateViewCall(
+            question_id,
+            call,
+            db,
+            up_to_stage=up_to_stage,
+        )
+        await create_view.run()
+
+    elif call_type == "update-view":
+        call = await db.create_call(
+            CallType.UPDATE_VIEW,
+            scope_page_id=question_id,
+        )
+        update_view = UpdateViewCall(
+            question_id,
+            call,
+            db,
+            up_to_stage=up_to_stage,
+        )
+        await update_view.run()
+
     elif call_type == "robustify":
         if up_to_stage:
             print("--up-to-stage is not supported for robustify.")
@@ -178,8 +206,27 @@ async def run(args: argparse.Namespace) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     workspace = args.workspace
-    staged = not args.no_stage
-    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod, staged=staged)
+    staged_flag = not args.no_stage
+
+    adopted_run_id: str | None = None
+    if args.question_id:
+        probe = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod, staged=False)
+        info = await probe.get_page_staging_info(args.question_id)
+        if info is None:
+            print(f"Question {args.question_id} not found.")
+            return
+        is_staged, owning_run_id, _owning_project_id = info
+        if is_staged:
+            if not staged_flag:
+                print(
+                    f"Question {args.question_id[:8]} is staged under run {owning_run_id[:8]}; "
+                    "cannot run with --no-stage. Drop --no-stage to adopt the staged run."
+                )
+                return
+            adopted_run_id = owning_run_id
+
+    run_id = adopted_run_id or str(uuid.uuid4())
+    db = await DB.create(run_id=run_id, prod=args.prod, staged=staged_flag)
     project = await db.get_or_create_project(workspace)
     db.project_id = project.id
 
@@ -194,7 +241,10 @@ async def run(args: argparse.Namespace) -> None:
         if page.project_id and page.project_id != db.project_id:
             db.project_id = page.project_id
         question_text = page.headline
-        print(f"Using existing question: {question_text}")
+        if adopted_run_id:
+            print(f"Adopted staged run {adopted_run_id[:8]} for question: {question_text}")
+        else:
+            print(f"Using existing question: {question_text}")
     elif args.question_text:
         question_text = args.question_text
         question_id = await create_root_question(question_text, db)
@@ -203,78 +253,28 @@ async def run(args: argparse.Namespace) -> None:
         print("Provide a question text or --question-id.")
         return
 
-    if args.ab:
-        await _run_ab(args, db, question_id, question_text, frontend)
-        return
-
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
-    await db.init_budget(args.budget)
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    if get_langfuse() is not None:
+        lf_base = settings.langfuse_base_url.rstrip("/")
+        print(f"Langfuse session: {lf_base}/sessions?sessionId={db.run_id}")
+    print()
+    if adopted_run_id:
+        await db.add_budget(args.budget)
+    else:
+        await db.init_budget(args.budget)
 
     name = args.name or question_text
     config = settings.capture_config()
-    await db.create_run(
-        name=name,
-        question_id=question_id,
-        config=config,
-    )
+    if not adopted_run_id:
+        await db.create_run(
+            name=name,
+            question_id=question_id,
+            config=config,
+        )
 
     print(f"Running {args.call_type} on {question_id[:8]}...")
     await run_call(args, db, question_id)
     print("\nDone.")
-
-
-async def _run_ab(
-    args: argparse.Namespace,
-    db: DB,
-    question_id: str,
-    question_text: str,
-    frontend: str,
-) -> None:
-    """Run an A/B test: two concurrent calls with different configs."""
-    ab_run_id = str(uuid.uuid4())
-    name = args.name or question_text
-
-    await db.create_ab_run(ab_run_id, name, question_id)
-
-    print(f"\nAB test: {ab_run_id}")
-    print(f"Question: {question_text}")
-    print(f"Budget per arm: {args.budget}")
-    print(f"Trace: {frontend}/ab-traces/{ab_run_id}")
-
-    parent_settings = get_settings()
-
-    async def run_arm(arm_label: str, env_file: str) -> None:
-        arm_settings = Settings.from_env_files(".env", env_file)
-        if parent_settings.is_smoke_test:
-            arm_settings.rumil_smoke_test = "1"
-        _settings_var.set(arm_settings)
-
-        arm_db = await DB.create(
-            run_id=str(uuid.uuid4()),
-            client=db.client,
-            project_id=db.project_id,
-            staged=True,
-            ab_run_id=ab_run_id,
-        )
-        config = arm_settings.capture_config()
-        await arm_db.create_run(
-            name=f"{name} (arm {arm_label})",
-            question_id=question_id,
-            config=config,
-            ab_arm=arm_label,
-        )
-        await arm_db.init_budget(args.budget)
-
-        print(f"\nRunning {args.call_type} arm {arm_label}...")
-        await run_call(args, db=arm_db, question_id=question_id)
-        total, used = await arm_db.get_budget()
-        print(f"\nArm {arm_label} complete: {used}/{total} budget used")
-
-    async with asyncio.TaskGroup() as tg:
-        tg.create_task(run_arm("a", ".a.env"))
-        tg.create_task(run_arm("b", ".b.env"))
-
-    print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
 
 
 def main() -> None:
@@ -287,6 +287,8 @@ def main() -> None:
             "robustify",
             "web-research",
             "link-subquestions",
+            "create-view",
+            "update-view",
             *_SCOUT_CALL_TYPES,
         ],
         help="Type of call to run",
@@ -299,12 +301,6 @@ def main() -> None:
     )
     parser.add_argument("--question-id", help="Existing question UUID")
     parser.add_argument("--budget", type=int, default=5, help="Budget (default: 5)")
-    parser.add_argument(
-        "--mode",
-        default="alternate",
-        choices=["alternate", "abstract", "concrete"],
-        help="Find-considerations mode (default: alternate)",
-    )
     parser.add_argument(
         "--max-rounds",
         type=int,
@@ -327,11 +323,6 @@ def main() -> None:
         action="store_true",
         dest="force_twophase_recurse",
         help="Force the two-phase orchestrator to dispatch two recurse calls",
-    )
-    parser.add_argument(
-        "--ab",
-        action="store_true",
-        help="Run the call as an A/B test (requires .a.env and .b.env)",
     )
     parser.add_argument(
         "--name",

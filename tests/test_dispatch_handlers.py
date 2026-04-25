@@ -6,10 +6,6 @@ prioritization can produce, so a new dispatchable call type cannot
 silently fall through _execute_dispatch.
 """
 
-from collections.abc import Awaitable, Callable
-
-import pytest
-
 from rumil.calls.dispatches import DISPATCH_DEFS
 from rumil.models import BaseDispatchPayload, CreateViewDispatchPayload
 from rumil.orchestrators.dispatch_handlers import (
@@ -34,9 +30,7 @@ def test_every_key_is_a_base_dispatch_payload_subclass():
 
 def test_every_value_is_callable():
     for payload_type, handler in DISPATCH_HANDLERS.items():
-        assert callable(handler), (
-            f"Handler for {payload_type.__name__} is not callable"
-        )
+        assert callable(handler), f"Handler for {payload_type.__name__} is not callable"
 
 
 def test_every_dispatch_def_payload_has_handler():
@@ -52,9 +46,7 @@ def test_every_dispatch_def_payload_has_handler():
         schema = ddef.schema
         if schema not in DISPATCH_HANDLERS:
             missing.append(f"{call_type.value} ({schema.__name__})")
-    assert not missing, (
-        "DISPATCH_DEFS payload types without a handler: " + ", ".join(missing)
-    )
+    assert not missing, "DISPATCH_DEFS payload types without a handler: " + ", ".join(missing)
 
 
 def test_internal_dispatch_types_also_have_handlers():

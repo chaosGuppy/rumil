@@ -1,6 +1,5 @@
 """Tests for supersession chain resolution and format_page annotation."""
 
-import pytest
 import pytest_asyncio
 
 from rumil.context import format_page
@@ -179,10 +178,11 @@ async def test_format_page_include_superseding_false(tmp_db):
 
     old = await tmp_db.get_page(old.id)
     text = await format_page(
-        old, PageDetail.CONTENT, db=tmp_db, linked_detail=None,
+        old,
+        PageDetail.CONTENT,
+        db=tmp_db,
+        linked_detail=None,
         include_superseding=False,
     )
     assert "SUPERSEDED" not in text
     assert "Full content of: Old claim" in text
-
-

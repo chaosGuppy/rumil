@@ -38,8 +38,7 @@ async def test_record_persists_event_on_success(tmp_db, trace_call):
 
     events = await tmp_db.get_call_trace(trace_call.id)
     assert any(
-        ev.get("event") == "warning" and ev.get("message") == "hello from mid-call"
-        for ev in events
+        ev.get("event") == "warning" and ev.get("message") == "hello from mid-call" for ev in events
     )
 
 
@@ -52,9 +51,7 @@ async def test_record_swallows_db_failure(tmp_db, trace_call, mocker, caplog):
     )
     with caplog.at_level("ERROR"):
         await trace.record(WarningEvent(message="in-progress diagnostic"))
-    assert any(
-        "Failed to persist trace event" in rec.getMessage() for rec in caplog.records
-    )
+    assert any("Failed to persist trace event" in rec.getMessage() for rec in caplog.records)
 
 
 async def test_record_strict_persists_event_on_success(tmp_db, trace_call):
@@ -120,7 +117,9 @@ async def test_record_round_moves_raises_when_trace_fails(tmp_db, trace_call, mo
         headline="post-mutation trace failure",
         content="The move landed before the trace was attempted.",
         credence=5,
+        credence_reasoning="fixture value, not meaningful",
         robustness=2,
+        robustness_reasoning="fixture value, not meaningful",
         workspace=Workspace.RESEARCH,
         supersedes=None,
         change_magnitude=None,

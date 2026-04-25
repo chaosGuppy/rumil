@@ -1,0 +1,141 @@
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: 100%;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 18px 22px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  position: relative;
+  overflow: hidden;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    background 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stamp::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 0;
+}
+
+.stamp:hover:not(:disabled)::before,
+.stamp:focus-visible:not(:disabled)::before {
+  transform: scaleX(1);
+}
+
+.stamp:hover:not(:disabled),
+.stamp:focus-visible:not(:disabled) {
+  color: var(--paper);
+  border-color: var(--ink);
+  outline: none;
+}
+
+.stamp:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+
+.stampMark,
+.stampLabel,
+.stampArrow {
+  position: relative;
+  z-index: 1;
+}
+
+.stampMark {
+  width: 22px;
+  height: 22px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0;
+  flex-shrink: 0;
+}
+
+.stampLabel {
+  flex: 1;
+  text-align: left;
+}
+
+.stampArrow {
+  display: inline-block;
+  width: 28px;
+  height: 1px;
+  background: currentColor;
+  flex-shrink: 0;
+  transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stampArrow::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 7px;
+  height: 7px;
+  border-top: 1px solid currentColor;
+  border-right: 1px solid currentColor;
+  transform: translateY(-3.5px) rotate(45deg);
+}
+
+.stamp:hover:not(:disabled) .stampArrow {
+  width: 40px;
+}
+
+.error {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 380;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--burgundy);
+  margin: 0;
+}
+
+.dissolving {
+  animation: dissolve 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  pointer-events: none;
+}
+
+@keyframes dissolve {
+  from { opacity: 1; filter: blur(0); }
+  to { opacity: 0; filter: blur(4px); transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stamp,
+  .stamp::before,
+  .stampArrow {
+    transition: none;
+  }
+  .dissolving {
+    animation: none;
+  }
+}

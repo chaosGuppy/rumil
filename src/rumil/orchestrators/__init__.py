@@ -7,21 +7,19 @@ from rumil.database import DB
 from rumil.orchestrators.base import BaseOrchestrator
 from rumil.orchestrators.claim_investigation import ClaimInvestigationOrchestrator
 from rumil.orchestrators.common import (
+    PRIORITIZATION_MOVES,
     ClaimScore,
     ClaimScoringResult,
     FruitResult,
-    PRIORITIZATION_MOVES,
     PrioritizationResult,
     SubquestionScore,
     SubquestionScoringResult,
     assess_question,
     compute_priority_score,
     create_root_question,
-    create_view_for_question,
-    score_items_sequentially,
     find_considerations_until_done,
     ingest_until_done,
-    update_view_for_question,
+    score_items_sequentially,
     web_research_question,
 )
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
@@ -48,26 +46,24 @@ def Orchestrator(db: DB, broadcaster: Broadcaster | None = None) -> BaseOrchestr
 
 
 __all__ = [
+    "PRIORITIZATION_MOVES",
     "BaseOrchestrator",
     "ClaimInvestigationOrchestrator",
     "ClaimScore",
     "ClaimScoringResult",
     "ExperimentalOrchestrator",
-    "GlobalPrioOrchestrator",
     "FruitResult",
+    "GlobalPrioOrchestrator",
     "Orchestrator",
-    "PRIORITIZATION_MOVES",
     "PrioritizationResult",
     "SubquestionScore",
     "SubquestionScoringResult",
     "TwoPhaseOrchestrator",
     "assess_question",
     "compute_priority_score",
-    "create_view_for_question",
     "create_root_question",
     "find_considerations_until_done",
-    "update_view_for_question",
-    "score_items_sequentially",
     "ingest_until_done",
+    "score_items_sequentially",
     "web_research_question",
 ]

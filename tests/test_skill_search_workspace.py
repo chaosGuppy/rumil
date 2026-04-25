@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from rumil_skills import _runctx, search_workspace
 
 from rumil.embeddings import embed_and_store_page
 from rumil.models import Page, PageLayer, PageType, Workspace
-from rumil_skills import _runctx, search_workspace
-
 
 pytestmark = pytest.mark.llm
 
@@ -15,9 +14,7 @@ pytestmark = pytest.mark.llm
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 async def _noop_close():
@@ -34,9 +31,7 @@ def patch_make_db(monkeypatch, tmp_db):
     return tmp_db
 
 
-async def test_quick_mode_finds_seeded_claim(
-    capsys, monkeypatch, patch_make_db, tmp_db
-):
+async def test_quick_mode_finds_seeded_claim(capsys, monkeypatch, patch_make_db, tmp_db):
     page = Page(
         page_type=PageType.CLAIM,
         layer=PageLayer.SQUIDGY,
@@ -47,9 +42,7 @@ async def test_quick_mode_finds_seeded_claim(
     await tmp_db.save_page(page)
     await embed_and_store_page(tmp_db, page)
 
-    monkeypatch.setattr(
-        "sys.argv", ["search_workspace", "how", "plants", "use", "sunlight"]
-    )
+    monkeypatch.setattr("sys.argv", ["search_workspace", "how", "plants", "use", "sunlight"])
     await search_workspace.main()
     out = capsys.readouterr().out
 
@@ -80,9 +73,7 @@ async def test_full_mode_finds_seeded_page(capsys, monkeypatch, patch_make_db, t
     # build_embedding_based_context searches on the abstract field.
     await embed_and_store_page(tmp_db, page, field_name="abstract")
 
-    monkeypatch.setattr(
-        "sys.argv", ["search_workspace", "--full", "cellular", "energy", "source"]
-    )
+    monkeypatch.setattr("sys.argv", ["search_workspace", "--full", "cellular", "energy", "source"])
     await search_workspace.main()
     out = capsys.readouterr().out
 
@@ -92,9 +83,7 @@ async def test_full_mode_finds_seeded_page(capsys, monkeypatch, patch_make_db, t
 
 
 async def test_full_mode_empty(capsys, monkeypatch, patch_make_db):
-    monkeypatch.setattr(
-        "sys.argv", ["search_workspace", "--full", "obscure", "topic", "nothing"]
-    )
+    monkeypatch.setattr("sys.argv", ["search_workspace", "--full", "obscure", "topic", "nothing"])
     await search_workspace.main()
     out = capsys.readouterr().out
 

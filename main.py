@@ -16,6 +16,7 @@ import json
 import logging
 import sys
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 
 from rumil.ab_eval import run_ab_eval
@@ -37,9 +38,26 @@ from rumil.models import (
 )
 from rumil.orchestrators import Orchestrator, create_root_question
 from rumil.report import generate_report, save_report
+from rumil.run_eval import run_run_eval
+from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
+from rumil.self_improve import run_self_improvement, save_self_improvement
 from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
+from rumil.tracing import get_langfuse
+
+
+def _maybe_print_langfuse_session(db: DB, *, indent: str = "") -> None:
+    """Print the Langfuse session URL when Langfuse is configured.
+
+    Called alongside the in-house "Trace:" prints so users can jump straight
+    into Langfuse for LLM-call detail. No-op when Langfuse is disabled.
+    """
+    if get_langfuse() is None:
+        return
+    settings = get_settings()
+    lf_base = settings.langfuse_base_url.rstrip("/")
+    print(f"{indent}Langfuse: {lf_base}/sessions?sessionId={db.run_id}")
 
 
 @dataclasses.dataclass
@@ -67,9 +85,7 @@ def parse_question_input(value: str) -> QuestionInput:
             sys.exit('Error: JSON file must contain at least a "headline" field.')
         unknown = set(data) - {"headline", "abstract", "content"}
         if unknown:
-            sys.exit(
-                f"Error: unknown fields in question JSON: {', '.join(sorted(unknown))}"
-            )
+            sys.exit(f"Error: unknown fields in question JSON: {', '.join(sorted(unknown))}")
         return QuestionInput(
             headline=data["headline"],
             abstract=data.get("abstract", ""),
@@ -157,12 +173,8 @@ async def cmd_ingest(
         return
 
     if not for_question_id:
-        print(
-            "\nSources stored. Use --for-question QUESTION_ID to extract considerations."
-        )
-        print(
-            "To investigate later:  python main.py --ingest FILE --for-question ID --budget N"
-        )
+        print("\nSources stored. Use --for-question QUESTION_ID to extract considerations.")
+        print("To investigate later:  python main.py --ingest FILE --for-question ID --budget N")
         return
 
     question = await db.get_page(for_question_id)
@@ -180,7 +192,9 @@ async def cmd_ingest(
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nExtracting considerations for: {question.headline[:80]}")
     print(f"Budget: {effective_budget} call{'s' if effective_budget != 1 else ''}")
-    print(f"Trace:  {frontend}/traces/{db.run_id}\n")
+    print(f"Trace:  {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db, indent=" ")
+    print()
     await db.init_budget(effective_budget)
     made = await run_ingest_calls(source_pages, for_question_id, db)
     total, used = await db.get_budget()
@@ -197,9 +211,7 @@ async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") 
         if resolved:
             question = await db.get_page(resolved)
     if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
@@ -207,7 +219,9 @@ async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") 
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nEvaluating judgement for: {question.headline[:80]}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db)
+    print()
 
     call = await run_evaluation(question.id, db, eval_type=eval_type)
     print(f"\nEvaluation complete (call {call.id}).\n")
@@ -265,9 +279,7 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
 
     prior_checkpoints: dict | None = None
     if from_stage > 1:
-        prior_checkpoints = await _load_prior_checkpoints(
-            call.scope_page_id, from_stage, db
-        )
+        prior_checkpoints = await _load_prior_checkpoints(call.scope_page_id, from_stage, db)
 
     await db.create_run(
         name=f"grounding: {question.headline[:80]}",
@@ -279,7 +291,9 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
     print(f"\nRunning grounding feedback for: {question.headline[:80]}")
     if from_stage > 1:
         print(f"Resuming from stage {from_stage}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db)
+    print()
 
     result = await run_grounding_feedback(
         call.scope_page_id,
@@ -342,7 +356,9 @@ async def cmd_feedback_update(
 
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nRunning feedback update for: {question.headline[:80]}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db)
+    print()
 
     if investigation_budget is not None:
         get_settings().feedback_investigation_budget = investigation_budget
@@ -397,7 +413,9 @@ async def cmd_feedback_update_from_file(
     frontend = get_settings().frontend_url.rstrip("/")
     print(f"\nRunning feedback update for: {question.headline[:80]}")
     print(f"Source: {file_path}")
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db)
+    print()
 
     if investigation_budget is not None:
         get_settings().feedback_investigation_budget = investigation_budget
@@ -458,9 +476,7 @@ async def cmd_show_evaluation(call_id: str, db: DB) -> None:
         sys.exit(1)
 
     if call.call_type != CallType.EVALUATE:
-        print(
-            f"Error: call '{call_id}' is a {call.call_type.value} call, not an evaluation."
-        )
+        print(f"Error: call '{call_id}' is a {call.call_type.value} call, not an evaluation.")
         sys.exit(1)
 
     scope = await db.get_page(call.scope_page_id) if call.scope_page_id else None
@@ -478,9 +494,7 @@ async def cmd_summary(
 ) -> str:
     question = await db.get_page(question_id)
     if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
         sys.exit(1)
 
     print(f"\nGenerating summary for: {question.headline[:80]}")
@@ -496,6 +510,34 @@ async def cmd_summary(
     return summary_text
 
 
+async def cmd_self_improve(question_id: str, db: DB) -> None:
+    question = await db.get_page(question_id)
+    if not question:
+        resolved = await db.resolve_page_id(question_id)
+        if resolved:
+            question = await db.get_page(resolved)
+    if not question:
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    print(f"\nSelf-improvement analysis for: {question.headline[:80]}")
+    print(
+        "(Uses one or more LLM calls with read-only tools, "
+        "does not count against research budget)\n"
+    )
+
+    text = await run_self_improvement(question.id, db)
+    if not text.strip():
+        print("No analysis produced.")
+        return
+    path = save_self_improvement(text, question.headline)
+    print(text)
+    print(f"\n---\nSelf-improvement analysis saved to: {path}")
+
+
 async def cmd_report(
     question_id: str,
     db: DB,
@@ -503,15 +545,11 @@ async def cmd_report(
 ) -> None:
     question = await db.get_page(question_id)
     if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
         sys.exit(1)
 
     print(f"\nGenerating report for: {question.headline[:80]}")
-    print(
-        "(This will use multiple LLM calls but does not count against research budget)\n"
-    )
+    print("(This will use multiple LLM calls but does not count against research budget)\n")
 
     report_text = await generate_report(question_id, db, max_depth=max_depth)
     path = save_report(report_text, question.headline)
@@ -532,9 +570,7 @@ async def cmd_list(db: DB, workspace_name: str) -> None:
     for q in questions:
         counts = await db.count_pages_for_question(q.id)
         truncated = q.headline[:55] + "…" if len(q.headline) > 55 else q.headline
-        print(
-            f"{q.id}  {counts['considerations']:>4}  {counts['judgements']:>4}  {truncated}"
-        )
+        print(f"{q.id}  {counts['considerations']:>4}  {counts['judgements']:>4}  {truncated}")
     print("\nTo continue investigating a question:")
     print("  python main.py --continue QUESTION_ID --budget N")
 
@@ -577,6 +613,7 @@ async def cmd_new(
     print(f"Headline:     {q.headline}")
     print(f"Budget:       {budget} research calls")
     print(f"Trace:        {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db, indent="       ")
 
     if ingest_files:
         source_pages = []
@@ -599,9 +636,7 @@ def _batch_label(entry: dict) -> str:
     return entry["question"][:70]
 
 
-async def _run_one_batch_entry(
-    entry: dict, index: int, total: int, template_db: DB
-) -> None:
+async def _run_one_batch_entry(entry: dict, index: int, total: int, template_db: DB) -> str:
     """Run a single batch entry with its own run_id for budget isolation."""
     budget = entry.get("budget", 10)
     label = _batch_label(entry)
@@ -621,9 +656,10 @@ async def _run_one_batch_entry(
         await cmd_new(q, budget, db, ingest_files=entry.get("ingest"))
 
     print(f"\n[{index + 1}/{total}] Done: {label}")
+    return db.run_id
 
 
-async def cmd_batch(batch_file: str, db: DB) -> None:
+async def cmd_batch(batch_file: str, db: DB) -> list[str]:
     path = Path(batch_file)
     if not path.exists():
         print(f"Error: file not found: {batch_file}")
@@ -658,82 +694,45 @@ async def cmd_batch(batch_file: str, db: DB) -> None:
     print(f"\nBatch: {' + '.join(parts)}, total budget {total_budget}")
     print("Running concurrently...\n")
 
-    tasks = [
-        _run_one_batch_entry(entry, i, len(entries), db)
-        for i, entry in enumerate(entries)
-    ]
-    await asyncio.gather(*tasks)
-
-
-async def cmd_ab(
-    q: QuestionInput,
-    budget: int | None,
-    db: DB,
-    name: str = "",
-) -> None:
-    """Run an A/B test: two concurrent investigations with different configs."""
-    ab_run_id = str(uuid.uuid4())
-    budget = _default_budget(budget)
-
-    question_id = await create_root_question(
-        q.headline,
-        db,
-        abstract=q.abstract,
-        content=q.content,
-    )
-    await db.create_ab_run(ab_run_id, name or q.headline, question_id)
-
-    frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nAB test: {ab_run_id}")
-    print(f"Headline: {q.headline}")
-    print(f"Budget per arm: {budget}")
-    print(f"Trace: {frontend}/ab-traces/{ab_run_id}")
-
-    async def run_arm(arm_label: str, env_file: str) -> None:
-        arm_settings = Settings.from_env_files(".env", env_file)
-        if get_settings().is_smoke_test:
-            arm_settings.rumil_smoke_test = "1"
-        if get_settings().is_prod_db:
-            arm_settings.use_prod_db = "1"
-        if not get_settings().tracing_enabled:
-            arm_settings.tracing_enabled = False
-        _settings_var.set(arm_settings)
-
-        arm_db = await DB.create(
-            run_id=str(uuid.uuid4()),
-            prod=arm_settings.is_prod_db,
-            client=db.client,
-            project_id=db.project_id,
-            staged=True,
-            ab_run_id=ab_run_id,
-        )
-        config = arm_settings.capture_config()
-        await arm_db.create_run(
-            name=f"{name or q.headline[:100]} (arm {arm_label})",
-            question_id=question_id,
-            config=config,
-            ab_arm=arm_label,
-        )
-        await arm_db.init_budget(budget)
-        await Orchestrator(arm_db).run(question_id)
-        total, used = await arm_db.get_budget()
-        print(f"\nArm {arm_label} complete: {used}/{total} budget used")
-
-    async with asyncio.TaskGroup() as tg:
-        tg.create_task(run_arm("a", ".a.env"))
-        tg.create_task(run_arm("b", ".b.env"))
-
-    print(f"\nAB test complete: {frontend}/ab-traces/{ab_run_id}")
+    tasks = [_run_one_batch_entry(entry, i, len(entries), db) for i, entry in enumerate(entries)]
+    return list(await asyncio.gather(*tasks))
 
 
 async def cmd_ab_eval(
     run_id_a: str,
     run_id_b: str,
     db: DB,
+    agents_override: Sequence[EvalAgentSpec] | None = None,
 ) -> None:
     """Run A/B evaluation agents comparing two staged runs."""
+    await run_ab_eval(run_id_a, run_id_b, db, agents_override=agents_override)
 
-    await run_ab_eval(run_id_a, run_id_b, db)
+
+def resolve_eval_agents(
+    names_csv: str | None,
+) -> Sequence[EvalAgentSpec] | None:
+    """Parse a comma-separated agent name string into a filtered agent list.
+
+    Returns *None* (meaning "use all") when *names_csv* is falsy.
+    """
+    if not names_csv:
+        return None
+    by_name = {s.name: s for s in EVAL_AGENTS}
+    requested = [n.strip() for n in names_csv.split(",")]
+    unknown = [n for n in requested if n not in by_name]
+    if unknown:
+        valid = ", ".join(by_name)
+        raise SystemExit(f"Unknown eval agent(s): {', '.join(unknown)}. Valid names: {valid}")
+    return [by_name[n] for n in requested]
+
+
+async def cmd_run_eval(
+    run_id: str,
+    db: DB,
+    agents_override: Sequence[EvalAgentSpec] | None = None,
+) -> None:
+    """Evaluate a single staged run across all quality dimensions."""
+    await run_run_eval(run_id, db, agents_override=agents_override)
 
 
 async def cmd_scope(
@@ -778,14 +777,10 @@ async def cmd_continue(
     additional_budget = _default_budget(additional_budget)
     question = await db.get_page(question_id)
     if not question:
-        print(
-            f"Error: question '{question_id}' not found. Run --list to see existing questions."
-        )
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
         sys.exit(1)
     if question.page_type != PageType.QUESTION:
-        print(
-            f"Error: page '{question_id}' is a {question.page_type.value}, not a question."
-        )
+        print(f"Error: page '{question_id}' is a {question.page_type.value}, not a question.")
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
@@ -807,6 +802,7 @@ async def cmd_continue(
     )
     print(f"Budget:       {additional_budget} research calls")
     print(f"Trace:        {frontend}/traces/{db.run_id}")
+    _maybe_print_langfuse_session(db, indent="       ")
 
     if chat_first:
         source_pages: list[Page] = []
@@ -827,9 +823,7 @@ async def cmd_continue(
     ingested_source_names: list[str] = []
     existing_claim_ids: set[str] = set()
     if ingest_files:
-        existing_claim_ids = {
-            p.id for p in await db.get_pages(page_type=PageType.CLAIM)
-        }
+        existing_claim_ids = {p.id for p in await db.get_pages(page_type=PageType.CLAIM)}
         source_pages = []
         for filepath in ingest_files:
             page = await create_source_page(filepath, db)
@@ -920,6 +914,20 @@ async def async_main():
         dest="report_id",
         metavar="QUESTION_ID",
         help="Generate a multi-section research report for a question",
+    )
+    parser.add_argument(
+        "--self-improve",
+        dest="self_improve_id",
+        metavar="QUESTION_ID",
+        nargs="?",
+        const="__auto__",
+        help=(
+            "Analyse how a completed investigation went and suggest "
+            "rumil code/prompt improvements. Read-only. Pass a "
+            "QUESTION_ID to analyse an existing investigation, or "
+            "combine with a new question to auto-analyse after "
+            "investigation completes."
+        ),
     )
     parser.add_argument(
         "--max-depth",
@@ -1052,6 +1060,15 @@ async def async_main():
         help="Project workspace name (default: 'default'). Auto-created on first use.",
     )
     parser.add_argument(
+        "--user",
+        dest="cli_user_id",
+        default="",
+        help=(
+            "Supabase auth.users.id to stamp as the project owner on first creation. "
+            "Overrides DEFAULT_CLI_USER_ID. Ignored for existing projects."
+        ),
+    )
+    parser.add_argument(
         "--list-workspaces",
         dest="list_workspaces",
         action="store_true",
@@ -1063,12 +1080,6 @@ async def async_main():
         metavar="FILE",
         help="JSON file with a list of questions to investigate: "
         '[{"question": "...", "budget": 10}, ...]',
-    )
-    parser.add_argument(
-        "--ab",
-        dest="ab_test",
-        action="store_true",
-        help="Run an A/B test with two arms (requires .a.env and .b.env)",
     )
     parser.add_argument(
         "--name",
@@ -1087,6 +1098,13 @@ async def async_main():
         dest="available_calls",
         default=None,
         help="Available-calls preset name (default: 'default'). Controls which scout/dispatch types the two-phase orchestrator uses.",
+    )
+    parser.add_argument(
+        "--view-variant",
+        dest="view_variant",
+        default=None,
+        help="View variant (default: 'sectioned'). Options: 'sectioned' "
+        "(importance-scored items), 'judgement' (flat NL judgement).",
     )
     parser.add_argument(
         "--ingest-num-claims",
@@ -1136,11 +1154,26 @@ async def async_main():
         help="Load settings from this env file in addition to .env",
     )
     parser.add_argument(
+        "--run-eval",
+        dest="run_eval_id",
+        metavar="RUN_ID",
+        help="Evaluate a single staged run across all quality dimensions",
+    )
+    parser.add_argument(
         "--ab-eval",
         dest="ab_eval_ids",
         nargs=2,
         metavar=("RUN_ID_A", "RUN_ID_B"),
         help="Run A/B evaluation agents comparing two staged runs",
+    )
+    parser.add_argument(
+        "--eval-agents",
+        dest="eval_agent_names",
+        metavar="NAMES",
+        help="Comma-separated list of evaluation agent names to run "
+        "(default: all). Available: grounding, coverage_and_relevance, "
+        "depth_vs_breadth, research_redundancy, consistency, "
+        "research_progress, general_quality",
     )
     parser.add_argument(
         "--stage-run",
@@ -1189,6 +1222,8 @@ async def async_main():
         get_settings().available_moves = args.available_moves
     if args.available_calls is not None:
         get_settings().available_calls = args.available_calls
+    if args.view_variant is not None:
+        get_settings().view_variant = args.view_variant
     if args.ingest_num_claims is not None:
         get_settings().ingest_num_claims = args.ingest_num_claims
     if args.smoke_test:
@@ -1200,9 +1235,7 @@ async def async_main():
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
 
-    db = await DB.create(
-        run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged
-    )
+    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged)
 
     if args.run_id_file:
         Path(args.run_id_file).write_text(db.run_id, encoding="utf-8")
@@ -1211,7 +1244,10 @@ async def async_main():
         await cmd_list_workspaces(db)
         return
 
-    project = await db.get_or_create_project(args.workspace_name)
+    project = await db.get_or_create_project(
+        args.workspace_name,
+        owner_user_id=args.cli_user_id or get_settings().default_cli_user_id or None,
+    )
     db.project_id = project.id
 
     if args.stage_run_id:
@@ -1224,8 +1260,19 @@ async def async_main():
         print(f"Run {args.commit_run_id} has been committed.")
         return
 
+    eval_agents = resolve_eval_agents(args.eval_agent_names)
+
+    if args.run_eval_id:
+        await cmd_run_eval(args.run_eval_id, db, agents_override=eval_agents)
+        return
+
     if args.ab_eval_ids:
-        await cmd_ab_eval(args.ab_eval_ids[0], args.ab_eval_ids[1], db)
+        await cmd_ab_eval(
+            args.ab_eval_ids[0],
+            args.ab_eval_ids[1],
+            db,
+            agents_override=eval_agents,
+        )
         return
 
     if args.obsidian_dir and not args.question:
@@ -1243,6 +1290,7 @@ async def async_main():
             out = await export_obsidian(db, args.obsidian_dir, question_id=resolved)
             print(f"Exported to: {out}")
             return
+    run_ids: list[str] = []
 
     if args.list:
         await cmd_list(db, args.workspace_name)
@@ -1252,12 +1300,10 @@ async def async_main():
         return
     elif args.ground_call_id:
         await cmd_ground(args.ground_call_id, db, from_stage=args.from_stage)
-        return
+        run_ids.append(db.run_id)
     elif args.feedback_call_id:
-        await cmd_feedback_update(
-            args.feedback_call_id, db, investigation_budget=args.budget
-        )
-        return
+        await cmd_feedback_update(args.feedback_call_id, db, investigation_budget=args.budget)
+        run_ids.append(db.run_id)
     elif args.feedback_file:
         await cmd_feedback_update_from_file(
             args.feedback_file[0],
@@ -1265,7 +1311,7 @@ async def async_main():
             db,
             investigation_budget=args.budget,
         )
-        return
+        run_ids.append(db.run_id)
     elif args.show_evaluation_id:
         await cmd_show_evaluation(args.show_evaluation_id, db)
         return
@@ -1277,6 +1323,7 @@ async def async_main():
             name=args.run_name,
             ingest_files=args.ingest_files,
         )
+        run_ids.append(db.run_id)
     elif args.chat_id:
         await run_chat(args.chat_id, db)
     elif args.add_question:
@@ -1295,6 +1342,8 @@ async def async_main():
             db,
             max_depth=args.max_depth,
         )
+    elif args.self_improve_id and args.self_improve_id != "__auto__":
+        await cmd_self_improve(args.self_improve_id, db)
     elif args.continue_id:
         await cmd_continue(
             args.continue_id,
@@ -1304,16 +1353,15 @@ async def async_main():
             ingest_files=args.ingest_files,
             chat_first=args.chat_first,
         )
+        run_ids.append(db.run_id)
     elif args.batch_file:
-        await cmd_batch(args.batch_file, db)
+        run_ids.extend(await cmd_batch(args.batch_file, db))
     elif args.ingest_files and not args.question:
         await cmd_ingest(args.ingest_files, args.for_question_id, args.budget, db)
-    elif args.question and args.ab_test:
-        q = parse_question_input(args.question)
-        await cmd_ab(q, args.budget, db, name=args.run_name)
     elif args.question:
         q = parse_question_input(args.question)
         do_summary = args.summary_id == "__auto__"
+        do_self_improve = args.self_improve_id == "__auto__"
         question_id = await cmd_new(
             q,
             args.budget,
@@ -1323,6 +1371,7 @@ async def async_main():
             auto_summary=do_summary,
         )
         summary_text = ""
+        run_ids.append(db.run_id)
         if do_summary:
             summary_text = await cmd_summary(
                 question_id,
@@ -1340,8 +1389,17 @@ async def async_main():
                 summary_text=summary_text or None,
             )
             print(f"\nObsidian vault exported to: {out}")
+        if do_self_improve:
+            await cmd_self_improve(question_id, db)
     else:
         parser.print_help()
+
+    if len(run_ids) == 1:
+        print(f"\nRun ID: {run_ids[0]}")
+    elif run_ids:
+        print("\nRun IDs:")
+        for rid in run_ids:
+            print(f"  {rid}")
 
 
 def main():

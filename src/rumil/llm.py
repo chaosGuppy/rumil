@@ -12,26 +12,19 @@ Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import re
+import sys
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Generic, TYPE_CHECKING, TypeVar, overload
-
 from collections.abc import Awaitable, Callable, Sequence
-
+from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import anthropic
-from tenacity import (
-    RetryCallState,
-    retry,
-    retry_if_exception,
-    wait_exponential,
-)
-
 from anthropic.types import (
     ServerToolUseBlock,
     TextBlock,
@@ -39,10 +32,20 @@ from anthropic.types import (
     WebSearchToolResultBlock,
 )
 from pydantic import BaseModel, ValidationError
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception,
+    wait_exponential,
+)
 
 from rumil.pricing import compute_cost
-
 from rumil.settings import get_settings
+from rumil.tracing import (
+    get_langfuse,
+    langfuse_trace_url_for_current_observation,
+    observe,
+)
 from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
 from rumil.tracing.tracer import get_trace
 
@@ -51,6 +54,37 @@ if TYPE_CHECKING:
 
 DEFAULT_MAX_TOKENS = 20_000
 DEFAULT_TEMPERATURE = 0.15
+
+
+def _supports_sampling_params(model: str) -> bool:
+    # Opus 4.7 removed temperature/top_p/top_k — sending any returns 400.
+    # With adaptive thinking on (Opus 4.6, Sonnet 4.6), temperature must be
+    # 1.0 — we'd rather skip it than set 1.0, so gate on thinking being off.
+    if model.startswith("claude-opus-4-7"):
+        return False
+    return _thinking_config(model) is None
+
+
+def _thinking_config(model: str) -> dict | None:
+    # Adaptive thinking: Opus 4.7/4.6 and Sonnet 4.6. Haiku and older Sonnet
+    # don't support adaptive. On 4.7, thinking text is omitted by default —
+    # ask for summarized so sdk_agent can still capture it.
+    if model.startswith("claude-opus-4-7"):
+        return {"type": "adaptive", "display": "summarized"}
+    if model.startswith(("claude-opus-4-6", "claude-sonnet-4-6")):
+        return {"type": "adaptive"}
+    return None
+
+
+def _effort_level(model: str) -> str | None:
+    # xhigh is Opus 4.7-only; high is the best shared setting elsewhere.
+    # Haiku and Sonnet 4.5 don't support the effort parameter at all.
+    if model.startswith("claude-opus-4-7"):
+        return "xhigh"
+    if model.startswith(("claude-opus-4-6", "claude-sonnet-4-6")):
+        return "high"
+    return None
+
 
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
@@ -93,6 +127,12 @@ def _log_before_retry(retry_state: RetryCallState) -> None:
         retry_state.attempt_number,
         max_retries,
     )
+    print(
+        f"  [retry] API {label}, waiting {wait:g}s "
+        f"(attempt {retry_state.attempt_number}/{max_retries})",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 _api_retry = retry(
@@ -111,13 +151,70 @@ def _load_file(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def build_system_prompt(call_type: str) -> str:
-    """Combine preamble + call-type instructions + citations into one system prompt."""
-    preamble = _load_file("preamble.md")
+_experimental_scout_budget: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "experimental_scout_budget", default=None
+)
+
+
+def set_experimental_scout_budget(budget: int | None) -> contextvars.Token:
+    """Set the prioritiser's budget visible to scouts on the experimental path.
+
+    Returns a token that can be passed to `reset_experimental_scout_budget`.
+    """
+    return _experimental_scout_budget.set(budget)
+
+
+def reset_experimental_scout_budget(token: contextvars.Token) -> None:
+    _experimental_scout_budget.reset(token)
+
+
+_SCOUT_BUDGET_CALL_TYPES: frozenset[str] = frozenset(
+    {
+        "scout_subquestions",
+        "scout_estimates",
+        "scout_hypotheses",
+        "scout_analogies",
+        "scout_paradigm_cases",
+        "scout_factchecks",
+        "scout_web_questions",
+        "scout_deep_questions",
+    }
+)
+
+
+def build_system_prompt(
+    call_type: str,
+    *,
+    include_preamble: bool = True,
+    include_citations: bool = True,
+) -> str:
+    """Combine preamble + call-type instructions + citations into one system prompt.
+
+    Pass ``include_citations=False`` for calls that do not create any content-bearing
+    pages (e.g. prioritization, scoring) — the inline-citation rules have nothing to
+    attach to in those calls and only add noise.
+
+    Pass ``include_preamble=False`` for calls whose prompts must not assume any
+    rumil-workspace framing (e.g. generate_artefact, where the LLM is acting as
+    a domain-neutral writer with only a spec for context). When preamble is off,
+    citations and grounding are also skipped since they're workspace-specific.
+    """
     instructions = _load_file(f"{call_type}.md")
-    citations = _load_file("citations.md")
+    if not include_preamble:
+        return instructions
+    preamble = _load_file("preamble.md")
     grounding = _load_file("grounding.md")
-    return f"{preamble}\n\n---\n\n{instructions}\n\n---\n\n{citations}\n\n---\n\n{grounding}"
+    parts = [preamble, instructions]
+    if include_citations:
+        parts.append(_load_file("citations.md"))
+    parts.append(grounding)
+    budget = _experimental_scout_budget.get()
+    if budget is not None and call_type in _SCOUT_BUDGET_CALL_TYPES:
+        budget_awareness = _load_file("scout_budget_awareness_experimental.md").format(
+            budget=budget
+        )
+        parts.append(budget_awareness)
+    return "\n\n---\n\n".join(parts)
 
 
 def build_user_message(context_text: str, task_description: str) -> str:
@@ -276,13 +373,17 @@ class LLMExchangeMetadata:
 
     Encapsulates the parameters needed by save_llm_exchange that are not
     already present in the call_api / structured_call signatures.
+
+    `user_message` is only used for single-turn calls (text_call). For
+    multi-turn calls the full message stack is serialized automatically
+    from the `messages` arg and persisted to `user_messages` on the
+    exchange row.
     """
 
     call_id: str
     phase: str
     round_num: int | None = None
     user_message: str | None = None
-    user_messages: list[dict] | None = None
 
 
 async def _save_exchange(
@@ -297,6 +398,7 @@ async def _save_exchange(
     duration_ms: int,
     cache_creation_input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
+    user_messages: Sequence[dict] | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event."""
     exchange_id = await db.save_llm_exchange(
@@ -312,7 +414,7 @@ async def _save_exchange(
         round_num=metadata.round_num,
         cache_creation_input_tokens=cache_creation_input_tokens or None,
         cache_read_input_tokens=cache_read_input_tokens or None,
-        user_messages=metadata.user_messages,
+        user_messages=user_messages,
     )
     cost_usd = compute_cost(
         model=model,
@@ -334,10 +436,86 @@ async def _save_exchange(
                 cache_read_input_tokens=cache_read_input_tokens or None,
                 duration_ms=duration_ms,
                 cost_usd=cost_usd or None,
+                langfuse_trace_url=langfuse_trace_url_for_current_observation(),
             )
         )
 
 
+def _extract_model_parameters(api_kwargs: dict) -> dict:
+    """Pull Anthropic-API params into the flat shape Langfuse renders in the UI.
+
+    Skips `system`/`messages` (they go into `input`). Flattens nested config
+    dicts (`thinking`, `output_config`) into individual keys since
+    update_current_generation's model_parameters slot is shallow.
+    """
+    params: dict = {}
+    for key in ("model", "max_tokens", "temperature"):
+        if key in api_kwargs:
+            params[key] = api_kwargs[key]
+    if (tools := api_kwargs.get("tools")) is not None:
+        params["tool_count"] = len(tools)
+    if (thinking := api_kwargs.get("thinking")) is not None:
+        for k, v in thinking.items():
+            params[f"thinking_{k}"] = v
+    if (output_config := api_kwargs.get("output_config")) is not None:
+        for k, v in output_config.items():
+            params[k] = v
+    if (tool_choice := api_kwargs.get("tool_choice")) is not None:
+        params["tool_choice"] = str(tool_choice)
+    return params
+
+
+def _enrich_langfuse_generation(
+    *,
+    model: str,
+    messages: Sequence[dict],
+    response: anthropic.types.Message,
+    elapsed_ms: int,
+    api_kwargs: dict | None = None,
+) -> None:
+    """Populate the active Langfuse generation span with model, IO, and usage.
+
+    No-op when Langfuse is disabled or no observation is active.
+    """
+    client = get_langfuse()
+    if client is None:
+        return
+    try:
+        usage = response.usage
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cost_usd = compute_cost(
+            model=model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_creation_input_tokens=cache_creation,
+            cache_read_input_tokens=cache_read,
+        )
+        output_text = "".join(
+            block.text for block in response.content if isinstance(block, TextBlock)
+        )
+        client.update_current_generation(
+            model=model,
+            input=_serialize_messages(messages),
+            output=output_text or None,
+            model_parameters=_extract_model_parameters(api_kwargs or {}),
+            usage_details={
+                "input": usage.input_tokens,
+                "output": usage.output_tokens,
+                "cache_creation_input": cache_creation,
+                "cache_read_input": cache_read,
+            },
+            cost_details={"total": cost_usd} if cost_usd else None,
+            metadata={
+                "stop_reason": response.stop_reason,
+                "duration_ms": elapsed_ms,
+            },
+        )
+    except Exception as exc:
+        log.debug("Langfuse enrichment failed: %s", exc)
+
+
+@observe(as_type="generation", name="anthropic.messages.create")
 async def call_api(
     client: anthropic.AsyncAnthropic,
     model: str,
@@ -348,7 +526,6 @@ async def call_api(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
-    temperature: float = DEFAULT_TEMPERATURE,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
@@ -361,10 +538,15 @@ async def call_api(
     kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "temperature": temperature,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
     }
+    if _supports_sampling_params(model):
+        kwargs["temperature"] = DEFAULT_TEMPERATURE
+    if (thinking := _thinking_config(model)) is not None:
+        kwargs["thinking"] = thinking
+    if (effort := _effort_level(model)) is not None:
+        kwargs["output_config"] = {"effort": effort}
     if tools:
         kwargs["tools"] = tools
 
@@ -402,8 +584,7 @@ async def call_api(
 
     elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
     log.debug(
-        "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, "
-        "full_usage=%s",
+        "API response: stop_reason=%s, usage=%d/%d tokens, duration=%dms, full_usage=%s",
         response.stop_reason,
         response.usage.input_tokens,
         response.usage.output_tokens,
@@ -426,8 +607,7 @@ async def call_api(
                         "content": block.model_dump(mode="json")["content"],
                     }
                 )
-        if metadata.user_messages is None and len(messages) > 1:
-            metadata.user_messages = _serialize_messages(messages)
+        serialized = _serialize_messages(messages) if len(messages) > 1 else None
         try:
             await _save_exchange(
                 metadata,
@@ -443,10 +623,8 @@ async def call_api(
                     response.usage, "cache_creation_input_tokens", 0
                 )
                 or 0,
-                cache_read_input_tokens=getattr(
-                    response.usage, "cache_read_input_tokens", 0
-                )
-                or 0,
+                cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                user_messages=serialized,
             )
         except Exception as exc:
             log.error(
@@ -459,12 +637,17 @@ async def call_api(
             if trace:
                 await trace.record(
                     ErrorEvent(
-                        message=(
-                            f"Failed to save exchange: {type(exc).__name__}: {exc}"
-                        ),
+                        message=(f"Failed to save exchange: {type(exc).__name__}: {exc}"),
                         phase=metadata.phase,
                     )
                 )
+    _enrich_langfuse_generation(
+        model=model,
+        messages=messages,
+        response=response,
+        elapsed_ms=elapsed_ms,
+        api_kwargs=kwargs,
+    )
     return APIResponse(message=response, duration_ms=elapsed_ms)
 
 
@@ -473,22 +656,31 @@ async def text_call(
     user_message: str = "",
     *,
     messages: list[dict] | None = None,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
     Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
+    Pass `metadata` and `db` together to persist the exchange and record a
+    trace event against the call identified by `metadata.call_id`.
     """
     settings = get_settings()
     api_key = settings.require_anthropic_key()
     model = settings.model
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    msg_list = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
-    )
+    msg_list = messages if messages is not None else [{"role": "user", "content": user_message}]
+    if metadata is not None and metadata.user_message is None:
+        metadata.user_message = user_message
     log.debug("text_call: messages=%d", len(msg_list))
-    api_resp = await call_api(client, model, system_prompt, msg_list)
+    api_resp = await call_api(
+        client,
+        model,
+        system_prompt,
+        msg_list,
+        metadata=metadata,
+        db=db,
+    )
     for block in api_resp.message.content:
         if isinstance(block, TextBlock):
             log.debug("text_call returned %d chars", len(block.text))
@@ -598,8 +790,7 @@ async def _structured_call_cached(
                 )
                 continue
             log.warning(
-                "structured_call (cached): all parse attempts failed (%s), "
-                "returning empty result",
+                "structured_call (cached): all parse attempts failed (%s), returning empty result",
                 exc,
             )
             trace = get_trace()
@@ -643,6 +834,7 @@ def _inject_into_last_user_message(
     return msgs
 
 
+@observe(as_type="generation", name="anthropic.messages.parse")
 async def _structured_call_parse(
     system_prompt: str,
     response_model: type[T] | None,
@@ -663,10 +855,15 @@ async def _structured_call_parse(
     parse_kwargs: dict = {
         "model": model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "temperature": DEFAULT_TEMPERATURE,
         "system": system_prompt,
         "messages": msg_list,
     }
+    if _supports_sampling_params(model):
+        parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
+    if (thinking := _thinking_config(model)) is not None:
+        parse_kwargs["thinking"] = thinking
+    if (effort := _effort_level(model)) is not None:
+        parse_kwargs["output_config"] = {"effort": effort}
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
     if tools is not None:
@@ -687,13 +884,21 @@ async def _structured_call_parse(
     for block in response.content:
         if isinstance(block, TextBlock):
             response_text += block.text
+    _enrich_langfuse_generation(
+        model=model,
+        messages=msg_list,
+        response=response,
+        elapsed_ms=elapsed_ms,
+        api_kwargs=parse_kwargs,
+    )
     if metadata and db:
-        if metadata.user_message is None and metadata.user_messages is None:
+        serialized: Sequence[dict] | None = None
+        if metadata.user_message is None:
             if len(msg_list) == 1:
                 content = msg_list[0].get("content", "")
                 metadata.user_message = content if isinstance(content, str) else None
             if len(msg_list) > 1 or metadata.user_message is None:
-                metadata.user_messages = _serialize_messages(msg_list)
+                serialized = _serialize_messages(msg_list)
         await _save_exchange(
             metadata,
             db=db,
@@ -704,14 +909,10 @@ async def _structured_call_parse(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
             duration_ms=elapsed_ms,
-            cache_creation_input_tokens=getattr(
-                response.usage, "cache_creation_input_tokens", 0
-            )
+            cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0)
             or 0,
-            cache_read_input_tokens=getattr(
-                response.usage, "cache_read_input_tokens", 0
-            )
-            or 0,
+            cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+            user_messages=serialized,
         )
     if response.parsed_output is not None:
         log.debug(
@@ -815,11 +1016,7 @@ async def structured_call(
     if not user_message and not messages:
         raise ValueError("Either user_message or messages must be provided")
 
-    raw_msgs = (
-        messages
-        if messages is not None
-        else [{"role": "user", "content": user_message}]
-    )
+    raw_msgs = messages if messages is not None else [{"role": "user", "content": user_message}]
     model_name = response_model.__name__ if response_model else "None"
     log.debug(
         "structured_call: response_model=%s, cache=%s",

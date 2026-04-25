@@ -12,11 +12,7 @@ class PageRef(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_summary(cls, values: dict) -> dict:
-        if (
-            isinstance(values, dict)
-            and "summary" in values
-            and "headline" not in values
-        ):
+        if isinstance(values, dict) and "summary" in values and "headline" not in values:
             values["headline"] = values.pop("summary")
         return values
 
@@ -47,7 +43,25 @@ class ContextBuiltEvent(BaseModel):
     preloaded_page_ids: PageRefList = []
     source_page_id: str | None = None
     budget: int | None = None
-    scout_mode: str | None = None
+    # Tiered breakdown of which pages went into the prompt at which fidelity.
+    # Empty lists when the context builder doesn't run tiered selection —
+    # the legacy working_context_page_ids field still carries the flat list.
+    full_pages: PageRefList = []
+    abstract_pages: PageRefList = []
+    summary_pages: PageRefList = []
+    distillation_pages: PageRefList = []
+    # Pages pulled in via the scope question's linked items — considerations,
+    # judgements, and sub-question judgements rendered inline by
+    # format_page(scope_page, linked_detail=...). These aren't in the
+    # embedding tiers; they're a separate category captured via page-load
+    # tracking during build_context.
+    scope_linked_pages: PageRefList = []
+    # Characters spent per tier (keys: full, abstract, summary, distillation).
+    budget_usage: dict[str, int] = {}
+    # The rendered context section the builder produced, plus its char count
+    # pre-computed so the UI can show a length at a glance without measuring.
+    context_text: str = ""
+    context_text_chars: int = 0
 
 
 class MovesExecutedEvent(BaseModel):
@@ -74,6 +88,7 @@ class LLMExchangeEvent(BaseModel):
     cost_usd: float | None = None
     has_thinking: bool | None = None
     tool_uses: list[dict[str, Any]] | None = None
+    langfuse_trace_url: str | None = None
 
 
 class WarningEvent(BaseModel):
@@ -122,6 +137,18 @@ class ScoringCompletedEvent(BaseModel):
     parent_fruit_reasoning: str = ""
     per_type_fruit: list[CallTypeFruitScoreItem] = []
     dispatch_guidance: str = ""
+
+
+class ExperimentalSubquestionScoreItem(BaseModel):
+    question_id: str
+    headline: str = ""
+    impact_curve: str = ""
+
+
+class ExperimentalScoringCompletedEvent(BaseModel):
+    event: Literal["experimental_scoring_completed"] = "experimental_scoring_completed"
+    subquestion_scores: list[ExperimentalSubquestionScoreItem] = []
+    per_type_fruit: list[CallTypeFruitScoreItem] = []
 
 
 class DispatchesPlannedEvent(BaseModel):
@@ -260,6 +287,11 @@ class ViewCreatedEvent(BaseModel):
     superseded_view_id: str | None = None
 
 
+class AutocompactEvent(BaseModel):
+    event: Literal["autocompact"] = "autocompact"
+    agent_id: str
+
+
 class PhaseSkippedEvent(BaseModel):
     event: Literal["phase_skipped"] = "phase_skipped"
     phase: str = ""
@@ -281,6 +313,25 @@ class UpdateViewPhaseCompletedEvent(BaseModel):
     items_removed: int = 0
 
 
+class DedupeCandidateItem(BaseModel):
+    id: str
+    headline: str = ""
+    similarity: float
+    kept_by_filter: bool = False
+
+
+class QuestionDedupeEvent(BaseModel):
+    event: Literal["question_dedupe"] = "question_dedupe"
+    proposed_headline: str = ""
+    parent_id: str
+    parent_headline: str = ""
+    candidates: list[DedupeCandidateItem] = []
+    outcome: str = ""
+    matched_page_id: str | None = None
+    matched_headline: str = ""
+    decision_reasoning: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -289,6 +340,7 @@ TraceEvent = Annotated[
     | WarningEvent
     | ErrorEvent
     | ScoringCompletedEvent
+    | ExperimentalScoringCompletedEvent
     | DispatchesPlannedEvent
     | DispatchExecutedEvent
     | ExplorePageEvent
@@ -308,8 +360,10 @@ TraceEvent = Annotated[
     | LoadPageEvent
     | LinkSubquestionsCompleteEvent
     | ViewCreatedEvent
+    | AutocompactEvent
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
-    | UpdateViewPhaseCompletedEvent,
+    | UpdateViewPhaseCompletedEvent
+    | QuestionDedupeEvent,
     Field(discriminator="event"),
 ]

@@ -60,7 +60,9 @@ async def test_take_new_moves_works_from_nonzero_start(tmp_db, scout_call):
 
     moves, _, _ = state.take_new_moves()
     assert [m.move_type for m in moves] == [
-        MoveType.CREATE_CLAIM, MoveType.LOAD_PAGE, MoveType.CREATE_QUESTION,
+        MoveType.CREATE_CLAIM,
+        MoveType.LOAD_PAGE,
+        MoveType.CREATE_QUESTION,
     ]
 
     moves2, _, _ = state.take_new_moves()

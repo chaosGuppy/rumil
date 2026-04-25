@@ -1,0 +1,166 @@
+"""Generative orchestrator: spec → refine → final artefact.
+
+Drives the generator-refiner workflow end to end:
+
+1. Create a hidden artefact-task question for the user's request.
+2. Run generate_spec to produce the initial set of spec items.
+3. Run refine_spec, which internally reads the spec + last-3 artefact/critique
+   triples, edits the spec via add/supersede/delete, fires regenerate_and_critique
+   to see how the artefact moves, and calls finalize_artefact when iteration
+   is no longer worthwhile.
+4. If the refiner hasn't finalized (e.g. budget ran out), the orchestrator
+   falls back to force-finalizing the latest artefact so the caller always
+   ends up with a visible artefact page.
+
+Budget is allocated at the orchestrator level. generate_spec costs 1 unit;
+each regenerate_and_critique inside refine_spec costs 2; refine_spec's own
+agent-loop turns cost 1 each (run_agent_loop does not charge budget — budget
+is only debited by explicit consume_budget calls, which the move does).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+
+from rumil.calls.critique_artefact import CritiqueArtefactCall
+from rumil.calls.generate_artefact import GenerateArtefactCall
+from rumil.calls.generate_spec import GenerateSpecCall
+from rumil.calls.refine_spec import RefineSpecCall
+from rumil.database import DB
+from rumil.models import (
+    CallType,
+    Page,
+    PageLayer,
+    PageType,
+    Workspace,
+)
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class GenerativeResult:
+    """Return value of GenerativeOrchestrator.run."""
+
+    task_id: str
+    artefact_id: str | None
+    finalized: bool
+
+
+class GenerativeOrchestrator:
+    """Drive the generator-refiner loop to produce a visible artefact."""
+
+    def __init__(
+        self,
+        db: DB,
+        *,
+        refine_max_rounds: int = 10,
+    ) -> None:
+        self.db = db
+        self.refine_max_rounds = refine_max_rounds
+
+    async def run(self, request: str, *, headline: str | None = None) -> GenerativeResult:
+        """Produce an artefact for *request*. Returns the result's IDs.
+
+        The orchestrator creates its own hidden artefact-task question,
+        drives generate_spec + refine_spec to completion (or budget
+        exhaustion), and ensures an artefact exists and is visible.
+        """
+        task = await self._create_task(request, headline=headline)
+        log.info(
+            "Generative orchestrator: task=%s, headline=%s",
+            task.id[:8],
+            task.headline[:70],
+        )
+
+        await self._run_generate_spec(task.id)
+
+        await self._run_refine_spec(task.id)
+
+        artefact = await self.db.latest_artefact_for_task(task.id)
+        finalized = False
+        # Refiner never produced an artefact (budget exhausted before the
+        # first regenerate_and_critique, or the model never fired one).
+        # Try to produce one now with a direct generate+critique so the
+        # caller at least has something.
+        if artefact is None and await self.db.consume_budget(1):
+            await self._one_off_regenerate(task.id, parent_call_id=None)
+            artefact = await self.db.latest_artefact_for_task(task.id)
+
+        if artefact is not None and artefact.hidden:
+            await self.db.set_page_hidden(artefact.id, False)
+            finalized = True
+            log.info("Orchestrator force-finalized artefact %s", artefact.id[:8])
+        elif artefact is not None and not artefact.hidden:
+            finalized = True
+
+        return GenerativeResult(
+            task_id=task.id,
+            artefact_id=artefact.id if artefact else None,
+            finalized=finalized,
+        )
+
+    async def _create_task(self, request: str, *, headline: str | None) -> Page:
+        task = Page(
+            page_type=PageType.QUESTION,
+            layer=PageLayer.SQUIDGY,
+            workspace=Workspace.RESEARCH,
+            content=request,
+            headline=headline or request[:120],
+            hidden=True,
+        )
+        await self.db.save_page(task)
+        return task
+
+    async def _run_generate_spec(self, task_id: str) -> None:
+        if not await self.db.consume_budget(1):
+            log.warning("Budget exhausted before generate_spec could run")
+            return
+        call = await self.db.create_call(
+            CallType.GENERATE_SPEC,
+            scope_page_id=task_id,
+        )
+        runner = GenerateSpecCall(task_id, call, self.db)
+        await runner.run()
+
+    async def _run_refine_spec(self, task_id: str) -> None:
+        if not await self.db.consume_budget(1):
+            log.warning("Budget exhausted before refine_spec could run")
+            return
+        call = await self.db.create_call(
+            CallType.REFINE_SPEC,
+            scope_page_id=task_id,
+        )
+        runner = RefineSpecCall(task_id, call, self.db, max_rounds=self.refine_max_rounds)
+        await runner.run()
+
+    async def _one_off_regenerate(self, task_id: str, parent_call_id: str | None) -> None:
+        """Run a single generate_artefact + critique_artefact as a fallback."""
+        gen_call = await self.db.create_call(
+            CallType.GENERATE_ARTEFACT,
+            scope_page_id=task_id,
+            parent_call_id=parent_call_id,
+        )
+        await GenerateArtefactCall(task_id, gen_call, self.db).run()
+
+        if not await self.db.consume_budget(1):
+            return
+        crit_call = await self.db.create_call(
+            CallType.CRITIQUE_ARTEFACT,
+            scope_page_id=task_id,
+            parent_call_id=parent_call_id,
+        )
+        await CritiqueArtefactCall(task_id, crit_call, self.db).run()
+
+
+async def run_generative_workflow(
+    db: DB,
+    request: str,
+    *,
+    headline: str | None = None,
+    refine_max_rounds: int = 10,
+) -> GenerativeResult:
+    """One-shot convenience wrapper for the generative orchestrator."""
+    orchestrator = GenerativeOrchestrator(db, refine_max_rounds=refine_max_rounds)
+    return await orchestrator.run(request, headline=headline)

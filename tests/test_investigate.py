@@ -18,10 +18,7 @@ async def test_investigate_creates_pages(tmp_db):
             "investment in protected bike lanes leads to a sustained increase "
             "in cycling commuting rates?"
         ),
-        headline=(
-            "What determines whether protected bike lanes increase cycling "
-            "commute rates?"
-        ),
+        headline=("What determines whether protected bike lanes increase cycling commute rates?"),
     )
     await tmp_db.save_page(question)
 
@@ -29,12 +26,7 @@ async def test_investigate_creates_pages(tmp_db):
     orch = Orchestrator(tmp_db)
     await orch.run(question.id)
 
-    rows = (
-        await tmp_db.client.table("pages")
-        .select("id")
-        .eq("run_id", tmp_db.run_id)
-        .execute()
-    )
+    rows = await tmp_db.client.table("pages").select("id").eq("run_id", tmp_db.run_id).execute()
     page_ids = [r["id"] for r in rows.data]
     new_ids = [pid for pid in page_ids if pid != question.id]
     assert len(new_ids) >= 1, "Expected new pages, only found the original question"

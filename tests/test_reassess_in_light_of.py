@@ -1,7 +1,5 @@
 """Tests for in_light_of resolution and its use in reassess_question."""
 
-import pytest
-
 from rumil.clean.common import reassess_question, resolve_in_light_of
 from rumil.models import (
     Call,
@@ -44,11 +42,13 @@ async def test_resolve_in_light_of_swaps_question_for_judgement(tmp_db):
 
     judgement = _make_page(PageType.JUDGEMENT, "Judgement on question")
     await tmp_db.save_page(judgement)
-    await tmp_db.save_link(PageLink(
-        from_page_id=judgement.id,
-        to_page_id=question.id,
-        link_type=LinkType.ANSWERS,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=judgement.id,
+            to_page_id=question.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
 
     resolved = await resolve_in_light_of([question.id[:8]], tmp_db)
 
@@ -85,7 +85,9 @@ async def test_resolve_in_light_of_skips_superseded_pages(tmp_db):
 
 
 async def test_reassess_question_passes_context_page_ids(
-    tmp_db, question_page, mocker,
+    tmp_db,
+    question_page,
+    mocker,
 ):
     """The child assess call should have context_page_ids set to the resolved
     in_light_of pages."""
@@ -102,15 +104,26 @@ async def test_reassess_question_passes_context_page_ids(
     trace = CallTrace(parent_call.id, tmp_db)
 
     # Mock CallRunner.run to avoid LLM calls — we only care about call creation
-    mocker.patch("rumil.clean.common.ASSESS_CALL_CLASSES", {
-        "default": type("FakeAssess", (), {
-            "__init__": lambda self, *a, **kw: None,
-            "run": mocker.AsyncMock(),
-        }),
-    })
+    mocker.patch(
+        "rumil.clean.common.ASSESS_CALL_CLASSES",
+        {
+            "default": type(
+                "FakeAssess",
+                (),
+                {
+                    "__init__": lambda self, *a, **kw: None,
+                    "run": mocker.AsyncMock(),
+                },
+            ),
+        },
+    )
 
     await reassess_question(
-        question_page.id[:8], [claim.id[:8]], parent_call, tmp_db, trace,
+        question_page.id[:8],
+        [claim.id[:8]],
+        parent_call,
+        tmp_db,
+        trace,
     )
 
     # Find the child assess call
@@ -121,7 +134,9 @@ async def test_reassess_question_passes_context_page_ids(
 
 
 async def test_reassess_question_resolves_question_to_judgement_in_context(
-    tmp_db, question_page, mocker,
+    tmp_db,
+    question_page,
+    mocker,
 ):
     """When in_light_of contains a question with a judgement, the child assess
     call's context_page_ids should contain the judgement ID, not the question."""
@@ -129,11 +144,13 @@ async def test_reassess_question_resolves_question_to_judgement_in_context(
     await tmp_db.save_page(sub_question)
     judgement = _make_page(PageType.JUDGEMENT, "Sub-question judgement")
     await tmp_db.save_page(judgement)
-    await tmp_db.save_link(PageLink(
-        from_page_id=judgement.id,
-        to_page_id=sub_question.id,
-        link_type=LinkType.ANSWERS,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=judgement.id,
+            to_page_id=sub_question.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
 
     parent_call = Call(
         call_type=CallType.FEEDBACK_UPDATE,
@@ -144,15 +161,26 @@ async def test_reassess_question_resolves_question_to_judgement_in_context(
     await tmp_db.save_call(parent_call)
     trace = CallTrace(parent_call.id, tmp_db)
 
-    mocker.patch("rumil.clean.common.ASSESS_CALL_CLASSES", {
-        "default": type("FakeAssess", (), {
-            "__init__": lambda self, *a, **kw: None,
-            "run": mocker.AsyncMock(),
-        }),
-    })
+    mocker.patch(
+        "rumil.clean.common.ASSESS_CALL_CLASSES",
+        {
+            "default": type(
+                "FakeAssess",
+                (),
+                {
+                    "__init__": lambda self, *a, **kw: None,
+                    "run": mocker.AsyncMock(),
+                },
+            ),
+        },
+    )
 
     await reassess_question(
-        question_page.id[:8], [sub_question.id[:8]], parent_call, tmp_db, trace,
+        question_page.id[:8],
+        [sub_question.id[:8]],
+        parent_call,
+        tmp_db,
+        trace,
     )
 
     children = await tmp_db.get_child_calls(parent_call.id)

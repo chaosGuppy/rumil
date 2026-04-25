@@ -12,9 +12,6 @@ from pydantic import BaseModel, Field
 from rumil.calls.common import (
     ABSTRACT_INSTRUCTION,
     PageSummaryItem,
-    _format_loaded_pages,
-    _run_phase1,
-    resolve_page_refs,
     save_page_abstracts,
 )
 from rumil.calls.stages import CallInfra, ContextBuilder, ContextResult
@@ -23,7 +20,7 @@ from rumil.context import (
     format_page,
 )
 from rumil.database import DB
-from rumil.embeddings import search_pages
+from rumil.embeddings import page_query_text, search_pages
 from rumil.llm import (
     LLMExchangeMetadata,
     build_system_prompt,
@@ -39,51 +36,10 @@ from rumil.models import (
     PageType,
 )
 from rumil.settings import get_settings
-from rumil.tracing.trace_events import ContextBuiltEvent
 
 log = logging.getLogger(__name__)
 
 _B2_SEMAPHORE = asyncio.Semaphore(15)
-
-
-async def _record_context_built(
-    infra: CallInfra,
-    working_page_ids: Sequence[str],
-    preloaded_ids: Sequence[str],
-    *,
-    source_page_id: str | None = None,
-    scout_mode: str | None = None,
-) -> None:
-    await infra.trace.record(
-        ContextBuiltEvent(
-            working_context_page_ids=await resolve_page_refs(
-                working_page_ids, infra.db
-            ),
-            preloaded_page_ids=await resolve_page_refs(preloaded_ids, infra.db),
-            source_page_id=source_page_id,
-            scout_mode=scout_mode,
-        )
-    )
-
-
-async def _do_phase1(
-    infra: CallInfra,
-    call_type: CallType,
-    context_text: str,
-) -> tuple[str, list[str]]:
-    """Run phase1 page loading and return (updated context_text, phase1_ids)."""
-    system_prompt = build_system_prompt(call_type.value)
-    phase1_ids = await _run_phase1(
-        system_prompt,
-        context_text,
-        infra.call.id,
-        infra.state,
-        infra.db,
-    )
-    if phase1_ids:
-        extra_text = await _format_loaded_pages(phase1_ids, infra.db)
-        context_text += "\n\n## Loaded Pages\n\n" + extra_text
-    return context_text, phase1_ids
 
 
 class CreateViewContext(ContextBuilder):
@@ -112,10 +68,18 @@ class CreateViewContext(ContextBuilder):
                 parts = ["\n\n---\n\n## Existing View Items (to update/supersede)\n"]
                 for page, link in items:
                     imp = f"I{link.importance}" if link.importance else "unscored"
+                    formatted = await format_page(
+                        page,
+                        PageDetail.CONTENT,
+                        linked_detail=None,
+                        db=infra.db,
+                        track=True,
+                        track_tags={"source": "existing_view_items"},
+                    )
                     parts.append(
-                        f"\n### [{page.page_type.value.upper()} C{page.credence}/R{page.robustness} {imp}] "
+                        f"\n### [{page.page_type.value.upper()} R{page.robustness} {imp}] "
                         f"`{page.id[:8]}` — {page.headline}\n\n"
-                        f"{page.content}\n"
+                        f"{formatted}\n"
                     )
                 context_text += "\n".join(parts)
 
@@ -131,20 +95,30 @@ class CreateViewContext(ContextBuilder):
                         "",
                         f"## Pre-loaded Page: `{pid[:8]}`",
                         "",
-                        await format_page(page, PageDetail.CONTENT, db=infra.db),
+                        await format_page(
+                            page,
+                            PageDetail.CONTENT,
+                            db=infra.db,
+                            track=True,
+                            track_tags={"source": "preloaded"},
+                        ),
                     ]
             context_text += "\n".join(parts_pre)
 
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
         )
 
 
 class EmbeddingContext(ContextBuilder):
-    """Embedding-based context (no phase1). Used by embedding variants."""
+    """Embedding-based context. Used by embedding variants."""
 
     def __init__(
         self,
@@ -162,6 +136,7 @@ class EmbeddingContext(ContextBuilder):
             query,
             infra.db,
             scope_question_id=infra.question_id,
+            scope_linked_detail=PageDetail.ABSTRACT,
             require_judgement_for_questions=self._require_judgement_for_questions,
         )
         working_page_ids = result.page_ids
@@ -179,15 +154,105 @@ class EmbeddingContext(ContextBuilder):
                         "",
                         f"## Pre-loaded Page: `{pid[:8]}`",
                         "",
-                        await format_page(page, PageDetail.CONTENT, db=infra.db),
+                        await format_page(
+                            page,
+                            PageDetail.CONTENT,
+                            db=infra.db,
+                            track=True,
+                            track_tags={"source": "preloaded"},
+                        ),
                     ]
             context_text += "\n".join(parts)
 
-        await _record_context_built(infra, working_page_ids, preloaded_ids)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+        )
+
+
+_SIBLING_BLOCK_HEADER = (
+    "## Existing child questions of this parent\n\n"
+    "The parent question already has these direct child questions. Any new "
+    "child question you create must be INDEPENDENT of these existing "
+    "siblings: its impact on the parent question must NOT be largely "
+    "mediated through any of them. If a candidate's contribution to "
+    "resolving the parent question flows mostly via an existing child's "
+    "answer, that candidate is not independent — do not create it.\n\n"
+    "Independence is stronger than non-duplication. Two siblings can have "
+    "different wordings and still fail independence: if answering one "
+    "largely determines the other's impact on the parent, they are not "
+    "independent. Judge by the causal path of the answer's influence on "
+    "the parent, not by surface similarity.\n"
+)
+
+
+async def _format_sibling_children_block(
+    scope_question_id: str,
+    db: DB,
+) -> str:
+    """Return a formatted block listing direct child questions of the scope question.
+
+    Empty string when the scope question has no active child questions. Uses
+    batched queries: one for links+pages (via get_child_questions_with_links)
+    and one for judgements across all children.
+    """
+    children = await db.get_child_questions_with_links(scope_question_id)
+    if not children:
+        return ""
+
+    judgements_by_qid = await db.get_judgements_for_questions([child.id for child, _ in children])
+
+    lines: list[str] = [_SIBLING_BLOCK_HEADER]
+    for child, link in children:
+        scout_tag = child.provenance_call_type or "unknown"
+        impact = link.impact_on_parent_question
+        impact_str = f"{impact}/10" if impact is not None else "unset"
+        judgements = judgements_by_qid.get(child.id, [])
+        if judgements:
+            latest = max(judgements, key=lambda j: j.created_at)
+            cred = latest.credence if latest.credence is not None else "?"
+            rob = latest.robustness if latest.robustness is not None else "?"
+            judgement_str = f"C{cred}/R{rob}"
+        else:
+            judgement_str = "none yet"
+        lines.append(
+            f"- [{scout_tag}] `{child.id[:8]}` — {child.headline}\n"
+            f"  (impact_on_parent: {impact_str}; judgement: {judgement_str})"
+        )
+    return "\n".join(lines) + "\n"
+
+
+class ScoutSiblingAwareContext(EmbeddingContext):
+    """Embedding context with a prepended block listing existing direct child
+    questions of the scope question, so the scout can avoid creating children
+    whose impact on the parent is mediated through an existing sibling.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        result = await super().build_context(infra)
+        sibling_block = await _format_sibling_children_block(
+            infra.question_id,
+            infra.db,
+        )
+        if not sibling_block:
+            return result
+        prepended = f"{sibling_block}\n---\n\n{result.context_text}"
+        return ContextResult(
+            context_text=prepended,
+            working_page_ids=result.working_page_ids,
+            preloaded_ids=result.preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+            source_page_id=result.source_page_id,
         )
 
 
@@ -208,25 +273,28 @@ class IngestEmbeddingContext(ContextBuilder):
             scope_question_id=infra.question_id,
         )
         working_page_ids = result.page_ids
-        await _record_context_built(
-            infra,
-            working_page_ids,
-            [],
-            source_page_id=self._source_page.id,
-        )
 
+        formatted_source = await format_page(
+            self._source_page,
+            PageDetail.CONTENT,
+            linked_detail=None,
+            db=infra.db,
+            track=True,
+            track_tags={"source": "source_document"},
+        )
         source_section = (
-            "\n\n---\n\n## Source Document\n\n"
-            f"**File:** {self._filename}  \n"
-            f"**Source page ID:** `{self._source_page.id}`\n\n"
-            f"{self._source_page.content}"
+            f"\n\n---\n\n## Source Document\n\n**File:** {self._filename}\n\n{formatted_source}"
         )
         return ContextResult(
             context_text=result.context_text + source_section,
             working_page_ids=working_page_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+            source_page_id=self._source_page.id,
         )
-
-
 
 
 class WebResearchEmbeddingContext(ContextBuilder):
@@ -263,26 +331,19 @@ class WebResearchEmbeddingContext(ContextBuilder):
             emb_result.budget_usage,
         )
 
-        await infra.trace.record(
-            ContextBuiltEvent(
-                working_context_page_ids=await resolve_page_refs(
-                    working_page_ids,
-                    infra.db,
-                ),
-                preloaded_page_ids=[],
-            )
-        )
-
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
+            full_page_ids=emb_result.full_page_ids,
+            abstract_page_ids=emb_result.abstract_page_ids,
+            summary_page_ids=emb_result.summary_page_ids,
+            distillation_page_ids=emb_result.distillation_page_ids,
+            budget_usage=emb_result.budget_usage,
         )
 
 
 class _PageSelection(BaseModel):
-    page_ids: list[str] = Field(
-        description="8-char short IDs of the selected pages"
-    )
+    page_ids: list[str] = Field(description="8-char short IDs of the selected pages")
 
 
 async def _select_sensitive_pages(
@@ -304,9 +365,7 @@ async def _select_sensitive_pages(
     for p in pages:
         entry = f"### `{p.id[:8]}` — {p.headline} ({p.page_type.value})"
         if judgement_content:
-            cite_pattern = re.compile(
-                rf'[^\n]*\[{re.escape(p.id[:8])}\][^\n]*'
-            )
+            cite_pattern = re.compile(rf"[^\n]*\[{re.escape(p.id[:8])}\][^\n]*")
             cite_lines = cite_pattern.findall(judgement_content)
             if cite_lines:
                 entry += "\n\nCited in the judgement as follows:"
@@ -321,9 +380,7 @@ async def _select_sensitive_pages(
     user_message_parts = [f"## Question\n\n**{question.headline}**"]
     if latest_judgement:
         user_message_parts.append(
-            "## Judgement\n\n"
-            f"**{latest_judgement.headline}**\n\n"
-            f"{latest_judgement.content}"
+            f"## Judgement\n\n**{latest_judgement.headline}**\n\n{latest_judgement.content}"
         )
     user_message_parts.append(
         "## Candidate pages\n\n"
@@ -378,7 +435,8 @@ _CONNECTED_LINK_TYPES = {
 
 
 async def _gather_connected_pages(
-    page_id: str, db: DB,
+    page_id: str,
+    db: DB,
 ) -> list[tuple[Page, PageLink]]:
     """Return all (page, link) pairs directly connected to a page.
 
@@ -441,7 +499,9 @@ async def _swap_superseded_link(
         ):
             log.info(
                 "Superseded link %s: equivalent link already exists on %s -> %s, skipping creation",
-                link.id[:8], new_from[:8], new_to[:8],
+                link.id[:8],
+                new_from[:8],
+                new_to[:8],
             )
             return existing
 
@@ -467,7 +527,8 @@ async def _swap_superseded_link(
 
 
 async def _get_latest_judgement(
-    question_id: str, db: DB,
+    question_id: str,
+    db: DB,
 ) -> Page | None:
     """Return the most recent active judgement for a question, or None."""
     judgements = await db.get_judgements_for_question(question_id)
@@ -565,7 +626,11 @@ async def _reassess_pages_citing_superseded(
 
     if len(stale) > 5:
         stale = await _select_sensitive_pages(
-            stale, question, latest_judgement, limit=5, infra=infra,
+            stale,
+            question,
+            latest_judgement,
+            limit=5,
+            infra=infra,
         )
 
     async def _do_reassess(page: Page) -> None:
@@ -573,22 +638,29 @@ async def _reassess_pages_citing_superseded(
 
         if page.page_type == PageType.QUESTION:
             await reassess_question(
-                page.id, [], infra.call, infra.db, infra.trace,
+                page.id,
+                [],
+                infra.call,
+                infra.db,
+                infra.trace,
                 assess_variant="default",
             )
         elif page.page_type == PageType.JUDGEMENT:
             links = await infra.db.get_links_from(page.id)
-            question_links = [
-                l for l in links if l.link_type == LinkType.ANSWERS
-            ]
+            question_links = [l for l in links if l.link_type == LinkType.ANSWERS]
             if question_links:
                 question_id = question_links[0].to_page_id
                 log.info(
                     "Stale judgement %s: reassessing its question %s",
-                    page.id[:8], question_id[:8],
+                    page.id[:8],
+                    question_id[:8],
                 )
                 await reassess_question(
-                    question_id, [], infra.call, infra.db, infra.trace,
+                    question_id,
+                    [],
+                    infra.call,
+                    infra.db,
+                    infra.trace,
                     assess_variant="default",
                 )
             else:
@@ -598,7 +670,11 @@ async def _reassess_pages_citing_superseded(
                 )
         else:
             await reassess_claim(
-                page.id, "", infra.call, infra.db, infra.trace,
+                page.id,
+                "",
+                infra.call,
+                infra.db,
+                infra.trace,
             )
 
     log.info("Reassess stale: reassessing %d pages", len(stale))
@@ -629,38 +705,36 @@ async def _find_higher_quality_replacements(
 
     async def _search_for_page(page: Page) -> tuple[Page, list[tuple[Page, float]]]:
         async with _B2_SEMAPHORE:
-            query_text = page.abstract if page.abstract else page.headline
             results = await search_pages(
-                infra.db, query_text, match_threshold=0.6, match_count=5,
+                infra.db,
+                page_query_text(page),
+                match_threshold=0.85,
+                match_count=5,
+                input_type="document",
             )
-        filtered = [
-            (p, score) for p, score in results
-            if p.id not in exclude_ids and p.is_active()
-        ]
+        filtered = [(p, score) for p, score in results if p.id not in exclude_ids and p.is_active()]
         return page, filtered
 
-    search_results = await asyncio.gather(
-        *[_search_for_page(page) for page, _ in connected]
-    )
+    search_results = await asyncio.gather(*[_search_for_page(page) for page, _ in connected])
 
     for page, candidates in search_results:
         if candidates:
-            match_titles = ", ".join(
-                f"{c.headline[:40]} ({score:.2f})" for c, score in candidates
-            )
+            match_titles = ", ".join(f"{c.headline[:40]} ({score:.2f})" for c, score in candidates)
             log.info(
                 "Find replacements: %s (%s) — %d matches: %s",
-                page.id[:8], page.headline[:50], len(candidates), match_titles,
+                page.id[:8],
+                page.headline[:50],
+                len(candidates),
+                match_titles,
             )
         else:
             log.info(
                 "Find replacements: %s (%s) — no matches",
-                page.id[:8], page.headline[:50],
+                page.id[:8],
+                page.headline[:50],
             )
 
-    pages_with_matches = [
-        (page, candidates) for page, candidates in search_results if candidates
-    ]
+    pages_with_matches = [(page, candidates) for page, candidates in search_results if candidates]
 
     if not pages_with_matches:
         log.info("Find replacements: no connected pages have similar matches")
@@ -674,27 +748,33 @@ async def _find_higher_quality_replacements(
     if len(pages_with_matches) > 10:
         match_pages = [p for p, _ in pages_with_matches]
         selected = await _select_sensitive_pages(
-            match_pages, question, latest_judgement, limit=10, infra=infra,
+            match_pages,
+            question,
+            latest_judgement,
+            limit=10,
+            infra=infra,
         )
         selected_ids = {p.id for p in selected}
-        pages_with_matches = [
-            (p, cs) for p, cs in pages_with_matches
-            if p.id in selected_ids
-        ][:10]
+        pages_with_matches = [(p, cs) for p, cs in pages_with_matches if p.id in selected_ids][:10]
 
     async def _check_replacements(
-        page: Page, candidates: Sequence[tuple[Page, float]],
+        page: Page,
+        candidates: Sequence[tuple[Page, float]],
     ) -> set[str]:
         async with _B2_SEMAPHORE:
             target_text = await format_page(
-                page, PageDetail.CONTENT, linked_detail=PageDetail.ABSTRACT,
+                page,
+                PageDetail.CONTENT,
+                linked_detail=PageDetail.ABSTRACT,
                 db=infra.db,
             )
             candidate_parts: list[str] = []
             for c, _ in candidates:
                 candidate_parts.append(
                     await format_page(
-                        c, PageDetail.CONTENT, linked_detail=PageDetail.ABSTRACT,
+                        c,
+                        PageDetail.CONTENT,
+                        linked_detail=PageDetail.ABSTRACT,
                         db=infra.db,
                     )
                 )
@@ -713,8 +793,7 @@ async def _find_higher_quality_replacements(
                 "or none. Return the 8-char short IDs of qualifying candidates, "
                 "or an empty list if none qualify.",
                 user_message=(
-                    f"## Target page\n\n{target_text}\n\n"
-                    f"## Candidates\n\n{candidate_descriptions}"
+                    f"## Target page\n\n{target_text}\n\n## Candidates\n\n{candidate_descriptions}"
                 ),
                 response_model=_ReplacementPick,
                 metadata=meta,
@@ -761,8 +840,7 @@ async def _generate_missing_abstracts(
     )
 
     page_contents = "\n\n---\n\n".join(
-        f'Page `{p.id[:8]}` — {p.headline}\n\n{p.content}'
-        for p in missing
+        f"Page `{p.id[:8]}` — {p.headline}\n\n{p.content}" for p in missing
     )
     system_prompt = (
         "You are generating abstracts for workspace pages. "
@@ -770,10 +848,7 @@ async def _generate_missing_abstracts(
         "abstract for each.\n\n"
         f"Page contents:\n\n{page_contents}"
     )
-    page_lines = "\n".join(
-        f'- `{p.id[:8]}`: "{p.headline[:120]}"'
-        for p in missing
-    )
+    page_lines = "\n".join(f'- `{p.id[:8]}`: "{p.headline[:120]}"' for p in missing)
     user_message = (
         "Generate an abstract for each of the following pages.\n\n"
         f"{page_lines}\n\n"
@@ -826,7 +901,9 @@ class BigAssessContext(ContextBuilder):
         latest_judgement = await _get_latest_judgement(infra.question_id, db)
 
         connected = await _resolve_superseded_connections(
-            infra.question_id, latest_judgement, db,
+            infra.question_id,
+            latest_judgement,
+            db,
         )
         log.info(
             "Big assess: %d connected pages after supersession resolution",
@@ -834,11 +911,16 @@ class BigAssessContext(ContextBuilder):
         )
 
         await _reassess_pages_citing_superseded(
-            connected, question, latest_judgement, infra,
+            connected,
+            question,
+            latest_judgement,
+            infra,
         )
         latest_judgement = await _get_latest_judgement(infra.question_id, db)
         connected = await _resolve_superseded_connections(
-            infra.question_id, latest_judgement, db,
+            infra.question_id,
+            latest_judgement,
+            db,
         )
         log.info(
             "Big assess: %d connected pages after reassessment refresh",
@@ -846,7 +928,10 @@ class BigAssessContext(ContextBuilder):
         )
 
         replacement_ids = await _find_higher_quality_replacements(
-            connected, question, latest_judgement, infra,
+            connected,
+            question,
+            latest_judgement,
+            infra,
         )
 
         await _generate_missing_abstracts(connected, infra)
@@ -875,9 +960,7 @@ class BigAssessContext(ContextBuilder):
 
         judgement_cited_ids: list[str] = []
         if latest_judgement and latest_judgement.content:
-            cited_sids = sorted(set(
-                _CITATION_RE.findall(latest_judgement.content)
-            ))
+            cited_sids = sorted(set(_CITATION_RE.findall(latest_judgement.content)))
             if cited_sids:
                 resp = await db._execute(
                     db.client.table("pages")
@@ -894,8 +977,7 @@ class BigAssessContext(ContextBuilder):
                         prefix_to_row[prefix] = row
 
                 superseded_ids = [
-                    row["id"] for row in prefix_to_row.values()
-                    if row["is_superseded"]
+                    row["id"] for row in prefix_to_row.values() if row["is_superseded"]
                 ]
                 resolved = await db.resolve_supersession_chains(superseded_ids)
 
@@ -934,14 +1016,284 @@ class BigAssessContext(ContextBuilder):
                         "",
                         f"## Pre-loaded Page: `{pid[:8]}`",
                         "",
-                        await format_page(page, PageDetail.CONTENT, db=db),
+                        await format_page(
+                            page,
+                            PageDetail.CONTENT,
+                            db=db,
+                            track=True,
+                            track_tags={"source": "big_assess_extra"},
+                        ),
                     ]
             if parts:
                 context_text += "\n".join(parts)
 
-        await _record_context_built(infra, working_page_ids, all_extra)
         return ContextResult(
             context_text=context_text,
             working_page_ids=working_page_ids,
             preloaded_ids=all_extra,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+        )
+
+
+class SpecOnlyContext(ContextBuilder):
+    """Context containing ONLY the spec items for an artefact-task question.
+
+    Used by generate_artefact: the generator must produce the artefact from
+    the spec alone, with no access to the broader workspace. Any information
+    the artefact should reflect must be captured in a spec item.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"SpecOnlyContext: artefact-task question {infra.question_id} not found"
+            )
+
+        spec_pages = await active_spec_items_for_task(infra.question_id, infra.db)
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            f"# Spec ({len(spec_pages)} items)",
+            "",
+        ]
+        if not spec_pages:
+            parts.append("(no spec items yet)")
+        else:
+            for i, spec in enumerate(spec_pages, start=1):
+                parts += [
+                    f"## {i}. {spec.headline}",
+                    "",
+                    spec.content,
+                    "",
+                ]
+        context_text = "\n".join(parts)
+
+        working_page_ids = [task.id] + [p.id for p in spec_pages]
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
+        )
+
+
+class CritiqueContext(ContextBuilder):
+    """Context for critiquing the latest artefact on an artefact-task question.
+
+    Includes the artefact-task question, the latest active Artefact produced
+    for it, and an embedding-based sweep over the broader workspace. Spec
+    items are deliberately EXCLUDED — the critic judges the artefact against
+    the request and what the workspace knows, not against the spec. That is
+    how spec-gaps get surfaced.
+    """
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"CritiqueContext: artefact-task question {infra.question_id} not found"
+            )
+
+        artefact = await infra.db.latest_artefact_for_task(infra.question_id)
+        if artefact is None:
+            raise ValueError(
+                f"CritiqueContext: no artefact found for task {infra.question_id}; "
+                "run generate_artefact first."
+            )
+
+        query = task.headline or task.content[:200]
+        embedding_result = await build_embedding_based_context(
+            query,
+            infra.db,
+            scope_question_id=infra.question_id,
+        )
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            "# Artefact under review",
+            "",
+            f"**{artefact.headline}**",
+            "",
+            artefact.content,
+            "",
+            "---",
+            "",
+            "# Broader workspace context",
+            "",
+            embedding_result.context_text,
+        ]
+        context_text = "\n".join(parts)
+
+        working_page_ids = [task.id, artefact.id, *embedding_result.page_ids]
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
+        )
+
+
+async def active_spec_items_for_task(task_id: str, db) -> list[Page]:
+    """Return active SPEC_ITEM pages SPEC_OF-linked to *task_id*.
+
+    Sorted by ``created_at`` (stable insertion order) so prompt rendering is
+    deterministic across runs — important for prompt caching and for keeping
+    generated artefacts consistent when the spec hasn't actually changed.
+    """
+    links = await db.get_links_to(task_id)
+    spec_of_links = [l for l in links if l.link_type == LinkType.SPEC_OF]
+    if not spec_of_links:
+        return []
+    pages_by_id = await db.get_pages_by_ids([l.from_page_id for l in spec_of_links])
+    active = [
+        p for p in pages_by_id.values() if p.is_active() and p.page_type == PageType.SPEC_ITEM
+    ]
+    active.sort(key=lambda p: (p.created_at, p.id))
+    return active
+
+
+class RefinementContext(ContextBuilder):
+    """Context for the refine_spec call.
+
+    Shows the refiner:
+    1. The original artefact-task request.
+    2. The current spec (same format as SpecOnlyContext).
+    3. The last-3 iteration triples — for each of the three most recent
+       artefact versions linked ARTEFACT_OF to the task: the spec items it
+       was generated from (via GENERATED_FROM — captured at generation time
+       so deleted spec items still appear in historical triples), the
+       artefact itself, and its critique.
+
+    Does NOT do a main-workspace embedding sweep — refinement operates on
+    the closed feedback loop of spec → artefact → critique.
+    """
+
+    def __init__(self, window: int = 3) -> None:
+        self._window = window
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        task = await infra.db.get_page(infra.question_id)
+        if task is None:
+            raise ValueError(
+                f"RefinementContext: artefact-task question {infra.question_id} not found"
+            )
+
+        current_spec = await active_spec_items_for_task(infra.question_id, infra.db)
+
+        links = await infra.db.get_links_to(infra.question_id)
+        artefact_links = [l for l in links if l.link_type == LinkType.ARTEFACT_OF]
+        artefact_ids = [l.from_page_id for l in artefact_links]
+        artefacts_by_id = await infra.db.get_pages_by_ids(artefact_ids)
+        artefacts = [p for p in artefacts_by_id.values() if p.page_type == PageType.ARTEFACT]
+        artefacts.sort(key=lambda p: (p.created_at, p.id))
+        recent = artefacts[-self._window :]
+
+        triples: list[tuple[Page, list[Page], Page | None]] = []
+        for artefact in recent:
+            snapshot_links = await infra.db.get_links_from(artefact.id)
+            spec_ids = [
+                l.to_page_id for l in snapshot_links if l.link_type == LinkType.GENERATED_FROM
+            ]
+            snapshot_pages_by_id = await infra.db.get_pages_by_ids(spec_ids) if spec_ids else {}
+            snapshot_specs = [
+                snapshot_pages_by_id[pid] for pid in spec_ids if pid in snapshot_pages_by_id
+            ]
+            snapshot_specs.sort(key=lambda p: (p.created_at, p.id))
+
+            inbound = await infra.db.get_links_to(artefact.id)
+            critique_link_ids = [
+                l.from_page_id for l in inbound if l.link_type == LinkType.CRITIQUE_OF
+            ]
+            critique_pages_by_id = (
+                await infra.db.get_pages_by_ids(critique_link_ids) if critique_link_ids else {}
+            )
+            critiques = [
+                p
+                for p in critique_pages_by_id.values()
+                if p.is_active() and p.page_type == PageType.JUDGEMENT
+            ]
+            latest_critique = max(critiques, key=lambda p: p.created_at) if critiques else None
+
+            triples.append((artefact, snapshot_specs, latest_critique))
+
+        parts: list[str] = [
+            "# Artefact task",
+            "",
+            task.headline,
+            "",
+            task.content or "(no further description)",
+            "",
+            "---",
+            "",
+            f"# Current spec ({len(current_spec)} items)",
+            "",
+        ]
+        if current_spec:
+            for i, spec in enumerate(current_spec, start=1):
+                parts += [
+                    f"## {i}. [{spec.id[:8]}] {spec.headline}",
+                    "",
+                    spec.content,
+                    "",
+                ]
+        else:
+            parts.append("(no spec items)")
+
+        parts += ["", "---", "", f"# Last {len(triples)} iterations (oldest first)", ""]
+        if not triples:
+            parts.append("(no iterations yet — call regenerate_and_critique to start)")
+        else:
+            for iter_index, (artefact, snapshot_specs, critique) in enumerate(triples, start=1):
+                parts += [f"## Iteration {iter_index} — artefact [{artefact.id[:8]}]", ""]
+                parts.append(f"### Spec used ({len(snapshot_specs)} items)")
+                parts.append("")
+                if snapshot_specs:
+                    for spec in snapshot_specs:
+                        parts.append(f"- [{spec.id[:8]}] **{spec.headline}** — {spec.content}")
+                else:
+                    parts.append("(none captured)")
+                parts += ["", f"### Artefact: {artefact.headline}", "", artefact.content, ""]
+                if critique is not None:
+                    grade = critique.extra.get("grade")
+                    issues = critique.extra.get("issues") or []
+                    grade_label = f"**Grade:** {grade}/10" if grade is not None else ""
+                    parts += ["### Critique", "", grade_label]
+                    if issues:
+                        parts.append("")
+                        parts.append("**Issues:**")
+                        for issue in issues:
+                            parts.append(f"- {issue}")
+                    parts.append("")
+                else:
+                    parts += ["### Critique", "", "(no critique recorded for this iteration)", ""]
+                parts.append("---")
+                parts.append("")
+
+        context_text = "\n".join(parts)
+        working_page_ids = [
+            task.id,
+            *[p.id for p in current_spec],
+            *[a.id for a, _, _ in triples],
+        ]
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=[],
         )

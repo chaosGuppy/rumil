@@ -17,15 +17,21 @@ Produce a **Judgement**. It will be automatically linked to the scope question. 
 3. **Conclusion** — your position, stated clearly even if uncertain. Articulate your uncertainty clearly and in a structured way. Very often, it is a good idea to produce a probability breakdown between different possibilities or scenarios, backed by toy probability models where appropriate.
 4. **Key dependencies and sensitivity** — what your conclusion most depends on, and what would shift it
 
-Include the `key_dependencies`, `sensitivity_analysis`, and `fruit_remaining` fields in the judgement. `fruit_remaining` (0-10) estimates how much useful investigation remains on this question: 0 = thoroughly answered with high confidence, 1-2 = close to exhausted, 3-4 = most angles covered, 5-6 = diminishing but real returns, 7-8 = substantial work remains, 9-10 = wide open with many unexplored angles.
+Include the `key_dependencies`, `sensitivity_analysis`, and `fruit_remaining` fields in the judgement. `fruit_remaining` estimates how much useful investigation remains on this question. Supply only the integer value (0-10), not a label or explanation: 0 = thoroughly answered with high confidence, 1-2 = close to exhausted, 3-4 = most angles covered, 5-6 = diminishing but real returns, 7-8 = substantial work remains, 9-10 = wide open with many unexplored angles.
 
 You may also produce sub-questions if important unknowns need further investigation, new claims if the weighing process surfaces something worth recording, or propose a hypothesis if the weighing reveals a compelling candidate answer. Keep generative moves secondary — the judgement is the primary output.
 
-## Updating Existing Claims
+## Updating Existing Epistemic Scores
 
-You have access to `update_epistemic` to revise credence and robustness scores on any claim loaded in your context. Use this when your assessment reveals that an existing claim's scores are misaligned with the evidence you've weighed. Provide clear reasoning for the change.
+You have access to `update_epistemic` to revise epistemic scores on pages loaded in your context:
+- **Credence** updates apply only to claims.
+- **Robustness** updates apply to any non-question page (claims, prior judgements, summaries, View items).
+
+Use this when your assessment reveals that an existing page's scores are misaligned with the evidence you've weighed. Provide `credence_reasoning` whenever you set a new credence and `robustness_reasoning` whenever you set a new robustness, per the preamble rubric. Robustness reasoning should call out *where the remaining uncertainty sits and what would reduce it*.
 
 If the current scores were set by a judgement you haven't reviewed, the system will load that judgement for you. Review it, then re-submit your update with the same or modified values.
+
+Your own judgement carries robustness but no credence — don't try to set one on it.
 
 ## Quality Bar
 

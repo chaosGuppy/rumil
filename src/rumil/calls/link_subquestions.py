@@ -14,26 +14,26 @@ from rumil.calls.stages import (
     UpdateResult,
     WorkspaceUpdater,
 )
+from rumil.context import format_page
 from rumil.llm import LLMExchangeMetadata, structured_call
-from rumil.models import CallType, LinkType
+from rumil.models import CallType, LinkType, PageDetail
 from rumil.moves.base import link_pages
 from rumil.scope_subquestion_linker.prompt import build_linker_prompt
 from rumil.scope_subquestion_linker.seed_selection import select_seed_questions
-from rumil.workspace_exploration import render_question_subgraph
-from rumil.scope_subquestion_linker.validation import validate_proposals
 from rumil.scope_subquestion_linker.tool import (
     LinkerResult,
     SubmitHolder,
     make_render_subgraph_tool,
     make_submit_tool,
 )
+from rumil.scope_subquestion_linker.validation import validate_proposals
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
-    ContextBuiltEvent,
     LinkSubquestionsCompleteEvent,
     ProposedSubquestion,
     ReviewCompleteEvent,
 )
+from rumil.workspace_exploration import render_question_subgraph
 
 log = logging.getLogger(__name__)
 
@@ -66,23 +66,26 @@ class LinkerContextBuilder(ContextBuilder):
 
         current_children = await infra.db.get_child_questions(infra.question_id)
         if current_children:
-            children_block = "\n".join(
-                f"- `{c.id[:8]}` -- {c.headline}" for c in current_children
-            )
+            children_block = "\n".join(f"- `{c.id[:8]}` -- {c.headline}" for c in current_children)
         else:
             children_block = "(none)"
 
+        scope_formatted = await format_page(
+            scope,
+            PageDetail.CONTENT,
+            linked_detail=None,
+            db=infra.db,
+            track=True,
+            track_tags={"source": "linker_scope"},
+        )
         context_text = (
             "## Scope Question\n\n"
-            f"`{scope.id[:8]}` -- {scope.headline}\n\n"
-            f"{scope.content or scope.abstract}\n\n"
+            f"{scope_formatted}\n\n"
             "## Currently-Linked Subquestions\n\n"
             f"{children_block}\n\n"
             "## Seed Subgraphs (most relevant top-level questions)\n\n"
             f"{seed_block or '(none)'}\n"
         )
-
-        await infra.trace.record(ContextBuiltEvent())
 
         return ContextResult(
             context_text=context_text,
@@ -162,12 +165,8 @@ class LinkerWorkspaceUpdater(WorkspaceUpdater):
             infra.question_id[:8],
         )
 
-        proposed = [
-            ProposedSubquestion(id=p.id, headline=p.headline) for p in proposed_pages
-        ]
-        await infra.trace.record_strict(
-            LinkSubquestionsCompleteEvent(proposed=proposed)
-        )
+        proposed = [ProposedSubquestion(id=p.id, headline=p.headline) for p in proposed_pages]
+        await infra.trace.record_strict(LinkSubquestionsCompleteEvent(proposed=proposed))
 
         return UpdateResult(
             created_page_ids=[],
@@ -185,9 +184,7 @@ class LinkerFruitAssessment(BaseModel):
             "you just linked. 0 means you believe you found all strong candidates."
         )
     )
-    brief_reasoning: str = Field(
-        description="One or two sentences explaining your estimate."
-    )
+    brief_reasoning: str = Field(description="One or two sentences explaining your estimate.")
 
 
 _FRUIT_ASSESSMENT_PROMPT = (
@@ -212,14 +209,10 @@ class LinkerClosingReviewer(ClosingReviewer):
     ) -> None:
         if not creation.messages:
             infra.call.review_json = {"remaining_linkable_questions": 0}
-            await mark_call_completed(
-                infra.call, infra.db, "Linker complete (no messages)."
-            )
+            await mark_call_completed(infra.call, infra.db, "Linker complete (no messages).")
             return
 
-        system_prompt = build_linker_prompt(
-            get_settings().scope_subquestion_linker_max_rounds
-        )
+        system_prompt = build_linker_prompt(get_settings().scope_subquestion_linker_max_rounds)
         tools = [
             make_render_subgraph_tool(infra.db, infra.trace),
             make_submit_tool(SubmitHolder()),

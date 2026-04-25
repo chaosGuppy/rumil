@@ -1,24 +1,25 @@
 """Tests for UpdateViewCall: incremental View updates."""
 
+from datetime import UTC
+
 import pytest
 import pytest_asyncio
 
+from rumil.calls.closing_reviewers import StandardClosingReview, ViewClosingReview
+from rumil.calls.common import format_moves_for_review
+from rumil.calls.stages import CallInfra, UpdateResult
 from rumil.calls.update_view import (
-    DeepReviewBatchResponse,
     DemotionChoice,
     ItemReview,
     ProposedItem,
-    PruneDecision,
-    TriageFlag,
     UnscoredItemScore,
-    UpdateViewCall,
-    UpdateViewContext,
     UpdateViewWorkspaceUpdater,
+    _is_explicit_duplicate,
     _parse_prompt_sections,
+    _prune_candidates,
     _render_item_compact,
     _render_item_full,
 )
-from rumil.calls.stages import CallInfra
 from rumil.constants import DEFAULT_VIEW_SECTIONS
 from rumil.models import (
     Call,
@@ -63,9 +64,10 @@ def _view(headline: str = "View: Test question", **kw) -> Page:
 
 
 def _view_item(headline: str = "Test item", **kw) -> Page:
-    defaults = {"credence": 6, "robustness": 3}
+    defaults = {"robustness": 3}
     defaults.update(kw)
-    return _page(PageType.VIEW_ITEM, headline, layer=PageLayer.WIKI, **defaults)
+    kw_no_credence = {k: v for k, v in defaults.items() if k != "credence"}
+    return _page(PageType.VIEW_ITEM, headline, layer=PageLayer.WIKI, **kw_no_credence)
 
 
 def _claim(headline: str = "Test claim", **kw) -> Page:
@@ -90,30 +92,31 @@ async def view_setup(tmp_db):
     """Create a question with a View and 3 VIEW_ITEM pages linked to it."""
     q = _question()
     v = _view()
-    items = [
-        _view_item(f"Item {i}", credence=5 + i, robustness=2)
-        for i in range(3)
-    ]
+    items = [_view_item(f"Item {i}", credence=5 + i, robustness=2) for i in range(3)]
 
     await tmp_db.save_page(q)
     await tmp_db.save_page(v)
     for item in items:
         await tmp_db.save_page(item)
 
-    await tmp_db.save_link(PageLink(
-        from_page_id=v.id,
-        to_page_id=q.id,
-        link_type=LinkType.VIEW_OF,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=v.id,
+            to_page_id=q.id,
+            link_type=LinkType.VIEW_OF,
+        )
+    )
 
     for i, item in enumerate(items):
-        await tmp_db.save_link(_view_item_link(
-            v.id,
-            item.id,
-            importance=3,
-            section="key_evidence",
-            position=i,
-        ))
+        await tmp_db.save_link(
+            _view_item_link(
+                v.id,
+                item.id,
+                importance=3,
+                section="key_evidence",
+                position=i,
+            )
+        )
 
     return q, v, items
 
@@ -121,7 +124,7 @@ async def view_setup(tmp_db):
 @pytest_asyncio.fixture
 async def call_infra(tmp_db, view_setup):
     """Build a CallInfra for UPDATE_VIEW tests."""
-    q, v, items = view_setup
+    q, _v, _items = view_setup
     call = Call(
         call_type=CallType.UPDATE_VIEW,
         workspace=Workspace.RESEARCH,
@@ -139,11 +142,7 @@ async def call_infra(tmp_db, view_setup):
 
 
 def test_parse_prompt_sections_extracts_markers():
-    text = (
-        "intro text\n"
-        "<!-- PHASE:alpha -->\nalpha content\n"
-        "<!-- PHASE:beta -->\nbeta content\n"
-    )
+    text = "intro text\n<!-- PHASE:alpha -->\nalpha content\n<!-- PHASE:beta -->\nbeta content\n"
     sections = _parse_prompt_sections(text)
     assert "alpha" in sections
     assert "beta" in sections
@@ -152,10 +151,7 @@ def test_parse_prompt_sections_extracts_markers():
 
 
 def test_parse_prompt_sections_handles_extra_attrs():
-    text = (
-        "<!-- PHASE:ctx — DO NOT RENAME THIS MARKER -->\n"
-        "Some context here"
-    )
+    text = "<!-- PHASE:ctx — DO NOT RENAME THIS MARKER -->\nSome context here"
     sections = _parse_prompt_sections(text)
     assert "ctx" in sections
     assert "Some context here" in sections["ctx"]
@@ -166,11 +162,12 @@ def test_parse_prompt_sections_empty():
 
 
 def test_render_item_compact_shows_scores():
-    page = _view_item("Important finding", credence=7, robustness=4)
+    page = _view_item("Important finding", robustness=4)
     link = _view_item_link("view-id", page.id, importance=5, section="key_evidence")
     rendered = _render_item_compact(page, link)
     assert "I5" in rendered
-    assert "C7/R4" in rendered
+    assert "R4" in rendered
+    assert "C" not in rendered.split("—")[0]
     assert "Important finding" in rendered
     assert page.id[:8] in rendered
 
@@ -212,22 +209,175 @@ def test_render_item_full_without_citations():
     assert "Cited evidence" not in rendered
 
 
-async def test_create_new_view_and_copy_items(tmp_db, view_setup):
-    """UpdateViewCall should create a new View, supersede the old one,
-    and copy all VIEW_ITEM links."""
-    q, old_view, items = view_setup
+def test_render_item_full_surfaces_uncited_parent_considerations():
+    page = _view_item("Equity is table-stakes")
+    link = _view_item_link("view-id", page.id)
+
+    cited_claim = _claim("40-60% giveback is normative")
+    cite_link = PageLink(
+        from_page_id=page.id,
+        to_page_id=cited_claim.id,
+        link_type=LinkType.DEPENDS_ON,
+    )
+    uncited_claim = _claim(
+        "Moskovitz departed Facebook with 0 percent giveback",
+        abstract="Paradigm counter-example to the giveback norm.",
+    )
+
+    rendered = _render_item_full(
+        page,
+        link,
+        cited_pages={cited_claim.id: cited_claim},
+        item_links=[cite_link],
+        related_considerations=[cited_claim, uncited_claim],
+    )
+
+    assert "Related considerations on the parent question" in rendered
+    assert uncited_claim.id[:8] in rendered
+    assert "Moskovitz" in rendered
+    related_section = rendered.split("Related considerations on the parent question")[1]
+    assert cited_claim.id[:8] not in related_section
+
+
+def test_render_item_full_omits_related_block_when_all_cited():
+    page = _view_item("Solo item")
+    link = _view_item_link("view-id", page.id)
+
+    cited = _claim("Already cited")
+    cite_link = PageLink(
+        from_page_id=page.id,
+        to_page_id=cited.id,
+        link_type=LinkType.DEPENDS_ON,
+    )
+    rendered = _render_item_full(
+        page,
+        link,
+        cited_pages={cited.id: cited},
+        item_links=[cite_link],
+        related_considerations=[cited],
+    )
+    assert "Related considerations on the parent question" not in rendered
+
+
+async def test_render_claim_investigation_findings_surfaces_new_findings(tmp_db):
+    """New considerations on a claim linked to the question should appear."""
+    from datetime import datetime, timedelta
+
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Scope question")
+    claim = _claim("Consideration on scope")
+    finding = _claim(
+        "Moskovitz paradigm case",
+        abstract="Departed Facebook with 0% giveback; undermines norm framing.",
+    )
+
+    await tmp_db.save_page(question)
+    await tmp_db.save_page(claim)
+    await tmp_db.save_page(finding)
+
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=claim.id,
+            to_page_id=question.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=finding.id,
+            to_page_id=claim.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+
+    cutoff = datetime.now(UTC) - timedelta(days=365)
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, cutoff)
+
+    assert finding.id in page_ids
+    assert "Moskovitz" in text
+    assert claim.id[:8] in text
+    assert "[NEW]" in text
+
+
+async def test_render_claim_investigation_findings_filters_old_findings(tmp_db):
+    """Findings older than last_view_created_at should be excluded."""
+    from datetime import datetime, timedelta
+
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Scope question")
+    claim = _claim("Consideration")
+    old_finding = _claim("Stale finding")
+
+    await tmp_db.save_page(question)
+    await tmp_db.save_page(claim)
+    await tmp_db.save_page(old_finding)
+
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=claim.id,
+            to_page_id=question.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=old_finding.id,
+            to_page_id=claim.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+
+    cutoff = datetime.now(UTC) + timedelta(days=1)
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, cutoff)
+
+    assert page_ids == []
+    assert text == ""
+
+
+async def test_render_claim_investigation_findings_no_considerations(tmp_db):
+    """Returns empty when the question has no considerations."""
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Lonely question")
+    await tmp_db.save_page(question)
+
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, None)
+    assert text == ""
+    assert page_ids == []
+
+
+async def _materialize(tmp_db, question_id: str) -> tuple[str, str]:
+    """Drive UpdateViewWorkspaceUpdater.materialize directly using a real
+    CallInfra. Returns (old_view_id, new_view_id).
+    """
+    import uuid as _uuid
 
     call = Call(
         call_type=CallType.UPDATE_VIEW,
         workspace=Workspace.RESEARCH,
-        scope_page_id=q.id,
+        scope_page_id=question_id,
         status=CallStatus.PENDING,
     )
     await tmp_db.save_call(call)
+    infra = CallInfra(
+        question_id=question_id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    updater = UpdateViewWorkspaceUpdater(str(_uuid.uuid4()), CallType.UPDATE_VIEW)
+    return await updater.materialize(infra)
 
-    runner = UpdateViewCall(q.id, call, tmp_db)
 
-    old_id, new_id = await runner._create_new_view_and_copy_items()
+async def test_materialize_creates_new_view_and_copies_items(tmp_db, view_setup):
+    """UpdateViewWorkspaceUpdater.materialize should create a new View,
+    supersede the old one, and copy all VIEW_ITEM links."""
+    q, old_view, items = view_setup
+
+    old_id, new_id = await _materialize(tmp_db, q.id)
 
     assert old_id == old_view.id
     assert new_id != old_view.id
@@ -255,7 +405,7 @@ async def test_create_new_view_and_copy_items(tmp_db, view_setup):
     assert found_view.id == new_id
 
 
-async def test_create_new_view_preserves_link_metadata(tmp_db):
+async def test_materialize_preserves_link_metadata(tmp_db):
     """Link metadata (importance, section, position) should survive the copy."""
     q = _question()
     v = _view()
@@ -263,25 +413,24 @@ async def test_create_new_view_preserves_link_metadata(tmp_db):
     await tmp_db.save_page(q)
     await tmp_db.save_page(v)
     await tmp_db.save_page(item)
-    await tmp_db.save_link(PageLink(
-        from_page_id=v.id,
-        to_page_id=q.id,
-        link_type=LinkType.VIEW_OF,
-    ))
-    await tmp_db.save_link(_view_item_link(
-        v.id, item.id, importance=5, section="confident_views", position=7,
-    ))
-
-    call = Call(
-        call_type=CallType.UPDATE_VIEW,
-        workspace=Workspace.RESEARCH,
-        scope_page_id=q.id,
-        status=CallStatus.PENDING,
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=v.id,
+            to_page_id=q.id,
+            link_type=LinkType.VIEW_OF,
+        )
     )
-    await tmp_db.save_call(call)
-    runner = UpdateViewCall(q.id, call, tmp_db)
+    await tmp_db.save_link(
+        _view_item_link(
+            v.id,
+            item.id,
+            importance=5,
+            section="confident_views",
+            position=7,
+        )
+    )
 
-    _, new_id = await runner._create_new_view_and_copy_items()
+    _, new_id = await _materialize(tmp_db, q.id)
     new_items = await tmp_db.get_view_items(new_id)
     assert len(new_items) == 1
     _, link = new_items[0]
@@ -290,8 +439,22 @@ async def test_create_new_view_preserves_link_metadata(tmp_db):
     assert link.position == 7
 
 
-async def test_create_new_view_raises_without_existing_view(tmp_db):
-    """UpdateViewCall should raise if there's no existing View to update."""
+async def test_materialize_raises_without_existing_view(tmp_db):
+    """UpdateViewWorkspaceUpdater.materialize should raise if there's no
+    existing View to update."""
+    q = _question()
+    await tmp_db.save_page(q)
+    with pytest.raises(RuntimeError, match="requires an existing View"):
+        await _materialize(tmp_db, q.id)
+
+
+async def test_build_context_uses_stageable_guard_without_view(tmp_db):
+    """UpdateViewContext should refuse to build context when no View exists —
+    build_context runs before materialize, so it has to fetch the old view
+    directly and enforce the same precondition.
+    """
+    from rumil.calls.update_view import UpdateViewContext
+
     q = _question()
     await tmp_db.save_page(q)
     call = Call(
@@ -301,9 +464,43 @@ async def test_create_new_view_raises_without_existing_view(tmp_db):
         status=CallStatus.PENDING,
     )
     await tmp_db.save_call(call)
-    runner = UpdateViewCall(q.id, call, tmp_db)
+    infra = CallInfra(
+        question_id=q.id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    builder = UpdateViewContext()
     with pytest.raises(RuntimeError, match="requires an existing View"):
-        await runner._create_new_view_and_copy_items()
+        await builder.build_context(infra)
+
+
+async def test_create_view_updater_mints_view_id_but_defers_persist(tmp_db):
+    """CreateViewCall mints the view UUID in __init__ but doesn't persist the
+    view until update_workspace runs; verify the Page isn't present after
+    construction.
+    """
+    from rumil.calls.create_view import CreateViewCall
+
+    q = _question()
+    await tmp_db.save_page(q)
+    call = Call(
+        call_type=CallType.CREATE_VIEW,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=q.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+
+    runner = CreateViewCall(q.id, call, tmp_db)
+    assert runner._view_id, "CreateViewCall should mint a view_id in __init__"
+
+    # Construction alone must not create any View page.
+    page_before = await tmp_db.get_page(runner._view_id)
+    assert page_before is None
+    found_view = await tmp_db.get_view_for_question(q.id)
+    assert found_view is None
 
 
 async def test_apply_item_score_updates_link(tmp_db, view_setup, call_infra):
@@ -313,9 +510,7 @@ async def test_apply_item_score_updates_link(tmp_db, view_setup, call_infra):
 
     target = items[0]
     view_items = await tmp_db.get_view_items(v.id)
-    target_page, target_link = next(
-        (p, l) for p, l in view_items if p.id == target.id
-    )
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
     score = UnscoredItemScore(
         item_id=target.id[:8],
         importance=5,
@@ -335,32 +530,35 @@ async def test_apply_item_score_updates_link(tmp_db, view_setup, call_infra):
         pytest.fail("Target item not found in view items")
 
 
-async def test_apply_item_score_updates_credence_robustness(
-    tmp_db, view_setup, call_infra,
+async def test_apply_item_score_updates_robustness(
+    tmp_db,
+    view_setup,
+    call_infra,
 ):
-    """_apply_item_score with credence/robustness overrides should update the page."""
+    """_apply_item_score with a robustness override should update the page."""
     _, v, items = view_setup
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
 
     target = items[1]
     view_items = await tmp_db.get_view_items(v.id)
-    target_page, target_link = next(
-        (p, l) for p, l in view_items if p.id == target.id
-    )
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
     score = UnscoredItemScore(
         item_id=target.id[:8],
         importance=4,
         section="live_hypotheses",
-        credence=8,
         robustness=4,
+        robustness_reasoning="Cross-checked against two cited sources; would firm up with a third.",
     )
 
     await updater._apply_item_score(tmp_db, score, target_page, target_link)
 
     updated_page = await tmp_db.get_page(target.id)
     assert updated_page is not None
-    assert updated_page.credence == 8
     assert updated_page.robustness == 4
+    assert updated_page.robustness_reasoning == (
+        "Cross-checked against two cited sources; would firm up with a third."
+    )
+    assert updated_page.credence is None
 
 
 async def test_apply_demotion_lowers_importance(tmp_db, view_setup, call_infra):
@@ -370,9 +568,7 @@ async def test_apply_demotion_lowers_importance(tmp_db, view_setup, call_infra):
 
     target = items[0]
     view_items = await tmp_db.get_view_items(v.id)
-    _, target_link = next(
-        (p, l) for p, l in view_items if p.id == target.id
-    )
+    _, target_link = next((p, l) for p, l in view_items if p.id == target.id)
     demotion = DemotionChoice(
         item_id=target.id[:8],
         new_importance=1,
@@ -396,9 +592,7 @@ async def test_unlink_item_removes_link_preserves_page(tmp_db, view_setup, call_
 
     target = items[0]
     view_items = await tmp_db.get_view_items(v.id)
-    _, target_link = next(
-        (p, l) for p, l in view_items if p.id == target.id
-    )
+    _, target_link = next((p, l) for p, l in view_items if p.id == target.id)
     did_unlink = await updater._unlink_item(tmp_db, target.id, target_link)
     assert did_unlink
 
@@ -418,9 +612,7 @@ async def test_apply_item_review_keep_returns_false(tmp_db, view_setup, call_inf
 
     target = items[0]
     view_items = await tmp_db.get_view_items(v.id)
-    target_page, target_link = next(
-        (p, l) for p, l in view_items if p.id == target.id
-    )
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
     review = ItemReview(
         item_id=target.id[:8],
         action="keep",
@@ -438,15 +630,14 @@ async def test_apply_item_review_adjust(tmp_db, view_setup, call_infra):
 
     target = items[1]
     view_items = await tmp_db.get_view_items(v.id)
-    target_page, target_link = next(
-        (p, l) for p, l in view_items if p.id == target.id
-    )
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
     review = ItemReview(
         item_id=target.id[:8],
         action="adjust",
         new_importance=5,
         new_section="confident_views",
-        new_credence=9,
+        new_robustness=4,
+        new_robustness_reasoning="Deep-review batch confirmed the citations cover the main failure modes.",
     )
     changed = await updater._apply_item_review(
         call_infra, review, target.id, target_page, target_link
@@ -464,7 +655,91 @@ async def test_apply_item_review_adjust(tmp_db, view_setup, call_infra):
 
     page = await tmp_db.get_page(target.id)
     assert page is not None
-    assert page.credence == 9
+    assert page.robustness == 4
+    assert page.robustness_reasoning == (
+        "Deep-review batch confirmed the citations cover the main failure modes."
+    )
+
+
+def test_unscored_item_score_requires_reasoning_with_robustness():
+    """Pydantic validator: setting robustness without reasoning must fail."""
+    with pytest.raises(Exception, match="robustness_reasoning is required"):
+        UnscoredItemScore(
+            item_id="abcdef12",
+            importance=3,
+            section="key_evidence",
+            robustness=4,
+        )
+
+
+def test_item_review_requires_reasoning_when_new_robustness_set():
+    """Pydantic validator: adjusting robustness without reasoning must fail."""
+    with pytest.raises(Exception, match="new_robustness_reasoning is required"):
+        ItemReview(
+            item_id="abcdef12",
+            action="adjust",
+            new_robustness=3,
+        )
+
+
+async def test_apply_item_score_records_mutation_event(tmp_db, view_setup):
+    """Robustness updates via _apply_item_score must land as set_robustness mutation events."""
+    _, v, items = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    target = items[0]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
+    score = UnscoredItemScore(
+        item_id=target.id[:8],
+        importance=4,
+        section="live_hypotheses",
+        robustness=5,
+        robustness_reasoning="Strongly corroborated by the cited benchmark runs.",
+    )
+
+    await updater._apply_item_score(tmp_db, score, target_page, target_link)
+
+    events = (
+        await tmp_db._execute(
+            tmp_db.client.table("mutation_events")
+            .select("event_type, payload")
+            .eq("target_id", target.id)
+            .eq("event_type", "set_robustness")
+        )
+    ).data
+    assert len(events) == 1
+    assert events[0]["payload"]["value"] == 5
+    assert "benchmark" in events[0]["payload"]["reasoning"]
+
+
+async def test_apply_item_review_adjust_records_mutation_event(tmp_db, view_setup, call_infra):
+    """Robustness adjustments via _apply_item_review must land as set_robustness mutation events."""
+    _, v, items = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    target = items[1]
+    view_items = await tmp_db.get_view_items(v.id)
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
+    review = ItemReview(
+        item_id=target.id[:8],
+        action="adjust",
+        new_robustness=2,
+        new_robustness_reasoning="Re-reading the citation shows it was overstated.",
+    )
+    await updater._apply_item_review(call_infra, review, target.id, target_page, target_link)
+
+    events = (
+        await tmp_db._execute(
+            tmp_db.client.table("mutation_events")
+            .select("event_type, payload")
+            .eq("target_id", target.id)
+            .eq("event_type", "set_robustness")
+        )
+    ).data
+    assert len(events) == 1
+    assert events[0]["payload"]["value"] == 2
+    assert "overstated" in events[0]["payload"]["reasoning"]
 
 
 async def test_apply_item_review_supersede(tmp_db, view_setup, call_infra):
@@ -474,9 +749,7 @@ async def test_apply_item_review_supersede(tmp_db, view_setup, call_infra):
 
     target = items[2]
     view_items = await tmp_db.get_view_items(v.id)
-    target_page, target_link = next(
-        (p, l) for p, l in view_items if p.id == target.id
-    )
+    target_page, target_link = next((p, l) for p, l in view_items if p.id == target.id)
     review = ItemReview(
         item_id=target.id[:8],
         action="supersede",
@@ -498,9 +771,7 @@ async def test_apply_item_review_supersede(tmp_db, view_setup, call_infra):
     remaining_ids = {page.id for page, _ in result_items}
     assert target.id not in remaining_ids
 
-    new_items = [
-        (p, l) for p, l in result_items if p.headline == "Revised finding"
-    ]
+    new_items = [(p, l) for p, l in result_items if p.headline == "Revised finding"]
     assert len(new_items) == 1
     new_page, new_link = new_items[0]
     assert new_page.content == "Updated content after new evidence."
@@ -516,8 +787,8 @@ async def test_create_proposed_item(tmp_db, view_setup, call_infra):
     proposal = ProposedItem(
         headline="Newly discovered pattern",
         content="Evidence suggests a recurring pattern in the data.",
-        credence=7,
         robustness=3,
+        robustness_reasoning="Based on three independent replications",
         importance=4,
         section="key_evidence",
         reasoning="Fills a gap in evidence coverage",
@@ -530,7 +801,8 @@ async def test_create_proposed_item(tmp_db, view_setup, call_infra):
     assert page is not None
     assert page.page_type == PageType.VIEW_ITEM
     assert page.headline == "Newly discovered pattern"
-    assert page.credence == 7
+    assert page.credence is None
+    assert page.robustness == 3
 
     result_items = await tmp_db.get_view_items(v.id)
     new_item_ids = {p.id for p, _ in result_items}
@@ -538,7 +810,9 @@ async def test_create_proposed_item(tmp_db, view_setup, call_infra):
 
 
 async def test_phase_score_unscored_skips_when_all_scored(
-    tmp_db, view_setup, call_infra,
+    tmp_db,
+    view_setup,
+    call_infra,
 ):
     """Phase 1 should skip (trace PhaseSkippedEvent) when all items already scored."""
     _, v, _ = view_setup
@@ -551,7 +825,10 @@ async def test_phase_score_unscored_skips_when_all_scored(
     sections = {"score_unscored": "Score them.", "context": ""}
 
     result_messages = await updater._phase_score_unscored(
-        call_infra, "system", sections, messages,
+        call_infra,
+        "system",
+        sections,
+        messages,
     )
     assert len(result_messages) == len(messages)
 
@@ -561,11 +838,13 @@ async def test_phase_triage_skips_when_no_scored_items(tmp_db, call_infra):
     q = await tmp_db.get_page(call_infra.question_id)
     v = _view("Empty view")
     await tmp_db.save_page(v)
-    await tmp_db.save_link(PageLink(
-        from_page_id=v.id,
-        to_page_id=q.id,
-        link_type=LinkType.VIEW_OF,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=v.id,
+            to_page_id=q.id,
+            link_type=LinkType.VIEW_OF,
+        )
+    )
 
     updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
     messages = [
@@ -574,14 +853,19 @@ async def test_phase_triage_skips_when_no_scored_items(tmp_db, call_infra):
     ]
 
     result_messages, flagged_ids = await updater._phase_triage(
-        call_infra, "system", {}, messages,
+        call_infra,
+        "system",
+        {},
+        messages,
     )
     assert len(result_messages) == len(messages)
     assert flagged_ids == []
 
 
 async def test_phase_prune_skips_when_no_low_items(
-    tmp_db, view_setup, call_infra,
+    tmp_db,
+    view_setup,
+    call_infra,
 ):
     """Prune phase should skip when there are no I1/I2 items."""
     _, v, _ = view_setup
@@ -593,13 +877,18 @@ async def test_phase_prune_skips_when_no_low_items(
     ]
 
     result_messages = await updater._phase_prune(
-        call_infra, "system", {}, messages,
+        call_infra,
+        "system",
+        {},
+        messages,
     )
     assert len(result_messages) == len(messages)
 
 
 async def test_phase_enforce_caps_skips_within_limits(
-    tmp_db, view_setup, call_infra,
+    tmp_db,
+    view_setup,
+    call_infra,
 ):
     """Enforce caps should skip when all levels are within their caps."""
     _, v, _ = view_setup
@@ -611,9 +900,130 @@ async def test_phase_enforce_caps_skips_within_limits(
     ]
 
     result_messages = await updater._phase_enforce_caps(
-        call_infra, "system", {}, messages,
+        call_infra,
+        "system",
+        {},
+        messages,
     )
     assert len(result_messages) == len(messages)
+
+
+def test_is_explicit_duplicate_detects_marker():
+    page_dup = _view_item("Dup", content="[Duplicate of abc123, created in error.]")
+    page_normal = _view_item("Normal", content="Some normal observation.")
+    assert _is_explicit_duplicate(page_dup)
+    assert not _is_explicit_duplicate(page_normal)
+
+
+def test_prune_candidates_includes_duplicates_at_any_importance():
+    """Duplicates should be routed through prune even if their importance is above I2."""
+    dup_high = _view_item("Dup at I5", content="[Duplicate of c9060eb4, created in error.]")
+    dup_link = _view_item_link("view-id", dup_high.id, importance=5, section="confident_views")
+    low = _view_item("Low I1", content="Minor note.")
+    low_link = _view_item_link("view-id", low.id, importance=1, section="other")
+    mid = _view_item("Mid I3", content="Useful background.")
+    mid_link = _view_item_link("view-id", mid.id, importance=3, section="key_evidence")
+    unscored = _view_item("Unscored", content="Not scored yet.")
+    unscored_link = _view_item_link("view-id", unscored.id, importance=None, section="other")
+
+    candidates = _prune_candidates(
+        [(dup_high, dup_link), (low, low_link), (mid, mid_link), (unscored, unscored_link)]
+    )
+    ids = {p.id for p, _ in candidates}
+    assert dup_high.id in ids, "duplicate-marked item must be a prune candidate at any importance"
+    assert low.id in ids, "low-importance item must be a prune candidate"
+    assert mid.id not in ids, "mid-importance non-duplicate must not be a prune candidate"
+    assert unscored.id not in ids, "unscored item must not be a prune candidate"
+
+
+async def test_phase_score_unscored_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    """Skipping phase 1 should append a phase_lines entry so closing review can see it."""
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_score_unscored(call_infra, "system", {}, messages)
+
+    assert len(updater._phase_lines) == 1
+    assert "score_unscored" in updater._phase_lines[0]
+    assert "skipped" in updater._phase_lines[0]
+
+
+async def test_phase_enforce_caps_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_enforce_caps(call_infra, "system", {}, messages)
+
+    assert any("enforce_caps" in line and "skipped" in line for line in updater._phase_lines)
+
+
+async def test_phase_prune_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_prune(call_infra, "system", {}, messages)
+
+    assert any("prune" in line and "skipped" in line for line in updater._phase_lines)
+
+
+def _make_update_result(*, phase_summary: str = "") -> UpdateResult:
+    return UpdateResult(
+        created_page_ids=[],
+        moves=[],
+        all_loaded_ids=[],
+        phase_summary=phase_summary,
+    )
+
+
+def test_format_moves_for_review_empty_flags_out_of_band_work():
+    """Empty moves should not just say '(no moves)'.
+
+    The closing-review LLM previously mistook the literal '(no moves)' for
+    'the call did nothing' — even for update_view, whose real work lives
+    in phase edits rather than moves. The empty-moves message must warn
+    the LLM that absence-of-moves is not absence-of-work.
+    """
+    rendered = format_moves_for_review([])
+    assert "no moves" not in rendered.lower() or "not" in rendered.lower()
+    assert rendered != "(no moves)"
+    assert "phase" in rendered.lower() or "outside" in rendered.lower()
+
+
+def test_view_closing_review_prefers_phase_summary_over_moves():
+    """ViewClosingReview must render phase_summary (not '(no moves)') when moves is empty."""
+    reviewer = ViewClosingReview(CallType.UPDATE_VIEW, view_id="view-id")
+    creation = _make_update_result(
+        phase_summary=(
+            "score_unscored: scored 3 item(s), modified 3\n"
+            "triage: reviewed 5 item(s), flagged 2 for deep review\n"
+            "deep_review: reviewed 2 item(s), superseded 1, adjusted 1, proposed 1 new item(s)"
+        )
+    )
+    rendered = reviewer._review_context(creation)
+    assert "score_unscored" in rendered
+    assert "superseded 1" in rendered
+    assert "(no moves)" not in rendered
+
+
+def test_view_closing_review_falls_back_to_moves_when_no_phase_summary():
+    """If phase_summary is empty, fall back to the default moves rendering."""
+    reviewer = ViewClosingReview(CallType.UPDATE_VIEW, view_id="view-id")
+    creation = _make_update_result(phase_summary="")
+    rendered = reviewer._review_context(creation)
+    default_rendered = StandardClosingReview(CallType.UPDATE_VIEW)._review_context(creation)
+    assert rendered == default_rendered
 
 
 async def test_view_setup_with_unscored_items(tmp_db):
@@ -627,17 +1037,27 @@ async def test_view_setup_with_unscored_items(tmp_db):
     await tmp_db.save_page(scored_item)
     await tmp_db.save_page(unscored_item)
 
-    await tmp_db.save_link(PageLink(
-        from_page_id=v.id,
-        to_page_id=q.id,
-        link_type=LinkType.VIEW_OF,
-    ))
-    await tmp_db.save_link(_view_item_link(
-        v.id, scored_item.id, importance=3,
-    ))
-    await tmp_db.save_link(_view_item_link(
-        v.id, unscored_item.id, importance=None,
-    ))
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=v.id,
+            to_page_id=q.id,
+            link_type=LinkType.VIEW_OF,
+        )
+    )
+    await tmp_db.save_link(
+        _view_item_link(
+            v.id,
+            scored_item.id,
+            importance=3,
+        )
+    )
+    await tmp_db.save_link(
+        _view_item_link(
+            v.id,
+            unscored_item.id,
+            importance=None,
+        )
+    )
 
     items = await tmp_db.get_view_items(v.id)
     importances = {page.headline: link.importance for page, link in items}

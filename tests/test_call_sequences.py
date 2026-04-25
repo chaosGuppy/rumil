@@ -6,7 +6,6 @@ from rumil.models import (
     AssessDispatchPayload,
     CallType,
     Dispatch,
-    FindConsiderationsMode,
     ScoutDispatchPayload,
 )
 from rumil.orchestrators import BaseOrchestrator
@@ -37,7 +36,6 @@ class ScriptedOrchestrator(BaseOrchestrator):
 
 
 def _scout(qid, **kw):
-    kw.setdefault("mode", FindConsiderationsMode.ALTERNATE)
     return Dispatch(
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(question_id=qid, max_rounds=1, **kw),
@@ -165,7 +163,7 @@ async def test_single_element_sequences_skip_sequence_creation(tmp_db, question_
         CallType.PRIORITIZATION,
         scope_page_id=question_page.id,
     )
-    trace = CallTrace(p_call.id, tmp_db)
+    CallTrace(p_call.id, tmp_db)
 
     orch = ScriptedOrchestrator(
         tmp_db,
@@ -187,16 +185,14 @@ async def test_single_element_sequences_skip_sequence_creation(tmp_db, question_
 
 
 @pytest.mark.integration
-async def test_multi_step_sequence_creates_record_and_assigns_positions(
-    tmp_db, question_page
-):
+async def test_multi_step_sequence_creates_record_and_assigns_positions(tmp_db, question_page):
     """A sequence with [scout, assess] should create one CallSequence and
     assign sequence_position 0 and 1 to the child calls."""
     p_call = await tmp_db.create_call(
         CallType.PRIORITIZATION,
         scope_page_id=question_page.id,
     )
-    trace = CallTrace(p_call.id, tmp_db)
+    CallTrace(p_call.id, tmp_db)
 
     orch = ScriptedOrchestrator(
         tmp_db,
@@ -228,7 +224,7 @@ async def test_mixed_single_and_multi_step_sequences(tmp_db, question_page):
         CallType.PRIORITIZATION,
         scope_page_id=question_page.id,
     )
-    trace = CallTrace(p_call.id, tmp_db)
+    CallTrace(p_call.id, tmp_db)
 
     orch = ScriptedOrchestrator(
         tmp_db,

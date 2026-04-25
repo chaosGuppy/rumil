@@ -4,7 +4,9 @@ You are creating a **View page** for a question. A View is a curated, structured
 
 ## What a View Is
 
-A View consists of **atomic items** organized into **sections**. Each item is a short, self-contained claim or observation with epistemic scores. Together, the items in a View represent the workspace's current worldview on the question.
+A View consists of **atomic items** organized into **sections**. Each item is a short, self-contained observation with epistemic scores. Together, the items in a View represent the workspace's current worldview on the question.
+
+View items are **not themselves claims** — they are curated observations about the research picture. If one of your items is a sharp, falsifiable assertion that deserves a credence score in its own right, create a separate claim for it and have the View item cite it.
 
 Think of the View as the workspace's collective intelligence on this question, distilled into its most useful form. It should orient future instances toward productive work and away from redundant investigation.
 
@@ -13,7 +15,7 @@ Think of the View as the workspace's collective intelligence on this question, d
 Items are organized into these sections:
 
 * **broader\_context**: Facts and framing that situate the question (e.g., "This question arises in the context of...")
-* **confident\_views**: Claims the workspace is relatively confident about (typically C7+ and R3+)
+* **confident\_views**: Positions the workspace is relatively confident about (typically R3+ on the View item, citing high-credence claims)
 * **live\_hypotheses**: Active hypotheses being considered — not yet well-evidenced enough for confident\_views
 * **key\_evidence**: Important evidence that bears on the question, regardless of which hypothesis it supports
 * **assessments**: Integrative assessments that weigh multiple considerations (e.g., "On balance, X seems more likely than Y because...")
@@ -22,11 +24,9 @@ Items are organized into these sections:
 
 ## Scoring Each Item
 
-Each item has three scores:
+Each item has two scores. (View items do not carry credence — that is reserved for claim pages. If a View item's underlying assertion deserves a credence score, create a claim and cite it.)
 
-**Credence (1-9)**: How likely is this to be true? See the preamble for the full scale.
-
-**Robustness (1-5)**: How well-investigated is this? 1=wild guess, 3=considered view, 5=thoroughly tested.
+**Robustness (1-5)**: How well-investigated is the position represented by this item? 1=wild guess, 3=considered view, 5=thoroughly tested.
 
 **Importance (1-5)**: How core is this item to the View?
 
@@ -43,16 +43,15 @@ Views have strict caps on how many items can be at each importance level. **You 
 ## How to Create the View
 
 1. **Survey the available evidence.** Read through the considerations, claims, judgements, and other material in your context.
-2. **Extract atomic items.** Each item should be a single, self-contained claim or observation — not a paragraph. Think "newspaper headline + one sentence of supporting reasoning." The content field should include an **epistemic gloss**: 1-2 sentences explaining what the credence and robustness scores mean in this specific case.
+2. **Extract atomic items.** Each item should be a single, self-contained observation — not a paragraph. Think "newspaper headline + one sentence of supporting reasoning." The content field should include an **epistemic gloss**: 1-2 sentences explaining what the robustness score means in this specific case, and (where relevant) the credences of the claims this item draws on.
 3. **Assign sections.** Place each item in the section that best fits its role in the View.
-4. **Score carefully.** Credence and robustness should reflect the actual evidence, not aspirations. Importance should reflect how much this item contributes to orienting someone on the question.
-5. **Prioritize ruthlessly.** Not everything belongs in the View. If a claim is low-credence, low-robustness, and not a live hypothesis worth tracking, leave it out. The View's value comes from curation, not completeness.
+4. **Score carefully, with reasoning.** Robustness should reflect how solid the underlying position is. Importance should reflect how much this item contributes to orienting someone on the question. Every item also needs `robustness_reasoning` per the preamble rubric — where the uncertainty sits and how reducible it is.
+5. **Prioritize ruthlessly.** Not everything belongs in the View. If an observation is low-robustness and not a live hypothesis worth tracking, leave it out. The View's value comes from curation, not completeness.
 
 ## Item Content Format
 
 Each item's content should follow this pattern:
 
-* Lead with the claim itself (clear, specific, self-contained)
-* Follow with a brief epistemic gloss in parentheses: why you assigned these C/R scores
+* Lead with the observation itself (clear, specific, self-contained)
+* Follow with a brief epistemic gloss in parentheses: why you assigned this robustness score, and the credence of any supporting claims
 * Optionally reference specific page IDs that provide supporting evidence
-

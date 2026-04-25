@@ -5,18 +5,16 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from rumil_skills import _runctx
 
 from rumil.models import CallType
-from rumil_skills import _runctx
 
 
 @pytest.fixture
 def _isolated_state(tmp_path, monkeypatch):
     """Redirect session-state file into tmp_path."""
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
     return tmp_path
 
 
@@ -45,9 +43,7 @@ async def test_ensure_creates_new_envelope(_isolated_state, envelope_cleanup):
         assert state.chat_envelope["run_id"] == db.run_id
         assert state.chat_envelope["workspace"] == workspace
 
-        run_rows = (
-            await db._execute(db.client.table("runs").select("*").eq("id", db.run_id))
-        ).data
+        run_rows = (await db._execute(db.client.table("runs").select("*").eq("id", db.run_id))).data
         assert len(run_rows) == 1
         assert run_rows[0]["config"]["envelope"] is True
         assert run_rows[0]["config"]["origin"] == "claude-code"
@@ -71,9 +67,7 @@ async def test_ensure_reuses_existing_envelope(_isolated_state, envelope_cleanup
         await db2.close()
 
 
-async def test_ensure_drops_envelope_when_workspace_changes(
-    _isolated_state, envelope_cleanup
-):
+async def test_ensure_drops_envelope_when_workspace_changes(_isolated_state, envelope_cleanup):
     workspace_a = f"test-env-a-{uuid.uuid4().hex[:8]}"
     workspace_b = f"test-env-b-{uuid.uuid4().hex[:8]}"
 
@@ -96,9 +90,7 @@ async def test_ensure_drops_envelope_when_workspace_changes(
         await db2.close()
 
 
-async def test_ensure_recreates_when_call_row_missing(
-    _isolated_state, envelope_cleanup
-):
+async def test_ensure_recreates_when_call_row_missing(_isolated_state, envelope_cleanup):
     """A stale pointer whose call has been deleted triggers a fresh envelope."""
     workspace = f"test-envelope-{uuid.uuid4().hex[:8]}"
     _set_workspace(workspace)
@@ -131,9 +123,7 @@ async def test_clear_chat_envelope_removes_pointer(_isolated_state, envelope_cle
     assert _runctx.load_session_state().chat_envelope is None
 
 
-async def test_clear_then_ensure_creates_fresh_envelope(
-    _isolated_state, envelope_cleanup
-):
+async def test_clear_then_ensure_creates_fresh_envelope(_isolated_state, envelope_cleanup):
     workspace = f"test-envelope-{uuid.uuid4().hex[:8]}"
     _set_workspace(workspace)
 

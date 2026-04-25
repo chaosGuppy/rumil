@@ -13,9 +13,7 @@ log = logging.getLogger(__name__)
 
 class LinkVariantPayload(BaseModel):
     original_page_id: str = Field(description="Page ID of the original claim")
-    variant_page_id: str = Field(
-        description="Page ID of the more robust variant claim"
-    )
+    variant_page_id: str = Field(description="Page ID of the more robust variant claim")
     reasoning: str = Field(
         "",
         description="What makes the variant more robust than the original",

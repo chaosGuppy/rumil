@@ -1,8 +1,6 @@
 """Dispatch definitions: tool schemas and registry for prioritization dispatches."""
 
-import copy
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -12,7 +10,8 @@ from rumil.models import (
     BaseDispatchPayload,
     CallType,
     Dispatch,
-    FindConsiderationsMode,
+    MultiRoundFields,
+    PrioritizationFields,
     RecurseClaimDispatchPayload,
     RecurseDispatchPayload,
     ScopeOnlyDispatchPayload,
@@ -24,19 +23,17 @@ from rumil.models import (
     ScoutCRobustifyDispatchPayload,
     ScoutCStrengthenDispatchPayload,
     ScoutCStressTestCasesDispatchPayload,
+    ScoutDeepQuestionsDispatchPayload,
     ScoutDispatchPayload,
-    ScoutParadigmCasesDispatchPayload,
     ScoutEstimatesDispatchPayload,
     ScoutFactchecksDispatchPayload,
     ScoutHypothesesDispatchPayload,
-    ScoutDeepQuestionsDispatchPayload,
-    ScoutWebQuestionsDispatchPayload,
+    ScoutParadigmCasesDispatchPayload,
     ScoutSubquestionsDispatchPayload,
+    ScoutWebQuestionsDispatchPayload,
     WebResearchDispatchPayload,
-    MultiRoundFields,
-    PrioritizationFields,
 )
-from rumil.moves.base import DispatchValidator, MoveState
+from rumil.moves.base import MoveState
 
 log = logging.getLogger(__name__)
 
@@ -97,74 +94,20 @@ class DispatchDef(Generic[S]):
         )
 
 
-def filter_mode_schema(
-    schema: dict,
-    allowed_modes: Sequence[FindConsiderationsMode],
-) -> dict:
-    """Deep-copy schema and restrict the FindConsiderationsMode enum to allowed values.
-
-    Works for both top-level mode properties (dispatch tools) and nested
-    schemas that reference FindConsiderationsMode via $defs (inline dispatches).
-    """
-    schema = copy.deepcopy(schema)
-    allowed_values = [m.value for m in allowed_modes]
-
-    mode_def_key = "FindConsiderationsMode"
-    defs = schema.get("$defs", {})
-    if mode_def_key not in defs:
-        return schema
-
-    defs[mode_def_key]["enum"] = [
-        v for v in defs[mode_def_key].get("enum", []) if v in allowed_values
-    ]
-
-    def _patch_mode_props(obj: dict) -> None:
-        """Patch any 'mode' property that refs FindConsiderationsMode."""
-        props = obj.get("properties", {})
-        if "mode" in props:
-            mode_prop = props["mode"]
-            if mode_prop.get("$ref", "").endswith(f"/{mode_def_key}"):
-                mode_prop.pop("default", None)
-                mode_prop["description"] = (
-                    "Scout mode. Available: "
-                    + ", ".join(f"'{v}'" for v in allowed_values)
-                    + "."
-                )
-
-    _patch_mode_props(schema)
-    for def_val in defs.values():
-        if isinstance(def_val, dict):
-            _patch_mode_props(def_val)
-
-    return schema
-
-
-def make_mode_validator(
-    allowed_modes: Sequence[FindConsiderationsMode],
-) -> DispatchValidator:
-    """Create a dispatch validator that rejects disallowed find-considerations modes."""
-
-    def validate(dispatch: Dispatch) -> Dispatch | str:
-        if dispatch.call_type != CallType.FIND_CONSIDERATIONS:
-            return dispatch
-        mode = getattr(dispatch.payload, "mode", None)
-        if mode is not None and mode not in allowed_modes:
-            allowed_str = ", ".join(m.value for m in allowed_modes)
-            return f"Invalid mode '{mode.value}'. Allowed modes: {allowed_str}"
-        return dispatch
-
-    return validate
-
-
 DISPATCH_DEFS: dict[CallType, DispatchDef] = {
     CallType.FIND_CONSIDERATIONS: DispatchDef(
         call_type=CallType.FIND_CONSIDERATIONS,
         name="dispatch_find_considerations",
         description=(
-            "Dispatch find-considerations rounds for a question. Finds missing "
-            "considerations. Each round consumes 1 unit of budget. Runs up to "
-            "max_rounds rounds, stopping early when remaining fruit falls below "
-            "fruit_threshold. Budget cost: between 1 and max_rounds (inclusive), plus 1 auto-assess if targeting a subquestion."
+            "Surface the handful of considerations that would most move the next "
+            "answer on a question. A targeted sharpener, not exploration: it "
+            "explicitly avoids opening new lines of investigation whose payoff is "
+            "deferred. Use when a question is close to a defensible answer but has "
+            "specific gaps, or when budget is tight and you need to reach a "
+            "defensible answer fast. Runs up to max_rounds rounds, stopping early "
+            "when remaining fruit falls below fruit_threshold. Budget cost: between "
+            "1 and max_rounds (inclusive), plus 1 auto-assess if targeting a "
+            "subquestion."
         ),
         schema=ScoutDispatchPayload,
     ),

@@ -4,13 +4,21 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from rumil.api.app import app
+from rumil.api.auth import AuthUser, get_current_user
 from rumil.database import DB
 
 
 @pytest.fixture
 def api_client():
+    app.dependency_overrides[get_current_user] = lambda: AuthUser(
+        user_id="", email="test@example.com"
+    )
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    client = AsyncClient(transport=transport, base_url="http://test")
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio
@@ -82,12 +90,8 @@ async def test_single_request_closes_its_db(api_client, db_close_spy):
     """A single API request must create exactly one DB and close it."""
     resp = await api_client.get("/api/projects")
     assert resp.status_code == 200
-    assert db_close_spy.created == 1, (
-        f"expected 1 DB.create call, got {db_close_spy.created}"
-    )
-    assert db_close_spy.closed == 1, (
-        f"expected 1 DB.close call, got {db_close_spy.closed}"
-    )
+    assert db_close_spy.created == 1, f"expected 1 DB.create call, got {db_close_spy.created}"
+    assert db_close_spy.closed == 1, f"expected 1 DB.close call, got {db_close_spy.closed}"
 
 
 async def test_multiple_requests_close_all_dbs(api_client, db_close_spy):
@@ -108,8 +112,7 @@ async def test_staged_run_endpoint_closes_its_db(api_client, db_close_spy):
     That path must also close cleanly."""
     # Unknown page_id — endpoint returns 404, but the DB should still close.
     resp = await api_client.get(
-        "/api/pages/00000000-0000-0000-0000-000000000000"
-        "?staged_run_id=test-run-does-not-exist"
+        "/api/pages/00000000-0000-0000-0000-000000000000?staged_run_id=test-run-does-not-exist"
     )
     # 404 is fine; the lifecycle must still run.
     assert resp.status_code in (200, 404)

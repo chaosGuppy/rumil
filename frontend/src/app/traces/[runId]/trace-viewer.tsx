@@ -5,6 +5,7 @@ import type { RunTraceTreeOut, CallNodeOut } from "@/api/types.gen";
 import { useRunTraceTree } from "@/lib/use-run-trace";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { CallNode, HashTargetProvider, type TreeNode } from "./call-node";
+import { PageLoadStats } from "./page-load-stats";
 
 export type SequenceNode = {
   id: string;
@@ -114,6 +115,7 @@ export function TraceViewer({
             No calls recorded for this run yet.
           </p>
         )}
+        <PageLoadStats runId={runId} />
       </div>
     </HashTargetProvider>
   );

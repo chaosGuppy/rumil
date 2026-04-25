@@ -23,9 +23,7 @@ class ScrapedPage:
     fetched_at: str
 
 
-async def scrape_url(
-    url: str, *, max_chars: int | None = None
-) -> ScrapedPage | None:
+async def scrape_url(url: str, *, max_chars: int | None = None) -> ScrapedPage | None:
     """Fetch and extract text content from a URL via Jina Reader.
 
     Returns a ScrapedPage on success, or None on any failure.

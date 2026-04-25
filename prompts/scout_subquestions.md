@@ -21,5 +21,5 @@ You are performing a **Scout Subquestions** call — an initial exploration of a
 
 - **Informative decomposition over exhaustive coverage.** Two subquestions that cut to the heart of the matter beat five that nibble at the edges.
 - **Subquestions should be substantially independent.** If answering one would largely answer another, merge them or drop the weaker one.
-- **Tentative claims are valuable.** A provisional answer with robustness 1–2 gives later calls something concrete to evaluate. Do not shy away from stating a view just because you are uncertain — flag the uncertainty in the credence and robustness scores.
+- **Tentative claims are valuable.** A provisional answer with robustness 1–2 gives later calls something concrete to evaluate. Do not shy away from stating a view just because you are uncertain — flag the uncertainty in the credence and robustness scores, and explain where the uncertainty sits in their reasoning fields (per the preamble rubric).
 - **Do not duplicate** subquestions or considerations already present in the workspace.

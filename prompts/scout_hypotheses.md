@@ -33,4 +33,4 @@ Use `CREATE_CLAIM` to create the hypothesis claim and `LINK_CONSIDERATION` to li
 - **One strong hypothesis beats several thin ones.** Do not pad with obvious or uninteresting options.
 - **Diversity of perspective.** Aim for hypotheses that represent genuinely different views, not minor variations on the same theme.
 - **Do not duplicate** hypotheses already present in the workspace.
-- **Set credence and robustness honestly.** These are initial assessments — low robustness (1-2) is expected, credence should reflect your genuine initial estimate.
+- **Set credence and robustness honestly, with reasoning.** These are initial assessments — low robustness (1-2) is expected, credence should reflect your genuine initial estimate. Every score needs its paired `credence_reasoning` / `robustness_reasoning` per the preamble rubric.

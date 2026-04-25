@@ -2,9 +2,9 @@
 Data models for the research workspace.
 """
 
+import uuid
 from datetime import UTC, datetime
 from enum import Enum
-import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,6 +31,8 @@ class PageType(str, Enum):
     VIEW = "view"
     VIEW_ITEM = "view_item"
     VIEW_META = "view_meta"
+    SPEC_ITEM = "spec_item"  # prescriptive claim constraining a generated artefact
+    ARTEFACT = "artefact"  # long-form object produced by the generative workflow
 
 
 class PageDetail(str, Enum):
@@ -78,9 +80,16 @@ class CallType(str, Enum):
     FEEDBACK_UPDATE = "feedback_update"
     LINK_SUBQUESTIONS = "link_subquestions"
     AB_EVAL = "ab_eval"
+    AB_EVAL_COMPARISON = "ab_eval_comparison"
+    AB_EVAL_SUMMARY = "ab_eval_summary"
+    RUN_EVAL = "run_eval"
     CREATE_VIEW = "create_view"
     GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
+    GENERATE_SPEC = "generate_spec"
+    GENERATE_ARTEFACT = "generate_artefact"
+    CRITIQUE_ARTEFACT = "critique_artefact"
+    REFINE_SPEC = "refine_spec"
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
@@ -122,7 +131,9 @@ class LinkType(str, Enum):
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
     RELATED = "related"  # general relation
-    ANSWERS = "answers"  # judgement -> question: this judgement is the current answer to the question
+    ANSWERS = (
+        "answers"  # judgement -> question: this judgement is the current answer to the question
+    )
     VARIANT = "variant"  # more robust variation of a claim
     SUMMARIZES = "summarizes"  # summary page covers a question subtree
     CITES = "cites"  # claim cites a source
@@ -130,6 +141,14 @@ class LinkType(str, Enum):
     VIEW_ITEM = "view_item"  # view -> view_item: item belongs to this view
     VIEW_OF = "view_of"  # view -> question: this view covers this question
     META_FOR = "meta_for"  # view_meta -> view_item or view: meta annotation
+    SPEC_OF = (
+        "spec_of"  # spec_item -> question: the artefact-task question this spec item constrains
+    )
+    ARTEFACT_OF = "artefact_of"  # artefact -> question: artefact produced for an artefact-task
+    CRITIQUE_OF = "critique_of"  # judgement -> artefact: this judgement critiques that artefact
+    GENERATED_FROM = (
+        "generated_from"  # artefact -> spec_item: spec items the artefact was generated from
+    )
 
 
 class MoveType(str, Enum):
@@ -148,21 +167,19 @@ class MoveType(str, Enum):
     REMOVE_LINK = "REMOVE_LINK"
     CHANGE_LINK_ROLE = "CHANGE_LINK_ROLE"
     UPDATE_EPISTEMIC = "UPDATE_EPISTEMIC"
-    LINK_DEPENDS_ON = "LINK_DEPENDS_ON"
     CREATE_VIEW_ITEM = "CREATE_VIEW_ITEM"
     PROPOSE_VIEW_ITEM = "PROPOSE_VIEW_ITEM"
+    ADD_SPEC_ITEM = "ADD_SPEC_ITEM"
+    SUPERSEDE_SPEC_ITEM = "SUPERSEDE_SPEC_ITEM"
+    DELETE_SPEC_ITEM = "DELETE_SPEC_ITEM"
+    FINALIZE_ARTEFACT = "FINALIZE_ARTEFACT"
+    REGENERATE_AND_CRITIQUE = "REGENERATE_AND_CRITIQUE"
 
 
 class CallStage(str, Enum):
     BUILD_CONTEXT = "build_context"
     UPDATE_WORKSPACE = "update_workspace"
     CLOSING_REVIEW = "closing_review"
-
-
-class FindConsiderationsMode(str, Enum):
-    ALTERNATE = "alternate"
-    ABSTRACT = "abstract"
-    CONCRETE = "concrete"
 
 
 class LinkRole(str, Enum):
@@ -177,9 +194,7 @@ class ConsiderationDirection(str, Enum):
 
 
 class _DispatchBase(BaseModel):
-    reason: str = Field(
-        default="", description="Why this dispatch is a good use of budget"
-    )
+    reason: str = Field(default="", description="Why this dispatch is a good use of budget")
     context_page_ids: list[str] = Field(
         default_factory=list,
         description=(
@@ -194,20 +209,9 @@ class BaseDispatchPayload(_DispatchBase):
 
 
 class MultiRoundFields(BaseModel):
-    fruit_threshold: int = Field(
-        default=4, description="Remaining fruit threshold for stopping"
-    )
+    fruit_threshold: int = Field(default=4, description="Remaining fruit threshold for stopping")
     max_rounds: int = Field(
         default=5, description="Maximum scouting rounds (each round costs 1 budget)"
-    )
-
-
-class _ScoutFields(MultiRoundFields):
-    mode: FindConsiderationsMode = Field(
-        description=(
-            "Scout mode: 'alternate' alternates abstract and concrete "
-            "each round; 'abstract' for all-abstract; 'concrete' for all-concrete."
-        ),
     )
 
 
@@ -215,7 +219,7 @@ class PrioritizationFields(BaseModel):
     budget: int = Field(description="Budget to allocate for the sub-investigation")
 
 
-class ScoutDispatchPayload(BaseDispatchPayload, _ScoutFields):
+class ScoutDispatchPayload(BaseDispatchPayload, MultiRoundFields):
     pass
 
 
@@ -344,6 +348,7 @@ class Project(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     hidden: bool = False
+    owner_user_id: str | None = None
 
 
 class Page(BaseModel):
@@ -357,8 +362,10 @@ class Page(BaseModel):
     project_id: str = ""
     epistemic_status: float = 2.5  # DEPRECATED — kept for backward compat
     epistemic_type: str = ""  # DEPRECATED — kept for backward compat
-    credence: int | None = None  # 1-9 probability bucket (claims/judgements only)
-    robustness: int | None = None  # 1-5 resilience of view (claims/judgements only)
+    credence: int | None = None  # 1-9 probability bucket (claim pages only)
+    credence_reasoning: str | None = None
+    robustness: int | None = None  # 1-5 resilience of view (any non-question page)
+    robustness_reasoning: str | None = None
     provenance_model: str = ""
     provenance_call_type: str = ""
     provenance_call_id: str = ""
@@ -371,6 +378,7 @@ class Page(BaseModel):
     sections: list[str] | None = None  # VIEW pages: ordered section names
     meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
     run_id: str = ""
+    hidden: bool = False
 
     def is_active(self) -> bool:
         return not self.is_superseded

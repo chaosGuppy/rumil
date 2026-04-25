@@ -41,18 +41,13 @@ function formatDate(iso: string): string {
   });
 }
 
-type DimTab = "comparison" | "report_a" | "report_b";
+function traceHref(evalRunId: string | undefined, callId: string): string {
+  if (evalRunId) return `/traces/${evalRunId}#call-${callId.slice(0, 8)}`;
+  return `/traces/${callId}`;
+}
 
-function DimensionSection({ dim }: { dim: AbEvalDimensionOut }) {
+function DimensionSection({ dim, evalRunId }: { dim: AbEvalDimensionOut; evalRunId?: string }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<DimTab>("comparison");
-
-  const content =
-    tab === "comparison"
-      ? dim.comparison
-      : tab === "report_a"
-        ? dim.report_a
-        : dim.report_b;
 
   return (
     <div className="ab-eval-dim" data-open={open}>
@@ -67,45 +62,17 @@ function DimensionSection({ dim }: { dim: AbEvalDimensionOut }) {
         </span>
       </div>
       <div className="ab-eval-dim-body">
-        <div className="ab-eval-dim-tabs">
-          {(
-            [
-              ["comparison", "Comparison"],
-              ["report_a", "Run A Report"],
-              ["report_b", "Run B Report"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              className="ab-eval-dim-tab"
-              data-active={tab === key}
-              onClick={() => setTab(key)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
         <div className="ab-eval-dim-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{dim.report ?? ""}</ReactMarkdown>
         </div>
-        {(dim.call_id_a || dim.call_id_b) && (
+        {dim.call_id && (
           <div className="ab-eval-dim-eval-links">
-            {dim.call_id_a && (
-              <Link
-                href={`/traces/${dim.call_id_a}`}
-                className="ab-eval-dim-eval-link"
-              >
-                eval trace A
-              </Link>
-            )}
-            {dim.call_id_b && (
-              <Link
-                href={`/traces/${dim.call_id_b}`}
-                className="ab-eval-dim-eval-link"
-              >
-                eval trace B
-              </Link>
-            )}
+            <Link
+              href={traceHref(evalRunId, dim.call_id)}
+              className="ab-eval-dim-eval-link"
+            >
+              eval trace
+            </Link>
           </div>
         )}
       </div>
@@ -234,13 +201,23 @@ export function EvalDetail({ report }: { report: AbEvalReportOut }) {
             {report.overall_assessment}
           </ReactMarkdown>
         </div>
+        {report.overall_assessment_call_id && (
+          <div className="ab-eval-dim-eval-links">
+            <Link
+              href={traceHref(report.eval_run_id, report.overall_assessment_call_id)}
+              className="ab-eval-dim-eval-link"
+            >
+              overall assessment trace
+            </Link>
+          </div>
+        )}
       </section>
 
       <section>
         <div className="ab-eval-section-label">dimension reports</div>
         <div className="ab-eval-dimensions">
           {report.dimension_reports.map((dim) => (
-            <DimensionSection key={dim.name} dim={dim} />
+            <DimensionSection key={dim.name} dim={dim} evalRunId={report.eval_run_id} />
           ))}
         </div>
       </section>

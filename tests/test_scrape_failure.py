@@ -8,8 +8,6 @@ from rumil.models import (
 )
 from rumil.moves.create_claim import execute_with_source_creation
 
-import pytest
-
 
 async def test_create_claim_errors_when_source_url_unscrapable(
     tmp_db,
@@ -61,6 +59,10 @@ async def test_create_claim_succeeds_when_no_source_urls(
         {
             "headline": "Some claim",
             "content": "Claim content",
+            "credence": 5,
+            "credence_reasoning": "Placeholder reasoning.",
+            "robustness": 2,
+            "robustness_reasoning": "Placeholder robustness reasoning.",
         },
         call,
         tmp_db,

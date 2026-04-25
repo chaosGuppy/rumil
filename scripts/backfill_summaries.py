@@ -35,21 +35,21 @@ SYSTEM = (
 )
 
 PROMPT_TEMPLATE = (
-    'Produce an abstract (~200 words) of the research page below.\n\n'
-    'Include the core conclusion, the main supporting reasoning or '
-    'evidence, key counter-arguments and why they were discounted, and the critical '
-    'uncertainties or dependencies. Preserve epistemic qualifications and confidence levels. '
-    'Must be self-contained.\n\n'
-    'Format your response exactly as:\n'
-    'ABSTRACT: <text>\n\n'
-    'Research page:\n'
-    '{content}'
+    "Produce an abstract (~200 words) of the research page below.\n\n"
+    "Include the core conclusion, the main supporting reasoning or "
+    "evidence, key counter-arguments and why they were discounted, and the critical "
+    "uncertainties or dependencies. Preserve epistemic qualifications and confidence levels. "
+    "Must be self-contained.\n\n"
+    "Format your response exactly as:\n"
+    "ABSTRACT: <text>\n\n"
+    "Research page:\n"
+    "{content}"
 )
 
 
 def _parse_response(text: str) -> str:
     if "ABSTRACT:" in text:
-        return text[text.index("ABSTRACT:") + len("ABSTRACT:"):].strip()
+        return text[text.index("ABSTRACT:") + len("ABSTRACT:") :].strip()
     return ""
 
 
@@ -103,7 +103,10 @@ async def _process_page(
             if not abstract:
                 log.warning(
                     "[%d/%d] Parse failed for %s — raw: %s",
-                    idx, total, page_id[:8], block.text[:120],
+                    idx,
+                    total,
+                    page_id[:8],
+                    block.text[:120],
                 )
                 counters["failed"] += 1
                 return
@@ -146,6 +149,8 @@ if __name__ == "__main__":
     parser.add_argument("--prod", action="store_true", help="Target production database")
     parser.add_argument("--dry-run", action="store_true", help="List pages without writing")
     parser.add_argument("--limit", type=int, default=None, help="Max pages to process")
-    parser.add_argument("--concurrency", type=int, default=10, help="Parallel API calls (default 10)")
+    parser.add_argument(
+        "--concurrency", type=int, default=10, help="Parallel API calls (default 10)"
+    )
     args = parser.parse_args()
     asyncio.run(backfill(args.prod, args.dry_run, args.limit, args.concurrency))

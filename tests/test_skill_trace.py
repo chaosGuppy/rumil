@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import pytest
-
-from rumil_skills import _runctx, trace as trace_mod
+from rumil_skills import _runctx
+from rumil_skills import trace as trace_mod
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 async def _noop_close():
@@ -79,9 +77,7 @@ async def test_trace_prints_events_and_exchanges(
     assert "RESP_TEXT" in out
 
 
-async def test_trace_short_id_resolution(
-    capsys, monkeypatch, patch_make_db, tmp_db, scout_call
-):
+async def test_trace_short_id_resolution(capsys, monkeypatch, patch_make_db, tmp_db, scout_call):
     await tmp_db.save_call_trace(
         scout_call.id,
         [{"event": "context_built", "ts": "2026-04-13T10:00:00"}],
@@ -124,9 +120,7 @@ async def test_trace_brief_omits_system_prompt(
     assert "user-words" in out or "resp-words" in out
 
 
-async def test_trace_only_filter(
-    capsys, monkeypatch, patch_make_db, tmp_db, scout_call
-):
+async def test_trace_only_filter(capsys, monkeypatch, patch_make_db, tmp_db, scout_call):
     await tmp_db.save_call_trace(
         scout_call.id,
         [
@@ -147,9 +141,7 @@ async def test_trace_only_filter(
     assert "context_built" not in out
 
 
-async def test_trace_no_exchanges_flag(
-    capsys, monkeypatch, patch_make_db, tmp_db, scout_call
-):
+async def test_trace_no_exchanges_flag(capsys, monkeypatch, patch_make_db, tmp_db, scout_call):
     await tmp_db.save_llm_exchange(
         call_id=scout_call.id,
         phase="update_workspace",

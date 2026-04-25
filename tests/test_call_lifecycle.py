@@ -10,8 +10,8 @@ import pytest_asyncio
 
 from rumil.calls.assess import AssessCall
 from rumil.calls.common import mark_call_completed, run_closing_review
-from rumil.calls.ingest import IngestCall
 from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.ingest import IngestCall
 from rumil.models import (
     Call,
     CallStatus,
@@ -19,7 +19,6 @@ from rumil.models import (
     Page,
     PageLayer,
     PageType,
-    FindConsiderationsMode,
     Workspace,
 )
 
@@ -55,7 +54,7 @@ async def test_assess_lifecycle(tmp_db, question_page, assess_call):
     """Assess call completes with correct DB state and review data."""
     assess = AssessCall(question_page.id, assess_call, tmp_db)
     await assess.run()
-    result, review = assess.result, assess.review
+    _result, _review = assess.result, assess.review
 
     refreshed = await tmp_db.get_call(assess_call.id)
     assert refreshed.status == CallStatus.COMPLETE
@@ -79,7 +78,7 @@ async def test_ingest_lifecycle(tmp_db, question_page, ingest_call, source_page)
     """Ingest call processes source document and completes with correct DB state."""
     ingest = IngestCall(source_page, question_page.id, ingest_call, tmp_db)
     await ingest.run()
-    result, review = ingest.result, ingest.review
+    _result, _review = ingest.result, ingest.review
 
     refreshed = await tmp_db.get_call(ingest_call.id)
     assert refreshed.status == CallStatus.COMPLETE
@@ -107,7 +106,6 @@ async def test_scout_lifecycle(tmp_db, question_page, scout_call):
         tmp_db,
         max_rounds=2,
         fruit_threshold=4,
-        mode=FindConsiderationsMode.ALTERNATE,
     )
     await scout.run()
 
@@ -118,7 +116,6 @@ async def test_scout_lifecycle(tmp_db, question_page, scout_call):
     assert refreshed.completed_at is not None
     assert "Scout session complete" in refreshed.result_summary
     assert refreshed.call_params is not None
-    assert refreshed.call_params["mode"] == "alternate"
 
     trace = await tmp_db.get_call_trace(scout_call.id)
     event_types = [e.get("event") for e in trace]
@@ -163,7 +160,9 @@ async def test_complete_call(tmp_db, assess_call):
 
 @pytest.mark.integration
 async def test_closing_review_saves_page_ratings(
-    tmp_db, question_page, assess_call,
+    tmp_db,
+    question_page,
+    assess_call,
 ):
     """run_closing_review returns a review dict and saves page ratings."""
     review = await run_closing_review(

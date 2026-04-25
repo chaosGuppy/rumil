@@ -28,8 +28,6 @@ from rumil.calls.common import (
 from rumil.calls.dispatches import (
     DISPATCH_DEFS,
     RECURSE_DISPATCH_DEF,
-    filter_mode_schema,
-    make_mode_validator,
 )
 from rumil.constants import (
     MAX_PROPAGATION_REASSESS,
@@ -58,20 +56,20 @@ from rumil.models import (
 from rumil.moves.base import MoveState
 from rumil.moves.registry import MOVES
 from rumil.orchestrators.base import BaseOrchestrator
-from rumil.orchestrators.common import assess_question
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
     ContextBuiltEvent,
-    DispatchExecutedEvent,
     DispatchesPlannedEvent,
+    DispatchExecutedEvent,
     DispatchTraceItem,
     ErrorEvent,
     GlobalPhaseCompletedEvent,
 )
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 from rumil.workspace_exploration import (
     make_explore_subgraph_tool,
     make_load_page_tool,
@@ -80,16 +78,12 @@ from rumil.workspace_exploration import (
 
 log = logging.getLogger(__name__)
 
-_INF = float('inf')
+_INF = float("inf")
 
 
 class GlobalDecideResult(BaseModel):
-    should_create: bool = Field(
-        description="True if a cross-cutting question is worth creating."
-    )
-    reasoning: str = Field(
-        description="Brief explanation of the decision."
-    )
+    should_create: bool = Field(description="True if a cross-cutting question is worth creating.")
+    reasoning: str = Field(description="Brief explanation of the decision.")
     question_headline: str | None = Field(
         None,
         description=(
@@ -109,6 +103,7 @@ class GlobalDecideResult(BaseModel):
 @dataclass
 class _PropagationPath:
     """A path from a researched question to the root, with its total weight."""
+
     nodes: list[str]
     weight: float
 
@@ -211,7 +206,9 @@ def _yen_k_shortest(
             excluded_nodes = set(root_path[:-1])
 
             spur = _dijkstra(
-                graph, spur_node, target,
+                graph,
+                spur_node,
+                target,
                 excluded_nodes=excluded_nodes,
                 excluded_edges=excluded_edges,
             )
@@ -234,7 +231,8 @@ def _yen_k_shortest(
 
 
 def _path_weight(
-    graph: dict[str, dict[str, float]], nodes: Sequence[str],
+    graph: dict[str, dict[str, float]],
+    nodes: Sequence[str],
 ) -> float:
     total = 0.0
     for i in range(len(nodes) - 1):
@@ -286,15 +284,11 @@ def _select_nodes_from_paths(
     selected_set: set[str] = set()
 
     for i, path in enumerate(paths):
-        new_nodes = [
-            n for n in path.nodes[1:] if n not in selected_set
-        ]
+        new_nodes = [n for n in path.nodes[1:] if n not in selected_set]
         if not new_nodes:
             continue
 
-        if i == 0:
-            take = new_nodes
-        elif len(new_nodes) <= budget - len(selected):
+        if i == 0 or len(new_nodes) <= budget - len(selected):
             take = new_nodes
         else:
             remaining = budget - len(selected)
@@ -391,6 +385,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         self._messages: list[dict] = []
         self._turn_count: int = 0
 
+        variant = get_settings().prioritizer_variant
+        if variant == "experimental":
+            self.summarise_before_assess = ExperimentalOrchestrator.summarise_before_assess
+        elif variant == "two_phase":
+            self.summarise_before_assess = TwoPhaseOrchestrator.summarise_before_assess
+
     async def run(self, root_question_id: str) -> None:
         own_db = await self.db.fork()
         self.db = own_db
@@ -409,14 +409,17 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         self._local_cap = local_cap
 
         log.info(
-            'GlobalPrioOrchestrator: total_remaining=%d, local_cap=%d, global_cap=%d',
-            remaining, local_cap, global_cap,
+            "GlobalPrioOrchestrator: total_remaining=%d, local_cap=%d, global_cap=%d",
+            remaining,
+            local_cap,
+            global_cap,
         )
 
         if local_cap < MIN_TWOPHASE_BUDGET:
             log.warning(
-                'Local budget too small (%d < %d), running global-only',
-                local_cap, MIN_TWOPHASE_BUDGET,
+                "Local budget too small (%d < %d), running global-only",
+                local_cap,
+                MIN_TWOPHASE_BUDGET,
             )
             local_cap = 0
 
@@ -427,11 +430,11 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             if local and local_cap >= MIN_TWOPHASE_BUDGET:
                 self._local_task = asyncio.create_task(
                     local.run(root_question_id),
-                    name='global_prio_local',
+                    name="global_prio_local",
                 )
             global_task = asyncio.create_task(
                 self._global_loop(root_question_id),
-                name='global_prio_global',
+                name="global_prio_global",
             )
 
             tasks_to_await: list[asyncio.Task] = []  # type: ignore[type-arg]
@@ -442,7 +445,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             results = await asyncio.gather(*tasks_to_await, return_exceptions=True)
             for r in results:
                 if isinstance(r, Exception):
-                    log.error('GlobalPrioOrchestrator task failed: %s', r, exc_info=r)
+                    log.error("GlobalPrioOrchestrator task failed: %s", r, exc_info=r)
         finally:
             self._local_task = None
             await self._teardown()
@@ -457,20 +460,24 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         settings = get_settings()
         variant = settings.prioritizer_variant
 
-        if variant == 'experimental':
+        if variant == "experimental":
             orch = ExperimentalOrchestrator(
-                self.db, self.broadcaster, budget_cap=budget_cap,
+                self.db,
+                self.broadcaster,
+                budget_cap=budget_cap,
             )
             orch._parent_call_id = parent_call_id
             return orch
-        if variant == 'two_phase':
+        if variant == "two_phase":
             orch = TwoPhaseOrchestrator(
-                self.db, self.broadcaster, budget_cap=budget_cap,
+                self.db,
+                self.broadcaster,
+                budget_cap=budget_cap,
             )
             orch._parent_call_id = parent_call_id
             return orch
 
-        log.error('Unknown prioritizer_variant: %s', variant)
+        log.error("Unknown prioritizer_variant: %s", variant)
         return None
 
     async def _global_loop(self, root_question_id: str) -> None:
@@ -487,15 +494,13 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
 
             turn_result = await self._global_turn(root_question_id)
 
-            local_done = (
-                self._local_task is None or self._local_task.done()
-            )
-            if local_done and not turn_result.get('created_questions'):
-                log.info('Global loop exiting: local done and no opportunity found')
+            local_done = self._local_task is None or self._local_task.done()
+            if local_done and not turn_result.get("created_questions"):
+                log.info("Global loop exiting: local done and no opportunity found")
                 break
 
-            if turn_result.get('dispatches'):
-                dispatches = turn_result['dispatches']
+            if turn_result.get("dispatches"):
+                dispatches = turn_result["dispatches"]
                 sequences: list[list[Dispatch]] = []
                 children: list[tuple[BaseOrchestrator, str]] = []
 
@@ -508,13 +513,13 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                         )
                         if not resolved:
                             log.warning(
-                                'Global recurse ID not found: %s',
+                                "Global recurse ID not found: %s",
                                 d.payload.question_id[:8],
                             )
                             continue
                         child = self._create_local_orchestrator(
                             d.payload.budget,
-                            parent_call_id=turn_result.get('call_id'),
+                            parent_call_id=turn_result.get("call_id"),
                         )
                         if child is None:
                             continue
@@ -522,9 +527,9 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                         dispatched_question_ids.add(resolved)
                         self._global_consumed += d.payload.budget
                         log.info(
-                            'Global: queued recursive investigation: '
-                            'question=%s, budget=%d',
-                            resolved[:8], d.payload.budget,
+                            "Global: queued recursive investigation: question=%s, budget=%d",
+                            resolved[:8],
+                            d.payload.budget,
                         )
                     else:
                         sequences.append([d])
@@ -533,74 +538,84 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                         )
 
                 tasks: list[asyncio.Task] = []  # type: ignore[type-arg]
-                call_id = turn_result.get('call_id')
-                trace: CallTrace | None = turn_result.get('trace')
+                call_id = turn_result.get("call_id")
+                trace: CallTrace | None = turn_result.get("trace")
                 if sequences:
-                    tasks.append(asyncio.create_task(
-                        self._run_sequences(
-                            sequences, root_question_id, call_id,
-                        ),
-                        name='global_leaf_dispatches',
-                    ))
+                    tasks.append(
+                        asyncio.create_task(
+                            self._run_sequences(
+                                sequences,
+                                root_question_id,
+                                call_id,
+                            ),
+                            name="global_leaf_dispatches",
+                        )
+                    )
                     self._global_consumed += len(sequences)
 
                 if children and trace:
                     child_qids = [qid for _, qid in children]
                     child_pages = await self.db.get_pages_by_ids(child_qids)
                     recurse_base = len(sequences)
-                    for ci, (child, child_qid) in enumerate(children):
+                    for ci, (_child, child_qid) in enumerate(children):
                         child_page = child_pages.get(child_qid)
-                        await trace.record(DispatchExecutedEvent(
-                            index=recurse_base + ci,
-                            child_call_type='recurse',
-                            question_id=child_qid,
-                            question_headline=(
-                                child_page.headline if child_page else ''
-                            ),
-                        ))
+                        await trace.record(
+                            DispatchExecutedEvent(
+                                index=recurse_base + ci,
+                                child_call_type="recurse",
+                                question_id=child_qid,
+                                question_headline=(child_page.headline if child_page else ""),
+                            )
+                        )
 
                 for child, child_qid in children:
-                    tasks.append(asyncio.create_task(
-                        child.run(child_qid),
-                        name=f'global_recurse_{child_qid[:8]}',
-                    ))
+                    tasks.append(
+                        asyncio.create_task(
+                            child.run(child_qid),
+                            name=f"global_recurse_{child_qid[:8]}",
+                        )
+                    )
                 if tasks:
                     results = await asyncio.gather(
-                        *tasks, return_exceptions=True,
+                        *tasks,
+                        return_exceptions=True,
                     )
                     for r in results:
                         if isinstance(r, Exception):
                             log.error(
-                                'Global dispatch task failed: %s',
-                                r, exc_info=r,
+                                "Global dispatch task failed: %s",
+                                r,
+                                exc_info=r,
                             )
 
                 dispatched_question_ids.discard(root_question_id)
                 if dispatched_question_ids:
                     await self._assess_stale_questions(
                         dispatched_question_ids,
-                        parent_call_id=turn_result.get('call_id'),
+                        parent_call_id=turn_result.get("call_id"),
                     )
 
-            researched_ids = turn_result.get('researched_question_ids', [])
+            researched_ids = turn_result.get("researched_question_ids", [])
             if researched_ids:
                 reassessed = await self._propagate_updates(
-                    root_question_id, researched_ids,
-                    parent_call_id=turn_result.get('call_id'),
+                    root_question_id,
+                    researched_ids,
+                    parent_call_id=turn_result.get("call_id"),
                 )
             else:
                 reassessed = 0
 
-            self._action_history.append({
-                'created_questions': turn_result.get('created_questions', []),
-                'dispatches_count': len(turn_result.get('dispatches', [])),
-                'reassessed_count': reassessed,
-            })
+            self._action_history.append(
+                {
+                    "created_questions": turn_result.get("created_questions", []),
+                    "dispatches_count": len(turn_result.get("dispatches", [])),
+                    "reassessed_count": reassessed,
+                }
+            )
 
             log.info(
-                'Global turn complete: dispatches=%d, reassessed=%d, '
-                'consumed=%d/%d',
-                len(turn_result.get('dispatches', [])),
+                "Global turn complete: dispatches=%d, reassessed=%d, consumed=%d/%d",
+                len(turn_result.get("dispatches", [])),
                 reassessed,
                 self._global_consumed,
                 self._global_cap,
@@ -609,7 +624,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
     async def _wait_for_trigger(self) -> None:
         """Wait until enough new questions have been created or local task is done."""
         if self._local_task is None:
-            log.info('Global trigger: no local task, proceeding immediately')
+            log.info("Global trigger: no local task, proceeding immediately")
             return
 
         settings = get_settings()
@@ -622,13 +637,14 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
 
             if len(new_questions) >= threshold:
                 log.info(
-                    'Global trigger: %d new questions (threshold=%d)',
-                    len(new_questions), threshold,
+                    "Global trigger: %d new questions (threshold=%d)",
+                    len(new_questions),
+                    threshold,
                 )
                 return
 
             if self._local_task.done():
-                log.info('Global trigger: local task completed')
+                log.info("Global trigger: local task completed")
                 return
 
             await asyncio.sleep(2)
@@ -659,72 +675,100 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         # Single MoveState shared across phases: tools are bound to it once so
         # the tool list stays identical for prompt-cache stability.
         state = MoveState(p_call, self.db)
-        system_prompt = build_system_prompt('global_prio')
+        system_prompt = build_system_prompt("global_prio")
         all_tools = await self._build_all_tools(
-            root_question_id, trace, state,
+            root_question_id,
+            trace,
+            state,
         )
 
         try:
             await self._explore_phase(
-                root_question_id, p_call, trace, state,
-                system_prompt, all_tools,
+                root_question_id,
+                p_call,
+                trace,
+                state,
+                system_prompt,
+                all_tools,
             )
-            await trace.record(GlobalPhaseCompletedEvent(
-                phase='explore', outcome='Exploration complete',
-            ))
+            await trace.record(
+                GlobalPhaseCompletedEvent(
+                    phase="explore",
+                    outcome="Exploration complete",
+                )
+            )
 
             decision = await self._decide_phase(
-                p_call, trace, state, system_prompt, all_tools,
+                p_call,
+                trace,
+                state,
+                system_prompt,
+                all_tools,
             )
-            await trace.record(GlobalPhaseCompletedEvent(
-                phase='decide',
-                outcome=(
-                    f"{'YES' if decision.should_create else 'NO'}: "
-                    f"{decision.reasoning}"
-                ),
-            ))
+            await trace.record(
+                GlobalPhaseCompletedEvent(
+                    phase="decide",
+                    outcome=(f"{'YES' if decision.should_create else 'NO'}: {decision.reasoning}"),
+                )
+            )
 
             if not decision.should_create:
                 await mark_call_completed(
-                    p_call, self.db, 'No cross-cutting opportunity found',
+                    p_call,
+                    self.db,
+                    "No cross-cutting opportunity found",
                 )
                 self._turn_count += 1
                 return {
-                    'dispatches': [],
-                    'call_id': p_call.id,
-                    'trace': trace,
-                    'created_questions': [],
-                    'researched_question_ids': [],
+                    "dispatches": [],
+                    "call_id": p_call.id,
+                    "trace": trace,
+                    "created_questions": [],
+                    "researched_question_ids": [],
                 }
 
             create_result = await self._create_phase(
-                p_call, trace, state, system_prompt, all_tools,
+                p_call,
+                trace,
+                state,
+                system_prompt,
+                all_tools,
             )
-            created_questions = create_result.get('created_questions', [])
-            await trace.record(GlobalPhaseCompletedEvent(
-                phase='create',
-                outcome=f"{len(created_questions)} questions created",
-            ))
+            created_questions = create_result.get("created_questions", [])
+            await trace.record(
+                GlobalPhaseCompletedEvent(
+                    phase="create",
+                    outcome=f"{len(created_questions)} questions created",
+                )
+            )
 
             dispatches: list[Dispatch] = []
             if created_questions:
                 dispatches = await self._dispatch_phase(
-                    p_call, trace, state, system_prompt, all_tools,
+                    p_call,
+                    trace,
+                    state,
+                    system_prompt,
+                    all_tools,
                     created_questions,
                 )
-                await trace.record(DispatchesPlannedEvent(
-                    dispatches=[
-                        DispatchTraceItem(
-                            call_type=d.call_type.value,
-                            **d.payload.model_dump(exclude_defaults=True),
-                        )
-                        for d in dispatches
-                    ],
-                ))
-                await trace.record(GlobalPhaseCompletedEvent(
-                    phase='dispatch',
-                    outcome=f"{len(dispatches)} dispatches queued",
-                ))
+                await trace.record(
+                    DispatchesPlannedEvent(
+                        dispatches=[
+                            DispatchTraceItem(
+                                call_type=d.call_type.value,
+                                **d.payload.model_dump(exclude_defaults=True),
+                            )
+                            for d in dispatches
+                        ],
+                    )
+                )
+                await trace.record(
+                    GlobalPhaseCompletedEvent(
+                        phase="dispatch",
+                        outcome=f"{len(dispatches)} dispatches queued",
+                    )
+                )
 
             summary = (
                 "Global turn complete. "
@@ -734,25 +778,23 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             await mark_call_completed(p_call, self.db, summary)
             self._turn_count += 1
             return {
-                'dispatches': dispatches,
-                'created_questions': created_questions,
-                'researched_question_ids': [
-                    q['page_id'] for q in created_questions
-                ],
-                'call_id': p_call.id,
-                'trace': trace,
+                "dispatches": dispatches,
+                "created_questions": created_questions,
+                "researched_question_ids": [q["page_id"] for q in created_questions],
+                "call_id": p_call.id,
+                "trace": trace,
             }
         except Exception:
-            log.exception('Global turn failed')
+            log.exception("Global turn failed")
             await self.db.update_call_status(p_call.id, CallStatus.FAILED)
-            await trace.record(ErrorEvent(message='Global turn failed'))
+            await trace.record(ErrorEvent(message="Global turn failed"))
             self._turn_count += 1
             return {
-                'dispatches': [],
-                'call_id': p_call.id,
-                'trace': trace,
-                'created_questions': [],
-                'researched_question_ids': [],
+                "dispatches": [],
+                "call_id": p_call.id,
+                "trace": trace,
+                "created_questions": [],
+                "researched_question_ids": [],
             }
 
     async def _build_all_tools(
@@ -768,22 +810,21 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         so varying tools between phases would bust the cache.
         """
         global_impacts = await compute_global_impacts(
-            root_question_id, self.db,
+            root_question_id,
+            self.db,
         )
         self._global_impacts = global_impacts
 
         explore_tools = [
             make_explore_subgraph_tool(
-                self.db, trace,
+                self.db,
+                trace,
                 include_impact=True,
                 global_impact=global_impacts or None,
                 questions_only=True,
             ),
             make_load_page_tool(self.db, trace, default_detail="content"),
         ]
-
-        allowed_fc_modes = get_settings().allowed_find_considerations_modes
-        state._dispatch_validators.append(make_mode_validator(allowed_fc_modes))
 
         create_tools: list[Tool] = []
         for mt in [MoveType.CREATE_QUESTION, MoveType.LINK_CHILD_QUESTION]:
@@ -795,17 +836,16 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                 state,
                 scope_question_id=root_question_id,
             )
-            if ct == CallType.FIND_CONSIDERATIONS:
-                tool.input_schema = filter_mode_schema(
-                    tool.input_schema, allowed_fc_modes,
-                )
             create_tools.append(tool)
 
         remaining_global = self._global_cap - self._global_consumed
         if remaining_global >= MIN_TWOPHASE_BUDGET:
-            create_tools.append(RECURSE_DISPATCH_DEF.bind(
-                state, scope_question_id=root_question_id,
-            ))
+            create_tools.append(
+                RECURSE_DISPATCH_DEF.bind(
+                    state,
+                    scope_question_id=root_question_id,
+                )
+            )
 
         return explore_tools + create_tools
 
@@ -820,14 +860,16 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
     ) -> None:
         """Phase 1: agent loop exploring the research graph with tools."""
         settings = get_settings()
-        global_impacts = getattr(self, '_global_impacts', None)
+        global_impacts = getattr(self, "_global_impacts", None)
 
         if self._turn_count == 0:
             root_page = await self.db.get_page(root_question_id)
             root_detail = ""
             if root_page:
                 root_detail = await format_page(
-                    root_page, PageDetail.CONTENT, db=self.db,
+                    root_page,
+                    PageDetail.CONTENT,
+                    db=self.db,
                 )
 
             subgraph = await render_question_subgraph(
@@ -868,19 +910,21 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             self._messages = result.messages
         else:
             local_hint = await self._build_local_activity_hint()
-            self._messages.append({
-                "role": "user",
-                "content": (
-                    "**You are in Phase 1: Explore.** Use only "
-                    "`explore_question_subgraph` and `load_page` tools. "
-                    "Do NOT use creation or dispatch tools in this "
-                    "phase.\n\n"
-                    "## New Questions (from local prioritiser)\n\n"
-                    f"{local_hint}\n\n"
-                    "Continue exploring the graph for cross-cutting "
-                    "opportunities. End with a summary of what you found."
-                ),
-            })
+            self._messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "**You are in Phase 1: Explore.** Use only "
+                        "`explore_question_subgraph` and `load_page` tools. "
+                        "Do NOT use creation or dispatch tools in this "
+                        "phase.\n\n"
+                        "## New Questions (from local prioritiser)\n\n"
+                        f"{local_hint}\n\n"
+                        "Continue exploring the graph for cross-cutting "
+                        "opportunities. End with a summary of what you found."
+                    ),
+                }
+            )
 
             result = await run_agent_loop(
                 system_prompt,
@@ -909,16 +953,18 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         Tools are passed for cache stability but the model is told not to
         call any.
         """
-        self._messages.append({
-            "role": "user",
-            "content": (
-                "**You are now in Phase 2: Decide.** Do NOT call any "
-                "tools.\n\n"
-                "Based on your exploration above, are there cross-cutting "
-                "questions that, if answered, would substantially advance "
-                "2+ high-impact questions from different branches?"
-            ),
-        })
+        self._messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "**You are now in Phase 2: Decide.** Do NOT call any "
+                    "tools.\n\n"
+                    "Based on your exploration above, are there cross-cutting "
+                    "questions that, if answered, would substantially advance "
+                    "2+ high-impact questions from different branches?"
+                ),
+            }
+        )
 
         tool_defs, _ = prepare_tools(tools)
         meta = LLMExchangeMetadata(
@@ -936,10 +982,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         )
 
         if result.response_text:
-            self._messages.append({
-                "role": "assistant",
-                "content": result.response_text,
-            })
+            self._messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.response_text,
+                }
+            )
 
         decision = result.parsed or GlobalDecideResult(
             should_create=False,
@@ -948,8 +996,9 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             parent_question_ids=[],
         )
         log.info(
-            'Global decide phase: should_create=%s, reasoning_len=%d',
-            decision.should_create, len(decision.reasoning),
+            "Global decide phase: should_create=%s, reasoning_len=%d",
+            decision.should_create,
+            len(decision.reasoning),
         )
         return decision
 
@@ -966,14 +1015,16 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         Continues the message stack from decide so the model has full
         context from exploration and decision.
         """
-        self._messages.append({
-            "role": "user",
-            "content": (
-                "**You are now in Phase 3: Create.** Use "
-                "`create_question` to create the cross-cutting question "
-                "with links to the relevant parent questions."
-            ),
-        })
+        self._messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "**You are now in Phase 3: Create.** Use "
+                    "`create_question` to create the cross-cutting question "
+                    "with links to the relevant parent questions."
+                ),
+            }
+        )
 
         result = await run_single_call(
             system_prompt,
@@ -996,16 +1047,19 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             page = pages_by_id.get(pid)
             if page:
                 parent_links = [
-                    l for l in links_by_target.get(pid, [])
+                    l
+                    for l in links_by_target.get(pid, [])
                     if l.link_type == LinkType.CHILD_QUESTION
                 ]
-                created_questions.append({
-                    'headline': page.headline,
-                    'parent_count': len(parent_links),
-                    'page_id': pid,
-                })
+                created_questions.append(
+                    {
+                        "headline": page.headline,
+                        "parent_count": len(parent_links),
+                        "page_id": pid,
+                    }
+                )
 
-        return {'created_questions': created_questions}
+        return {"created_questions": created_questions}
 
     async def _dispatch_phase(
         self,
@@ -1025,14 +1079,9 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         remaining_global = self._global_cap - self._global_consumed
 
         async def dispatch_one(question: dict) -> None:
-            qid = question['page_id']
-            headline = question['headline']
+            qid = question["page_id"]
+            headline = question["headline"]
             dispatch_state = MoveState(call, self.db)
-
-            allowed_fc_modes = get_settings().allowed_find_considerations_modes
-            dispatch_state._dispatch_validators.append(
-                make_mode_validator(allowed_fc_modes),
-            )
 
             user_msg = (
                 "**You are now in Phase 4: Dispatch.** "
@@ -1046,7 +1095,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                 "prompt for budget allocation rules."
             )
 
-            result = await run_single_call(
+            await run_single_call(
                 system_prompt,
                 user_message=user_msg,
                 tools=tools,
@@ -1058,9 +1107,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             )
             state.dispatches.extend(dispatch_state.dispatches)
 
-        await asyncio.gather(*(
-            dispatch_one(q) for q in created_questions
-        ))
+        await asyncio.gather(*(dispatch_one(q) for q in created_questions))
 
         return list(state.dispatches)
 
@@ -1079,7 +1126,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             self._last_trigger_at = datetime.now(UTC)
 
             if not new_questions:
-                return '(no new questions since last turn)'
+                return "(no new questions since last turn)"
 
             new_ids = [q.id for q in new_questions]
             links_by_child = await self.db.get_links_to_many(new_ids)
@@ -1092,11 +1139,12 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             parent_pages = await self.db.get_pages_by_ids(list(parent_ids))
 
             lines: list[str] = [
-                f'{len(new_questions)} new questions since last turn:',
+                f"{len(new_questions)} new questions since last turn:",
             ]
             for q in new_questions:
                 parent_links = [
-                    l for l in links_by_child.get(q.id, [])
+                    l
+                    for l in links_by_child.get(q.id, [])
                     if l.link_type == LinkType.CHILD_QUESTION
                 ]
                 if parent_links:
@@ -1105,22 +1153,18 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                         pp = parent_pages.get(pl.from_page_id)
                         label = (
                             f'"{pp.headline[:50]}" [{pl.from_page_id[:8]}]'
-                            if pp else f'[{pl.from_page_id[:8]}]'
+                            if pp
+                            else f"[{pl.from_page_id[:8]}]"
                         )
                         parent_labels.append(label)
-                    parents_str = ', '.join(parent_labels)
-                    lines.append(
-                        f'- [{q.id[:8]}] "{q.headline}" '
-                        f'(child of {parents_str})'
-                    )
+                    parents_str = ", ".join(parent_labels)
+                    lines.append(f'- [{q.id[:8]}] "{q.headline}" (child of {parents_str})')
                 else:
-                    lines.append(
-                        f'- [{q.id[:8]}] "{q.headline}" (root-level)'
-                    )
-            return '\n'.join(lines)
+                    lines.append(f'- [{q.id[:8]}] "{q.headline}" (root-level)')
+            return "\n".join(lines)
         except Exception:
-            log.debug('Could not build activity hint', exc_info=True)
-            return '(no activity data available)'
+            log.debug("Could not build activity hint", exc_info=True)
+            return "(no activity data available)"
 
     async def _assess_stale_questions(
         self,
@@ -1139,12 +1183,14 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             return 0
 
         assessed = 0
+        view = get_active_view()
         for qid in stale_ids:
             if self._global_consumed >= self._global_cap:
                 break
             try:
-                call_id = await assess_question(
-                    qid, self.db,
+                call_id = await view.refresh(
+                    qid,
+                    self.db,
                     parent_call_id=parent_call_id,
                     broadcaster=self.broadcaster,
                     force=True,
@@ -1153,13 +1199,14 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                     self._global_consumed += 1
                     assessed += 1
                     log.info(
-                        'Global post-dispatch assess: question=%s',
+                        "Global post-dispatch refresh: question=%s",
                         qid[:8],
                     )
             except Exception:
                 log.warning(
-                    'Global post-dispatch assess failed: %s',
-                    qid[:8], exc_info=True,
+                    "Global post-dispatch refresh failed: %s",
+                    qid[:8],
+                    exc_info=True,
                 )
         return assessed
 
@@ -1184,13 +1231,16 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
         Returns the number of re-assess calls made.
         """
         graph = await self._build_propagation_graph(
-            root_question_id, researched_question_ids,
+            root_question_id,
+            researched_question_ids,
         )
         if not graph:
             return 0
 
         paths = _find_propagation_paths(
-            graph, researched_question_ids, root_question_id,
+            graph,
+            researched_question_ids,
+            root_question_id,
             k_per_source=3,
         )
         if not paths:
@@ -1203,12 +1253,14 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             return 0
 
         reassessed = 0
+        view = get_active_view()
         for qid in ordered_nodes:
             if self._global_consumed >= self._global_cap:
                 break
             try:
-                call_id = await assess_question(
-                    qid, self.db,
+                call_id = await view.refresh(
+                    qid,
+                    self.db,
                     parent_call_id=parent_call_id,
                     broadcaster=self.broadcaster,
                     force=True,
@@ -1217,13 +1269,14 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
                     self._global_consumed += 1
                     reassessed += 1
                     log.info(
-                        'Global propagation: re-assessed question %s',
+                        "Global propagation: refreshed question %s",
                         qid[:8],
                     )
             except Exception:
                 log.warning(
-                    'Global propagation: failed to re-assess %s',
-                    qid[:8], exc_info=True,
+                    "Global propagation: failed to refresh %s",
+                    qid[:8],
+                    exc_info=True,
                 )
 
         return reassessed

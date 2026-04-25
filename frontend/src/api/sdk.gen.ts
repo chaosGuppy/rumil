@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetAbRunTraceApiAbRunsAbRunIdTraceGetData, GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors, GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListAbEvalsApiAbEvalsGetData, ListAbEvalsApiAbEvalsGetErrors, ListAbEvalsApiAbEvalsGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses } from './types.gen';
+import type { GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetMeApiAuthMeGetData, GetMeApiAuthMeGetErrors, GetMeApiAuthMeGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetErrors, GetRealtimeConfigApiRealtimeConfigGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListAbEvalsApiAbEvalsGetData, ListAbEvalsApiAbEvalsGetErrors, ListAbEvalsApiAbEvalsGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -22,6 +22,11 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  * Healthz
  */
 export const healthzHealthzGet = <ThrowOnError extends boolean = false>(options?: Options<HealthzHealthzGetData, ThrowOnError>) => (options?.client ?? client).get<HealthzHealthzGetResponses, unknown, ThrowOnError>({ url: '/healthz', ...options });
+
+/**
+ * Get Me
+ */
+export const getMeApiAuthMeGet = <ThrowOnError extends boolean = false>(options?: Options<GetMeApiAuthMeGetData, ThrowOnError>) => (options?.client ?? client).get<GetMeApiAuthMeGetResponses, GetMeApiAuthMeGetErrors, ThrowOnError>({ url: '/api/auth/me', ...options });
 
 /**
  * List Projects
@@ -92,8 +97,9 @@ export const getPageCountsApiPagesPageIdCountsGet = <ThrowOnError extends boolea
  *
  * Aggregate stats over all pages/links/calls in a project.
  *
- * v1 is baseline-only: rows with staged=true or is_superseded=true are excluded,
- * and staged_run_id is not accepted.
+ * Baseline rows are always included; when `staged_run_id` is provided as a
+ * query param, rows from that staged run are also included and its mutation
+ * events (supersede_page, delete_link) are overlayed.
  */
 export const getProjectStatsApiProjectsProjectIdStatsGet = <ThrowOnError extends boolean = false>(options: Options<GetProjectStatsApiProjectsProjectIdStatsGetData, ThrowOnError>) => (options.client ?? client).get<GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetErrors, ThrowOnError>({ url: '/api/projects/{project_id}/stats', ...options });
 
@@ -102,7 +108,8 @@ export const getProjectStatsApiProjectsProjectIdStatsGet = <ThrowOnError extends
  *
  * Aggregate stats over the 2-hop undirected neighborhood around a question.
  *
- * Returns 404 if the target page is not a question. v1 is baseline-only.
+ * Returns 404 if the target page is not a question. Staged-run visibility
+ * matches get_project_stats.
  */
 export const getQuestionStatsApiPagesPageIdStatsGet = <ThrowOnError extends boolean = false>(options: Options<GetQuestionStatsApiPagesPageIdStatsGetData, ThrowOnError>) => (options.client ?? client).get<GetQuestionStatsApiPagesPageIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetErrors, ThrowOnError>({ url: '/api/pages/{page_id}/stats', ...options });
 
@@ -137,11 +144,6 @@ export const getRunTraceTreeApiRunsRunIdTraceTreeGet = <ThrowOnError extends boo
 export const getCallEventsApiCallsCallIdEventsGet = <ThrowOnError extends boolean = false>(options: Options<GetCallEventsApiCallsCallIdEventsGetData, ThrowOnError>) => (options.client ?? client).get<GetCallEventsApiCallsCallIdEventsGetResponses, GetCallEventsApiCallsCallIdEventsGetErrors, ThrowOnError>({ url: '/api/calls/{call_id}/events', ...options });
 
 /**
- * Get Ab Run Trace
- */
-export const getAbRunTraceApiAbRunsAbRunIdTraceGet = <ThrowOnError extends boolean = false>(options: Options<GetAbRunTraceApiAbRunsAbRunIdTraceGetData, ThrowOnError>) => (options.client ?? client).get<GetAbRunTraceApiAbRunsAbRunIdTraceGetResponses, GetAbRunTraceApiAbRunsAbRunIdTraceGetErrors, ThrowOnError>({ url: '/api/ab-runs/{ab_run_id}/trace', ...options });
-
-/**
  * List Ab Evals
  */
 export const listAbEvalsApiAbEvalsGet = <ThrowOnError extends boolean = false>(options?: Options<ListAbEvalsApiAbEvalsGetData, ThrowOnError>) => (options?.client ?? client).get<ListAbEvalsApiAbEvalsGetResponses, ListAbEvalsApiAbEvalsGetErrors, ThrowOnError>({ url: '/api/ab-evals', ...options });
@@ -164,9 +166,14 @@ export const getLlmExchangeApiLlmExchangesExchangeIdGet = <ThrowOnError extends 
 /**
  * Get Realtime Config
  */
-export const getRealtimeConfigApiRealtimeConfigGet = <ThrowOnError extends boolean = false>(options?: Options<GetRealtimeConfigApiRealtimeConfigGetData, ThrowOnError>) => (options?.client ?? client).get<GetRealtimeConfigApiRealtimeConfigGetResponses, unknown, ThrowOnError>({ url: '/api/realtime/config', ...options });
+export const getRealtimeConfigApiRealtimeConfigGet = <ThrowOnError extends boolean = false>(options?: Options<GetRealtimeConfigApiRealtimeConfigGetData, ThrowOnError>) => (options?.client ?? client).get<GetRealtimeConfigApiRealtimeConfigGetResponses, GetRealtimeConfigApiRealtimeConfigGetErrors, ThrowOnError>({ url: '/api/realtime/config', ...options });
 
 /**
  * Get Page Run
  */
 export const getPageRunApiPagesPageIdRunGet = <ThrowOnError extends boolean = false>(options: Options<GetPageRunApiPagesPageIdRunGetData, ThrowOnError>) => (options.client ?? client).get<GetPageRunApiPagesPageIdRunGetResponses, GetPageRunApiPagesPageIdRunGetErrors, ThrowOnError>({ url: '/api/pages/{page_id}/run', ...options });
+
+/**
+ * Get Page Load Stats
+ */
+export const getPageLoadStatsApiRunsRunIdPageLoadStatsGet = <ThrowOnError extends boolean = false>(options: Options<GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, ThrowOnError>) => (options.client ?? client).get<GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, ThrowOnError>({ url: '/api/runs/{run_id}/page-load-stats', ...options });

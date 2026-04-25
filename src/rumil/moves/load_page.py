@@ -23,8 +23,7 @@ class LoadPagePayload(BaseModel):
     detail: str = Field(
         default="content",
         description=(
-            "Level of detail: 'content' (full text, default) "
-            "or 'abstract' (short summary)"
+            "Level of detail: 'content' (full text, default) or 'abstract' (short summary)"
         ),
     )
 
@@ -47,7 +46,15 @@ async def execute(payload: LoadPagePayload, call: Call, db: DB) -> MoveResult:
         detail.value,
         len(page.content),
     )
-    return MoveResult(await format_page(page, detail, db=db))
+    return MoveResult(
+        await format_page(
+            page,
+            detail,
+            db=db,
+            track=True,
+            track_tags={"source": "load_page_move"},
+        )
+    )
 
 
 MOVE = MoveDef(

@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { PageDetailOut, QuestionStatsOut, Project } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import StagedBanner from "@/components/staged-banner";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
 import { SubgraphView } from "@/components/subgraph-view";
+import { useDocumentTitle } from "@/lib/use-document-title";
+import { truncateHeadline } from "@/lib/page-titles";
+import { withStagedRun } from "@/lib/staged-run-href";
 
 type LoadState =
   | { kind: "loading" }
@@ -25,17 +29,26 @@ type LoadState =
 export default function QuestionStatsPage() {
   const params = useParams<{ pageId: string }>();
   const pageId = params.pageId;
+  const searchParams = useSearchParams();
+  const stagedRunId = searchParams.get("staged_run_id");
 
   const [projectName, setProjectName] = useState<string>();
   const [projectId, setProjectId] = useState<string>();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+
+  const titleHeadline = state.kind === "ready" ? state.headline : null;
+  const titleLabel = titleHeadline
+    ? `question "${truncateHeadline(titleHeadline, 45)}" · stats`
+    : null;
+  const wsSuffix = projectName ? ` — ${projectName}` : "";
+  useDocumentTitle(titleLabel ? `${titleLabel}${wsSuffix}` : null);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
         const detailRes = await fetch(
-          `${API_BASE}/api/pages/${pageId}/detail`,
+          withStagedRun(`${API_BASE}/api/pages/${pageId}/detail`, stagedRunId),
           { cache: "no-store" },
         );
         if (detailRes.status === 404) {
@@ -57,7 +70,7 @@ export default function QuestionStatsPage() {
         }
 
         const statsRes = await fetch(
-          `${API_BASE}/api/pages/${pageId}/stats`,
+          withStagedRun(`${API_BASE}/api/pages/${pageId}/stats`, stagedRunId),
           { cache: "no-store" },
         );
         if (!statsRes.ok) throw new Error(`stats ${statsRes.status}`);
@@ -79,7 +92,7 @@ export default function QuestionStatsPage() {
     return () => {
       cancelled = true;
     };
-  }, [pageId]);
+  }, [pageId, stagedRunId]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -214,15 +227,24 @@ export default function QuestionStatsPage() {
         <WorkspaceIndicator projectId={projectId} projectName={projectName} />
       ) : null}
 
+      {stagedRunId && (
+        <StagedBanner
+          runId={stagedRunId}
+          pageUrl={`/pages/${pageId}/stats`}
+        />
+      )}
+
       <div className="stats-header">
         <div>
           <h1>Statistics</h1>
           <div className="subtitle">question neighborhood · 2 hops</div>
         </div>
         <div className="stats-nav">
-          <Link href={`/pages/${pageId}`}>Page</Link>
+          <Link href={withStagedRun(`/pages/${pageId}`, stagedRunId)}>Page</Link>
           {projectId && (
-            <Link href={`/projects/${projectId}/stats`}>Project stats</Link>
+            <Link href={withStagedRun(`/projects/${projectId}/stats`, stagedRunId)}>
+              Project stats
+            </Link>
           )}
         </div>
       </div>
@@ -251,7 +273,11 @@ export default function QuestionStatsPage() {
         <div className="stats-error">Failed to load stats: {state.message}</div>
       )}
       {state.kind === "ready" && (
-        <StatsView data={state.data} leadingPanel={leadingPanel} />
+        <StatsView
+          data={state.data}
+          leadingPanel={leadingPanel}
+          anchorId={pageId}
+        />
       )}
     </main>
   );

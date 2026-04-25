@@ -26,7 +26,6 @@ from rumil.models import (
     CallType,
     CreateViewDispatchPayload,
     Dispatch,
-    FindConsiderationsMode,
     ScoutAnalogiesDispatchPayload,
     ScoutCCruxesDispatchPayload,
     ScoutCHowFalseDispatchPayload,
@@ -83,7 +82,6 @@ class ScriptedOrchestrator(BaseOrchestrator):
 
 
 def _scout_dispatch(question_id: str, **kwargs) -> Dispatch:
-    kwargs.setdefault("mode", FindConsiderationsMode.ALTERNATE)
     return Dispatch(
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(question_id=question_id, **kwargs),
@@ -169,10 +167,7 @@ async def test_empty_dispatches_exits_loop(tmp_db, question_page):
     await orch.run(question_page.id)
 
     rows = (
-        await tmp_db.client.table("calls")
-        .select("call_type")
-        .eq("run_id", tmp_db.run_id)
-        .execute()
+        await tmp_db.client.table("calls").select("call_type").eq("run_id", tmp_db.run_id).execute()
     )
     call_types = {r["call_type"] for r in rows.data}
     assert "find_considerations" not in call_types
@@ -249,12 +244,7 @@ async def test_dispatch_executed_events_recorded(tmp_db, question_page):
     )
     await orch.run(question_page.id)
 
-    rows = (
-        await tmp_db.client.table("calls")
-        .select("trace_json")
-        .eq("id", p_call.id)
-        .execute()
-    )
+    rows = await tmp_db.client.table("calls").select("trace_json").eq("id", p_call.id).execute()
     trace_json = rows.data[0]["trace_json"]
     dispatch_events = [e for e in trace_json if e.get("event") == "dispatch_executed"]
     assert len(dispatch_events) >= 1
@@ -303,12 +293,7 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
 
     await orch.run(question_page.id)
 
-    rows = (
-        await tmp_db.client.table("calls")
-        .select("trace_json")
-        .eq("id", p_call.id)
-        .execute()
-    )
+    rows = await tmp_db.client.table("calls").select("trace_json").eq("id", p_call.id).execute()
     trace_json = rows.data[0]["trace_json"]
     error_events = [e for e in trace_json if e.get("event") == "error"]
     assert len(error_events) >= 1
@@ -398,11 +383,11 @@ def mocked_helpers(mocker):
             return_value="child-web-id",
         ),
         "create_view": mocker.patch(
-            "rumil.orchestrators.dispatch_handlers.create_view_for_question",
+            "rumil.views.sectioned.create_view_for_question",
             return_value="child-view-id",
         ),
         "update_view": mocker.patch(
-            "rumil.orchestrators.dispatch_handlers.update_view_for_question",
+            "rumil.views.sectioned.update_view_for_question",
             return_value="child-update-view-id",
         ),
         "simple": mocker.patch.object(
@@ -431,7 +416,6 @@ async def test_execute_dispatch_find_considerations_forwards_fields(
             question_id=question_page.id,
             reason="test-reason",
             context_page_ids=["ctx-1"],
-            mode=FindConsiderationsMode.CONCRETE,
             max_rounds=3,
             fruit_threshold=2,
         ),
@@ -454,7 +438,6 @@ async def test_execute_dispatch_find_considerations_forwards_fields(
     assert mocked_helpers["find_considerations"].call_args.args[0] == question_page.id
     assert kwargs["max_rounds"] == 3
     assert kwargs["fruit_threshold"] == 2
-    assert kwargs["mode"] == FindConsiderationsMode.CONCRETE
     assert kwargs["parent_call_id"] == "parent-1"
     assert kwargs["context_page_ids"] == ["ctx-1"]
     assert kwargs["force"] is True
@@ -487,7 +470,6 @@ async def test_execute_dispatch_find_considerations_returns_none_when_no_child_i
         call_type=CallType.FIND_CONSIDERATIONS,
         payload=ScoutDispatchPayload(
             question_id=question_page.id,
-            mode=FindConsiderationsMode.ALTERNATE,
             reason="no-children",
         ),
     )

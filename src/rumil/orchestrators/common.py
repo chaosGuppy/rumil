@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.ingest import IngestCall
-from rumil.calls.web_research import WebResearchCall
 from rumil.calls.summarize import summarize_question
+from rumil.calls.web_research import WebResearchCall
 from rumil.constants import (
     DEFAULT_FRUIT_THRESHOLD,
     DEFAULT_INGEST_FRUIT_THRESHOLD,
@@ -33,7 +33,6 @@ from rumil.embeddings import embed_and_store_page
 from rumil.models import (
     CallType,
     Dispatch,
-    FindConsiderationsMode,
     LinkType,
     MoveType,
     Page,
@@ -43,7 +42,6 @@ from rumil.models import (
 )
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
-
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +81,24 @@ class SubquestionScore(BaseModel):
     reasoning: str = Field(description="Brief explanation of scores")
 
 
+class ExperimentalSubquestionScore(BaseModel):
+    question_id: str = Field(description="Full UUID of the subquestion")
+    headline: str = Field(description="Headline of the subquestion")
+    impact_curve: str = Field(
+        description=(
+            "Natural-language description of the impact-vs-effort curve for "
+            "further investigation of this subquestion, starting from its "
+            "current state (what has already been done, how robust the latest "
+            "judgement is). Describe what additional research effort at "
+            "different levels (say, a few budget units vs. a substantial "
+            "recursion) would yield for the parent question, and how impact "
+            "scales: where are the diminishing returns, plateaus, thresholds, "
+            "or unbounded gains? If the subquestion is already at the point "
+            "of diminishing returns, say so explicitly."
+        )
+    )
+
+
 class SubquestionScoringResult(BaseModel):
     scores: list[SubquestionScore]
 
@@ -95,8 +111,7 @@ class ClaimScore(BaseModel):
     )
     broader_impact: int = Field(
         description=(
-            "0-10: how strategically important it is in general to have a "
-            "good answer on this claim"
+            "0-10: how strategically important it is in general to have a good answer on this claim"
         )
     )
     fruit: int = Field(description="0-10: how much useful investigation remains")
@@ -148,18 +163,13 @@ def _build_item_block(
     judgements = judgements_by_id.get(item.id, [])
     if judgements:
         latest_j = max(judgements, key=lambda j: j.created_at)
-        parts.append(
-            f"\nLatest judgement (credence {latest_j.credence}/9, "
-            f"robustness {latest_j.robustness}/5):"
-        )
+        parts.append(f"\nLatest judgement (robustness {latest_j.robustness}/5):")
         if latest_j.abstract:
             parts.append(latest_j.abstract)
         else:
             parts.append(latest_j.headline)
         if latest_j.fruit_remaining is not None:
-            parts.append(
-                f"\nPrior fruit_remaining estimate: {latest_j.fruit_remaining}/10"
-            )
+            parts.append(f"\nPrior fruit_remaining estimate: {latest_j.fruit_remaining}/10")
     else:
         parts.append("\nNo prior assessment.")
 
@@ -223,7 +233,8 @@ async def score_items_sequentially(
         child_page_ids: list[str] = []
         for qid in question_ids:
             child_page_ids.extend(
-                l.to_page_id for l in links_by_parent.get(qid, [])
+                l.to_page_id
+                for l in links_by_parent.get(qid, [])
                 if l.link_type == LinkType.CHILD_QUESTION
             )
         if child_page_ids:
@@ -259,29 +270,35 @@ async def score_items_sequentially(
         parent_parts.append(parent_page.abstract)
         parent_parts.append("")
     if parent_judgement:
-        parent_parts.append(
-            f"Latest judgement (credence {parent_judgement.credence}/9, "
-            f"robustness {parent_judgement.robustness}/5):"
-        )
+        parent_parts.append(f"Latest judgement (robustness {parent_judgement.robustness}/5):")
         if parent_judgement.abstract:
             parent_parts.append(parent_judgement.abstract)
         else:
             parent_parts.append(parent_judgement.headline)
         parent_parts.append("")
 
-    view = await db.get_view_for_question(parent_page.id)
-    if view:
-        from rumil.context import render_view
+    from rumil.views import get_active_view
 
-        view_items = await db.get_view_items(view.id, min_importance=2)
-        view_text = await render_view(view, view_items, min_importance=2)
-        if view_text.strip():
-            parent_parts.append(view_text)
-            parent_parts.append("")
+    view_text = await get_active_view().render_for_parent_scoring(parent_page.id, db)
+    if view_text:
+        parent_parts.append(view_text)
+        parent_parts.append("")
 
     parent_context = "\n".join(parent_parts)
-    system_prompt = build_system_prompt(system_prompt_name)
-    messages: list[dict] = []
+    system_prompt = build_system_prompt(system_prompt_name, include_citations=False)
+    messages: list[dict] = [
+        {"role": "user", "content": parent_context},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Understood. Ready to score batches.",
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+        },
+    ]
     results: list[dict] = []
 
     batch_sizes = _split_into_batches(len(items), SCORING_BATCH_SIZE)
@@ -309,12 +326,7 @@ async def score_items_sequentially(
             + "\n\nScore all items in this batch now."
         )
 
-        if batch_idx == 0:
-            user_content = parent_context + "\n" + batch_text
-        else:
-            user_content = batch_text
-
-        messages.append({"role": "user", "content": user_content})
+        messages.append({"role": "user", "content": batch_text})
 
         result = await structured_call(
             system_prompt,
@@ -324,7 +336,6 @@ async def score_items_sequentially(
             metadata=LLMExchangeMetadata(
                 call_id=call_id,
                 phase=f"score_batch_{batch_idx}",
-                user_messages=[{"role": "user", "content": user_content}],
             ),
             db=db,
         )
@@ -378,23 +389,11 @@ async def create_root_question(
     return page.id
 
 
-async def _consume_budget(db: DB, force: bool = False) -> bool:
-    """Consume one unit of global budget. Returns False if exhausted.
-
-    When *force* is True the call always succeeds: if normal consumption
-    fails, budget is temporarily expanded so the dispatch can proceed.
-    This is used to guarantee that every dispatch in a committed batch
-    runs, even if it means slightly exceeding the original budget.
-    """
-    ok = await db.consume_budget(1)
-    if not ok:
-        if force:
-            await db.add_budget(1)
-            ok = await db.consume_budget(1)
-        if not ok:
-            remaining = await db.budget_remaining()
-            log.info("Budget exhausted (remaining: %d)", remaining)
-    return ok
+# _consume_budget lives in rumil.budget so that rumil.calls.page_creators
+# can import it without forming a cycle (page_creators is reached *via*
+# this module's own imports of FindConsiderationsCall etc.). Re-exported
+# here for callers that already imported from this location.
+from rumil.budget import _consume_budget  # noqa: E402
 
 
 async def find_considerations_until_done(
@@ -404,12 +403,12 @@ async def find_considerations_until_done(
     fruit_threshold: int = DEFAULT_FRUIT_THRESHOLD,
     parent_call_id: str | None = None,
     context_page_ids: list | None = None,
-    mode: FindConsiderationsMode = FindConsiderationsMode.ALTERNATE,
     broadcaster=None,
     force: bool = False,
     call_id: str | None = None,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    pool_question_id: str | None = None,
 ) -> tuple[int, list[str]]:
     """Run a cache-aware find-considerations session.
 
@@ -420,19 +419,14 @@ async def find_considerations_until_done(
     Returns (rounds_made, list_of_call_ids).
     """
     if max_rounds is None:
-        max_rounds = (
-            SMOKE_TEST_MAX_ROUNDS
-            if get_settings().is_smoke_test
-            else DEFAULT_MAX_ROUNDS
-        )
+        max_rounds = SMOKE_TEST_MAX_ROUNDS if get_settings().is_smoke_test else DEFAULT_MAX_ROUNDS
     elif get_settings().is_smoke_test:
         max_rounds = min(max_rounds, SMOKE_TEST_MAX_ROUNDS)
     log.info(
-        "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d, mode=%s",
+        "find_considerations_until_done: question=%s, max_rounds=%d, fruit_threshold=%d",
         question_id[:8],
         max_rounds,
         fruit_threshold,
-        mode.value,
     )
 
     if force and await db.budget_remaining() <= 0:
@@ -454,9 +448,9 @@ async def find_considerations_until_done(
         db,
         max_rounds=max_rounds,
         fruit_threshold=fruit_threshold,
-        mode=mode,
         context_page_ids=context_page_ids,
         broadcaster=broadcaster,
+        pool_question_id=pool_question_id,
     )
     await scout.run()
 
@@ -476,6 +470,7 @@ async def ingest_until_done(
     fruit_threshold: int = DEFAULT_INGEST_FRUIT_THRESHOLD,
     parent_call_id: str | None = None,
     broadcaster=None,
+    pool_question_id: str | None = None,
 ) -> int:
     """
     Run Ingest rounds on a source/question pair until remaining_fruit falls below
@@ -497,7 +492,7 @@ async def ingest_until_done(
     )
     rounds = 0
     for i in range(max_rounds):
-        if not await _consume_budget(db):
+        if not await _consume_budget(db, pool_question_id=pool_question_id):
             break
 
         call = await db.create_call(
@@ -541,26 +536,33 @@ async def assess_question(
     call_id: str | None = None,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    summarise: bool = True,
+    pool_question_id: str | None = None,
 ) -> str | None:
     """Run one Assess call on a question. Returns call ID, or None if no budget.
 
-    When ``sequence_id`` is provided, the summarise call is placed at
-    ``sequence_position`` and the assess call at ``sequence_position + 1``.
-    Callers should account for two positions being consumed.
+    When ``summarise`` is True (the default), a summarise call runs first;
+    with ``sequence_id`` provided it is placed at ``sequence_position`` and
+    the assess call at ``sequence_position + 1`` — callers should account for
+    two positions being consumed. When ``summarise`` is False, the summarise
+    step is skipped and the assess call sits at ``sequence_position``.
     """
     log.info("assess_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
+    if not await _consume_budget(db, force=force, pool_question_id=pool_question_id):
         return None
 
-    await summarize_question(
-        question_id,
-        db,
-        parent_call_id=parent_call_id,
-        sequence_id=sequence_id,
-        sequence_position=sequence_position,
-    )
+    if summarise:
+        await summarize_question(
+            question_id,
+            db,
+            parent_call_id=parent_call_id,
+            sequence_id=sequence_id,
+            sequence_position=sequence_position,
+        )
+        assess_position = sequence_position + 1 if sequence_position is not None else None
+    else:
+        assess_position = sequence_position
 
-    assess_position = sequence_position + 1 if sequence_position is not None else None
     call = await db.create_call(
         CallType.ASSESS,
         scope_page_id=question_id,
@@ -576,70 +578,6 @@ async def assess_question(
     return call.id
 
 
-async def create_view_for_question(
-    question_id: str,
-    db: DB,
-    parent_call_id: str | None = None,
-    context_page_ids: Sequence[str] | None = None,
-    broadcaster=None,
-    force: bool = False,
-    call_id: str | None = None,
-    sequence_id: str | None = None,
-    sequence_position: int | None = None,
-) -> str | None:
-    """Run a CreateView call on a question. Returns call ID, or None if no budget."""
-    from rumil.calls.create_view import CreateViewCall
-
-    log.info("create_view_for_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
-        return None
-
-    call = await db.create_call(
-        CallType.CREATE_VIEW,
-        scope_page_id=question_id,
-        parent_call_id=parent_call_id,
-        context_page_ids=context_page_ids,
-        call_id=call_id,
-        sequence_id=sequence_id,
-        sequence_position=sequence_position,
-    )
-    instance = CreateViewCall(question_id, call, db, broadcaster=broadcaster)
-    await instance.run()
-    return call.id
-
-
-async def update_view_for_question(
-    question_id: str,
-    db: DB,
-    parent_call_id: str | None = None,
-    context_page_ids: Sequence[str] | None = None,
-    broadcaster=None,
-    force: bool = False,
-    call_id: str | None = None,
-    sequence_id: str | None = None,
-    sequence_position: int | None = None,
-) -> str | None:
-    """Run an UpdateView call on a question with an existing View. Returns call ID."""
-    from rumil.calls.update_view import UpdateViewCall
-
-    log.info("update_view_for_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
-        return None
-
-    call = await db.create_call(
-        CallType.UPDATE_VIEW,
-        scope_page_id=question_id,
-        parent_call_id=parent_call_id,
-        context_page_ids=context_page_ids,
-        call_id=call_id,
-        sequence_id=sequence_id,
-        sequence_position=sequence_position,
-    )
-    instance = UpdateViewCall(question_id, call, db, broadcaster=broadcaster)
-    await instance.run()
-    return call.id
-
-
 async def web_research_question(
     question_id: str,
     db: DB,
@@ -650,10 +588,11 @@ async def web_research_question(
     call_id: str | None = None,
     sequence_id: str | None = None,
     sequence_position: int | None = None,
+    pool_question_id: str | None = None,
 ) -> str | None:
     """Run one web research call on a question. Returns call ID, or None if no budget."""
     log.info("web_research_question: question=%s", question_id[:8])
-    if not await _consume_budget(db, force=force):
+    if not await _consume_budget(db, force=force, pool_question_id=pool_question_id):
         return None
 
     call = await db.create_call(

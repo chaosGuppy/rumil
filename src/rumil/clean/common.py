@@ -15,30 +15,32 @@ from rumil.calls.common import (
     save_page_abstracts,
 )
 from rumil.context import build_embedding_based_context
-from rumil.moves.base import HEADLINE_DESCRIPTION
 from rumil.database import DB
+from rumil.embeddings import page_query_text
 from rumil.llm import LLMExchangeMetadata, structured_call
 from rumil.models import (
     Call,
     CallType,
     LinkRole,
-    LinkType,
     Page,
     PageLayer,
-    PageLink,
     PageType,
 )
 from rumil.moves.base import (
+    HEADLINE_DESCRIPTION,
     _copy_consideration_links,
     extract_and_link_citations,
-    link_pages,
 )
 from rumil.moves.link_consideration import (
     LinkConsiderationPayload,
+)
+from rumil.moves.link_consideration import (
     execute as execute_link_consideration,
 )
 from rumil.moves.remove_link import (
     RemoveLinkPayload,
+)
+from rumil.moves.remove_link import (
     execute as execute_remove_link,
 )
 from rumil.settings import get_settings
@@ -57,9 +59,7 @@ class UpdateOperation(BaseModel):
         description="8-char short ID of the page to update (for reassess_claim / reassess_question)",
     )
     operation: str = Field(
-        description=(
-            "Type of update: 'reassess_claim', 'reassess_claims', or 'reassess_question'"
-        )
+        description=("Type of update: 'reassess_claim', 'reassess_claims', or 'reassess_question'")
     )
     findings_summary: str = Field(
         default="",
@@ -112,7 +112,16 @@ class ReassessedClaim(BaseModel):
     headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(description="Full standalone content of the replacement claim")
     credence: int = Field(description="Probability bucket 1-9 (1=very unlikely, 9=very likely)")
+    credence_reasoning: str = Field(
+        description=(
+            "Why this credence level — what would have to be true for a "
+            "higher or lower credence, and how new evidence would move it."
+        )
+    )
     robustness: int = Field(description="Resilience of view 1-5 (1=fragile, 5=very robust)")
+    robustness_reasoning: str = Field(
+        description=("Where the remaining uncertainty stems from and how reducible it is.")
+    )
 
 
 class _PageAbstractList(BaseModel):
@@ -153,8 +162,7 @@ def normalize_plan(raw: Any) -> dict:
             normalized_op: dict = {
                 "page_id": op.get("page_id", ""),
                 "operation": op.get("operation") or op.get("type", ""),
-                "findings_summary": op.get("findings_summary")
-                or op.get("findings", ""),
+                "findings_summary": op.get("findings_summary") or op.get("findings", ""),
                 "page_ids": op.get("page_ids", []),
                 "in_light_of": op.get("in_light_of", []),
                 "guidance": op.get("guidance", ""),
@@ -195,17 +203,11 @@ async def execute_update_plan(
         async def _execute_op(op: UpdateOperation) -> None:
             async with _UPDATE_SEMAPHORE:
                 if op.operation == "reassess_claim":
-                    await reassess_claim(
-                        op.page_id, op.findings_summary, call, db, trace
-                    )
+                    await reassess_claim(op.page_id, op.findings_summary, call, db, trace)
                 elif op.operation == "reassess_claims":
-                    await reassess_claims(
-                        op.page_ids, op.in_light_of, op.guidance, call, db, trace
-                    )
+                    await reassess_claims(op.page_ids, op.in_light_of, op.guidance, call, db, trace)
                 elif op.operation == "reassess_question":
-                    await reassess_question(
-                        op.page_id, op.in_light_of, call, db, trace
-                    )
+                    await reassess_question(op.page_id, op.in_light_of, call, db, trace)
                 else:
                     log.warning("Unknown operation type: %s", op.operation)
 
@@ -237,23 +239,20 @@ async def reassess_claim(
     )
 
     ctx_result = await build_embedding_based_context(
-        old_page.headline,
+        page_query_text(old_page),
         db,
+        input_type="document",
     )
 
     links_from = await db.get_links_from(old_page.id)
     links_to = await db.get_links_to(old_page.id)
-    linked_ids = (
-        {link.to_page_id for link in links_from}
-        | {link.from_page_id for link in links_to}
-    )
+    linked_ids = {link.to_page_id for link in links_from} | {link.from_page_id for link in links_to}
     linked_pages = await db.get_pages_by_ids(list(linked_ids))
     linked_text_parts: list[str] = []
     for pid, lp in linked_pages.items():
         if lp.is_active():
             linked_text_parts.append(
-                f"### `{pid[:8]}` — {lp.headline} ({lp.page_type.value})\n\n"
-                f"{lp.content}"
+                f"### `{pid[:8]}` — {lp.headline} ({lp.page_type.value})\n\n{lp.content}"
             )
     linked_text = "\n\n---\n\n".join(linked_text_parts) if linked_text_parts else ""
 
@@ -302,14 +301,16 @@ async def reassess_claim(
         content=reassessed.content,
         headline=reassessed.headline,
         credence=reassessed.credence,
+        credence_reasoning=reassessed.credence_reasoning,
         robustness=reassessed.robustness,
+        robustness_reasoning=reassessed.robustness_reasoning,
         provenance_model=get_settings().model,
         provenance_call_type=call.call_type.value,
         provenance_call_id=call.id,
         project_id=old_page.project_id,
     )
     await db.save_page(new_page)
-    await extract_and_link_citations(new_page.id, new_page.content, db)
+    await extract_and_link_citations(new_page.id, new_page.content, db, call=call)
 
     await db.supersede_page(old_page.id, new_page.id)
     await _copy_consideration_links(old_page.id, new_page.id, db)
@@ -388,11 +389,16 @@ async def reassess_question(
 class ReassessedClaimItem(BaseModel):
     headline: str = Field(description=HEADLINE_DESCRIPTION)
     content: str = Field(description="Full standalone content of the replacement claim")
-    credence: int = Field(
-        description="Probability bucket 1-9 (1=very unlikely, 9=very likely)"
+    credence: int = Field(description="Probability bucket 1-9 (1=very unlikely, 9=very likely)")
+    credence_reasoning: str = Field(
+        description=(
+            "Why this credence level — what would have to be true for a "
+            "higher or lower credence, and how new evidence would move it."
+        )
     )
-    robustness: int = Field(
-        description="Resilience of view 1-5 (1=fragile, 5=very robust)"
+    robustness: int = Field(description="Resilience of view 1-5 (1=fragile, 5=very robust)")
+    robustness_reasoning: str = Field(
+        description=("Where the remaining uncertainty stems from and how reducible it is.")
     )
     supersedes: list[str] = Field(
         default_factory=list,
@@ -408,12 +414,8 @@ class LinkAddItem(BaseModel):
         description="Index into the claims list (0-based) identifying which new claim to link"
     )
     question_id: str = Field(description="8-char short ID of the question page")
-    strength: float = Field(
-        description="0-5: how strongly this claim bears on the question"
-    )
-    reasoning: str = Field(
-        default="", description="Why this claim bears on the question"
-    )
+    strength: float = Field(description="0-5: how strongly this claim bears on the question")
+    reasoning: str = Field(default="", description="Why this claim bears on the question")
 
 
 class LinkRemovalItem(BaseModel):
@@ -435,9 +437,7 @@ class ReassessedClaimsResult(BaseModel):
     )
 
 
-async def resolve_in_light_of(
-    page_ids: Sequence[str], db: DB
-) -> list[Page]:
+async def resolve_in_light_of(page_ids: Sequence[str], db: DB) -> list[Page]:
     """Resolve page IDs for the in_light_of parameter.
 
     For each page_id: if it points to a question with an active judgement,
@@ -508,16 +508,15 @@ async def reassess_claims(
     context_text_parts: list[str] = []
     for cp in context_pages:
         context_text_parts.append(
-            f"### `{cp.id[:8]}` — {cp.headline} ({cp.page_type.value})\n\n"
-            f"{cp.content}"
+            f"### `{cp.id[:8]}` — {cp.headline} ({cp.page_type.value})\n\n{cp.content}"
         )
-    context_text = (
-        "\n\n---\n\n".join(context_text_parts) if context_text_parts else ""
-    )
+    context_text = "\n\n---\n\n".join(context_text_parts) if context_text_parts else ""
 
     first_claim = claim_pages[0]
     ctx_result = await build_embedding_based_context(
-        first_claim.headline, db
+        page_query_text(first_claim),
+        db,
+        input_type="document",
     )
 
     user_parts: list[str] = [
@@ -565,14 +564,16 @@ async def reassess_claims(
             content=item.content,
             headline=item.headline,
             credence=item.credence,
+            credence_reasoning=item.credence_reasoning,
             robustness=item.robustness,
+            robustness_reasoning=item.robustness_reasoning,
             provenance_model=get_settings().model,
             provenance_call_type=call.call_type.value,
             provenance_call_id=call.id,
             project_id=first_claim.project_id,
         )
         await db.save_page(new_page)
-        await extract_and_link_citations(new_page.id, new_page.content, db)
+        await extract_and_link_citations(new_page.id, new_page.content, db, call=call)
 
         old_ids: list[str] = []
         for superseded_short_id in item.supersedes:
@@ -592,9 +593,7 @@ async def reassess_claims(
 
     for link_add in parsed.link_adds:
         if link_add.claim_index < 0 or link_add.claim_index >= len(new_pages):
-            log.warning(
-                "reassess_claims: invalid claim_index %d", link_add.claim_index
-            )
+            log.warning("reassess_claims: invalid claim_index %d", link_add.claim_index)
             continue
         claim_page = new_pages[link_add.claim_index]
         payload = LinkConsiderationPayload(
@@ -609,9 +608,7 @@ async def reassess_claims(
     for link_rm in parsed.link_removals:
         resolved_link_id = await db.resolve_link_id(link_rm.link_id)
         if not resolved_link_id:
-            log.warning(
-                "reassess_claims: could not resolve link ID %s", link_rm.link_id
-            )
+            log.warning("reassess_claims: could not resolve link ID %s", link_rm.link_id)
             continue
         payload = RemoveLinkPayload(
             link_id=resolved_link_id,
@@ -650,23 +647,18 @@ async def reassess_claims(
 
 async def generate_abstracts(call: Call, db: DB) -> None:
     """Generate abstracts and embeddings for pages created in this call."""
-    rows = (
-        await db._execute(
-            db.client.table("pages")
-            .select("id, headline, content, page_type")
-            .eq("provenance_call_id", call.id)
-            .neq("page_type", "source")
-        )
+    rows = await db._execute(
+        db.client.table("pages")
+        .select("id, headline, content, page_type")
+        .eq("provenance_call_id", call.id)
+        .neq("page_type", "source")
     )
     pages = [r for r in (rows.data or []) if r.get("id")]
     if not pages:
         log.info("No pages to abstract")
         return
 
-    page_lines = "\n".join(
-        f'- `{p["id"][:8]}`: "{p["headline"][:120]}"'
-        for p in pages
-    )
+    page_lines = "\n".join(f'- `{p["id"][:8]}`: "{p["headline"][:120]}"' for p in pages)
     user_message = (
         "Generate an abstract for each of the following pages.\n\n"
         f"{page_lines}\n\n"
@@ -675,8 +667,7 @@ async def generate_abstracts(call: Call, db: DB) -> None:
     )
 
     page_contents = "\n\n---\n\n".join(
-        f'Page `{p["id"][:8]}` — {p["headline"]}\n\n{p["content"]}'
-        for p in pages
+        f"Page `{p['id'][:8]}` — {p['headline']}\n\n{p['content']}" for p in pages
     )
     system_prompt = (
         "You are generating abstracts for workspace pages. "

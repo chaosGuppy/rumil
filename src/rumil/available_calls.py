@@ -146,7 +146,5 @@ def get_available_calls_preset() -> AvailableCallsPreset:
     preset = AVAILABLE_CALLS_PRESETS.get(name)
     if preset is None:
         available = ", ".join(sorted(AVAILABLE_CALLS_PRESETS))
-        raise ValueError(
-            f"Unknown available-calls preset: {name!r}. Available: {available}"
-        )
+        raise ValueError(f"Unknown available-calls preset: {name!r}. Available: {available}")
     return preset

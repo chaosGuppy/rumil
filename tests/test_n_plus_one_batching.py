@@ -69,12 +69,9 @@ async def claims_abcdef(tmp_db):
 # ---------------------------------------------------------------------------
 # get_stale_dependencies
 #
-# Note: get_stale_dependencies does not filter by project_id. The
-# page_links table has no project_id column, and other link queries in
-# database.py scope via keyed page IDs rather than project. These tests
-# therefore assert only on the subset of results whose links we created
-# ourselves — they are robust to leftover cross-project rows in the
-# shared local DB.
+# get_stale_dependencies scopes to the current project by fetching
+# project page IDs and filtering links by from_page_id. These tests
+# use the subset helper for extra safety against leftover rows.
 # ---------------------------------------------------------------------------
 
 
@@ -227,9 +224,7 @@ async def test_stale_deps_query_count_is_constant(
     # With cross-project leftover data the batch counts can exceed 1
     # each, but the total stays O(ceil(N_targets/batch_size)) — well
     # under O(N_links).
-    assert queries <= 10, (
-        f"expected O(1) queries from get_stale_dependencies, got {queries}"
-    )
+    assert queries <= 10, f"expected O(1) queries from get_stale_dependencies, got {queries}"
 
 
 # ---------------------------------------------------------------------------

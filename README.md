@@ -86,6 +86,15 @@ uv run python main.py "Your question here" --budget 20 --summary
 # Generate a multi-section research report
 uv run python main.py --report QUESTION_ID
 
+# Self-improvement: analyse how an investigation went and get rumil
+# code/prompt improvement suggestions. Read-only; inspects the run plus
+# rumil's own source via LLM tools, then writes a markdown analysis to
+# pages/self-improvement/.
+uv run python main.py --self-improve QUESTION_ID
+
+# Investigate and self-improve in one command (analyses the just-finished run)
+uv run python main.py "Your question here" --budget 20 --self-improve
+
 # Evaluate the judgement quality for a question
 uv run python main.py --evaluate QUESTION_ID
 
@@ -127,10 +136,6 @@ uv run python main.py --list-workspaces
 # List questions in a specific workspace
 uv run python main.py --list --workspace my-project
 
-# A/B test: run two arms concurrently with different configs
-# Requires .a.env and .b.env files with differing settings
-uv run python main.py --ab "Your question here" --budget 10
-
 # Name a run for easier identification in the trace viewer
 uv run python main.py "Your question here" --name "baseline v2" --budget 10
 
@@ -152,6 +157,10 @@ uv run python main.py "Your question" --available-moves default --budget 10
 # Select an available-calls preset (controls which scouts/dispatches the two-phase orchestrator uses)
 # 'default' = standard scouts, 'multi-subquestion' = replaces generic subquestions scout with web-questions and deep-questions scouts
 uv run python main.py "Your question" --available-calls multi-subquestion --budget 20
+
+# Select a view variant (the ever-evolving best summary of a question)
+# 'sectioned' = importance-scored items (default), 'judgement' = flat NL judgement page
+uv run python main.py "Your question" --view-variant judgement --budget 10
 
 # Tune how many considerations each ingest call extracts (default: 4)
 uv run python main.py --ingest FILE --for-question QUESTION_ID --ingest-num-claims 6 --budget 5
@@ -188,24 +197,7 @@ For PDF ingestion, install the optional dependency: `uv sync --extra pdf`
 
 ### A/B testing
 
-The `--ab` flag runs two concurrent investigations of the same question with different configurations. Each arm reads its settings from a separate env file (`.a.env` and `.b.env`), allowing you to compare call variants, context budgets, or other settings side by side.
-
-```bash
-# Create arm-specific config files
-echo 'SCOUT_CALL_VARIANT=default' > .a.env
-echo 'SCOUT_CALL_VARIANT=embedding' > .b.env
-
-# Run the AB test
-uv run python main.py --ab "Your question" --budget 10 --workspace ab-scratch
-
-# View results in the frontend at /ab-traces/{ab_run_id}
-```
-
-Pages created by each arm are isolated — arm A cannot see pages created by arm B, and vice versa. Shared pages (like the root question) are visible to both arms. The frontend shows a side-by-side trace comparison with config diff highlighting.
-
-### Branch-based A/B testing
-
-For comparing code changes across branches (rather than config changes), use `scripts/ab_branch.sh`. This creates git worktrees for each branch, runs staged investigations concurrently, then launches evaluation agents that compare the results.
+To compare two variants of the research pipeline (different configs, prompts, or code changes), use `scripts/ab_branch.sh`. This creates git worktrees for each arm, runs staged investigations concurrently, then launches evaluation agents that compare the results.
 
 ```bash
 scripts/ab_branch.sh \
@@ -226,9 +218,22 @@ scripts/ab_branch.sh \
 | `--eval-branch` | No (default: current branch) | Branch to run evaluation agents from |
 | `--workspace` | No | Workspace name passed to main.py |
 
-The script runs 5 concurrent evaluation agents that compare the runs on: grounding & factual correctness, subquestion relevance, consistency, research progress, and general quality. Each agent independently evaluates both arms, then a comparison LLM produces a structured preference rating (7-point scale from "A strongly preferred" to "B strongly preferred"). A final LLM synthesizes all comparisons into an overall assessment.
+The script runs concurrent evaluation agents that compare the runs on: grounding & factual correctness, coverage & relevance, depth vs breadth, research redundancy, consistency, research progress, and general quality. Each agent independently evaluates both arms, then a comparison LLM produces a structured preference rating (7-point scale from "A strongly preferred" to "B strongly preferred"). A final LLM synthesizes all comparisons into an overall assessment.
 
 Reports are saved to `data/ab-reports/` and to the `ab_eval_reports` database table. View them in the frontend at `/ab-evals`.
+
+### Single-run evaluation
+
+Evaluate a single staged run across all quality dimensions (grounding, coverage & relevance, depth vs breadth, research redundancy, consistency, research progress, general quality):
+
+```bash
+uv run python main.py --run-eval RUN_ID
+
+# Run only specific evaluation agents (works with --run-eval and --ab-eval)
+uv run python main.py --run-eval RUN_ID --eval-agents grounding,consistency
+```
+
+Reports are saved to `data/run-eval-reports/` and to the `run_eval_reports` database table.
 
 ### A/B evaluation (standalone)
 
@@ -287,16 +292,11 @@ uv run python scripts/run_call.py find-considerations "Test question" --smoke-te
 uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage build_context
 uv run python scripts/run_call.py find-considerations "Test question" --up-to-stage update_workspace
 
-# A/B test a single call (requires .a.env and .b.env)
-uv run python scripts/run_call.py find-considerations "Test question" --ab --smoke-test
-
 # Name a run for easier identification
 uv run python scripts/run_call.py find-considerations "Test question" --name "context experiment"
 ```
 
 The `--up-to-stage` flag truncates the call lifecycle. Each call runs three stages in order: `build_context` → `update_workspace` → `closing_review`. Passing `--up-to-stage build_context` runs only context assembly; `--up-to-stage update_workspace` skips the closing review. Useful for inspecting context or page output in isolation.
-
-The `--ab` flag works the same as in `main.py` — it runs both arms concurrently with settings from `.a.env` and `.b.env`, and prints an AB trace URL.
 
 ## Frontend
 

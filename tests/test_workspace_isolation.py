@@ -81,16 +81,12 @@ async def two_workspaces():
     db_beta = await _make_db(f"beta-{uuid.uuid4().hex[:8]}")
 
     q_alpha = await _make_question(db_alpha, "What colour is the sky?")
-    claim_alpha = await _make_claim(
-        db_alpha, "The sky is blue due to Rayleigh scattering"
-    )
+    claim_alpha = await _make_claim(db_alpha, "The sky is blue due to Rayleigh scattering")
     await _link_consideration(db_alpha, claim_alpha, q_alpha)
     source_alpha = await _make_source(db_alpha, "sky-paper.pdf")
 
     q_beta = await _make_question(db_beta, "Why is the ocean salty?")
-    claim_beta = await _make_claim(
-        db_beta, "Rivers carry dissolved salts into the ocean"
-    )
+    claim_beta = await _make_claim(db_beta, "Rivers carry dissolved salts into the ocean")
     await _link_consideration(db_beta, claim_beta, q_beta)
 
     yield {
@@ -165,17 +161,11 @@ async def test_get_all_links_isolated(two_workspaces):
 
     for link in alpha_links:
         assert link.from_page_id in alpha_page_ids or link.to_page_id in alpha_page_ids
-        assert (
-            link.from_page_id not in beta_page_ids
-            and link.to_page_id not in beta_page_ids
-        )
+        assert link.from_page_id not in beta_page_ids and link.to_page_id not in beta_page_ids
 
     for link in beta_links:
         assert link.from_page_id in beta_page_ids or link.to_page_id in beta_page_ids
-        assert (
-            link.from_page_id not in alpha_page_ids
-            and link.to_page_id not in alpha_page_ids
-        )
+        assert link.from_page_id not in alpha_page_ids and link.to_page_id not in alpha_page_ids
 
 
 async def test_get_pages_slim_isolated(two_workspaces):

@@ -58,27 +58,18 @@ async def select_seed_questions(
         f"  `{scope.id[:8]}` -- {scope.headline}\n\n"
         f"{scope.content or scope.abstract}\n\n"
         f"Candidate top-level questions ({len(candidates)} total). "
-        f"Select up to {limit}, ordered by expected relevance:\n\n"
-        + "\n".join(candidate_lines)
-    )
-
-    model = (
-        settings.model
-        if settings.is_test_mode or settings.is_smoke_test
-        else settings.sonnet_model
+        f"Select up to {limit}, ordered by expected relevance:\n\n" + "\n".join(candidate_lines)
     )
 
     result = await structured_call(
         _SYSTEM_PROMPT,
         user_message,
         response_model=TopLevelRelevanceRanking,
-        model=model,
+        model=settings.sonnet_model,
     )
 
     if result.parsed is None:
-        log.warning(
-            "seed selection ranker returned no data; falling back to first %d", limit
-        )
+        log.warning("seed selection ranker returned no data; falling back to first %d", limit)
         return candidates[:limit]
 
     ranking = result.parsed

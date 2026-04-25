@@ -28,21 +28,105 @@
         }
       }
     },
-    "/api/projects": {
+    "/api/auth/me": {
       "get": {
-        "summary": "List Projects",
-        "operationId": "list_projects_api_projects_get",
+        "summary": "Get Me",
+        "operationId": "get_me_api_auth_me_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "$ref": "#/components/schemas/AuthUserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "summary": "List Projects",
+        "operationId": "list_projects_api_projects_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/Project"
                   },
-                  "type": "array",
                   "title": "Response List Projects Api Projects Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -62,6 +146,22 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -101,6 +201,22 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -189,22 +305,6 @@
             }
           },
           {
-            "name": "staged_run_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Staged Run Id"
-            }
-          },
-          {
             "name": "search",
             "in": "query",
             "required": false,
@@ -238,6 +338,48 @@
               "type": "integer",
               "default": 50,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -294,6 +436,32 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -349,6 +517,32 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -387,6 +581,32 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -430,6 +650,32 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -475,6 +721,42 @@
               "type": "string",
               "title": "Page Id"
             }
+          },
+          {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -518,6 +800,42 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -578,6 +896,32 @@
               ],
               "title": "Staged Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -617,6 +961,32 @@
               "type": "string",
               "title": "Page Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -646,7 +1016,7 @@
     "/api/projects/{project_id}/stats": {
       "get": {
         "summary": "Get Project Stats",
-        "description": "Aggregate stats over all pages/links/calls in a project.\n\nv1 is baseline-only: rows with staged=true or is_superseded=true are excluded,\nand staged_run_id is not accepted.",
+        "description": "Aggregate stats over all pages/links/calls in a project.\n\nBaseline rows are always included; when `staged_run_id` is provided as a\nquery param, rows from that staged run are also included and its mutation\nevents (supersede_page, delete_link) are overlayed.",
         "operationId": "get_project_stats_api_projects__project_id__stats_get",
         "parameters": [
           {
@@ -656,6 +1026,38 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -686,7 +1088,7 @@
     "/api/pages/{page_id}/stats": {
       "get": {
         "summary": "Get Question Stats",
-        "description": "Aggregate stats over the 2-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. v1 is baseline-only.",
+        "description": "Aggregate stats over the 2-hop undirected neighborhood around a question.\n\nReturns 404 if the target page is not a question. Staged-run visibility\nmatches get_project_stats.",
         "operationId": "get_question_stats_api_pages__page_id__stats_get",
         "parameters": [
           {
@@ -696,6 +1098,48 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -744,6 +1188,32 @@
             "schema": {
               "$ref": "#/components/schemas/Workspace",
               "default": "research"
+            }
+          },
+          {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -804,6 +1274,22 @@
               ],
               "title": "Question Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -847,6 +1333,32 @@
               "type": "string",
               "title": "Call Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -885,6 +1397,32 @@
             "schema": {
               "type": "string",
               "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -929,6 +1467,32 @@
               "type": "string",
               "title": "Run Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -968,6 +1532,32 @@
               "type": "string",
               "title": "Call Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -999,6 +1589,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/ScoringCompletedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ExperimentalScoringCompletedEventOut"
                       },
                       {
                         "$ref": "#/components/schemas/DispatchesPlannedEventOut"
@@ -1049,16 +1642,28 @@
                         "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/LoadPageEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
                       },
                       {
                         "$ref": "#/components/schemas/ViewCreatedEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/AutocompactEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/PhaseSkippedEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/GlobalPhaseCompletedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/QuestionDedupeEventOut"
                       }
                     ],
                     "discriminator": {
@@ -1071,6 +1676,7 @@
                         "warning": "#/components/schemas/WarningEventOut",
                         "error": "#/components/schemas/ErrorEventOut",
                         "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
+                        "experimental_scoring_completed": "#/components/schemas/ExperimentalScoringCompletedEventOut",
                         "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
                         "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
                         "explore_page": "#/components/schemas/ExplorePageEventOut",
@@ -1087,53 +1693,18 @@
                         "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
                         "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut",
                         "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
+                        "load_page": "#/components/schemas/LoadPageEventOut",
                         "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
                         "view_created": "#/components/schemas/ViewCreatedEventOut",
+                        "autocompact": "#/components/schemas/AutocompactEventOut",
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
-                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
+                        "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
+                        "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
+                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut"
                       }
                     }
                   },
                   "title": "Response Get Call Events Api Calls  Call Id  Events Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/ab-runs/{ab_run_id}/trace": {
-      "get": {
-        "summary": "Get Ab Run Trace",
-        "operationId": "get_ab_run_trace_api_ab_runs__ab_run_id__trace_get",
-        "parameters": [
-          {
-            "name": "ab_run_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Ab Run Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ABRunTraceOut"
                 }
               }
             }
@@ -1164,6 +1735,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1218,6 +1805,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -1256,6 +1859,32 @@
             "schema": {
               "type": "string",
               "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1300,6 +1929,32 @@
               "type": "string",
               "title": "Exchange Id"
             }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -1330,6 +1985,24 @@
       "get": {
         "summary": "Get Realtime Config",
         "operationId": "get_realtime_config_api_realtime_config_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1337,6 +2010,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RealtimeConfigOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1356,6 +2039,48 @@
             "schema": {
               "type": "string",
               "title": "Page Id"
+            }
+          },
+          {
+            "name": "staged_run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1390,6 +2115,71 @@
           }
         }
       }
+    },
+    "/api/runs/{run_id}/page-load-stats": {
+      "get": {
+        "summary": "Get Page Load Stats",
+        "operationId": "get_page_load_stats_api_runs__run_id__page_load_stats_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageLoadStatsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1408,26 +2198,14 @@
             "type": "string",
             "title": "Preference"
           },
-          "report_a": {
+          "report": {
             "type": "string",
-            "title": "Report A"
-          },
-          "report_b": {
-            "type": "string",
-            "title": "Report B"
-          },
-          "comparison": {
-            "type": "string",
-            "title": "Comparison"
-          },
-          "call_id_a": {
-            "type": "string",
-            "title": "Call Id A",
+            "title": "Report",
             "default": ""
           },
-          "call_id_b": {
+          "call_id": {
             "type": "string",
-            "title": "Call Id B",
+            "title": "Call Id",
             "default": ""
           }
         },
@@ -1435,10 +2213,7 @@
         "required": [
           "name",
           "display_name",
-          "preference",
-          "report_a",
-          "report_b",
-          "comparison"
+          "preference"
         ],
         "title": "ABEvalDimensionOut"
       },
@@ -1554,6 +2329,16 @@
             "type": "string",
             "title": "Overall Assessment"
           },
+          "overall_assessment_call_id": {
+            "type": "string",
+            "title": "Overall Assessment Call Id",
+            "default": ""
+          },
+          "eval_run_id": {
+            "type": "string",
+            "title": "Eval Run Id",
+            "default": ""
+          },
           "dimension_reports": {
             "items": {
               "$ref": "#/components/schemas/ABEvalDimensionOut"
@@ -1588,70 +2373,6 @@
           "created_at"
         ],
         "title": "ABEvalReportOut"
-      },
-      "ABRunArmOut": {
-        "properties": {
-          "run_id": {
-            "type": "string",
-            "title": "Run Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "default": ""
-          },
-          "config": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Config",
-            "default": {}
-          },
-          "trace": {
-            "$ref": "#/components/schemas/RunTraceOut"
-          }
-        },
-        "type": "object",
-        "required": [
-          "run_id",
-          "trace"
-        ],
-        "title": "ABRunArmOut"
-      },
-      "ABRunTraceOut": {
-        "properties": {
-          "ab_run_id": {
-            "type": "string",
-            "title": "Ab Run Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name",
-            "default": ""
-          },
-          "question": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Page"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "arms": {
-            "items": {
-              "$ref": "#/components/schemas/ABRunArmOut"
-            },
-            "type": "array",
-            "title": "Arms"
-          }
-        },
-        "type": "object",
-        "required": [
-          "ab_run_id",
-          "arms"
-        ],
-        "title": "ABRunTraceOut"
       },
       "AffectedPagesIdentifiedEventOut": {
         "properties": {
@@ -1724,6 +2445,54 @@
           "user_message"
         ],
         "title": "AgentStartedEventOut"
+      },
+      "AuthUserOut": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "title": "AuthUserOut"
+      },
+      "AutocompactEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "autocompact",
+            "title": "Event",
+            "default": "autocompact"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "agent_id"
+        ],
+        "title": "AutocompactEventOut"
       },
       "Call": {
         "properties": {
@@ -1920,32 +2689,6 @@
         ],
         "title": "CallNodeOut"
       },
-      "CallSequenceOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "position_in_batch": {
-            "type": "integer",
-            "title": "Position In Batch"
-          },
-          "calls": {
-            "items": {
-              "$ref": "#/components/schemas/CallTraceOut"
-            },
-            "type": "array",
-            "title": "Calls"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "position_in_batch",
-          "calls"
-        ],
-        "title": "CallSequenceOut"
-      },
       "CallStatus": {
         "type": "string",
         "enum": [
@@ -2072,184 +2815,6 @@
         "title": "CallSummary",
         "description": "Lightweight Call representation for tree views \u2014 excludes bulky fields\nlike review_json, result_summary, and context_page_ids."
       },
-      "CallTraceOut": {
-        "properties": {
-          "call": {
-            "$ref": "#/components/schemas/Call"
-          },
-          "scope_page_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scope Page Summary"
-          },
-          "events": {
-            "items": {
-              "oneOf": [
-                {
-                  "$ref": "#/components/schemas/ContextBuiltEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/MovesExecutedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ReviewCompleteEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/LLMExchangeEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/WarningEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ErrorEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ScoringCompletedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/DispatchesPlannedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/DispatchExecutedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ExplorePageEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/SubagentStartedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/SubagentCompletedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/AgentStartedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/EvaluationCompleteEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ToolCallEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ReassessTriggeredEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/AffectedPagesIdentifiedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/UpdateSubgraphComputedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/UpdatePlanCreatedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ClaimReassessedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/GroundingTasksGeneratedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/WebResearchCompleteEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/RenderQuestionSubgraphEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/LinkSubquestionsCompleteEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/ViewCreatedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/PhaseSkippedEventOut"
-                },
-                {
-                  "$ref": "#/components/schemas/UpdateViewPhaseCompletedEventOut"
-                }
-              ],
-              "discriminator": {
-                "propertyName": "event",
-                "mapping": {
-                  "affected_pages_identified": "#/components/schemas/AffectedPagesIdentifiedEventOut",
-                  "agent_started": "#/components/schemas/AgentStartedEventOut",
-                  "claim_reassessed": "#/components/schemas/ClaimReassessedEventOut",
-                  "context_built": "#/components/schemas/ContextBuiltEventOut",
-                  "dispatch_executed": "#/components/schemas/DispatchExecutedEventOut",
-                  "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
-                  "error": "#/components/schemas/ErrorEventOut",
-                  "evaluation_complete": "#/components/schemas/EvaluationCompleteEventOut",
-                  "explore_page": "#/components/schemas/ExplorePageEventOut",
-                  "grounding_tasks_generated": "#/components/schemas/GroundingTasksGeneratedEventOut",
-                  "link_subquestions_complete": "#/components/schemas/LinkSubquestionsCompleteEventOut",
-                  "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
-                  "moves_executed": "#/components/schemas/MovesExecutedEventOut",
-                  "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
-                  "reassess_triggered": "#/components/schemas/ReassessTriggeredEventOut",
-                  "render_question_subgraph": "#/components/schemas/RenderQuestionSubgraphEventOut",
-                  "review_complete": "#/components/schemas/ReviewCompleteEventOut",
-                  "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
-                  "subagent_completed": "#/components/schemas/SubagentCompletedEventOut",
-                  "subagent_started": "#/components/schemas/SubagentStartedEventOut",
-                  "tool_call": "#/components/schemas/ToolCallEventOut",
-                  "update_plan_created": "#/components/schemas/UpdatePlanCreatedEventOut",
-                  "update_subgraph_computed": "#/components/schemas/UpdateSubgraphComputedEventOut",
-                  "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
-                  "view_created": "#/components/schemas/ViewCreatedEventOut",
-                  "warning": "#/components/schemas/WarningEventOut",
-                  "web_research_complete": "#/components/schemas/WebResearchCompleteEventOut"
-                }
-              }
-            },
-            "type": "array",
-            "title": "Events"
-          },
-          "children": {
-            "items": {
-              "$ref": "#/components/schemas/CallTraceOut"
-            },
-            "type": "array",
-            "title": "Children"
-          },
-          "sequences": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CallSequenceOut"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sequences"
-          },
-          "cost_usd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Usd"
-          }
-        },
-        "type": "object",
-        "required": [
-          "call",
-          "events",
-          "children"
-        ],
-        "title": "CallTraceOut"
-      },
       "CallType": {
         "type": "string",
         "enum": [
@@ -2281,8 +2846,16 @@
           "feedback_update",
           "link_subquestions",
           "ab_eval",
+          "ab_eval_comparison",
+          "ab_eval_summary",
+          "run_eval",
           "create_view",
+          "global_prioritization",
           "update_view",
+          "generate_spec",
+          "generate_artefact",
+          "critique_artefact",
+          "refine_spec",
           "claude_code_direct"
         ],
         "title": "CallType"
@@ -2337,6 +2910,18 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "child_questions": {
+            "type": "integer",
+            "title": "Child Questions"
+          },
+          "considerations": {
+            "type": "integer",
+            "title": "Considerations"
+          },
+          "judgements": {
+            "type": "integer",
+            "title": "Judgements"
           }
         },
         "type": "object",
@@ -2344,7 +2929,10 @@
           "question_id",
           "headline",
           "by_type",
-          "total"
+          "total",
+          "child_questions",
+          "considerations",
+          "judgements"
         ],
         "title": "CallsForQuestion"
       },
@@ -2501,16 +3089,63 @@
             ],
             "title": "Budget"
           },
-          "scout_mode": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scout Mode"
+          "full_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Full Pages",
+            "default": []
+          },
+          "abstract_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Abstract Pages",
+            "default": []
+          },
+          "summary_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Summary Pages",
+            "default": []
+          },
+          "distillation_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Distillation Pages",
+            "default": []
+          },
+          "scope_linked_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Scope Linked Pages",
+            "default": []
+          },
+          "budget_usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Budget Usage",
+            "default": {}
+          },
+          "context_text": {
+            "type": "string",
+            "title": "Context Text",
+            "default": ""
+          },
+          "context_text_chars": {
+            "type": "integer",
+            "title": "Context Text Chars",
+            "default": 0
           }
         },
         "type": "object",
@@ -2522,9 +3157,44 @@
           "preloaded_page_ids",
           "source_page_id",
           "budget",
-          "scout_mode"
+          "full_pages",
+          "abstract_pages",
+          "summary_pages",
+          "distillation_pages",
+          "scope_linked_pages",
+          "budget_usage",
+          "context_text",
+          "context_text_chars"
         ],
         "title": "ContextBuiltEventOut"
+      },
+      "DedupeCandidateItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          },
+          "similarity": {
+            "type": "number",
+            "title": "Similarity"
+          },
+          "kept_by_filter": {
+            "type": "boolean",
+            "title": "Kept By Filter",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "similarity"
+        ],
+        "title": "DedupeCandidateItem"
       },
       "DegreeCell": {
         "properties": {
@@ -2717,6 +3387,72 @@
         ],
         "title": "EvaluationCompleteEventOut"
       },
+      "ExperimentalScoringCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "experimental_scoring_completed",
+            "title": "Event",
+            "default": "experimental_scoring_completed"
+          },
+          "subquestion_scores": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentalSubquestionScoreItem"
+            },
+            "type": "array",
+            "title": "Subquestion Scores",
+            "default": []
+          },
+          "per_type_fruit": {
+            "items": {
+              "$ref": "#/components/schemas/CallTypeFruitScoreItem"
+            },
+            "type": "array",
+            "title": "Per Type Fruit",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "subquestion_scores",
+          "per_type_fruit"
+        ],
+        "title": "ExperimentalScoringCompletedEventOut"
+      },
+      "ExperimentalSubquestionScoreItem": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline",
+            "default": ""
+          },
+          "impact_curve": {
+            "type": "string",
+            "title": "Impact Curve",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id"
+        ],
+        "title": "ExperimentalSubquestionScoreItem"
+      },
       "ExplorePageEventOut": {
         "properties": {
           "ts": {
@@ -2758,6 +3494,43 @@
           "response"
         ],
         "title": "ExplorePageEventOut"
+      },
+      "GlobalPhaseCompletedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "global_phase_completed",
+            "title": "Event",
+            "default": "global_phase_completed"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "phase",
+          "outcome"
+        ],
+        "title": "GlobalPhaseCompletedEventOut"
       },
       "GroundingTasksGeneratedEventOut": {
         "properties": {
@@ -2939,6 +3712,17 @@
               }
             ],
             "title": "Tool Uses"
+          },
+          "langfuse_trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Langfuse Trace Url"
           }
         },
         "type": "object",
@@ -2956,7 +3740,8 @@
           "duration_ms",
           "cost_usd",
           "has_thinking",
-          "tool_uses"
+          "tool_uses",
+          "langfuse_trace_url"
         ],
         "title": "LLMExchangeEventOut"
       },
@@ -3249,7 +4034,11 @@
           "depends_on",
           "view_item",
           "view_of",
-          "meta_for"
+          "meta_for",
+          "spec_of",
+          "artefact_of",
+          "critique_of",
+          "generated_from"
         ],
         "title": "LinkType"
       },
@@ -3268,6 +4057,54 @@
           "link"
         ],
         "title": "LinkedPageOut"
+      },
+      "LoadPageEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "load_page",
+            "title": "Event",
+            "default": "load_page"
+          },
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "page_headline": {
+            "type": "string",
+            "title": "Page Headline",
+            "default": ""
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          },
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "page_id",
+          "page_headline",
+          "detail",
+          "response"
+        ],
+        "title": "LoadPageEventOut"
       },
       "MoveTraceItem": {
         "properties": {
@@ -3379,6 +4216,17 @@
             ],
             "title": "Credence"
           },
+          "credence_reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credence Reasoning"
+          },
           "robustness": {
             "anyOf": [
               {
@@ -3389,6 +4237,17 @@
               }
             ],
             "title": "Robustness"
+          },
+          "robustness_reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness Reasoning"
           },
           "provenance_model": {
             "type": "string",
@@ -3476,6 +4335,11 @@
             "type": "string",
             "title": "Run Id",
             "default": ""
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
           }
         },
         "type": "object",
@@ -3490,7 +4354,9 @@
           "epistemic_status",
           "epistemic_type",
           "credence",
+          "credence_reasoning",
           "robustness",
+          "robustness_reasoning",
           "provenance_model",
           "provenance_call_type",
           "provenance_call_id",
@@ -3502,7 +4368,8 @@
           "fruit_remaining",
           "sections",
           "meta_type",
-          "run_id"
+          "run_id",
+          "hidden"
         ],
         "title": "Page"
       },
@@ -3634,6 +4501,17 @@
             ],
             "title": "Position"
           },
+          "impact_on_parent_question": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact On Parent Question"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -3658,10 +4536,71 @@
           "importance",
           "section",
           "position",
+          "impact_on_parent_question",
           "created_at",
           "run_id"
         ],
         "title": "PageLink"
+      },
+      "PageLoadEventOut": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "tags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id",
+          "detail",
+          "tags"
+        ],
+        "title": "PageLoadEventOut"
+      },
+      "PageLoadStatsOut": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/PageLoadEventOut"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "total_unique": {
+            "type": "integer",
+            "title": "Total Unique"
+          },
+          "question_headlines": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Question Headlines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events",
+          "total",
+          "total_unique",
+          "question_headlines"
+        ],
+        "title": "PageLoadStatsOut"
       },
       "PageRef": {
         "properties": {
@@ -3692,7 +4631,9 @@
           "summary",
           "view",
           "view_item",
-          "view_meta"
+          "view_meta",
+          "spec_item",
+          "artefact"
         ],
         "title": "PageType"
       },
@@ -3783,6 +4724,17 @@
             "type": "boolean",
             "title": "Hidden",
             "default": false
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
           }
         },
         "type": "object",
@@ -3790,7 +4742,8 @@
           "name",
           "id",
           "created_at",
-          "hidden"
+          "hidden",
+          "owner_user_id"
         ],
         "title": "Project"
       },
@@ -3885,6 +4838,87 @@
           "id"
         ],
         "title": "ProposedSubquestion"
+      },
+      "QuestionDedupeEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "question_dedupe",
+            "title": "Event",
+            "default": "question_dedupe"
+          },
+          "proposed_headline": {
+            "type": "string",
+            "title": "Proposed Headline",
+            "default": ""
+          },
+          "parent_id": {
+            "type": "string",
+            "title": "Parent Id"
+          },
+          "parent_headline": {
+            "type": "string",
+            "title": "Parent Headline",
+            "default": ""
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/DedupeCandidateItem"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "default": ""
+          },
+          "matched_page_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Page Id"
+          },
+          "matched_headline": {
+            "type": "string",
+            "title": "Matched Headline",
+            "default": ""
+          },
+          "decision_reasoning": {
+            "type": "string",
+            "title": "Decision Reasoning",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "proposed_headline",
+          "parent_id",
+          "parent_headline",
+          "candidates",
+          "outcome",
+          "matched_page_id",
+          "matched_headline",
+          "decision_reasoning"
+        ],
+        "title": "QuestionDedupeEventOut"
       },
       "QuestionStatsOut": {
         "properties": {
@@ -4171,29 +5205,6 @@
             ],
             "title": "Question Summary"
           },
-          "ab_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ab Run Id"
-          },
-          "arms": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Arms"
-          },
           "staged": {
             "type": "boolean",
             "title": "Staged",
@@ -4228,49 +5239,6 @@
           "created_at"
         ],
         "title": "RunSummaryOut"
-      },
-      "RunTraceOut": {
-        "properties": {
-          "run_id": {
-            "type": "string",
-            "title": "Run Id"
-          },
-          "question": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Page"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "root_calls": {
-            "items": {
-              "$ref": "#/components/schemas/CallTraceOut"
-            },
-            "type": "array",
-            "title": "Root Calls"
-          },
-          "cost_usd": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cost Usd"
-          }
-        },
-        "type": "object",
-        "required": [
-          "run_id",
-          "question",
-          "root_calls"
-        ],
-        "title": "RunTraceOut"
       },
       "RunTraceTreeOut": {
         "properties": {

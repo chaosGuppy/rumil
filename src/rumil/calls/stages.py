@@ -8,13 +8,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import ClassVar
 
-from rumil.calls.common import mark_call_completed
+from rumil.available_moves import get_moves_for_call
+from rumil.calls.common import mark_call_completed, resolve_page_refs
 from rumil.database import DB
 from rumil.models import Call, CallStage, CallStatus, CallType, Dispatch, Move, MoveType
-from rumil.available_moves import get_moves_for_call
 from rumil.moves.base import MoveState
-from rumil.tracing.trace_events import ErrorEvent
-from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.tracing import get_langfuse, observe, phase_span, propagate_attributes
+from rumil.tracing.page_load_tracking import page_track_scope
+from rumil.tracing.trace_events import ContextBuiltEvent, ErrorEvent
+from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +30,10 @@ class CallInfra:
     db: DB
     trace: CallTrace
     state: MoveState
+    # The parent prio cycle's root question — when set, per-round budget
+    # consumption also debits this question's budget pool. Left None for
+    # rumil-mediated dispatch and other paths outside a prio cycle.
+    pool_question_id: str | None = None
 
 
 @dataclass
@@ -37,8 +43,20 @@ class ContextResult:
     context_text: str
     working_page_ids: list[str]
     preloaded_ids: Sequence[str] = field(default_factory=list)
-    phase1_ids: list[str] = field(default_factory=list)
     messages: list[dict] = field(default_factory=list)
+    # Tiered breakdown of working_page_ids at the fidelity each page was
+    # rendered at. Builders that don't run tiered selection leave these
+    # empty; the event then falls back to showing working_page_ids as a
+    # single undifferentiated group.
+    full_page_ids: Sequence[str] = field(default_factory=list)
+    abstract_page_ids: Sequence[str] = field(default_factory=list)
+    summary_page_ids: Sequence[str] = field(default_factory=list)
+    distillation_page_ids: Sequence[str] = field(default_factory=list)
+    # Per-tier character usage as produced by build_embedding_based_context.
+    budget_usage: dict[str, int] = field(default_factory=dict)
+    # Set by ingest-style builders: the source page whose content is being
+    # folded into the prompt.
+    source_page_id: str | None = None
 
 
 @dataclass
@@ -52,6 +70,7 @@ class UpdateResult:
     messages: list[dict] = field(default_factory=list)
     last_fruit_score: int | None = None
     rounds_completed: int = 0
+    phase_summary: str = ""
 
 
 class ContextBuilder(ABC):
@@ -100,6 +119,7 @@ class CallRunner(ABC):
         up_to_stage: CallStage | None = None,
         max_rounds: int = 5,
         fruit_threshold: int = 4,
+        pool_question_id: str | None = None,
     ):
         self.infra = CallInfra(
             question_id=question_id,
@@ -107,6 +127,7 @@ class CallRunner(ABC):
             db=db,
             trace=CallTrace(call.id, db, broadcaster=broadcaster),
             state=MoveState(call, db),
+            pool_question_id=pool_question_id,
         )
         self.up_to_stage = up_to_stage
         self._max_rounds = max_rounds
@@ -151,54 +172,123 @@ class CallRunner(ABC):
     @abstractmethod
     def task_description(self) -> str: ...
 
+    async def _record_context_built(self, result: ContextResult) -> None:
+        """Emit the context_built trace event from the ContextResult.
+
+        Single authoritative emission point so every call type records the
+        event uniformly. Builders fill in tier fields on ContextResult when
+        they have them; absent tiers become empty lists in the event.
+
+        Scope-linked pages (considerations, judgements, sub-question
+        judgements rendered by ``format_page(scope_page, linked_detail=...)``)
+        aren't part of the context builder's returned ID lists — they're
+        recovered from the trace's page-load log by source-tag prefix so the
+        event can show what actually went into the prompt.
+        """
+        db = self.infra.db
+        scope_linked_ids = self.infra.trace.page_ids_by_source_prefix("linked_")
+        await self.infra.trace.record(
+            ContextBuiltEvent(
+                working_context_page_ids=await resolve_page_refs(result.working_page_ids, db),
+                preloaded_page_ids=await resolve_page_refs(result.preloaded_ids, db),
+                full_pages=await resolve_page_refs(result.full_page_ids, db),
+                abstract_pages=await resolve_page_refs(result.abstract_page_ids, db),
+                summary_pages=await resolve_page_refs(result.summary_page_ids, db),
+                distillation_pages=await resolve_page_refs(result.distillation_page_ids, db),
+                scope_linked_pages=await resolve_page_refs(scope_linked_ids, db),
+                budget_usage=dict(result.budget_usage),
+                context_text=result.context_text,
+                context_text_chars=len(result.context_text),
+                source_page_id=result.source_page_id,
+            )
+        )
+
+    @observe(name="call.run")
     async def run(self) -> None:
         call_db = await self.infra.db.fork()
         self.infra.db = call_db
+        self.infra.state.db = call_db
+        self.infra.trace.db = call_db
+        trace_token = set_trace(self.infra.trace)
+        lf = get_langfuse()
+        if lf is not None:
+            lf.update_current_span(
+                name=f"call.{self.infra.call.call_type.value}",
+                metadata={
+                    "call_id": self.infra.call.id,
+                    "call_type": self.infra.call.call_type.value,
+                    "question_id": self.infra.question_id,
+                    "parent_call_id": self.infra.call.parent_call_id,
+                },
+            )
         try:
-            await self._run_stages()
+            with propagate_attributes(
+                session_id=self.infra.db.run_id or None,
+                metadata={
+                    "call_type": self.infra.call.call_type.value,
+                    "call_id": self.infra.call.id,
+                },
+                tags=[f"call_type:{self.infra.call.call_type.value}"],
+            ):
+                await self._run_stages()
         finally:
-            await call_db.close()
+            try:
+                await call_db.close()
+            finally:
+                reset_trace(trace_token)
 
     async def _run_stages(self) -> None:
-        set_trace(self.infra.trace)
-        try:
-            await self.infra.db.update_call_status(
-                self.infra.call.id,
-                CallStatus.RUNNING,
-                call_params=self.infra.call.call_params,
-            )
-
-            self.context_result = await self.context_builder.build_context(self.infra)
-            if self.up_to_stage == CallStage.BUILD_CONTEXT:
-                await mark_call_completed(
-                    self.infra.call,
-                    self.infra.db,
-                    "Stopped after build_context",
+        question_short = self.infra.question_id[:8] if self.infra.question_id else ""
+        with page_track_scope(
+            call_type=self.infra.call.call_type.value,
+            question=question_short,
+        ):
+            try:
+                await self.infra.db.update_call_status(
+                    self.infra.call.id,
+                    CallStatus.RUNNING,
+                    call_params=self.infra.call.call_params,
                 )
-                return
 
-            self.update_result = await self.workspace_updater.update_workspace(
-                self.infra,
-                self.context_result,
-            )
-            if self.up_to_stage == CallStage.UPDATE_WORKSPACE:
-                await mark_call_completed(
-                    self.infra.call,
-                    self.infra.db,
-                    "Stopped after update_workspace",
-                )
-                return
+                with phase_span("build_context"):
+                    self.context_result = await self.context_builder.build_context(self.infra)
+                await self._record_context_built(self.context_result)
+                if self.up_to_stage == CallStage.BUILD_CONTEXT:
+                    await mark_call_completed(
+                        self.infra.call,
+                        self.infra.db,
+                        "Stopped after build_context",
+                    )
+                    await self.infra.trace.flush_page_loads()
+                    return
 
-            await self.closing_reviewer.closing_review(
-                self.infra,
-                self.context_result,
-                self.update_result,
-            )
-        except Exception as e:
-            await self.infra.trace.record(
-                ErrorEvent(
-                    message=f"Call failed: {type(e).__name__}: {e}",
-                    phase="run",
+                with phase_span("update_workspace"):
+                    self.update_result = await self.workspace_updater.update_workspace(
+                        self.infra,
+                        self.context_result,
+                    )
+                if self.up_to_stage == CallStage.UPDATE_WORKSPACE:
+                    await mark_call_completed(
+                        self.infra.call,
+                        self.infra.db,
+                        "Stopped after update_workspace",
+                    )
+                    await self.infra.trace.flush_page_loads()
+                    return
+
+                with phase_span("closing_review"):
+                    await self.closing_reviewer.closing_review(
+                        self.infra,
+                        self.context_result,
+                        self.update_result,
+                    )
+                await self.infra.trace.flush_page_loads()
+            except Exception as e:
+                await self.infra.trace.flush_page_loads()
+                await self.infra.trace.record(
+                    ErrorEvent(
+                        message=f"Call failed: {type(e).__name__}: {e}",
+                        phase="run",
+                    )
                 )
-            )
-            raise
+                raise

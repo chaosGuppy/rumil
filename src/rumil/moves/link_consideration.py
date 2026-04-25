@@ -59,7 +59,8 @@ async def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> Move
         )
         return MoveResult(
             "Link skipped — consideration links must originate from a claim. "
-            "Use link_depends_on for claim/judgement → claim/judgement relationships."
+            "Claim/judgement → claim/judgement dependencies are recorded by "
+            "inline [shortid] citations in the citing page's content, not by a tool."
         )
     if question_page is None or question_page.page_type != PageType.QUESTION:
         log.warning(
@@ -69,7 +70,8 @@ async def execute(payload: LinkConsiderationPayload, call: Call, db: DB) -> Move
         )
         return MoveResult(
             "Link skipped — consideration links must target a question. "
-            "Use link_depends_on if you meant to record a dependency between claims."
+            "If you meant to record a dependency between claims, cite the "
+            "depended-on page inline in content with [shortid] instead."
         )
 
     link = PageLink(
@@ -98,8 +100,9 @@ MOVE = MoveDef(
         "should be accounted for in any analysis of the question — with a "
         "strength rating indicating how strongly it bears on the question. "
         "The source must be a claim and the target must be a question. Do NOT "
-        "use this for claim→claim or judgement→claim relationships; use "
-        "link_depends_on for those."
+        "use this for claim→claim or judgement→claim relationships; those "
+        "dependencies are created automatically from inline [shortid] "
+        "citations in the citing page's content."
     ),
     schema=LinkConsiderationPayload,
     execute=execute,

@@ -8,17 +8,15 @@ origin=claude-code, at least one page was linked to the scope question.
 from __future__ import annotations
 
 import pytest
+from rumil_skills import _runctx, dispatch_call
 
 from rumil.models import CallStatus
-from rumil_skills import _runctx, dispatch_call
 
 
 @pytest.fixture(autouse=True)
 def _isolate_state(monkeypatch, tmp_path):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 @pytest.fixture
@@ -68,9 +66,7 @@ async def test_dispatch_find_considerations_completes(
 
 
 @pytest.mark.integration
-async def test_dispatch_records_run_with_origin(
-    monkeypatch, patch_make_db, tmp_db, question_page
-):
+async def test_dispatch_records_run_with_origin(monkeypatch, patch_make_db, tmp_db, question_page):
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -86,9 +82,7 @@ async def test_dispatch_records_run_with_origin(
     )
     await dispatch_call.main()
 
-    runs = await tmp_db._execute(
-        tmp_db.client.table("runs").select("*").eq("id", tmp_db.run_id)
-    )
+    runs = await tmp_db._execute(tmp_db.client.table("runs").select("*").eq("id", tmp_db.run_id))
     rows = list(getattr(runs, "data", None) or [])
     assert len(rows) == 1
     config = rows[0].get("config") or {}

@@ -4,48 +4,43 @@ FastAPI application for the Rumil research workspace.
 Read-only API for browsing projects, pages, links, and calls.
 """
 
-import asyncio
-import base64
 import logging
 import os
-import secrets
 import uuid
 from collections.abc import AsyncIterator
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
-from starlette.middleware.base import BaseHTTPMiddleware
 
-from rumil.database import DB, _row_to_call, _rows
-from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
-from rumil.settings import get_settings
+from rumil.api.auth import AuthUser, get_current_user
 from rumil.api.schemas import (
     ABEvalDimensionOut,
     ABEvalDimensionSummaryOut,
     ABEvalReportListItemOut,
     ABEvalReportOut,
-    ABRunArmOut,
-    ABRunTraceOut,
-    CallSequenceOut,
-    CallTraceOut,
+    AuthUserOut,
+    CallNodeOut,
+    CallSummary,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
     PageCountsOut,
     PageDetailOut,
+    PageLoadEventOut,
+    PageLoadStatsOut,
     PaginatedPagesOut,
     ProjectStatsOut,
     QuestionStatsOut,
     RealtimeConfigOut,
     RunListItemOut,
-    CallNodeOut,
-    CallSummary,
     RunSummaryOut,
-    RunTraceOut,
     RunTraceTreeOut,
     TraceEventOut,
 )
+from rumil.database import DB, _row_to_call, _rows
+from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
+from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
 _trace_event_adapter = TypeAdapter(TraceEventOut)
@@ -57,39 +52,42 @@ app = FastAPI(
     description="Read-only API for the Rumil research workspace.",
 )
 
-_AUTH_PASSWORD = os.environ.get("RUMIL_AUTH_PASSWORD", "")
-
-
-class BasicAuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
-        if request.url.path == "/healthz" or not _AUTH_PASSWORD:
-            return await call_next(request)
-
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Basic "):
-            try:
-                decoded = base64.b64decode(auth[6:]).decode()
-                _, password = decoded.split(":", 1)
-            except Exception:
-                password = ""
-            if secrets.compare_digest(password, _AUTH_PASSWORD):
-                return await call_next(request)
-
-        return Response(
-            status_code=401,
-            headers={"WWW-Authenticate": 'Basic realm="rumil"'},
-            content="Unauthorized",
-        )
-
-
-app.add_middleware(BasicAuthMiddleware)
+_ALLOWED_FRONTEND_ORIGINS = [
+    o.strip()
+    for o in os.environ.get(
+        "RUMIL_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3012,http://localhost:3013",
+    ).split(",")
+    if o.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_FRONTEND_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+async def _assert_page_access(db: DB, page_id: str) -> Page:
+    page = await db.get_page(page_id)
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+    return page
+
+
+async def _assert_call_access(db: DB, call_id: str) -> Call:
+    call = await db.get_call(call_id)
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+    return call
+
+
+async def _assert_run_access(db: DB, run_id: str) -> None:
+    rows = _rows(await db.client.table("runs").select("id").eq("id", run_id).execute())
+    if not rows:
+        raise HTTPException(status_code=404, detail="Run not found")
 
 
 @app.get("/healthz")
@@ -97,14 +95,15 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def _get_db(project_id: str = "") -> AsyncIterator[DB]:
+async def _get_db(
+    project_id: str = "",
+    _user: AuthUser = Depends(get_current_user),
+) -> AsyncIterator[DB]:
     """Yield a per-request DB, closing its HTTP connections on teardown.
 
-    FastAPI injects this as a Depends() and runs the post-yield cleanup
-    after the response is sent, regardless of whether the endpoint
-    returned normally or raised. This is the fundamental lifecycle
-    fix for chaosGuppy/rumil#274. project_id, if declared as a path
-    parameter on the endpoint, flows in here via name-based matching.
+    The `_user` dependency is declared purely as an auth gate — every
+    endpoint that injects the DB transitively requires a valid JWT. Project
+    visibility is intentionally global: any signed-in user sees all projects.
     """
     prod = get_settings().is_prod_db
     db = await DB.create(
@@ -121,13 +120,9 @@ async def _get_db(project_id: str = "") -> AsyncIterator[DB]:
 async def _get_db_maybe_staged(
     staged_run_id: str | None = None,
     project_id: str = "",
+    _user: AuthUser = Depends(get_current_user),
 ) -> AsyncIterator[DB]:
-    """Same as _get_db but optionally scoped to a staged run.
-
-    When staged_run_id is present (as a query parameter on the endpoint),
-    the DB is constructed with staged=True and run_id=staged_run_id so
-    staged-run visibility rules apply.
-    """
+    """Same as `_get_db` but optionally scoped to a staged run."""
     prod = get_settings().is_prod_db
     if staged_run_id:
         db = await DB.create(
@@ -148,6 +143,11 @@ async def _get_db_maybe_staged(
         await db.close()
 
 
+@app.get("/api/auth/me", response_model=AuthUserOut)
+async def get_me(user: AuthUser = Depends(get_current_user)):
+    return AuthUserOut(user_id=user.user_id, email=user.email)
+
+
 @app.get("/api/projects", response_model=list[Project])
 async def list_projects(db: DB = Depends(_get_db)):
     return await db.list_projects()
@@ -155,9 +155,7 @@ async def list_projects(db: DB = Depends(_get_db)):
 
 @app.get("/api/projects/{project_id}", response_model=Project)
 async def get_project(project_id: str, db: DB = Depends(_get_db)):
-    rows = _rows(
-        await db.client.table("projects").select("*").eq("id", project_id).execute()
-    )
+    rows = _rows(await db.client.table("projects").select("*").eq("id", project_id).execute())
     if not rows:
         raise HTTPException(status_code=404, detail="Project not found")
     r = rows[0]
@@ -166,6 +164,7 @@ async def get_project(project_id: str, db: DB = Depends(_get_db)):
         name=r["name"],
         created_at=r["created_at"],
         hidden=r.get("hidden", False),
+        owner_user_id=r.get("owner_user_id"),
     )
 
 
@@ -183,6 +182,7 @@ async def list_pages(
     search: str | None = None,
     offset: int = 0,
     limit: int = 50,
+    include_hidden: bool = False,
     db: DB = Depends(_get_db_maybe_staged),
 ):
     pages, total_count = await db.get_pages_paginated(
@@ -192,6 +192,7 @@ async def list_pages(
         search=search,
         offset=offset,
         limit=limit,
+        include_hidden=include_hidden,
     )
     return PaginatedPagesOut(
         items=pages,
@@ -204,62 +205,80 @@ async def list_pages(
 @app.get("/api/pages/short/{short_id}", response_model=Page)
 async def get_page_by_short_id(
     short_id: str,
+    user: AuthUser = Depends(get_current_user),
     db: DB = Depends(_get_db_maybe_staged),
 ):
     full_id = await db.resolve_page_id(short_id)
     if not full_id:
         raise HTTPException(status_code=404, detail="Page not found")
-    page = await db.get_page(full_id)
-    if not page:
-        raise HTTPException(status_code=404, detail="Page not found")
-    return page
+    return await _assert_page_access(db, full_id)
 
 
 @app.get("/api/pages/{page_id}", response_model=Page)
-async def get_page(page_id: str, db: DB = Depends(_get_db_maybe_staged)):
-    page = await db.get_page(page_id)
-    if not page:
-        raise HTTPException(status_code=404, detail="Page not found")
-    return page
+async def get_page(
+    page_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db_maybe_staged),
+):
+    return await _assert_page_access(db, page_id)
 
 
 @app.get("/api/pages/{page_id}/links/from", response_model=list[PageLink])
-async def get_links_from(page_id: str, db: DB = Depends(_get_db)):
+async def get_links_from(
+    page_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    await _assert_page_access(db, page_id)
     return await db.get_links_from(page_id)
 
 
 @app.get("/api/pages/{page_id}/links/to", response_model=list[PageLink])
-async def get_links_to(page_id: str, db: DB = Depends(_get_db)):
+async def get_links_to(
+    page_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    await _assert_page_access(db, page_id)
     return await db.get_links_to(page_id)
 
 
 @app.get("/api/pages/{page_id}/dependents", response_model=list[LinkedPageOut])
-async def get_dependents(page_id: str, db: DB = Depends(_get_db)):
+async def get_dependents(
+    page_id: str,
+    include_hidden: bool = False,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
     """Pages that depend on this page (inbound DEPENDS_ON links)."""
-    results = await db.get_dependents(page_id)
+    await _assert_page_access(db, page_id)
+    results = await db.get_dependents(page_id, include_hidden=include_hidden)
     return [LinkedPageOut(page=page, link=link) for page, link in results]
 
 
 @app.get("/api/pages/{page_id}/dependencies", response_model=list[LinkedPageOut])
-async def get_dependencies(page_id: str, db: DB = Depends(_get_db)):
+async def get_dependencies(
+    page_id: str,
+    include_hidden: bool = False,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
     """Pages that this page depends on (outbound DEPENDS_ON links)."""
-    results = await db.get_dependencies(page_id)
+    await _assert_page_access(db, page_id)
+    results = await db.get_dependencies(page_id, include_hidden=include_hidden)
     return [LinkedPageOut(page=page, link=link) for page, link in results]
 
 
 @app.get("/api/pages/{page_id}/detail", response_model=PageDetailOut)
 async def get_page_detail(
     page_id: str,
+    user: AuthUser = Depends(get_current_user),
     db: DB = Depends(_get_db_maybe_staged),
 ):
-    page = await db.get_page(page_id)
-    if not page:
-        raise HTTPException(status_code=404, detail="Page not found")
+    page = await _assert_page_access(db, page_id)
     raw_from = await db.get_links_from(page_id)
     raw_to = await db.get_links_to(page_id)
-    all_linked_ids = [link.to_page_id for link in raw_from] + [
-        link.from_page_id for link in raw_to
-    ]
+    all_linked_ids = [link.to_page_id for link in raw_from] + [link.from_page_id for link in raw_to]
     pages_by_id = await db.get_pages_by_ids(all_linked_ids)
     links_from = [
         LinkedPageOut(page=pages_by_id[link.to_page_id], link=link)
@@ -275,31 +294,40 @@ async def get_page_detail(
 
 
 @app.get("/api/pages/{page_id}/counts", response_model=PageCountsOut)
-async def get_page_counts(page_id: str, db: DB = Depends(_get_db)):
+async def get_page_counts(
+    page_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    await _assert_page_access(db, page_id)
     counts = await db.count_pages_for_question(page_id)
     return PageCountsOut(**counts)
 
 
 @app.get("/api/projects/{project_id}/stats", response_model=ProjectStatsOut)
-async def get_project_stats(project_id: str, db: DB = Depends(_get_db)):
+async def get_project_stats(project_id: str, db: DB = Depends(_get_db_maybe_staged)):
     """Aggregate stats over all pages/links/calls in a project.
 
-    v1 is baseline-only: rows with staged=true or is_superseded=true are excluded,
-    and staged_run_id is not accepted.
+    Baseline rows are always included; when `staged_run_id` is provided as a
+    query param, rows from that staged run are also included and its mutation
+    events (supersede_page, delete_link) are overlayed.
     """
     blob = await db.get_project_stats(project_id)
     return ProjectStatsOut(project_id=project_id, **blob)
 
 
 @app.get("/api/pages/{page_id}/stats", response_model=QuestionStatsOut)
-async def get_question_stats(page_id: str, db: DB = Depends(_get_db)):
+async def get_question_stats(
+    page_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db_maybe_staged),
+):
     """Aggregate stats over the 2-hop undirected neighborhood around a question.
 
-    Returns 404 if the target page is not a question. v1 is baseline-only.
+    Returns 404 if the target page is not a question. Staged-run visibility
+    matches get_project_stats.
     """
-    page = await db.get_page(page_id)
-    if not page:
-        raise HTTPException(status_code=404, detail="Page not found")
+    page = await _assert_page_access(db, page_id)
     if page.page_type != PageType.QUESTION:
         raise HTTPException(
             status_code=404,
@@ -316,9 +344,10 @@ async def get_question_stats(page_id: str, db: DB = Depends(_get_db)):
 async def list_root_questions(
     project_id: str,
     workspace: Workspace = Workspace.RESEARCH,
+    include_hidden: bool = False,
     db: DB = Depends(_get_db),
 ):
-    return await db.get_root_questions(workspace)
+    return await db.get_root_questions(workspace, include_hidden=include_hidden)
 
 
 @app.get(
@@ -345,66 +374,22 @@ async def list_calls(
 
 
 @app.get("/api/calls/{call_id}", response_model=Call)
-async def get_call(call_id: str, db: DB = Depends(_get_db)):
-    call = await db.get_call(call_id)
-    if not call:
-        raise HTTPException(status_code=404, detail="Call not found")
-    return call
+async def get_call(
+    call_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    return await _assert_call_access(db, call_id)
 
 
 @app.get("/api/calls/{call_id}/children", response_model=list[Call])
-async def get_child_calls(call_id: str, db: DB = Depends(_get_db)):
+async def get_child_calls(
+    call_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    await _assert_call_access(db, call_id)
     return await db.get_child_calls(call_id)
-
-
-async def _build_call_trace(db: DB, call_id: str) -> CallTraceOut:
-    call = await db.get_call(call_id)
-    if not call:
-        raise HTTPException(status_code=404, detail="Call not found")
-    events, children, db_sequences = await asyncio.gather(
-        _parse_trace_events(db, call_id),
-        db.get_child_calls(call_id),
-        db.get_sequences_for_call(call_id),
-    )
-    scope_page_summary = None
-    if call.scope_page_id:
-        scope_page = await db.get_page(call.scope_page_id)
-        if scope_page:
-            scope_page_summary = scope_page.headline
-    child_traces = list(
-        await asyncio.gather(*[_build_call_trace(db, c.id) for c in children])
-    )
-
-    sequences_out: list[CallSequenceOut] | None = None
-    if db_sequences:
-        seq_call_lists = await asyncio.gather(
-            *[db.get_calls_for_sequence(seq.id) for seq in db_sequences]
-        )
-        seq_trace_lists = await asyncio.gather(
-            *[
-                asyncio.gather(*[_build_call_trace(db, sc.id) for sc in seq_calls])
-                for seq_calls in seq_call_lists
-            ]
-        )
-        sequences_out = [
-            CallSequenceOut(
-                id=seq.id,
-                position_in_batch=seq.position_in_batch,
-                calls=list(seq_traces),
-            )
-            for seq, seq_traces in zip(db_sequences, seq_trace_lists)
-        ]
-
-    child_costs = [ct.cost_usd for ct in child_traces if ct.cost_usd is not None]
-    total = (call.cost_usd or 0) + sum(child_costs)
-    return CallTraceOut(
-        call=call,
-        scope_page_summary=scope_page_summary,
-        events=events,
-        children=child_traces,
-        sequences=sequences_out,
-        cost_usd=total if total > 0 else None,
-    )
 
 
 async def _parse_trace_events(db: DB, call_id: str) -> list[TraceEventOut]:
@@ -434,7 +419,12 @@ def _count_trace_events(trace_json: list[dict] | None) -> tuple[int, int]:
 
 
 @app.get("/api/runs/{run_id}/trace-tree", response_model=RunTraceTreeOut)
-async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
+async def get_run_trace_tree(
+    run_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    await _assert_run_access(db, run_id)
     question_id = await db.get_run_question_id(run_id)
     question_page = None
     if question_id:
@@ -460,12 +450,7 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = (
-        await db.client.table("runs")
-        .select("staged, config")
-        .eq("id", run_id)
-        .execute()
-    )
+    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
     run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
     is_staged = bool(run_data and run_data[0].get("staged"))
     run_config: dict = {}
@@ -482,66 +467,13 @@ async def get_run_trace_tree(run_id: str, db: DB = Depends(_get_db)):
 
 
 @app.get("/api/calls/{call_id}/events", response_model=list[TraceEventOut])
-async def get_call_events(call_id: str, db: DB = Depends(_get_db)):
-    call = await db.get_call(call_id)
-    if not call:
-        raise HTTPException(status_code=404, detail="Call not found")
+async def get_call_events(
+    call_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    await _assert_call_access(db, call_id)
     return await _parse_trace_events(db, call_id)
-
-
-@app.get("/api/ab-runs/{ab_run_id}/trace", response_model=ABRunTraceOut)
-async def get_ab_run_trace(ab_run_id: str, db: DB = Depends(_get_db)):
-    ab_rows = _rows(
-        await db.client.table("ab_runs").select("*").eq("id", ab_run_id).execute()
-    )
-    if not ab_rows:
-        raise HTTPException(status_code=404, detail="AB run not found")
-    ab_row = ab_rows[0]
-    arm_rows = _rows(
-        await db.client.table("runs")
-        .select("id, name, config, ab_arm")
-        .eq("ab_run_id", ab_run_id)
-        .order("ab_arm")
-        .execute()
-    )
-    question_page = None
-    qid = ab_row.get("question_id")
-    if qid:
-        question_page = await db.get_page(qid)
-
-    async def _build_arm(arm_row: dict) -> ABRunArmOut:
-        run_id = arm_row["id"]
-        question_id = await db.get_run_question_id(run_id)
-        q_page = None
-        if question_id:
-            q_page = await db.get_page(question_id)
-        calls = await db.get_calls_for_run(run_id)
-        root_calls = [c for c in calls if c.parent_call_id is None]
-        root_traces = list(
-            await asyncio.gather(*[_build_call_trace(db, c.id) for c in root_calls])
-        )
-        run_costs = [ct.cost_usd for ct in root_traces if ct.cost_usd is not None]
-        run_total = sum(run_costs)
-        trace = RunTraceOut(
-            run_id=run_id,
-            question=q_page,
-            root_calls=root_traces,
-            cost_usd=run_total if run_total > 0 else None,
-        )
-        return ABRunArmOut(
-            run_id=run_id,
-            name=arm_row.get("name", ""),
-            config=arm_row.get("config", {}),
-            trace=trace,
-        )
-
-    arms = list(await asyncio.gather(*[_build_arm(arm_row) for arm_row in arm_rows]))
-    return ABRunTraceOut(
-        ab_run_id=ab_run_id,
-        name=ab_row.get("name", ""),
-        question=question_page,
-        arms=arms,
-    )
 
 
 @app.get(
@@ -552,10 +484,7 @@ async def list_ab_evals(db: DB = Depends(_get_db)):
     rows = await db.list_ab_eval_reports()
 
     question_ids = {
-        qid
-        for row in rows
-        for qid in (row.get("question_id_a"), row.get("question_id_b"))
-        if qid
+        qid for row in rows for qid in (row.get("question_id_a"), row.get("question_id_b")) if qid
     }
     pages_by_id: dict[str, Page] = {}
     if question_ids:
@@ -616,16 +545,14 @@ async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
         question_id_b=row.get("question_id_b") or "",
         question_headline=q_page.headline if q_page else "",
         overall_assessment=row.get("overall_assessment") or "",
+        overall_assessment_call_id=row.get("overall_assessment_call_id") or "",
         dimension_reports=[
             ABEvalDimensionOut(
                 name=d.get("name", ""),
                 display_name=d.get("display_name", ""),
                 preference=d.get("preference", ""),
-                report_a=d.get("report_a", ""),
-                report_b=d.get("report_b", ""),
-                comparison=d.get("comparison", ""),
-                call_id_a=d.get("call_id_a", ""),
-                call_id_b=d.get("call_id_b", ""),
+                report=d.get("report", ""),
+                call_id=d.get("call_id", ""),
             )
             for d in dims
         ],
@@ -639,7 +566,12 @@ async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
     "/api/calls/{call_id}/llm-exchanges",
     response_model=list[LLMExchangeSummaryOut],
 )
-async def list_llm_exchanges(call_id: str, db: DB = Depends(_get_db)):
+async def list_llm_exchanges(
+    call_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    await _assert_call_access(db, call_id)
     rows = await db.get_llm_exchanges(call_id)
     return [
         LLMExchangeSummaryOut(
@@ -657,10 +589,15 @@ async def list_llm_exchanges(call_id: str, db: DB = Depends(_get_db)):
 
 
 @app.get("/api/llm-exchanges/{exchange_id}", response_model=LLMExchangeOut)
-async def get_llm_exchange(exchange_id: str, db: DB = Depends(_get_db)):
+async def get_llm_exchange(
+    exchange_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
     row = await db.get_llm_exchange(exchange_id)
     if not row:
         raise HTTPException(status_code=404, detail="LLM exchange not found")
+    await _assert_call_access(db, row["call_id"])
     return LLMExchangeOut(
         id=row["id"],
         call_id=row["call_id"],
@@ -680,7 +617,7 @@ async def get_llm_exchange(exchange_id: str, db: DB = Depends(_get_db)):
 
 
 @app.get("/api/realtime/config", response_model=RealtimeConfigOut)
-def get_realtime_config():
+def get_realtime_config(_user: AuthUser = Depends(get_current_user)):
     settings = get_settings()
     url, key = settings.get_supabase_credentials(prod=settings.is_prod_db)
     anon_key = os.environ.get("SUPABASE_ANON_KEY", key)
@@ -691,7 +628,12 @@ def get_realtime_config():
     "/api/pages/{page_id}/run",
     response_model=RunSummaryOut | None,
 )
-async def get_page_run(page_id: str, db: DB = Depends(_get_db)):
+async def get_page_run(
+    page_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db_maybe_staged),
+):
+    await _assert_page_access(db, page_id)
     run = await db.get_run_for_page(page_id)
     if not run:
         return None
@@ -699,4 +641,46 @@ async def get_page_run(page_id: str, db: DB = Depends(_get_db)):
         run_id=run["run_id"],
         created_at=run["created_at"],
         provenance_call_id=run.get("provenance_call_id", ""),
+    )
+
+
+@app.get(
+    "/api/runs/{run_id}/page-load-stats",
+    response_model=PageLoadStatsOut,
+)
+async def get_page_load_stats(
+    run_id: str,
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
+):
+    await _assert_run_access(db, run_id)
+    rows = await db.get_page_format_events_for_run(run_id)
+
+    events = [
+        PageLoadEventOut(
+            page_id=r["page_id"],
+            detail=r["detail"],
+            tags=r.get("tags") or {},
+        )
+        for r in rows
+    ]
+    unique_pages = {r["page_id"] for r in rows}
+
+    question_shorts = {q for ev in events if (q := ev.tags.get("question"))}
+    question_headlines: dict[str, str] = {}
+    if question_shorts:
+        resolved = await db.resolve_page_ids(list(question_shorts))
+        full_ids = list(set(resolved.values()))
+        if full_ids:
+            page_by_id = await db.get_pages_by_ids(full_ids)
+            for short_id, full_id in resolved.items():
+                page = page_by_id.get(full_id)
+                if page and page.headline:
+                    question_headlines[short_id] = page.headline
+
+    return PageLoadStatsOut(
+        events=events,
+        total=len(rows),
+        total_unique=len(unique_pages),
+        question_headlines=question_headlines,
     )

@@ -1,11 +1,12 @@
 """Embedding creation (Voyage AI) and vector search (Supabase pgvector)."""
 
 import logging
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from voyageai.client_async import AsyncClient
 
-from rumil.database import DB, _Rows, _row_to_page, _rows
+from rumil.database import DB, _row_to_page, _Rows, _rows
 from rumil.models import Page, Workspace
 from rumil.settings import get_settings
 
@@ -18,9 +19,7 @@ EMBEDDING_DIMENSIONS = 1024
 def _get_client() -> AsyncClient:
     key = get_settings().voyage_ai_api_key
     if not key:
-        raise EnvironmentError(
-            "VOYAGE_AI_API_KEY not set. Add it to .env to use embeddings."
-        )
+        raise OSError("VOYAGE_AI_API_KEY not set. Add it to .env to use embeddings.")
     return AsyncClient(api_key=key)
 
 
@@ -45,10 +44,32 @@ async def embed_texts(
     return result.embeddings
 
 
-async def embed_query(text: str) -> Sequence[float]:
-    """Create an embedding for a search query."""
-    embeddings = await embed_texts([text], input_type="query")
+async def embed_query(text: str, input_type: str = "query") -> Sequence[float]:
+    """Create an embedding for a search query.
+
+    ``input_type`` defaults to ``"query"`` for asymmetric retrieval (e.g.
+    using a question to find content that answers it). Pass ``"document"``
+    for symmetric page-to-page similarity — querying with ``"query"`` caps
+    identical-text cosine similarity at ~0.74 against stored documents.
+    """
+    embeddings = await embed_texts([text], input_type=input_type)
     return embeddings[0]
+
+
+def page_query_text(page: Page) -> str:
+    """Return text to represent a page when querying for similar pages.
+
+    Prefers the page's abstract (the canonical retrieval surface); falls
+    back to headline+content with a warning when the abstract is empty,
+    since the fallback is a less-clean query surface.
+    """
+    if page.abstract and page.abstract.strip():
+        return page.abstract
+    log.warning(
+        "Page %s has no abstract; using headline+content as similarity query",
+        page.id[:8],
+    )
+    return f"{page.headline}\n\n{page.content}"
 
 
 def page_text_for_field(page: Page, field_name: str) -> str:
@@ -113,13 +134,17 @@ async def search_pages(
     match_count: int = 10,
     workspace: Workspace | None = None,
     field_name: str | None = None,
+    input_type: str = "query",
 ) -> list[tuple[Page, float]]:
     """Search for pages similar to a query string.
 
     Returns (page, similarity_score) pairs sorted by descending similarity.
     Optionally filter to embeddings of a specific field_name.
+
+    ``input_type`` defaults to ``"query"`` for asymmetric retrieval. Pass
+    ``"document"`` for symmetric page-to-page similarity (e.g. dedupe).
     """
-    query_embedding = await embed_query(query)
+    query_embedding = await embed_query(query, input_type=input_type)
     return await search_pages_by_vector(
         db,
         query_embedding,
@@ -137,11 +162,13 @@ async def search_pages_by_vector(
     match_count: int = 10,
     workspace: Workspace | None = None,
     field_name: str | None = None,
+    include_hidden: bool = False,
 ) -> list[tuple[Page, float]]:
     """Search for pages similar to a given embedding vector.
 
     Returns (page, similarity_score) pairs sorted by descending similarity.
-    Optionally filter to embeddings of a specific field_name.
+    Optionally filter to embeddings of a specific field_name. Hidden pages
+    are excluded unless *include_hidden* is True.
     """
     embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
     params: dict[str, Any] = {
@@ -157,6 +184,8 @@ async def search_pages_by_vector(
         params["filter_field_name"] = field_name
     if db.staged:
         params["filter_staged_run_id"] = db.run_id
+    if include_hidden:
+        params["filter_include_hidden"] = True
     rows: _Rows = _rows(await db.client.rpc("match_pages", params).execute())
     results: list[tuple[Page, float]] = []
     for row in rows:
@@ -167,7 +196,6 @@ async def search_pages_by_vector(
         pages = await db._apply_page_events([p for p, _ in results])
         scores = {p.id: s for p, s in results}
         results = [(p, scores[p.id]) for p in pages if p.is_active()]
-    await db.apply_epistemic_overrides([p for p, _ in results])
     return results
 
 
@@ -189,9 +217,7 @@ async def backfill_embeddings(
         params["p_workspace"] = workspace.value
     if db.project_id:
         params["p_project_id"] = db.project_id
-    rows: _Rows = _rows(
-        await db.client.rpc("pages_missing_embedding", params).execute()
-    )
+    rows: _Rows = _rows(await db.client.rpc("pages_missing_embedding", params).execute())
     if not rows:
         return 0
     pages = [_row_to_page(r) for r in rows]

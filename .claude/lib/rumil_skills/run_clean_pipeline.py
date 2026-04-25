@@ -52,8 +52,7 @@ async def _load_eval_call(db, eval_call_id: str):
         sys.exit(1)
     if call.status != CallStatus.COMPLETE:
         print(
-            f"evaluate call {resolved[:8]} has status {call.status.value}, "
-            "must be complete",
+            f"evaluate call {resolved[:8]} has status {call.status.value}, must be complete",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -115,9 +114,7 @@ async def main() -> None:
         print_trace(db.run_id)
 
         if args.pipeline == "grounding":
-            print_event(
-                "→", f"running grounding pipeline (from_stage={args.from_stage})"
-            )
+            print_event("→", f"running grounding pipeline (from_stage={args.from_stage})")
             result = await run_grounding_feedback(
                 call.scope_page_id,
                 evaluation_text,
@@ -128,9 +125,7 @@ async def main() -> None:
             # Lazy import — run_feedback_update has a heavier import tree.
             from rumil.clean.feedback import run_feedback_update
 
-            print_event(
-                "→", f"running feedback pipeline (from_stage={args.from_stage})"
-            )
+            print_event("→", f"running feedback pipeline (from_stage={args.from_stage})")
             result = await run_feedback_update(
                 call.scope_page_id,
                 evaluation_text,

@@ -7,6 +7,11 @@ import uuid
 
 import pytest
 import pytest_asyncio
+from rumil_skills import _runctx, apply_move
+from rumil_skills.apply_move import (
+    TraceRecordError,
+    apply_validated_move,
+)
 
 from rumil.database import DB
 from rumil.models import (
@@ -19,19 +24,12 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil_skills import _runctx, apply_move
-from rumil_skills.apply_move import (
-    TraceRecordError,
-    apply_validated_move,
-)
 
 
 @pytest.fixture
 def _isolated_state(tmp_path, monkeypatch):
     monkeypatch.setattr(_runctx, "STATE_DIR", tmp_path / "state")
-    monkeypatch.setattr(
-        _runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json"
-    )
+    monkeypatch.setattr(_runctx, "STATE_FILE", tmp_path / "state" / "rumil-session.json")
 
 
 def _set_workspace(workspace: str) -> None:
@@ -99,9 +97,7 @@ async def test_accreting_only_refuses_destructive(_isolated_state, monkeypatch):
     assert excinfo.value.code == 2
 
 
-async def test_create_claim_end_to_end_via_cli(
-    _isolated_state, monkeypatch, envelope_cleanup
-):
+async def test_create_claim_end_to_end_via_cli(_isolated_state, monkeypatch, envelope_cleanup):
     """Full CLI path: argparse → envelope creation → move → trace event."""
     workspace = f"test-apply-{uuid.uuid4().hex[:8]}"
     _set_workspace(workspace)
@@ -111,7 +107,9 @@ async def test_create_claim_end_to_end_via_cli(
             "headline": "Transformers scale with compute and data",
             "content": "Empirical scaling laws demonstrate log-linear loss improvements.",
             "credence": 7,
+            "credence_reasoning": "Supported by multiple scaling-law papers.",
             "robustness": 3,
+            "robustness_reasoning": "Well-replicated empirical finding.",
         }
     )
     _run_main(monkeypatch, ["CREATE_CLAIM", payload])
@@ -147,7 +145,9 @@ async def test_apply_validated_move_creates_claim(tmp_db, envelope_call):
         "headline": "Compute doubles every 6 months",
         "content": "Training compute has been doubling every ~6 months since 2012.",
         "credence": 6,
+        "credence_reasoning": "Multiple empirical measurements since 2012.",
         "robustness": 2,
+        "robustness_reasoning": "Depends on a handful of compute-tracker studies.",
     }
     result = await apply_validated_move(
         db=tmp_db,
@@ -188,6 +188,10 @@ async def test_apply_validated_move_links_consideration(tmp_db, envelope_call):
         payload={
             "headline": "Regulation follows deployment",
             "content": "Historical pattern: rules arrive after the tech is live.",
+            "credence": 5,
+            "credence_reasoning": "Broad historical pattern with exceptions.",
+            "robustness": 2,
+            "robustness_reasoning": "Based on a handful of well-known case studies.",
         },
     )
     assert claim_result.created_page_id is not None
@@ -212,9 +216,7 @@ async def test_apply_validated_move_links_consideration(tmp_db, envelope_call):
     assert consideration_links[0].strength == 4.0
 
 
-async def test_apply_validated_move_supersede_records_mutation_event(
-    tmp_db, envelope_call
-):
+async def test_apply_validated_move_supersede_records_mutation_event(tmp_db, envelope_call):
     old_result = await apply_validated_move(
         db=tmp_db,
         envelope_call=envelope_call,
@@ -222,6 +224,10 @@ async def test_apply_validated_move_supersede_records_mutation_event(
         payload={
             "headline": "Frontier models cost $100M to train",
             "content": "Based on compute-cost estimates.",
+            "credence": 5,
+            "credence_reasoning": "Ballpark from rough compute accounting.",
+            "robustness": 2,
+            "robustness_reasoning": "Approximate; firm numbers are not public.",
         },
     )
     old_id = old_result.created_page_id
@@ -234,6 +240,10 @@ async def test_apply_validated_move_supersede_records_mutation_event(
         payload={
             "headline": "Frontier models now cost $1B+ to train",
             "content": "Updated estimates show costs crossing the billion-dollar threshold.",
+            "credence": 6,
+            "credence_reasoning": "Updated estimates from more recent reporting.",
+            "robustness": 2,
+            "robustness_reasoning": "Still approximate; firm-costed is non-public.",
             "supersedes": old_id,
             "change_magnitude": 3,
         },
@@ -266,9 +276,7 @@ async def test_apply_validated_move_unknown_move_raises(tmp_db, envelope_call):
         )
 
 
-async def test_apply_validated_move_raises_trace_record_error(
-    tmp_db, envelope_call, mocker
-):
+async def test_apply_validated_move_raises_trace_record_error(tmp_db, envelope_call, mocker):
     """If the trace write fails, the move has already landed but we fail loud."""
     mocker.patch.object(
         tmp_db,
@@ -278,6 +286,10 @@ async def test_apply_validated_move_raises_trace_record_error(
     payload = {
         "headline": "Trace write will fail",
         "content": "We still expect the page to be created before the raise.",
+        "credence": 5,
+        "credence_reasoning": "Test placeholder.",
+        "robustness": 2,
+        "robustness_reasoning": "Test placeholder.",
     }
     with pytest.raises(TraceRecordError, match="simulated trace write failure"):
         await apply_validated_move(
@@ -315,6 +327,10 @@ async def test_main_exits_nonzero_when_trace_write_fails(
         {
             "headline": "Trace failure path",
             "content": "We expect exit 1 and a loud message.",
+            "credence": 5,
+            "credence_reasoning": "Test placeholder.",
+            "robustness": 2,
+            "robustness_reasoning": "Test placeholder.",
         }
     )
     _run_main(monkeypatch, ["CREATE_CLAIM", payload])

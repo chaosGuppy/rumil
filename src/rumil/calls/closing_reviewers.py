@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
+from rumil.available_moves import get_moves_for_call
 from rumil.calls.common import (
     PageSummaryItem,
     ReviewResponse,
@@ -13,18 +14,17 @@ from rumil.calls.common import (
     mark_call_completed,
     prepare_tools,
     run_closing_review,
-    run_single_call,
     save_page_abstracts,
 )
 from rumil.calls.stages import CallInfra, ClosingReviewer, ContextResult, UpdateResult
+from rumil.context import format_page
 from rumil.llm import (
     LLMExchangeMetadata,
     build_system_prompt,
     structured_call,
     text_call,
 )
-from rumil.models import CallType, MoveType, PageType
-from rumil.available_moves import get_moves_for_call
+from rumil.models import CallType, MoveType, PageDetail, PageType
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
 from rumil.tracing.trace_events import ReviewCompleteEvent
@@ -38,13 +38,22 @@ class StandardClosingReview(ClosingReviewer):
     def __init__(self, call_type: CallType) -> None:
         self._call_type = call_type
 
+    def _review_context(self, creation: UpdateResult) -> str:
+        """Return the main_output string shown to the review LLM.
+
+        Default: render the call's moves. Subclasses override when the
+        call's real work is carried outside of moves (e.g. update_view,
+        whose phases mutate the View page directly).
+        """
+        return format_moves_for_review(creation.moves)
+
     async def closing_review(
         self,
         infra: CallInfra,
         context: ContextResult,
         creation: UpdateResult,
     ) -> None:
-        review_context = format_moves_for_review(creation.moves)
+        review_context = self._review_context(creation)
         review = await run_closing_review(
             infra.call,
             review_context,
@@ -85,6 +94,12 @@ class ViewClosingReview(StandardClosingReview):
         super().__init__(call_type)
         self._view_id = view_id
 
+    def _review_context(self, creation: UpdateResult) -> str:
+        summary = (creation.phase_summary or "").strip()
+        if summary:
+            return "Per-phase summary of work done:\n" + summary
+        return format_moves_for_review(creation.moves)
+
     async def closing_review(
         self,
         infra: CallInfra,
@@ -97,9 +112,16 @@ class ViewClosingReview(StandardClosingReview):
             for page, link in items:
                 imp = link.importance or 0
                 marker = " [IMPORTANCE 5 — FOCUS]" if imp == 5 else ""
+                formatted = await format_page(
+                    page,
+                    PageDetail.CONTENT,
+                    linked_detail=None,
+                    db=infra.db,
+                    track=True,
+                    track_tags={"source": "closing_review_view"},
+                )
                 item_lines.append(
-                    f"### [C{page.credence}/R{page.robustness} I{imp}]{marker} "
-                    f"{page.headline}\n\n{page.content}\n"
+                    f"### [R{page.robustness} I{imp}]{marker} {page.headline}\n\n{formatted}\n"
                 )
             items_text = "\n".join(item_lines)
 
@@ -134,9 +156,7 @@ class ViewClosingReview(StandardClosingReview):
         await super().closing_review(infra, context, creation)
 
     def _result_summary(self, creation: UpdateResult) -> str:
-        return (
-            f"View created. {len(creation.created_page_ids)} items."
-        )
+        return f"View created. {len(creation.created_page_ids)} items."
 
 
 class IngestClosingReview(StandardClosingReview):
@@ -162,9 +182,7 @@ class WebResearchClosingReview(StandardClosingReview):
 
     def _result_summary(self, creation: UpdateResult) -> str:
         source_count = (
-            len(self._page_creator.source_page_ids)
-            if self._page_creator is not None
-            else 0
+            len(self._page_creator.source_page_ids) if self._page_creator is not None else 0
         )
         return (
             f"Web research complete. {len(creation.created_page_ids)} claims created, "
@@ -190,9 +208,7 @@ async def _self_assessment(
 
     page_rating_note = ""
     if loaded_summaries:
-        page_lines = [
-            f'  - `{pid[:8]}`: "{summary[:120]}"' for pid, summary in loaded_summaries
-        ]
+        page_lines = [f'  - `{pid[:8]}`: "{summary[:120]}"' for pid, summary in loaded_summaries]
         page_rating_note = (
             "\n\nThe following pages were loaded into your context:\n"
             + "\n".join(page_lines)
@@ -259,9 +275,7 @@ async def _self_assessment(
                 )
         raw_summaries = review_data.get("page_summaries", [])
         items = [
-            PageSummaryItem(**s)
-            for s in raw_summaries
-            if isinstance(s, dict) and s.get("page_id")
+            PageSummaryItem(**s) for s in raw_summaries if isinstance(s, dict) and s.get("page_id")
         ]
         await save_page_abstracts(items, infra.db)
 

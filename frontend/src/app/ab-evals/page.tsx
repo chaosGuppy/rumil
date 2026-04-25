@@ -1,7 +1,12 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import type { AbEvalReportListItemOut } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import "./ab-evals.css";
+
+export const metadata: Metadata = {
+  title: "A/B evaluations",
+};
 
 async function getABEvals(): Promise<AbEvalReportListItemOut[]> {
   const res = await serverFetch(`${API_BASE}/api/ab-evals`, {

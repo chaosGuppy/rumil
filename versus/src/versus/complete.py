@@ -7,6 +7,7 @@ import hashlib
 import json
 import pathlib
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -149,7 +150,12 @@ def load_paraphrases_by_essay_model(paraphrases_log: pathlib.Path) -> dict[tuple
     return out
 
 
-def _call_one_completion(task, prompt, m, sh, k, client):
+def _call_one_completion(task, prompt, m, sh, k, client, semaphore: threading.BoundedSemaphore):
+    with semaphore:
+        return _call_one_completion_inner(task, prompt, m, sh, k, client)
+
+
+def _call_one_completion_inner(task, prompt, m, sh, k, client):
     t0 = time.time()
     resp = openrouter.chat(
         model=m.id,
@@ -181,7 +187,13 @@ def _call_one_completion(task, prompt, m, sh, k, client):
     }
 
 
-def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
+def run(
+    cfg: config.Config,
+    essays: list[versus_essay.Essay],
+    *,
+    prefix_cfg: config.PrefixCfg | None = None,
+) -> None:
+    pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
     log = cfg.storage.completions_log
     existing = jsonl.keys(log)
     paraphrase_rows = load_paraphrases_by_essay_model(cfg.storage.paraphrases_log)
@@ -191,15 +203,15 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
     for essay in essays:
         task = prepare.prepare(
             essay,
-            n_paragraphs=cfg.prefix.n_paragraphs,
-            include_headers=cfg.prefix.include_headers,
+            n_paragraphs=pcfg.n_paragraphs,
+            include_headers=pcfg.include_headers,
             length_tolerance=cfg.completion.length_tolerance,
         )
         ensure_human_baseline(task, log, existing)
-        ensure_paraphrase_rows(task, paraphrase_rows, cfg.prefix.n_paragraphs, log, existing)
+        ensure_paraphrase_rows(task, paraphrase_rows, pcfg.n_paragraphs, log, existing)
         prompt = prepare.render_prompt(
             task,
-            include_headers=cfg.prefix.include_headers,
+            include_headers=pcfg.include_headers,
             tolerance=cfg.completion.length_tolerance,
         )
         for m in cfg.completion.models:
@@ -213,12 +225,24 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
 
     if not tasks_to_run:
         return
-    print(f"[run ] {len(tasks_to_run)} completion calls (concurrency={cfg.concurrency})")
+    # Per-model semaphores so a slow reasoning model can't block fast
+    # lanes. Sized at cfg.per_model_concurrency each; total in-flight
+    # calls = per_model_concurrency × number of distinct models.
+    semaphores: dict[str, threading.BoundedSemaphore] = {
+        m_id: threading.BoundedSemaphore(cfg.per_model_concurrency)
+        for m_id in {m.id for _, _, m, _, _ in tasks_to_run}
+    }
+    total_workers = cfg.per_model_concurrency * len(semaphores)
+    print(
+        f"[run ] {len(tasks_to_run)} completion calls "
+        f"(per_model_concurrency={cfg.per_model_concurrency}, "
+        f"models={len(semaphores)}, total_workers={total_workers})"
+    )
     client = httpx.Client(timeout=600.0)
     try:
-        with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
+        with ThreadPoolExecutor(max_workers=total_workers) as pool:
             futures = {
-                pool.submit(_call_one_completion, t, p, m, sh, k, client): k
+                pool.submit(_call_one_completion, t, p, m, sh, k, client, semaphores[m.id]): k
                 for (t, p, m, sh, k) in tasks_to_run
             }
             for fut in as_completed(futures):

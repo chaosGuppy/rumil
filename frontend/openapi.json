@@ -6,27 +6,6 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/api/versus/criteria": {
-      "get": {
-        "tags": [
-          "versus"
-        ],
-        "summary": "Get Criteria",
-        "operationId": "get_criteria_api_versus_criteria_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CriteriaResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/versus/essays": {
       "get": {
         "tags": [
@@ -67,6 +46,22 @@
             "schema": {
               "type": "string",
               "title": "Essay Id"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
             }
           }
         ],
@@ -109,6 +104,22 @@
             "schema": {
               "type": "string",
               "title": "Essay Id"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
             }
           }
         ],
@@ -155,6 +166,22 @@
             "schema": {
               "type": "string",
               "title": "Essay Id"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
             }
           }
         ],
@@ -289,51 +316,9 @@
               ],
               "title": "Filter Criterion"
             }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResultsBundle"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/versus/next-pair": {
-      "get": {
-        "tags": [
-          "versus"
-        ],
-        "summary": "Get Next Pair",
-        "operationId": "get_next_pair_api_versus_next_pair_get",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
           },
           {
-            "name": "criterion",
+            "name": "prefix_label",
             "in": "query",
             "required": false,
             "schema": {
@@ -345,7 +330,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Criterion"
+              "title": "Prefix Label"
             }
           }
         ],
@@ -355,7 +340,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NextPairResponse"
+                  "$ref": "#/components/schemas/ResultsBundle"
                 }
               }
             }
@@ -416,47 +401,6 @@
         }
       }
     },
-    "/api/versus/judgments": {
-      "post": {
-        "tags": [
-          "versus"
-        ],
-        "summary": "Submit Judgment",
-        "operationId": "submit_judgment_api_versus_judgments_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/JudgmentSubmit"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JudgmentSubmitResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/versus/diagnostics": {
       "get": {
         "tags": [
@@ -500,6 +444,22 @@
               "type": "boolean",
               "default": true,
               "title": "Include Stale"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
             }
           }
         ],
@@ -3376,6 +3336,7 @@
           "generate_spec",
           "generate_artefact",
           "critique_artefact",
+          "critique_artefact_request_only",
           "refine_spec",
           "claude_code_direct",
           "versus_judge"
@@ -3805,23 +3766,6 @@
         ],
         "title": "ContextBuiltEventOut"
       },
-      "CriteriaResponse": {
-        "properties": {
-          "criteria": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Criteria"
-          }
-        },
-        "type": "object",
-        "required": [
-          "criteria"
-        ],
-        "title": "CriteriaResponse",
-        "description": "Dimensions the human-judging UI should offer.\n\nSourced from ``cfg.judging.criteria`` so the landing page tracks the\nversus config instead of a frontend hard-coded list. Keeps the\nselectable criteria in sync with what run_judgments / run_rumil_judgments\nactually evaluate."
-      },
       "CriterionMatrix": {
         "properties": {
           "criterion": {
@@ -3842,29 +3786,6 @@
           "cells"
         ],
         "title": "CriterionMatrix"
-      },
-      "CriterionStats": {
-        "properties": {
-          "criterion": {
-            "type": "string",
-            "title": "Criterion"
-          },
-          "done": {
-            "type": "integer",
-            "title": "Done"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          }
-        },
-        "type": "object",
-        "required": [
-          "criterion",
-          "done",
-          "total"
-        ],
-        "title": "CriterionStats"
       },
       "DedupeCandidateItem": {
         "properties": {
@@ -4144,6 +4065,17 @@
             },
             "type": "array",
             "title": "Criteria"
+          },
+          "prefix_variants": {
+            "items": {
+              "$ref": "#/components/schemas/PrefixVariantInfo"
+            },
+            "type": "array",
+            "title": "Prefix Variants"
+          },
+          "active_prefix_label": {
+            "type": "string",
+            "title": "Active Prefix Label"
           }
         },
         "type": "object",
@@ -4159,7 +4091,9 @@
           "completion_prompt",
           "judge_prompt_template",
           "paraphrase_prompt_template",
-          "criteria"
+          "criteria",
+          "prefix_variants",
+          "active_prefix_label"
         ],
         "title": "EssayDetail",
         "description": "Essay + the prompts shown to completion / judge / paraphrase models."
@@ -4226,15 +4160,20 @@
           "stale_hidden": {
             "type": "integer",
             "title": "Stale Hidden"
+          },
+          "other_variant_hidden": {
+            "type": "integer",
+            "title": "Other Variant Hidden"
           }
         },
         "type": "object",
         "required": [
           "judgments",
-          "stale_hidden"
+          "stale_hidden",
+          "other_variant_hidden"
         ],
         "title": "EssayJudgmentsResponse",
-        "description": "Judgments for a single essay at the current prefix_config_hash.\n\nStale judgments (rows whose prefix_hash no longer matches what the\nessay hashes to today) are filtered out of ``judgments`` so the UI\ndoesn't aggregate verdicts that scored different text. ``stale_hidden``\nis the count of rows filtered this way, so the UI can surface\n\"N stale judgments hidden\" rather than silently dropping them.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in the current completions.jsonl at the same prefix_hash --\nthe judgment survived a prefix-hash check but its sources did not.\nRare (requires manual jsonl edits or an aborted generation run), but\nwhen it happens the verdict is meaningless."
+        "description": "Judgments for a single essay at one prefix variant.\n\nRows whose ``prefix_config_hash`` doesn't match the selected variant\nare filtered out of ``judgments``. They split into two buckets:\n\n- ``other_variant_hidden``: hash matches a *different* active prefix\n  variant for this essay (e.g. you're viewing ``no_headers`` and 227\n  rows belong to ``default``). Not stale \u2014 just a different cohort.\n- ``stale_hidden``: hash matches no current variant. Genuinely stale\n  from essay re-import drift or a prefix-config bump.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in the current completions.jsonl at the same prefix_hash --\nthe judgment survived the variant check but its sources did not."
       },
       "EssayMeta": {
         "properties": {
@@ -4718,41 +4657,6 @@
         "title": "JudgeLabel",
         "description": "Stacked column-header parts for a judge model id."
       },
-      "JudgingProgress": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "criterion": {
-            "type": "string",
-            "title": "Criterion"
-          },
-          "criteria": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Criteria"
-          },
-          "per_criterion": {
-            "items": {
-              "$ref": "#/components/schemas/CriterionStats"
-            },
-            "type": "array",
-            "title": "Per Criterion"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "criterion",
-          "criteria",
-          "per_criterion"
-        ],
-        "title": "JudgingProgress",
-        "description": "Returned when there is no next pair; tells the UI to show 'done'."
-      },
       "Judgment": {
         "properties": {
           "judge_model": {
@@ -5229,7 +5133,7 @@
           "duration_s"
         ],
         "title": "JudgmentDetail",
-        "description": "Full judgment row for the side-panel inspector on /versus/results.\n\nIncludes the verbatim prompt + reasoning text + raw provider response,\nso a reader can audit what the judge actually saw and said. Most fields\nare optional because the shape varies across judge variants (OpenRouter\nvs anthropic vs rumil:text vs rumil:ws/orch vs human:*)."
+        "description": "Full judgment row for the side-panel inspector on /versus/results.\n\nIncludes the verbatim prompt + reasoning text + raw provider response,\nso a reader can audit what the judge actually saw and said. Most fields\nare optional because the shape varies across judge variants (OpenRouter\nvs anthropic vs rumil:text vs rumil:ws/orch)."
       },
       "JudgmentRow": {
         "properties": {
@@ -5323,92 +5227,6 @@
         ],
         "title": "JudgmentRow",
         "description": "One row in the raw-judgments explorer at the bottom of /results."
-      },
-      "JudgmentSubmit": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "criterion": {
-            "type": "string",
-            "title": "Criterion"
-          },
-          "essay_id": {
-            "type": "string",
-            "title": "Essay Id"
-          },
-          "prefix_hash": {
-            "type": "string",
-            "title": "Prefix Hash"
-          },
-          "a": {
-            "type": "string",
-            "title": "A"
-          },
-          "b": {
-            "type": "string",
-            "title": "B"
-          },
-          "first_source": {
-            "type": "string",
-            "title": "First Source"
-          },
-          "second_source": {
-            "type": "string",
-            "title": "Second Source"
-          },
-          "verdict": {
-            "type": "string",
-            "title": "Verdict"
-          },
-          "note": {
-            "type": "string",
-            "title": "Note",
-            "default": ""
-          },
-          "force": {
-            "type": "boolean",
-            "title": "Force",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "criterion",
-          "essay_id",
-          "prefix_hash",
-          "a",
-          "b",
-          "first_source",
-          "second_source",
-          "verdict"
-        ],
-        "title": "JudgmentSubmit"
-      },
-      "JudgmentSubmitResult": {
-        "properties": {
-          "key": {
-            "type": "string",
-            "title": "Key"
-          },
-          "winner_source": {
-            "type": "string",
-            "title": "Winner Source"
-          },
-          "duplicate": {
-            "type": "boolean",
-            "title": "Duplicate",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "key",
-          "winner_source"
-        ],
-        "title": "JudgmentSubmitResult"
       },
       "LLMExchangeEventOut": {
         "properties": {
@@ -6016,108 +5834,6 @@
         ],
         "title": "MovesExecutedEventOut"
       },
-      "NextPair": {
-        "properties": {
-          "essay_id": {
-            "type": "string",
-            "title": "Essay Id"
-          },
-          "prefix_hash": {
-            "type": "string",
-            "title": "Prefix Hash"
-          },
-          "a": {
-            "type": "string",
-            "title": "A"
-          },
-          "b": {
-            "type": "string",
-            "title": "B"
-          },
-          "first_source": {
-            "type": "string",
-            "title": "First Source"
-          },
-          "second_source": {
-            "type": "string",
-            "title": "Second Source"
-          },
-          "first_text": {
-            "type": "string",
-            "title": "First Text"
-          },
-          "second_text": {
-            "type": "string",
-            "title": "Second Text"
-          },
-          "prefix_text": {
-            "type": "string",
-            "title": "Prefix Text"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "criterion": {
-            "type": "string",
-            "title": "Criterion"
-          },
-          "criterion_desc": {
-            "type": "string",
-            "title": "Criterion Desc"
-          },
-          "done_count": {
-            "type": "integer",
-            "title": "Done Count"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          }
-        },
-        "type": "object",
-        "required": [
-          "essay_id",
-          "prefix_hash",
-          "a",
-          "b",
-          "first_source",
-          "second_source",
-          "first_text",
-          "second_text",
-          "prefix_text",
-          "title",
-          "criterion",
-          "criterion_desc",
-          "done_count",
-          "total"
-        ],
-        "title": "NextPair"
-      },
-      "NextPairResponse": {
-        "properties": {
-          "pair": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/NextPair"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "progress": {
-            "$ref": "#/components/schemas/JudgingProgress"
-          }
-        },
-        "type": "object",
-        "required": [
-          "pair",
-          "progress"
-        ],
-        "title": "NextPairResponse",
-        "description": "Either a next pair to judge, or progress when nothing's left."
-      },
       "Page": {
         "properties": {
           "page_type": {
@@ -6656,6 +6372,30 @@
         ],
         "title": "PhaseSkippedEventOut"
       },
+      "PrefixVariantInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "n_paragraphs": {
+            "type": "integer",
+            "title": "N Paragraphs"
+          },
+          "include_headers": {
+            "type": "boolean",
+            "title": "Include Headers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "n_paragraphs",
+          "include_headers"
+        ],
+        "title": "PrefixVariantInfo",
+        "description": "One prefix variant available in the active config.\n\nSurfaced on ResultsBundle so the /versus/results UI can render a\nvariant selector. ``id`` matches the yaml ``prefix.id`` /\n``prefix_variants[].id`` and is the value the UI passes back as\n``?prefix_label=<id>``."
+      },
       "Project": {
         "properties": {
           "name": {
@@ -7182,6 +6922,17 @@
           "rows_total_before_filter": {
             "type": "integer",
             "title": "Rows Total Before Filter"
+          },
+          "prefix_variants": {
+            "items": {
+              "$ref": "#/components/schemas/PrefixVariantInfo"
+            },
+            "type": "array",
+            "title": "Prefix Variants"
+          },
+          "active_prefix_label": {
+            "type": "string",
+            "title": "Active Prefix Label"
           }
         },
         "type": "object",
@@ -7205,7 +6956,9 @@
           "include_stale",
           "include_contaminated",
           "row_filter",
-          "rows_total_before_filter"
+          "rows_total_before_filter",
+          "prefix_variants",
+          "active_prefix_label"
         ],
         "title": "ResultsBundle"
       },

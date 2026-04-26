@@ -20,6 +20,11 @@ class EssaysCfg(pydantic.BaseModel):
 
 
 class PrefixCfg(pydantic.BaseModel):
+    # Stable label used to scope run scripts (--prefix-label) and the
+    # /versus/results UI dropdown. The canonical entry is implicitly
+    # "default" if unset; sibling variants under prefix_variants must
+    # name themselves explicitly.
+    id: str = "default"
     n_paragraphs: int = 3
     include_headers: bool = True
 
@@ -58,11 +63,30 @@ class StorageCfg(pydantic.BaseModel):
 class Config(pydantic.BaseModel):
     essays: EssaysCfg
     prefix: PrefixCfg
+    # Optional sibling prefix configs tracked in parallel with the
+    # canonical `prefix`. Each must have a distinct `id`. Run scripts
+    # default to the canonical variant; pass --prefix-label <id> to
+    # target a sibling.
+    prefix_variants: list[PrefixCfg] = pydantic.Field(default_factory=list)
     completion: CompletionCfg
     paraphrasing: ParaphrasingCfg = pydantic.Field(default_factory=ParaphrasingCfg)
     judging: JudgingCfg
     storage: StorageCfg
     concurrency: int = 20
+    # Per-model concurrency cap. Each unique completion/judge model id
+    # gets its own semaphore of this size, so a slow reasoning model
+    # can't starve a fast lane. Total in-flight calls = this × n_models.
+    # Provider rate limits attach to model ids, so 8 is a safe default
+    # for OpenAI; Anthropic / Google would happily take more.
+    per_model_concurrency: int = 8
+
+    @pydantic.model_validator(mode="after")
+    def _check_unique_prefix_ids(self) -> Config:
+        ids = [self.prefix.id, *(v.id for v in self.prefix_variants)]
+        dupes = {i for i in ids if ids.count(i) > 1}
+        if dupes:
+            raise ValueError(f"duplicate prefix variant ids: {sorted(dupes)}")
+        return self
 
 
 def load(path: str | pathlib.Path = "config.yaml") -> Config:

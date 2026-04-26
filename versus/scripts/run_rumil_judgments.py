@@ -165,6 +165,15 @@ def main() -> None:
         ),
     )
     ap.add_argument(
+        "--prefix-label",
+        default=None,
+        help=(
+            "Scope --current-only to a specific prefix variant (default: "
+            "the canonical `prefix:` entry). Sibling variants live under "
+            "`prefix_variants:` in config.yaml; pass their `id`."
+        ),
+    )
+    ap.add_argument(
         "--persist",
         action="store_true",
         help=(
@@ -195,6 +204,9 @@ def main() -> None:
     else:
         essay_ids = args.essay
 
+    prefix_cfg = prepare.resolve_prefix_cfg(cfg, args.prefix_label)
+    print(f"[prefix] using variant {prefix_cfg.id!r}")
+
     if args.variant == "text":
         models = args.model if args.model else list(cfg.judging.anthropic_models)
         rumil_judge.run(
@@ -206,6 +218,7 @@ def main() -> None:
             contestants=contestants,
             vs_human=args.vs_human,
             current_only=args.current_only,
+            prefix_cfg=prefix_cfg,
         )
         return
 
@@ -224,6 +237,7 @@ def main() -> None:
             contestants=contestants,
             vs_human=args.vs_human,
             current_only=args.current_only,
+            prefix_cfg=prefix_cfg,
             concurrency=args.concurrency,
         )
         return
@@ -248,6 +262,7 @@ def main() -> None:
                 contestants=contestants,
                 vs_human=args.vs_human,
                 current_only=args.current_only,
+                prefix_cfg=prefix_cfg,
                 persist=args.persist,
             )
         )
@@ -266,6 +281,7 @@ def main() -> None:
                 contestants=contestants,
                 vs_human=args.vs_human,
                 current_only=args.current_only,
+                prefix_cfg=prefix_cfg,
                 persist=args.persist,
             )
         )

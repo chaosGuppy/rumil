@@ -11,18 +11,14 @@ config; everything else returns 503 if config is missing.
 
 from __future__ import annotations
 
-import datetime as dt
 import functools
 import json
 import os
 import pathlib
-from collections import defaultdict
-from collections.abc import Sequence
 
 import pydantic
 from fastapi import APIRouter, HTTPException
 
-from rumil.versus_bridge import get_rumil_dimension_body
 from versus import analyze as versus_analyze
 from versus import config as versus_config
 from versus import diagnostics as versus_diagnostics
@@ -123,16 +119,31 @@ def _is_orphaned(row: dict, sources: dict[tuple[str, str], set[str]]) -> bool:
     return row.get("source_a") not in present or row.get("source_b") not in present
 
 
+def _resolve_prefix_label(cfg: versus_config.Config, label: str | None) -> versus_config.PrefixCfg:
+    """Look up a prefix variant by id; HTTP 400 on unknown."""
+    try:
+        return versus_prepare.resolve_prefix_cfg(cfg, label)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
 def _build_essays_status(
     cfg: versus_config.Config,
+    *,
+    prefix_cfg: versus_config.PrefixCfg | None = None,
 ) -> tuple[list[EssayStatus], dict[str, str]]:
     """Compute the per-essay status panel and the {essay_id -> current
     prefix_config_hash} map used to flag stale judgment/completion rows.
+
+    ``prefix_cfg`` defaults to ``cfg.prefix``. Pass a sibling from
+    ``cfg.prefix_variants`` to compute the map under that variant — this
+    is how the UI scopes staleness to a selected variant.
 
     Reads cached essay JSONs + their adjacent ``.verdict.json`` files. If
     no essays are cached, returns empty containers (matrix filtering is a
     no-op when ``current_prefix_hashes`` is empty).
     """
+    pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
     statuses: list[EssayStatus] = []
     current: dict[str, str] = {}
     exclude = set(cfg.essays.exclude_ids)
@@ -159,8 +170,8 @@ def _build_essays_status(
         )
         task = versus_prepare.prepare(
             essay,
-            n_paragraphs=cfg.prefix.n_paragraphs,
-            include_headers=cfg.prefix.include_headers,
+            n_paragraphs=pcfg.n_paragraphs,
+            include_headers=pcfg.include_headers,
             length_tolerance=cfg.completion.length_tolerance,
         )
         current[essay.id] = task.prefix_config_hash
@@ -204,6 +215,11 @@ class EssayDetail(pydantic.BaseModel):
     judge_prompt_template: str
     paraphrase_prompt_template: str
     criteria: list[str]
+    # Available prefix variants and the one this response was rendered
+    # for. Used by the /versus/inspect dropdown so users can flip the
+    # prompt + completions + judgments view between variants.
+    prefix_variants: list[PrefixVariantInfo]
+    active_prefix_label: str
 
 
 class Source(pydantic.BaseModel):
@@ -249,7 +265,7 @@ class JudgmentDetail(pydantic.BaseModel):
     Includes the verbatim prompt + reasoning text + raw provider response,
     so a reader can audit what the judge actually saw and said. Most fields
     are optional because the shape varies across judge variants (OpenRouter
-    vs anthropic vs rumil:text vs rumil:ws/orch vs human:*).
+    vs anthropic vs rumil:text vs rumil:ws/orch).
     """
 
     key: str
@@ -415,6 +431,20 @@ class RowFilter(pydantic.BaseModel):
     criterion: str | None
 
 
+class PrefixVariantInfo(pydantic.BaseModel):
+    """One prefix variant available in the active config.
+
+    Surfaced on ResultsBundle so the /versus/results UI can render a
+    variant selector. ``id`` matches the yaml ``prefix.id`` /
+    ``prefix_variants[].id`` and is the value the UI passes back as
+    ``?prefix_label=<id>``.
+    """
+
+    id: str
+    n_paragraphs: int
+    include_headers: bool
+
+
 class ResultsBundle(pydantic.BaseModel):
     conditions: list[str]
     criteria: list[str]
@@ -436,90 +466,11 @@ class ResultsBundle(pydantic.BaseModel):
     include_contaminated: bool
     row_filter: RowFilter
     rows_total_before_filter: int
-
-
-class NextPair(pydantic.BaseModel):
-    essay_id: str
-    prefix_hash: str
-    a: str
-    b: str
-    first_source: str
-    second_source: str
-    first_text: str
-    second_text: str
-    prefix_text: str
-    title: str
-    criterion: str
-    criterion_desc: str
-    done_count: int
-    total: int
-
-
-class CriterionStats(pydantic.BaseModel):
-    criterion: str
-    done: int
-    total: int
-
-
-class JudgingProgress(pydantic.BaseModel):
-    """Returned when there is no next pair; tells the UI to show 'done'."""
-
-    name: str
-    criterion: str
-    criteria: list[str]
-    per_criterion: list[CriterionStats]
-
-
-class NextPairResponse(pydantic.BaseModel):
-    """Either a next pair to judge, or progress when nothing's left."""
-
-    pair: NextPair | None
-    progress: JudgingProgress
-
-
-class JudgmentSubmit(pydantic.BaseModel):
-    name: str
-    criterion: str
-    essay_id: str
-    prefix_hash: str
-    a: str
-    b: str
-    first_source: str
-    second_source: str
-    verdict: str  # "A" | "B" | "tie"
-    note: str = ""
-    force: bool = False
-
-
-class JudgmentSubmitResult(pydantic.BaseModel):
-    key: str
-    winner_source: str
-    duplicate: bool = False
+    prefix_variants: list[PrefixVariantInfo]
+    active_prefix_label: str
 
 
 router = APIRouter(prefix="/api/versus", tags=["versus"])
-
-
-class CriteriaResponse(pydantic.BaseModel):
-    """Dimensions the human-judging UI should offer.
-
-    Sourced from ``cfg.judging.criteria`` so the landing page tracks the
-    versus config instead of a frontend hard-coded list. Keeps the
-    selectable criteria in sync with what run_judgments / run_rumil_judgments
-    actually evaluate.
-    """
-
-    criteria: list[str]
-
-
-@router.get("/criteria", response_model=CriteriaResponse)
-def get_criteria() -> CriteriaResponse:
-    cfg = _cfg_required()
-    return CriteriaResponse(criteria=list(cfg.judging.criteria))
-
-
-def _human_judge_id(name: str) -> str:
-    return f"human:{name.strip().lower()}"
 
 
 def _load_essay(essay_id: str) -> versus_essay.Essay | None:
@@ -569,20 +520,21 @@ def list_essays() -> list[EssayMeta]:
 
 
 @router.get("/essays/{essay_id}", response_model=EssayDetail)
-def get_essay(essay_id: str) -> EssayDetail:
+def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
     cfg = _cfg_required()
     essay = _load_essay(essay_id)
     if not essay:
         raise HTTPException(404, f"essay {essay_id} not found")
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     task = versus_prepare.prepare(
         essay,
-        n_paragraphs=cfg.prefix.n_paragraphs,
-        include_headers=cfg.prefix.include_headers,
+        n_paragraphs=active_prefix_cfg.n_paragraphs,
+        include_headers=active_prefix_cfg.include_headers,
         length_tolerance=cfg.completion.length_tolerance,
     )
     completion_prompt = versus_prepare.render_prompt(
         task,
-        include_headers=cfg.prefix.include_headers,
+        include_headers=active_prefix_cfg.include_headers,
         tolerance=cfg.completion.length_tolerance,
     )
     judge_system, judge_user = versus_judge.render_judge_prompt(
@@ -610,19 +562,29 @@ def get_essay(essay_id: str) -> EssayDetail:
         judge_prompt_template=judge_prompt_template,
         paraphrase_prompt_template=paraphrase_prompt_template,
         criteria=list(cfg.judging.criteria),
+        prefix_variants=[
+            PrefixVariantInfo(
+                id=p.id,
+                n_paragraphs=p.n_paragraphs,
+                include_headers=p.include_headers,
+            )
+            for p in versus_prepare.active_prefix_configs(cfg)
+        ],
+        active_prefix_label=active_prefix_cfg.id,
     )
 
 
 @router.get("/essays/{essay_id}/sources", response_model=list[Source])
-def get_essay_sources(essay_id: str) -> list[Source]:
+def get_essay_sources(essay_id: str, prefix_label: str | None = None) -> list[Source]:
     cfg = _cfg_required()
     essay = _load_essay(essay_id)
     if not essay:
         raise HTTPException(404, f"essay {essay_id} not found")
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     task = versus_prepare.prepare(
         essay,
-        n_paragraphs=cfg.prefix.n_paragraphs,
-        include_headers=cfg.prefix.include_headers,
+        n_paragraphs=active_prefix_cfg.n_paragraphs,
+        include_headers=active_prefix_cfg.include_headers,
         length_tolerance=cfg.completion.length_tolerance,
     )
     # Multiple completion rows can share the same source_id (different
@@ -643,46 +605,66 @@ def get_essay_sources(essay_id: str) -> list[Source]:
 
 
 class EssayJudgmentsResponse(pydantic.BaseModel):
-    """Judgments for a single essay at the current prefix_config_hash.
+    """Judgments for a single essay at one prefix variant.
 
-    Stale judgments (rows whose prefix_hash no longer matches what the
-    essay hashes to today) are filtered out of ``judgments`` so the UI
-    doesn't aggregate verdicts that scored different text. ``stale_hidden``
-    is the count of rows filtered this way, so the UI can surface
-    "N stale judgments hidden" rather than silently dropping them.
+    Rows whose ``prefix_config_hash`` doesn't match the selected variant
+    are filtered out of ``judgments``. They split into two buckets:
+
+    - ``other_variant_hidden``: hash matches a *different* active prefix
+      variant for this essay (e.g. you're viewing ``no_headers`` and 227
+      rows belong to ``default``). Not stale — just a different cohort.
+    - ``stale_hidden``: hash matches no current variant. Genuinely stale
+      from essay re-import drift or a prefix-config bump.
 
     ``orphaned`` flags a judgment whose source_a / source_b is not
     present in the current completions.jsonl at the same prefix_hash --
-    the judgment survived a prefix-hash check but its sources did not.
-    Rare (requires manual jsonl edits or an aborted generation run), but
-    when it happens the verdict is meaningless.
+    the judgment survived the variant check but its sources did not.
     """
 
     judgments: list[Judgment]
     stale_hidden: int
+    other_variant_hidden: int
 
 
 @router.get("/essays/{essay_id}/judgments", response_model=EssayJudgmentsResponse)
-def get_essay_judgments(essay_id: str) -> EssayJudgmentsResponse:
+def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> EssayJudgmentsResponse:
     cfg = _cfg_required()
     essay = _load_essay(essay_id)
     if not essay:
         raise HTTPException(404, f"essay {essay_id} not found")
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     task = versus_prepare.prepare(
         essay,
-        n_paragraphs=cfg.prefix.n_paragraphs,
-        include_headers=cfg.prefix.include_headers,
+        n_paragraphs=active_prefix_cfg.n_paragraphs,
+        include_headers=active_prefix_cfg.include_headers,
         length_tolerance=cfg.completion.length_tolerance,
     )
+    # Hashes for *all* current variants, so we can tell "belongs to
+    # another live variant" apart from "no longer matches any variant"
+    # (genuine essay-drift staleness).
+    other_variant_hashes = {
+        versus_prepare.prepare(
+            essay,
+            n_paragraphs=p.n_paragraphs,
+            include_headers=p.include_headers,
+            length_tolerance=cfg.completion.length_tolerance,
+        ).prefix_config_hash
+        for p in versus_prepare.active_prefix_configs(cfg)
+        if p.id != active_prefix_cfg.id
+    }
     source_index = _build_completion_source_index(cfg)
     judgments: list[Judgment] = []
     stale_hidden = 0
+    other_variant_hidden = 0
     for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
         if row.get("essay_id") != essay.id:
             continue
         if row.get("prefix_config_hash") != task.prefix_config_hash:
             if row.get("verdict") is not None:
-                stale_hidden += 1
+                if row.get("prefix_config_hash") in other_variant_hashes:
+                    other_variant_hidden += 1
+                else:
+                    stale_hidden += 1
             continue
         jm = str(row.get("judge_model", ""))
         base, phash, version = versus_judge.parse_judge_model_suffix(jm)
@@ -713,7 +695,11 @@ def get_essay_judgments(essay_id: str) -> EssayJudgmentsResponse:
             )
         )
     judgments.sort(key=lambda j: (j.judge_model, j.criterion, j.source_a, j.source_b))
-    return EssayJudgmentsResponse(judgments=judgments, stale_hidden=stale_hidden)
+    return EssayJudgmentsResponse(
+        judgments=judgments,
+        stale_hidden=stale_hidden,
+        other_variant_hidden=other_variant_hidden,
+    )
 
 
 def _cond_meta(cond: str) -> ConditionMeta:
@@ -813,12 +799,14 @@ def get_results(
     filter_judge: str | None = None,
     filter_condition: str | None = None,
     filter_criterion: str | None = None,
+    prefix_label: str | None = None,
 ) -> ResultsBundle:
     cfg = _cfg_required()
     judgments_log = _resolve_path(cfg.storage.judgments_log)
     completions_log = _resolve_path(cfg.storage.completions_log)
 
-    essays_status, current_prefix_hashes = _build_essays_status(cfg)
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
+    essays_status, current_prefix_hashes = _build_essays_status(cfg, prefix_cfg=active_prefix_cfg)
 
     data = versus_analyze.matrix(
         judgments_log,
@@ -1046,117 +1034,16 @@ def get_results(
             criterion=filter_criterion,
         ),
         rows_total_before_filter=rows_total_before_filter,
-    )
-
-
-def _enumerate_pairs(cfg: versus_config.Config):
-    _, current_prefix_hashes = _build_essays_status(cfg)
-    return versus_view.enumerate_pairs(
-        cfg,
-        _resolve_path(cfg.storage.completions_log),
-        _iter_essay_paths(),
-        current_prefix_hashes=current_prefix_hashes,
-    )
-
-
-def _build_judging_progress(
-    name: str,
-    criterion: str,
-    criteria: Sequence[str],
-    counts: dict[str, int],
-    total: int,
-) -> JudgingProgress:
-    return JudgingProgress(
-        name=name,
-        criterion=criterion,
-        criteria=list(criteria),
-        per_criterion=[
-            CriterionStats(criterion=c, done=counts.get(c, 0), total=total) for c in criteria
-        ],
-    )
-
-
-def _judging_progress(cfg: versus_config.Config, name: str, criterion: str) -> JudgingProgress:
-    judge_model = _human_judge_id(name)
-    counts: dict[str, int] = defaultdict(int)
-    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
-        if row.get("judge_model") == judge_model:
-            counts[row.get("criterion", "")] += 1
-    total = sum(1 for _ in _enumerate_pairs(cfg))
-    return _build_judging_progress(name, criterion, cfg.judging.criteria, counts, total)
-
-
-@router.get("/next-pair", response_model=NextPairResponse)
-def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
-    cfg = _cfg_required()
-    judge_model = _human_judge_id(name)
-    active_criterion = criterion or cfg.judging.criteria[0]
-    if active_criterion not in cfg.judging.criteria:
-        raise HTTPException(
-            400,
-            f"unknown criterion {active_criterion!r}; configured: {list(cfg.judging.criteria)}",
-        )
-
-    # Single pass over judgments.jsonl populates both the per-criterion
-    # progress counts and the "done" set for the active criterion. The old
-    # code read the file twice (here + _judging_progress at the end of
-    # the request) — same cache hit but two O(N) Python loops per call.
-    done: set[str] = set()
-    counts: dict[str, int] = defaultdict(int)
-    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
-        if row.get("judge_model") != judge_model:
-            continue
-        row_crit = row.get("criterion", "")
-        counts[row_crit] += 1
-        if row_crit == active_criterion:
-            # Re-derive the row's key with the current scheme so legacy
-            # rows (pre-order field) are still recognized as done: their
-            # stored ``key`` lacks the ``|ab``/``|ba`` suffix. infer_order
-            # recovers the single order they were judged in from
-            # display_first; we then rebuild the key under the current
-            # scheme so the "done" set is comparable to enumeration keys.
-            rorder = versus_judge.infer_order(row)
-            done.add(
-                versus_judge.judgment_key(
-                    row["essay_id"],
-                    row["prefix_config_hash"],
-                    row["source_a"],
-                    row["source_b"],
-                    row["criterion"],
-                    row["judge_model"],
-                    rorder,
-                )
+        prefix_variants=[
+            PrefixVariantInfo(
+                id=p.id,
+                n_paragraphs=p.n_paragraphs,
+                include_headers=p.include_headers,
             )
-
-    # Enumerate once, reuse for both progress.total and the next-pair walk.
-    # _judging_progress() internally re-enumerates; we skip that by
-    # building the progress payload directly.
-    all_pairs = list(_enumerate_pairs(cfg))
-    total = len(all_pairs)
-    done_count = 0
-    next_p: versus_view.PairShape | None = None
-    for p in all_pairs:
-        order = versus_judge.order_from_display_first(p.a, p.b, p.first_source)
-        k = versus_judge.judgment_key(
-            p.essay_id, p.prefix_hash, p.a, p.b, active_criterion, judge_model, order
-        )
-        if k in done:
-            done_count += 1
-        elif next_p is None:
-            next_p = p
-
-    progress = _build_judging_progress(name, active_criterion, cfg.judging.criteria, counts, total)
-    if next_p is None:
-        return NextPairResponse(pair=None, progress=progress)
-
-    pair = NextPair(
-        criterion=active_criterion,
-        criterion_desc=get_rumil_dimension_body(active_criterion),
-        done_count=done_count,
-        total=total,
-        **versus_view.pair_as_dict(next_p),
+            for p in versus_prepare.active_prefix_configs(cfg)
+        ],
+        active_prefix_label=active_prefix_cfg.id,
     )
-    return NextPairResponse(pair=pair, progress=progress)
 
 
 @router.get("/judgments/by-key", response_model=JudgmentDetail)
@@ -1207,54 +1094,6 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             duration_s=row.get("duration_s"),
         )
     raise HTTPException(404, f"judgment key not found: {key}")
-
-
-@router.post("/judgments", response_model=JudgmentSubmitResult)
-def submit_judgment(body: JudgmentSubmit) -> JudgmentSubmitResult:
-    cfg = _cfg_required()
-    judge_model = _human_judge_id(body.name)
-    if body.verdict == "A":
-        winner_source = body.first_source
-    elif body.verdict == "B":
-        winner_source = body.second_source
-    elif body.verdict == "tie":
-        winner_source = "tie"
-    else:
-        raise HTTPException(400, f"bad verdict: {body.verdict}")
-
-    order = versus_judge.order_from_display_first(body.a, body.b, body.first_source)
-    k = versus_judge.judgment_key(
-        body.essay_id, body.prefix_hash, body.a, body.b, body.criterion, judge_model, order
-    )
-    log_path = _resolve_path(cfg.storage.judgments_log)
-    # Guard against double-clicks / accidental re-judgment. read_dedup
-    # collapses dupes last-row-wins, but the raw file grows and
-    # total_judgments inflates until caches roll over. Require an
-    # explicit `force` to override -- lets the operator fix a mistaken
-    # verdict, but makes "I clicked twice" a no-op.
-    if not body.force and k in versus_jsonl.keys(log_path):
-        return JudgmentSubmitResult(key=k, winner_source=winner_source, duplicate=True)
-    row = {
-        "key": k,
-        "essay_id": body.essay_id,
-        "prefix_config_hash": body.prefix_hash,
-        "source_a": body.a,
-        "source_b": body.b,
-        "display_first": body.first_source,
-        "display_second": body.second_source,
-        "order": order,
-        "criterion": body.criterion,
-        "judge_model": judge_model,
-        "verdict": body.verdict,
-        "winner_source": winner_source,
-        "reasoning_text": body.note,
-        "prompt": None,
-        "ts": dt.datetime.now(dt.UTC).isoformat(),
-        "duration_s": None,
-        "raw_response": None,
-    }
-    versus_jsonl.append(log_path, row)
-    return JudgmentSubmitResult(key=k, winner_source=winner_source)
 
 
 class JudgeBiasRowOut(pydantic.BaseModel):
@@ -1314,6 +1153,7 @@ def get_diagnostics(
     criterion: str | None = None,
     include_contaminated: bool = False,
     include_stale: bool = True,
+    prefix_label: str | None = None,
 ) -> DiagnosticsBundle:
     """Post-hoc bias / n-floor / per-essay sanity over the judgments log.
 
@@ -1323,7 +1163,8 @@ def get_diagnostics(
     cfg = _cfg_required()
     judgments_log = _resolve_path(cfg.storage.judgments_log)
 
-    _, current_prefix_hashes = _build_essays_status(cfg)
+    active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
+    _, current_prefix_hashes = _build_essays_status(cfg, prefix_cfg=active_prefix_cfg)
 
     titles: dict[str, str] = {}
     for p in _iter_essay_paths():

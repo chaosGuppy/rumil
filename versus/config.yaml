@@ -36,6 +36,11 @@ prefix:
   n_paragraphs: 3        # show this many opening paragraphs
   include_headers: true  # include a list of remaining section headings in the prompt
 
+prefix_variants:
+  - id: no_headers
+    n_paragraphs: 1
+    include_headers: false
+
 completion:
   length_tolerance: 0.10 # target = original remainder word count, allow +/- this fraction
   models:

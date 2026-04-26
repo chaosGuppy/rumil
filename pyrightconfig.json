@@ -1,7 +1,5 @@
 {
   "venvPath": ".",
   "venv": ".venv",
-  "extraPaths": ["src", ".claude/lib"],
-  "include": ["src", "tests", "scripts"],
-  "exclude": ["frontend", "supabase", "data", "versus", "**/__pycache__"]
+  "extraPaths": ["src", ".claude/lib"]
 }

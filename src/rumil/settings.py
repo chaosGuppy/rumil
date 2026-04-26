@@ -59,9 +59,12 @@ class Settings(BaseSettings):
     supabase_prod_key: str = ""
     supabase_jwt_secret: str = "super-secret-jwt-token-with-at-least-32-characters-long"
     auth_enabled: bool = True
-    # Shared CLI service-account user in Supabase Auth (cli-service@rumil.local).
-    # Created by scripts/create_cli_service_account.py. Override via the
+    # Shared CLI service-account user in *prod* Supabase Auth
+    # (cli-service@rumil.local). Created by
+    # scripts/create_cli_service_account.py. Override via the
     # DEFAULT_CLI_USER_ID env var to attribute remote jobs to a specific user.
+    # Only applied when targeting prod — see `effective_cli_user_id` below; the
+    # local Supabase has its own auth.users and would FK-fail this UUID.
     default_cli_user_id: str = "c4179ddb-bf61-4ba3-acfa-6b5408c19874"
     rumil_api_url: str = "https://api.rumil.ink"
     # GKE cluster identity, used to build a Cloud Logging URL for the
@@ -170,6 +173,17 @@ class Settings(BaseSettings):
     @property
     def is_prod_db(self) -> bool:
         return self.use_prod_db.lower() in ("1", "true")
+
+    @property
+    def effective_cli_user_id(self) -> str:
+        """The user_id to stamp on projects created by `main.py`.
+
+        The committed default for `default_cli_user_id` is the prod-Supabase
+        service-account UUID and would FK-fail the local Supabase's
+        `auth.users`. Only apply it when the run is actually targeting prod;
+        local runs default to no owner.
+        """
+        return self.default_cli_user_id if self.is_prod_db else ""
 
     def get_supabase_credentials(self, prod: bool = False) -> tuple[str, str]:
         if prod:

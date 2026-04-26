@@ -1319,7 +1319,7 @@ async def async_main():
 
     project = await db.get_or_create_project(
         args.workspace_name,
-        owner_user_id=args.cli_user_id or get_settings().default_cli_user_id or None,
+        owner_user_id=args.cli_user_id or get_settings().effective_cli_user_id or None,
     )
     db.project_id = project.id
 

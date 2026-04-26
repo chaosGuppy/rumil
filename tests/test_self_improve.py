@@ -456,7 +456,7 @@ async def test_read_repo_file_reads_real_file(tmp_db, question_page):
 
 async def test_read_repo_file_reads_prompt_file(tmp_db, question_page):
     tools = _build_tools(question_page.id, [(question_page, 0)], [], tmp_db)
-    out = await _get_tool(tools, "read_repo_file").fn({"path": "prompts/self_improve.md"})
+    out = await _get_tool(tools, "read_repo_file").fn({"path": "src/rumil/prompts/self_improve.md"})
     assert "rumil" in out.lower()
 
 
@@ -485,7 +485,6 @@ async def test_list_repo_dir_shows_visible_entries(tmp_db, question_page):
     tools = _build_tools(question_page.id, [(question_page, 0)], [], tmp_db)
     out = await _get_tool(tools, "list_repo_dir").fn({"path": "."})
     assert "src/" in out
-    assert "prompts/" in out
     assert "main.py" in out
 
 

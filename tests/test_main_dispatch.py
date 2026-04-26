@@ -144,3 +144,24 @@ def test_ingest_files_alone_is_non_orchestrator():
 def test_ingest_files_with_question_is_orchestrator():
     args = _make_namespace(ingest_files=["doc.pdf"], question="some question", budget=2)
     assert main_module._is_non_orchestrator_mode(args) is False
+
+
+def test_effective_cli_user_id_empty_for_local_db():
+    """The committed default_cli_user_id is a prod-only Supabase user and must
+    NOT be stamped on projects created against the local Supabase, where it
+    would FK-fail auth.users."""
+    from rumil.settings import override_settings
+
+    with override_settings(use_prod_db="", default_cli_user_id="some-uuid"):
+        from rumil.settings import get_settings
+
+        assert get_settings().effective_cli_user_id == ""
+
+
+def test_effective_cli_user_id_returns_default_for_prod_db():
+    from rumil.settings import override_settings
+
+    with override_settings(use_prod_db="1", default_cli_user_id="some-uuid"):
+        from rumil.settings import get_settings
+
+        assert get_settings().effective_cli_user_id == "some-uuid"

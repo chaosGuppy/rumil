@@ -29,7 +29,7 @@ Each call records:
 
 All call types share a three-stage architecture: `build_context` → `update_workspace` → `closing_review`. The context builder selects the slice of the workspace to show the LLM; the updater runs the agent loop that issues moves; the closing reviewer persists results and wraps up.
 
-The codebase is in `src/rumil/`. Prompts are in `prompts/`. Call implementations are in `src/rumil/calls/`, moves in `src/rumil/moves/`, orchestrators in `src/rumil/orchestrators/`. The top-level `CLAUDE.md` has more architectural detail.
+The codebase is in `src/rumil/`. Prompts are in `src/rumil/prompts/`. Call implementations are in `src/rumil/calls/`, moves in `src/rumil/moves/`, orchestrators in `src/rumil/orchestrators/`. The top-level `CLAUDE.md` has more architectural detail.
 
 ## What you have access to
 
@@ -69,7 +69,7 @@ A markdown document — the full text of your final response — structured roug
 - **Start by orienting.** Use the overview tool to see the shape of the investigation, then skim the high-level call list and the top-level pages. Don't dive into a single LLM exchange before you have a picture of the whole.
 - **Follow the evidence.** When you notice something that seems off, pull on the thread — read the specific exchange, the specific prompt, the specific move. Cite IDs.
 - **Read the relevant source.** When you suspect a prompt or a move is to blame, read the actual prompt file or the move's implementation before proposing a change. Don't suggest changes to code you haven't looked at.
-- **Be specific.** "Improve the assess prompt" is useless. "The assess prompt (`prompts/assess.md`) doesn't mention X, which caused the model to Y in exchange abc12345; adding a paragraph about X would probably fix this" is useful.
+- **Be specific.** "Improve the assess prompt" is useless. "The assess prompt (`src/rumil/prompts/assess.md`) doesn't mention X, which caused the model to Y in exchange abc12345; adding a paragraph about X would probably fix this" is useful.
 - **Be honest.** If the run went well and you can't find much wrong, say so. Don't invent weaknesses. If you find a real problem that's hard to fix, say that too.
 - **Don't pad.** Length is not a virtue. A short, sharp analysis is better than a long, hedged one.
 

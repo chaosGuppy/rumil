@@ -21,9 +21,14 @@ metadata:
   name: rumil-ci-rbac
   namespace: rumil
 rules:
+  # `escalate` and `bind` are k8s's designed escape hatches: they let the
+  # holder create Roles with arbitrary permissions and bind them, without
+  # needing those permissions itself. Without them, helm upgrade fails
+  # with "attempting to grant RBAC permissions not currently held" the
+  # first time the chart's Role declares any verb the CI SA lacks.
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "escalate", "bind"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

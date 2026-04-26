@@ -72,6 +72,8 @@ def _request_from_args(args: argparse.Namespace) -> OrchestratorRunRequest:
         debug=bool(getattr(args, "debug", False)),
         force_twophase_recurse=bool(getattr(args, "force_twophase_recurse", False)),
         no_trace=bool(getattr(args, "no_trace", False)),
+        auto_summary=getattr(args, "summary_id", None) == "__auto__",
+        auto_self_improve=getattr(args, "self_improve_id", None) == "__auto__",
         available_moves=getattr(args, "available_moves", None),
         available_calls=getattr(args, "available_calls", None),
         view_variant=getattr(args, "view_variant", None),

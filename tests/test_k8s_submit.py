@@ -65,6 +65,29 @@ def test_container_command_forwards_smoke_test_flag():
     assert "--smoke-test" in cmd
 
 
+def test_container_command_forwards_auto_summary_as_bare_summary_flag():
+    cmd = list(_build_container_command(_spec(auto_summary=True)))
+    assert "--summary" in cmd
+    # The flag must NOT be followed by a value; main.py's argparse uses
+    # nargs="?" with const="__auto__", which only triggers when --summary
+    # is bare.
+    idx = cmd.index("--summary")
+    assert idx == len(cmd) - 1 or cmd[idx + 1].startswith("--")
+
+
+def test_container_command_forwards_auto_self_improve_as_bare_flag():
+    cmd = list(_build_container_command(_spec(auto_self_improve=True)))
+    assert "--self-improve" in cmd
+    idx = cmd.index("--self-improve")
+    assert idx == len(cmd) - 1 or cmd[idx + 1].startswith("--")
+
+
+def test_container_command_omits_auto_flags_by_default():
+    cmd = _build_container_command(_spec())
+    assert "--summary" not in cmd
+    assert "--self-improve" not in cmd
+
+
 def test_container_command_omits_unset_optional_flags():
     cmd = _build_container_command(_spec())
     assert "--smoke-test" not in cmd

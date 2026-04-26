@@ -49,6 +49,8 @@ def _args_namespace(**overrides) -> argparse.Namespace:
         "debug": False,
         "force_twophase_recurse": False,
         "no_trace": False,
+        "summary_id": None,
+        "self_improve_id": None,
         "available_moves": None,
         "available_calls": None,
         "view_variant": None,
@@ -77,6 +79,36 @@ def test_request_from_args_no_container_tag_by_default():
     args = _args_namespace()
     spec = _request_from_args(args)
     assert spec.container_tag is None
+
+
+def test_request_from_args_forwards_auto_summary():
+    """`--summary` (no ID) sets summary_id="__auto__"; should map to auto_summary=True."""
+    args = _args_namespace(summary_id="__auto__")
+    spec = _request_from_args(args)
+    assert spec.auto_summary is True
+    assert spec.auto_self_improve is False
+
+
+def test_request_from_args_forwards_auto_self_improve():
+    args = _args_namespace(self_improve_id="__auto__")
+    spec = _request_from_args(args)
+    assert spec.auto_self_improve is True
+    assert spec.auto_summary is False
+
+
+def test_request_from_args_ignores_summary_with_real_id():
+    """`--summary <QID>` is the standalone (non-orchestrator) mode and is
+    rejected before it reaches the request builder; defensively, a real ID
+    should not flip auto_summary."""
+    args = _args_namespace(summary_id="some-question-id")
+    spec = _request_from_args(args)
+    assert spec.auto_summary is False
+
+
+def test_request_from_args_no_auto_flags_by_default():
+    spec = _request_from_args(_args_namespace())
+    assert spec.auto_summary is False
+    assert spec.auto_self_improve is False
 
 
 def test_request_from_args_rejects_json_question():

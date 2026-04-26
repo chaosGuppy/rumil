@@ -33,6 +33,12 @@ class OrchestratorRunRequest(BaseModel):
     debug: bool = False
     force_twophase_recurse: bool = False
     no_trace: bool = False
+    # Post-orchestrator modifiers triggered by `--summary` / `--self-improve`
+    # passed without an ID (= dest="__auto__"). These are auto-mode booleans
+    # rather than ID-bearing fields because the standalone forms (with an ID)
+    # are non-orchestrator modes and aren't supported remotely.
+    auto_summary: bool = False
+    auto_self_improve: bool = False
 
     available_moves: str | None = None
     available_calls: str | None = None

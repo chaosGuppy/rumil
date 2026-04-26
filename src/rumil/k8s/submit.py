@@ -153,6 +153,10 @@ def _build_container_command(spec: OrchestratorRunRequest) -> Sequence[str]:
         args.append("--force-twophase-recurse")
     if spec.no_trace:
         args.append("--no-trace")
+    if spec.auto_summary:
+        args.append("--summary")
+    if spec.auto_self_improve:
+        args.append("--self-improve")
     if spec.available_moves:
         args += ["--available-moves", spec.available_moves]
     if spec.available_calls:

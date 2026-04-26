@@ -77,7 +77,7 @@ def _load_manifest() -> dict[str, Any]:
 
 def _read_api_runtime(
     apps_v1: client.AppsV1Api,
-) -> tuple[str, list[client.V1EnvVar], list[client.V1EnvFromSource]]:
+) -> tuple[str, Sequence[client.V1EnvVar], Sequence[client.V1EnvFromSource]]:
     """Return (image, env, env_from) from the running rumil-api Deployment."""
     dep = cast(
         client.V1Deployment,
@@ -128,7 +128,7 @@ def _job_name(spec: OrchestratorRunRequest) -> str:
     return name[:63]
 
 
-def _build_container_command(spec: OrchestratorRunRequest) -> list[str]:
+def _build_container_command(spec: OrchestratorRunRequest) -> Sequence[str]:
     """Translate the request into the in-pod CLI invocation."""
     args: list[str] = [
         "python",

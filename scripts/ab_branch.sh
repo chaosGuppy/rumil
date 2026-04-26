@@ -162,7 +162,11 @@ if [[ -n "$BUDGET" ]]; then
     COMMAND+=("--budget" "$BUDGET")
 fi
 if [[ -n "$PROD" ]]; then
-    COMMAND+=("--prod")
+    # Use the explicit local-executor form: `--prod` is now shorthand for
+    # `--db prod --executor prod`, which submits the orchestrator as a k8s
+    # Job and would silently drop --staged/--run-id-file. We need an
+    # in-process run so --run-id-file lands on disk for downstream --ab-eval.
+    COMMAND+=("--db" "prod" "--executor" "local")
 fi
 
 echo "=== A/B Branch Test ==="

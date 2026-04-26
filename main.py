@@ -22,6 +22,7 @@ from pathlib import Path
 from rumil.ab_eval import run_ab_eval
 from rumil.chat import run_chat, run_continuation_chat, run_scoping_chat
 from rumil.clean import run_feedback_update, run_grounding_feedback
+from rumil.cli_client import submit_remote_orchestrator_run
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.database import DB
 from rumil.evaluate.runner import run_evaluation
@@ -109,6 +110,7 @@ _NON_ORCHESTRATOR_FLAGS: tuple[str, ...] = (
     "chat_id",
     "add_question",
     "summary_id",
+    "self_improve_id",
     "report_id",
     "continue_id",
     "batch_file",
@@ -118,13 +120,23 @@ _NON_ORCHESTRATOR_FLAGS: tuple[str, ...] = (
     "commit_run_id",
 )
 
+# A few flags use nargs="?" with const="__auto__" to mean "do this step after
+# the orchestrator finishes" rather than "this is the standalone mode". An
+# auto value should NOT mark the run as non-orchestrator — the orchestrator
+# is still the primary action.
+_AUTO_AWARE_FLAGS = frozenset({"summary_id", "self_improve_id"})
+_AUTO_VALUE = "__auto__"
+
 
 def _is_non_orchestrator_mode(args: argparse.Namespace) -> bool:
     """True if the CLI was invoked in any mode other than `question --budget N`."""
     for flag in _NON_ORCHESTRATOR_FLAGS:
         value = getattr(args, flag, None)
-        if value:
-            return True
+        if not value:
+            continue
+        if flag in _AUTO_AWARE_FLAGS and value == _AUTO_VALUE:
+            continue
+        return True
     return bool(getattr(args, "ingest_files", None) and not getattr(args, "question", None))
 
 
@@ -1256,12 +1268,20 @@ async def async_main():
 
     if args.prod_db and (args.db is not None or args.executor is not None):
         parser.error("--prod cannot be combined with explicit --db or --executor")
+    explicit_remote = args.executor == "prod"
     db_choice = "prod" if args.prod_db else (args.db or "local")
     executor_choice = "prod" if args.prod_db else (args.executor or "local")
     if db_choice == "local" and executor_choice == "prod":
         parser.error(
             "--executor prod requires --db prod (the prod cluster cannot reach a local Supabase)"
         )
+    # `--prod` is documented as a shorthand that targets prod for any command.
+    # Non-orchestrator commands (--list, --summary ID, --report ID, etc.) only
+    # have an in-process implementation, so silently keep them local; only an
+    # explicit `--executor prod` is rejected for these modes (loud failure for
+    # an explicit ask, soft fallback for the documented shorthand).
+    if executor_choice == "prod" and not explicit_remote and _is_non_orchestrator_mode(args):
+        executor_choice = "local"
     args.prod_db = db_choice == "prod"
 
     if args.debug:
@@ -1304,8 +1324,6 @@ async def async_main():
                 "--executor prod is only supported for orchestrator runs (a question with "
                 "--budget). For other modes, omit --executor or use --executor local."
             )
-        from rumil.cli_client import submit_remote_orchestrator_run
-
         sys.exit(submit_remote_orchestrator_run(args))
 
     db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged)

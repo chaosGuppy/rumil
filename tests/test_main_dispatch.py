@@ -34,6 +34,7 @@ def _make_namespace(**overrides) -> argparse.Namespace:
         "chat_id": None,
         "add_question": None,
         "summary_id": None,
+        "self_improve_id": None,
         "report_id": None,
         "continue_id": None,
         "batch_file": None,
@@ -51,10 +52,17 @@ def _resolve(args: argparse.Namespace) -> tuple[str, str]:
     """Mirror of the resolution block at the top of async_main."""
     if args.prod_db and (args.db is not None or args.executor is not None):
         raise SystemExit("--prod cannot be combined with explicit --db or --executor")
+    explicit_remote = args.executor == "prod"
     db_choice = "prod" if args.prod_db else (args.db or "local")
     executor_choice = "prod" if args.prod_db else (args.executor or "local")
     if db_choice == "local" and executor_choice == "prod":
         raise SystemExit("--executor prod requires --db prod")
+    if (
+        executor_choice == "prod"
+        and not explicit_remote
+        and main_module._is_non_orchestrator_mode(args)
+    ):
+        executor_choice = "local"
     args.prod_db = db_choice == "prod"
     return db_choice, executor_choice
 
@@ -165,3 +173,56 @@ def test_effective_cli_user_id_returns_default_for_prod_db():
         from rumil.settings import get_settings
 
         assert get_settings().effective_cli_user_id == "some-uuid"
+
+
+def test_prod_with_list_silently_falls_back_to_local_executor():
+    """`--prod --list` is documented as targeting prod for any command. Don't
+    break that — only loud-reject when --executor prod was set explicitly."""
+    args = _make_namespace(prod_db=True, list=True)
+    db, executor = _resolve(args)
+    assert (db, executor) == ("prod", "local")
+    assert args.prod_db is True
+
+
+def test_prod_with_summary_id_silently_falls_back_to_local_executor():
+    args = _make_namespace(prod_db=True, summary_id="some-qid")
+    assert _resolve(args) == ("prod", "local")
+
+
+def test_prod_with_summary_auto_stays_remote():
+    """`--summary` (auto, paired with an orchestrator run) must NOT be
+    treated as a non-orchestrator mode and must keep executor=prod."""
+    args = _make_namespace(prod_db=True, question="q", budget=4, summary_id="__auto__")
+    assert _resolve(args) == ("prod", "prod")
+
+
+def test_prod_with_self_improve_auto_stays_remote():
+    args = _make_namespace(prod_db=True, question="q", budget=4, self_improve_id="__auto__")
+    assert _resolve(args) == ("prod", "prod")
+
+
+def test_explicit_executor_prod_still_rejects_non_orchestrator():
+    """An explicit `--executor prod --list` is loud-rejected via parser.error
+    in the dispatch block (not the resolver), because the user explicitly
+    asked for the remote path. Verified via _is_non_orchestrator_mode."""
+    args = _make_namespace(db="prod", executor="prod", list=True)
+    db, executor = _resolve(args)
+    assert (db, executor) == ("prod", "prod")
+    assert main_module._is_non_orchestrator_mode(args) is True
+
+
+def test_self_improve_with_id_is_non_orchestrator():
+    args = _make_namespace(self_improve_id="some-qid")
+    assert main_module._is_non_orchestrator_mode(args) is True
+
+
+def test_summary_auto_value_is_treated_as_orchestrator():
+    """Pre-existing bug fix: `--summary` (= summary_id="__auto__") is a
+    post-orch modifier, not a standalone mode."""
+    args = _make_namespace(question="q", budget=4, summary_id="__auto__")
+    assert main_module._is_non_orchestrator_mode(args) is False
+
+
+def test_self_improve_auto_value_is_treated_as_orchestrator():
+    args = _make_namespace(question="q", budget=4, self_improve_id="__auto__")
+    assert main_module._is_non_orchestrator_mode(args) is False

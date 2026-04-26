@@ -11,18 +11,14 @@ config; everything else returns 503 if config is missing.
 
 from __future__ import annotations
 
-import datetime as dt
 import functools
 import json
 import os
 import pathlib
-from collections import defaultdict
-from collections.abc import Sequence
 
 import pydantic
 from fastapi import APIRouter, HTTPException
 
-from rumil.versus_bridge import get_rumil_dimension_body
 from versus import analyze as versus_analyze
 from versus import config as versus_config
 from versus import diagnostics as versus_diagnostics
@@ -269,7 +265,7 @@ class JudgmentDetail(pydantic.BaseModel):
     Includes the verbatim prompt + reasoning text + raw provider response,
     so a reader can audit what the judge actually saw and said. Most fields
     are optional because the shape varies across judge variants (OpenRouter
-    vs anthropic vs rumil:text vs rumil:ws/orch vs human:*).
+    vs anthropic vs rumil:text vs rumil:ws/orch).
     """
 
     key: str
@@ -474,88 +470,7 @@ class ResultsBundle(pydantic.BaseModel):
     active_prefix_label: str
 
 
-class NextPair(pydantic.BaseModel):
-    essay_id: str
-    prefix_hash: str
-    a: str
-    b: str
-    first_source: str
-    second_source: str
-    first_text: str
-    second_text: str
-    prefix_text: str
-    title: str
-    criterion: str
-    criterion_desc: str
-    done_count: int
-    total: int
-
-
-class CriterionStats(pydantic.BaseModel):
-    criterion: str
-    done: int
-    total: int
-
-
-class JudgingProgress(pydantic.BaseModel):
-    """Returned when there is no next pair; tells the UI to show 'done'."""
-
-    name: str
-    criterion: str
-    criteria: list[str]
-    per_criterion: list[CriterionStats]
-
-
-class NextPairResponse(pydantic.BaseModel):
-    """Either a next pair to judge, or progress when nothing's left."""
-
-    pair: NextPair | None
-    progress: JudgingProgress
-
-
-class JudgmentSubmit(pydantic.BaseModel):
-    name: str
-    criterion: str
-    essay_id: str
-    prefix_hash: str
-    a: str
-    b: str
-    first_source: str
-    second_source: str
-    verdict: str  # "A" | "B" | "tie"
-    note: str = ""
-    force: bool = False
-
-
-class JudgmentSubmitResult(pydantic.BaseModel):
-    key: str
-    winner_source: str
-    duplicate: bool = False
-
-
 router = APIRouter(prefix="/api/versus", tags=["versus"])
-
-
-class CriteriaResponse(pydantic.BaseModel):
-    """Dimensions the human-judging UI should offer.
-
-    Sourced from ``cfg.judging.criteria`` so the landing page tracks the
-    versus config instead of a frontend hard-coded list. Keeps the
-    selectable criteria in sync with what run_judgments / run_rumil_judgments
-    actually evaluate.
-    """
-
-    criteria: list[str]
-
-
-@router.get("/criteria", response_model=CriteriaResponse)
-def get_criteria() -> CriteriaResponse:
-    cfg = _cfg_required()
-    return CriteriaResponse(criteria=list(cfg.judging.criteria))
-
-
-def _human_judge_id(name: str) -> str:
-    return f"human:{name.strip().lower()}"
 
 
 def _load_essay(essay_id: str) -> versus_essay.Essay | None:
@@ -1131,116 +1046,6 @@ def get_results(
     )
 
 
-def _enumerate_pairs(cfg: versus_config.Config):
-    _, current_prefix_hashes = _build_essays_status(cfg)
-    return versus_view.enumerate_pairs(
-        cfg,
-        _resolve_path(cfg.storage.completions_log),
-        _iter_essay_paths(),
-        current_prefix_hashes=current_prefix_hashes,
-    )
-
-
-def _build_judging_progress(
-    name: str,
-    criterion: str,
-    criteria: Sequence[str],
-    counts: dict[str, int],
-    total: int,
-) -> JudgingProgress:
-    return JudgingProgress(
-        name=name,
-        criterion=criterion,
-        criteria=list(criteria),
-        per_criterion=[
-            CriterionStats(criterion=c, done=counts.get(c, 0), total=total) for c in criteria
-        ],
-    )
-
-
-def _judging_progress(cfg: versus_config.Config, name: str, criterion: str) -> JudgingProgress:
-    judge_model = _human_judge_id(name)
-    counts: dict[str, int] = defaultdict(int)
-    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
-        if row.get("judge_model") == judge_model:
-            counts[row.get("criterion", "")] += 1
-    total = sum(1 for _ in _enumerate_pairs(cfg))
-    return _build_judging_progress(name, criterion, cfg.judging.criteria, counts, total)
-
-
-@router.get("/next-pair", response_model=NextPairResponse)
-def get_next_pair(name: str, criterion: str | None = None) -> NextPairResponse:
-    cfg = _cfg_required()
-    judge_model = _human_judge_id(name)
-    active_criterion = criterion or cfg.judging.criteria[0]
-    if active_criterion not in cfg.judging.criteria:
-        raise HTTPException(
-            400,
-            f"unknown criterion {active_criterion!r}; configured: {list(cfg.judging.criteria)}",
-        )
-
-    # Single pass over judgments.jsonl populates both the per-criterion
-    # progress counts and the "done" set for the active criterion. The old
-    # code read the file twice (here + _judging_progress at the end of
-    # the request) — same cache hit but two O(N) Python loops per call.
-    done: set[str] = set()
-    counts: dict[str, int] = defaultdict(int)
-    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
-        if row.get("judge_model") != judge_model:
-            continue
-        row_crit = row.get("criterion", "")
-        counts[row_crit] += 1
-        if row_crit == active_criterion:
-            # Re-derive the row's key with the current scheme so legacy
-            # rows (pre-order field) are still recognized as done: their
-            # stored ``key`` lacks the ``|ab``/``|ba`` suffix. infer_order
-            # recovers the single order they were judged in from
-            # display_first; we then rebuild the key under the current
-            # scheme so the "done" set is comparable to enumeration keys.
-            rorder = versus_judge.infer_order(row)
-            done.add(
-                versus_judge.judgment_key(
-                    row["essay_id"],
-                    row["prefix_config_hash"],
-                    row["source_a"],
-                    row["source_b"],
-                    row["criterion"],
-                    row["judge_model"],
-                    rorder,
-                )
-            )
-
-    # Enumerate once, reuse for both progress.total and the next-pair walk.
-    # _judging_progress() internally re-enumerates; we skip that by
-    # building the progress payload directly.
-    all_pairs = list(_enumerate_pairs(cfg))
-    total = len(all_pairs)
-    done_count = 0
-    next_p: versus_view.PairShape | None = None
-    for p in all_pairs:
-        order = versus_judge.order_from_display_first(p.a, p.b, p.first_source)
-        k = versus_judge.judgment_key(
-            p.essay_id, p.prefix_hash, p.a, p.b, active_criterion, judge_model, order
-        )
-        if k in done:
-            done_count += 1
-        elif next_p is None:
-            next_p = p
-
-    progress = _build_judging_progress(name, active_criterion, cfg.judging.criteria, counts, total)
-    if next_p is None:
-        return NextPairResponse(pair=None, progress=progress)
-
-    pair = NextPair(
-        criterion=active_criterion,
-        criterion_desc=get_rumil_dimension_body(active_criterion),
-        done_count=done_count,
-        total=total,
-        **versus_view.pair_as_dict(next_p),
-    )
-    return NextPairResponse(pair=pair, progress=progress)
-
-
 @router.get("/judgments/by-key", response_model=JudgmentDetail)
 def get_judgment_by_key(key: str) -> JudgmentDetail:
     """Look up the verbatim row for a single judgment key.
@@ -1289,54 +1094,6 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             duration_s=row.get("duration_s"),
         )
     raise HTTPException(404, f"judgment key not found: {key}")
-
-
-@router.post("/judgments", response_model=JudgmentSubmitResult)
-def submit_judgment(body: JudgmentSubmit) -> JudgmentSubmitResult:
-    cfg = _cfg_required()
-    judge_model = _human_judge_id(body.name)
-    if body.verdict == "A":
-        winner_source = body.first_source
-    elif body.verdict == "B":
-        winner_source = body.second_source
-    elif body.verdict == "tie":
-        winner_source = "tie"
-    else:
-        raise HTTPException(400, f"bad verdict: {body.verdict}")
-
-    order = versus_judge.order_from_display_first(body.a, body.b, body.first_source)
-    k = versus_judge.judgment_key(
-        body.essay_id, body.prefix_hash, body.a, body.b, body.criterion, judge_model, order
-    )
-    log_path = _resolve_path(cfg.storage.judgments_log)
-    # Guard against double-clicks / accidental re-judgment. read_dedup
-    # collapses dupes last-row-wins, but the raw file grows and
-    # total_judgments inflates until caches roll over. Require an
-    # explicit `force` to override -- lets the operator fix a mistaken
-    # verdict, but makes "I clicked twice" a no-op.
-    if not body.force and k in versus_jsonl.keys(log_path):
-        return JudgmentSubmitResult(key=k, winner_source=winner_source, duplicate=True)
-    row = {
-        "key": k,
-        "essay_id": body.essay_id,
-        "prefix_config_hash": body.prefix_hash,
-        "source_a": body.a,
-        "source_b": body.b,
-        "display_first": body.first_source,
-        "display_second": body.second_source,
-        "order": order,
-        "criterion": body.criterion,
-        "judge_model": judge_model,
-        "verdict": body.verdict,
-        "winner_source": winner_source,
-        "reasoning_text": body.note,
-        "prompt": None,
-        "ts": dt.datetime.now(dt.UTC).isoformat(),
-        "duration_s": None,
-        "raw_response": None,
-    }
-    versus_jsonl.append(log_path, row)
-    return JudgmentSubmitResult(key=k, winner_source=winner_source)
 
 
 class JudgeBiasRowOut(pydantic.BaseModel):

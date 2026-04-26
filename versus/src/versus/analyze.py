@@ -34,12 +34,9 @@ def model_sort_key(judge: str) -> tuple:
     within family: flash < pro for gemini, nano < mini < full for openai,
     haiku < sonnet < opus for anthropic. Variant (relevant for judges):
     bare openrouter < anthropic: (legacy text) < rumil:text < rumil:ws <
-    rumil:orch. Human judges pinned to the end.
+    rumil:orch.
     """
     low = judge.lower()
-
-    if low.startswith("human:"):
-        return (99, 99, "", 99, judge)
 
     if low.startswith("rumil:orch:"):
         variant = 4
@@ -154,8 +151,6 @@ def judge_label(judge: str) -> dict:
     into `variant` so the phash remains separable. Applies to all
     variants: rumil:*, anthropic:*, and OpenRouter bare-provider form.
     """
-    if judge.startswith("human:"):
-        return {"variant": "human", "model": judge.split(":", 1)[1], "task": None, "phash": None}
     if (
         judge.startswith("rumil:orch:")
         or judge.startswith("rumil:ws:")

@@ -1,0 +1,40 @@
+# One-shot RBAC for the CI deployer service account.
+#
+# The Helm chart at deploy/chart/ owns the *application's* RBAC
+# (templates/api-rbac.yaml). But helm itself runs as `rumil-ci`, whose
+# project-level role `roles/container.developer` intentionally excludes
+# Kubernetes RBAC management — so it can't create or patch the chart's
+# Role/RoleBinding without help.
+#
+# This file grants `rumil-ci` permission to manage Roles and RoleBindings
+# in the `rumil` namespace only, which is the minimum needed for the
+# chart's helm upgrade to succeed.
+#
+# Apply once, manually:
+#   kubectl apply -f deploy/infra/rumil-ci-rbac.yaml
+#
+# Not part of any helm release; it must already exist before CI runs the
+# first deploy that touches RBAC resources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rumil-ci-rbac
+  namespace: rumil
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rumil-ci-rbac
+  namespace: rumil
+subjects:
+  - kind: User
+    name: rumil-ci@project-fe559f0f-d011-4af4-bf0.iam.gserviceaccount.com
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: rumil-ci-rbac
+  apiGroup: rbac.authorization.k8s.io

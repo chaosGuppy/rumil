@@ -44,13 +44,12 @@ from rumil.models import (
     Workspace,
 )
 from rumil.orchestrators import Orchestrator
+from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import build_research_tree
 
 log = logging.getLogger(__name__)
-
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 # True-colour ANSI: warm off-white for human, cool off-white for assistant
 _RESET = "\033[0m"

@@ -1,8 +1,6 @@
 """System prompt builder for the scope-subquestion linker agent."""
 
-from pathlib import Path
-
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 
 
 def build_linker_prompt(max_rounds: int) -> str:

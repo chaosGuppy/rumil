@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 
 from claude_agent_sdk import AgentDefinition, tool
 from pydantic import BaseModel, Field
@@ -33,6 +32,7 @@ from rumil.models import (
 )
 from rumil.moves.base import link_pages
 from rumil.orchestrators.experimental import ExperimentalOrchestrator
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -41,7 +41,6 @@ from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 _SERVER_NAME = "feedback-plan"
 
 

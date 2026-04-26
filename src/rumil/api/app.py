@@ -1,7 +1,9 @@
 """
 FastAPI application for the Rumil research workspace.
 
-Read-only API for browsing projects, pages, links, and calls.
+Mostly read-only browsing endpoints (projects, pages, links, calls). Also
+exposes POST /api/jobs/orchestrator-runs, which creates Kubernetes Jobs to
+run orchestrator investigations remotely; see `rumil.api.jobs`.
 """
 
 import logging
@@ -14,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
 from rumil.api.auth import AuthUser, get_current_user
+from rumil.api.jobs import router as jobs_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
     ABEvalDimensionSummaryOut,
@@ -49,7 +52,10 @@ _trace_event_adapter = TypeAdapter(TraceEventOut)
 app = FastAPI(
     title="Rumil API",
     version="0.1.0",
-    description="Read-only API for the Rumil research workspace.",
+    description=(
+        "Read-only browsing API for the Rumil research workspace, plus a "
+        "/api/jobs/orchestrator-runs endpoint that submits Kubernetes Jobs."
+    ),
 )
 
 _ALLOWED_FRONTEND_ORIGINS = [
@@ -68,6 +74,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+app.include_router(jobs_router)
 
 
 async def _assert_page_access(db: DB, page_id: str) -> Page:

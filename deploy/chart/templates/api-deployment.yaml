@@ -21,6 +21,7 @@ spec:
         {{- include "rumil.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
+      serviceAccountName: rumil-api
       containers:
         - name: {{ .Chart.Name }}-api
           image: "{{ .Values.api.image.repository }}:{{ .Values.releaseId }}"

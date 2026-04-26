@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -35,6 +34,7 @@ from rumil.models import (
 )
 from rumil.moves.base import HEADLINE_DESCRIPTION
 from rumil.moves.create_claim import ensure_source_page, execute_with_source_creation
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -47,7 +47,6 @@ from rumil.tracing.tracer import CallTrace
 
 log = logging.getLogger(__name__)
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 _TOOL_SERVER_NAME = "grounding-identify"
 _PLAN_SERVER_NAME = "grounding-plan"
 _WEB_SEARCH_SEMAPHORE = asyncio.Semaphore(10)

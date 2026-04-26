@@ -22,6 +22,7 @@ from pathlib import Path
 from rumil.ab_eval import run_ab_eval
 from rumil.chat import run_chat, run_continuation_chat, run_scoping_chat
 from rumil.clean import run_feedback_update, run_grounding_feedback
+from rumil.cli_client import submit_remote_orchestrator_run
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.database import DB
 from rumil.evaluate.runner import run_evaluation
@@ -95,6 +96,48 @@ def parse_question_input(value: str) -> QuestionInput:
 
 
 NORMAL_BUDGET_DEFAULT = 10
+
+
+_NON_ORCHESTRATOR_FLAGS: tuple[str, ...] = (
+    "list",
+    "list_workspaces",
+    "evaluate_id",
+    "ground_call_id",
+    "feedback_call_id",
+    "feedback_file",
+    "show_evaluation_id",
+    "scope_question",
+    "chat_id",
+    "add_question",
+    "summary_id",
+    "self_improve_id",
+    "report_id",
+    "continue_id",
+    "batch_file",
+    "run_eval_id",
+    "ab_eval_ids",
+    "stage_run_id",
+    "commit_run_id",
+)
+
+# A few flags use nargs="?" with const="__auto__" to mean "do this step after
+# the orchestrator finishes" rather than "this is the standalone mode". An
+# auto value should NOT mark the run as non-orchestrator — the orchestrator
+# is still the primary action.
+_AUTO_AWARE_FLAGS = frozenset({"summary_id", "self_improve_id"})
+_AUTO_VALUE = "__auto__"
+
+
+def _is_non_orchestrator_mode(args: argparse.Namespace) -> bool:
+    """True if the CLI was invoked in any mode other than `question --budget N`."""
+    for flag in _NON_ORCHESTRATOR_FLAGS:
+        value = getattr(args, flag, None)
+        if not value:
+            continue
+        if flag in _AUTO_AWARE_FLAGS and value == _AUTO_VALUE:
+            continue
+        return True
+    return bool(getattr(args, "ingest_files", None) and not getattr(args, "question", None))
 
 
 def _default_budget(budget: int | None, fallback: int = NORMAL_BUDGET_DEFAULT) -> int:
@@ -1133,7 +1176,29 @@ async def async_main():
         "--prod",
         dest="prod_db",
         action="store_true",
-        help="Use production Supabase (requires SUPABASE_PROD_URL and SUPABASE_PROD_KEY)",
+        help="Shorthand for --db prod --executor prod (run as a k8s Job against prod Supabase).",
+    )
+    parser.add_argument(
+        "--db",
+        choices=["prod", "local"],
+        default=None,
+        help="Which Supabase to target. Default: local. Cannot be combined with --prod.",
+    )
+    parser.add_argument(
+        "--executor",
+        choices=["prod", "local"],
+        default=None,
+        help="Where to run. 'local' (default) runs in this process; 'prod' submits a "
+        "Kubernetes Job via the rumil API. Cannot be combined with --prod.",
+    )
+    parser.add_argument(
+        "--container-tag",
+        dest="container_tag",
+        default=None,
+        metavar="TAG",
+        help="Image tag override for --executor prod. The job runs against "
+        "<registry>/rumil-api:<TAG> instead of the currently-deployed image. "
+        "Used by scripts/remote_run.sh for experiment runs.",
     )
     parser.add_argument(
         "--staged",
@@ -1201,6 +1266,24 @@ async def async_main():
     )
     args = parser.parse_args()
 
+    if args.prod_db and (args.db is not None or args.executor is not None):
+        parser.error("--prod cannot be combined with explicit --db or --executor")
+    explicit_remote = args.executor == "prod"
+    db_choice = "prod" if args.prod_db else (args.db or "local")
+    executor_choice = "prod" if args.prod_db else (args.executor or "local")
+    if db_choice == "local" and executor_choice == "prod":
+        parser.error(
+            "--executor prod requires --db prod (the prod cluster cannot reach a local Supabase)"
+        )
+    # `--prod` is documented as a shorthand that targets prod for any command.
+    # Non-orchestrator commands (--list, --summary ID, --report ID, etc.) only
+    # have an in-process implementation, so silently keep them local; only an
+    # explicit `--executor prod` is rejected for these modes (loud failure for
+    # an explicit ask, soft fallback for the documented shorthand).
+    if executor_choice == "prod" and not explicit_remote and _is_non_orchestrator_mode(args):
+        executor_choice = "local"
+    args.prod_db = db_choice == "prod"
+
     if args.debug:
         log_level = logging.DEBUG
     elif args.quiet:
@@ -1235,6 +1318,14 @@ async def async_main():
     if args.force_twophase_recurse:
         get_settings().force_twophase_recurse = True
 
+    if executor_choice == "prod":
+        if not args.question or _is_non_orchestrator_mode(args):
+            parser.error(
+                "--executor prod is only supported for orchestrator runs (a question with "
+                "--budget). For other modes, omit --executor or use --executor local."
+            )
+        sys.exit(submit_remote_orchestrator_run(args))
+
     db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged)
 
     if args.run_id_file:
@@ -1246,7 +1337,7 @@ async def async_main():
 
     project = await db.get_or_create_project(
         args.workspace_name,
-        owner_user_id=args.cli_user_id or get_settings().default_cli_user_id or None,
+        owner_user_id=args.cli_user_id or get_settings().effective_cli_user_id or None,
     )
     db.project_id = project.id
 

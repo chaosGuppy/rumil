@@ -23,11 +23,11 @@ from rumil.calls.common import execute_tool_uses, prepare_tools
 from rumil.database import DB, _row_to_call
 from rumil.llm import Tool, call_api
 from rumil.models import Call, Page, PageType
+from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
 
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 REPO_ROOT = (Path(__file__).parent.parent.parent).resolve()
 OUTPUT_DIR = Path(__file__).parent.parent.parent / "pages" / "self-improvement"
 

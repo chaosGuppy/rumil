@@ -7,8 +7,8 @@ from pathlib import Path
 
 from rumil.database import DB
 from rumil.llm import text_call
+from rumil.prompts import PROMPTS_DIR
 
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 SUMMARIES_DIR = Path(__file__).parent.parent.parent / "pages" / "summaries"
 
 

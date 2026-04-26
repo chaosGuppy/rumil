@@ -33,6 +33,16 @@ The deployed app has two gates: an invite password (`/welcome`) and Google OAuth
 - Set `AUTH_ENABLED=0` in **both** `.env` (backend) and `frontend/.env.local` (frontend). The example files ship with this set. The middleware then skips the invite cookie and the Supabase session check, and the API skips JWT verification. The two sides must agree — if only the frontend has it, every `/api/*` call 401s.
 - To exercise the real flow locally, unset `AUTH_ENABLED` (or set to `1`) and fill in `INVITE_PASSWORD`, `INVITE_SECRET`, and the `NEXT_PUBLIC_SUPABASE_*` vars in `frontend/.env.local`. Local Google OAuth isn't wired up in `supabase/config.toml`, so the `/sign-in` button won't actually complete a flow against `supabase start` — you'd need to point at a real Supabase project.
 
+### Submitting orchestrator runs to Kubernetes (`--executor prod`)
+
+To use `--prod` (or `--db prod --executor prod`) the laptop needs to mint a short-lived Supabase JWT that the API verifies via the same `Depends(get_current_user)` flow the frontend uses. Set in your `.env`:
+
+- `SUPABASE_JWT_SECRET` — same HS256 secret as the prod `rumil-api-secrets`. The CLI signs JWTs with it.
+- `RUMIL_API_URL` — only needs to be set to override the default `https://api.rumil.ink`.
+- `DEFAULT_CLI_USER_ID` — optional. Defaults to a shared CLI service-account user baked into `Settings`. Set this to attribute jobs to a specific Supabase user instead.
+
+You don't need `kubectl` or a kubeconfig — the API does the cluster work for you.
+
 ## Common tasks
 
 A [justfile](./justfile) wraps the commands below — `brew bundle` installs `just` (or `brew install just` on its own). Run `just --list` to see recipes. Direct commands work too.

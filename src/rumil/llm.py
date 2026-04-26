@@ -21,7 +21,6 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import anthropic
@@ -40,6 +39,7 @@ from tenacity import (
 )
 
 from rumil.pricing import compute_cost
+from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.tracing import (
     get_langfuse,
@@ -85,8 +85,6 @@ def _effort_level(model: str) -> str | None:
         return "high"
     return None
 
-
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 log = logging.getLogger(__name__)
 

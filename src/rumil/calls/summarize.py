@@ -2,7 +2,6 @@
 
 import logging
 from datetime import UTC, datetime
-from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -21,14 +20,13 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ContextBuiltEvent, ErrorEvent, PageRef
 from rumil.tracing.tracer import CallTrace, set_trace
 
 log = logging.getLogger(__name__)
-
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 
 SYSTEM_PROMPT = (_PROMPTS_DIR / "summarize.md").read_text()
 

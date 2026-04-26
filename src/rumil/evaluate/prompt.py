@@ -1,9 +1,6 @@
 """Build the system prompt for the evaluation agent."""
 
-from pathlib import Path
-
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
-
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 
 EVAL_PROMPTS: dict[str, str] = {
     "default": "eval-falsifiable-grounding.md",

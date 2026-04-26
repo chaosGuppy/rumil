@@ -7,7 +7,6 @@ import traceback
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 
 from rumil.ab_eval.arm_tools import (
     make_arm_explore_subgraph_tool,
@@ -17,6 +16,7 @@ from rumil.ab_eval.arm_tools import (
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, text_call
 from rumil.models import Call, CallStatus, CallType
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 from rumil.run_eval.agents import EVAL_AGENTS, EvalAgentSpec
 from rumil.run_eval.runner import wrap_as_mcp_tool
 from rumil.run_eval.seed import build_eval_seed_context
@@ -28,7 +28,6 @@ from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
 log = logging.getLogger(__name__)
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 _TOOL_SERVER_NAME = "ab-eval-tools"
 
 

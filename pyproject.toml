@@ -18,6 +18,7 @@ dependencies = [
     "google-genai>=1.72",
     "pyjwt[crypto]>=2.11.0",
     "langfuse>=4.5.1",
+    "kubernetes>=33.0.0",
 ]
 
 [project.optional-dependencies]

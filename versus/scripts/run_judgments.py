@@ -84,15 +84,6 @@ def main() -> None:
             "this, completions tied to older imports also get judged."
         ),
     )
-    ap.add_argument(
-        "--prefix-label",
-        default=None,
-        help=(
-            "Scope --current-only to a specific prefix variant (default: "
-            "the canonical `prefix:` entry). Sibling variants live under "
-            "`prefix_variants:` in config.yaml; pass their `id`."
-        ),
-    )
     ap.add_argument("--limit", type=int, default=None, help="Cap on number of judgments.")
     ap.add_argument("--dry-run", action="store_true", help="Print the plan and exit.")
     args = ap.parse_args()
@@ -114,8 +105,6 @@ def main() -> None:
         essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
     else:
         essay_ids = args.essay
-    prefix_cfg = prepare.resolve_prefix_cfg(cfg, args.prefix_label)
-    print(f"[prefix] using variant {prefix_cfg.id!r}")
     judge.run(
         cfg,
         judge_models=args.judge_model,
@@ -124,7 +113,6 @@ def main() -> None:
         contestants=contestants,
         vs_human=args.vs_human,
         current_only=args.current_only,
-        prefix_cfg=prefix_cfg,
         limit=args.limit,
         dry_run=args.dry_run,
     )

@@ -393,7 +393,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'claude_code_direct' | 'versus_judge';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'refine_spec' | 'claude_code_direct' | 'versus_judge';
 
 /**
  * CallTypeFruitScoreItem
@@ -663,6 +663,23 @@ export type ContextBuiltEventOut = {
 };
 
 /**
+ * CriteriaResponse
+ *
+ * Dimensions the human-judging UI should offer.
+ *
+ * Sourced from ``cfg.judging.criteria`` so the landing page tracks the
+ * versus config instead of a frontend hard-coded list. Keeps the
+ * selectable criteria in sync with what run_judgments / run_rumil_judgments
+ * actually evaluate.
+ */
+export type CriteriaResponse = {
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+};
+
+/**
  * CriterionMatrix
  */
 export type CriterionMatrix = {
@@ -674,6 +691,24 @@ export type CriterionMatrix = {
      * Cells
      */
     cells: Array<GenJudgeCell>;
+};
+
+/**
+ * CriterionStats
+ */
+export type CriterionStats = {
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Done
+     */
+    done: number;
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**
@@ -890,14 +925,6 @@ export type EssayDetail = {
      * Criteria
      */
     criteria: Array<string>;
-    /**
-     * Prefix Variants
-     */
-    prefix_variants: Array<PrefixVariantInfo>;
-    /**
-     * Active Prefix Label
-     */
-    active_prefix_label: string;
 };
 
 /**
@@ -937,20 +964,19 @@ export type EssayFlagOut = {
 /**
  * EssayJudgmentsResponse
  *
- * Judgments for a single essay at one prefix variant.
+ * Judgments for a single essay at the current prefix_config_hash.
  *
- * Rows whose ``prefix_config_hash`` doesn't match the selected variant
- * are filtered out of ``judgments``. They split into two buckets:
- *
- * - ``other_variant_hidden``: hash matches a *different* active prefix
- * variant for this essay (e.g. you're viewing ``no_headers`` and 227
- * rows belong to ``default``). Not stale — just a different cohort.
- * - ``stale_hidden``: hash matches no current variant. Genuinely stale
- * from essay re-import drift or a prefix-config bump.
+ * Stale judgments (rows whose prefix_hash no longer matches what the
+ * essay hashes to today) are filtered out of ``judgments`` so the UI
+ * doesn't aggregate verdicts that scored different text. ``stale_hidden``
+ * is the count of rows filtered this way, so the UI can surface
+ * "N stale judgments hidden" rather than silently dropping them.
  *
  * ``orphaned`` flags a judgment whose source_a / source_b is not
  * present in the current completions.jsonl at the same prefix_hash --
- * the judgment survived the variant check but its sources did not.
+ * the judgment survived a prefix-hash check but its sources did not.
+ * Rare (requires manual jsonl edits or an aborted generation run), but
+ * when it happens the verdict is meaningless.
  */
 export type EssayJudgmentsResponse = {
     /**
@@ -961,10 +987,6 @@ export type EssayJudgmentsResponse = {
      * Stale Hidden
      */
     stale_hidden: number;
-    /**
-     * Other Variant Hidden
-     */
-    other_variant_hidden: number;
 };
 
 /**
@@ -1290,6 +1312,30 @@ export type JudgeLabel = {
 };
 
 /**
+ * JudgingProgress
+ *
+ * Returned when there is no next pair; tells the UI to show 'done'.
+ */
+export type JudgingProgress = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+    /**
+     * Per Criterion
+     */
+    per_criterion: Array<CriterionStats>;
+};
+
+/**
  * Judgment
  *
  * One pairwise judgment row, shaped for the inspect view.
@@ -1395,7 +1441,7 @@ export type Judgment = {
  * Includes the verbatim prompt + reasoning text + raw provider response,
  * so a reader can audit what the judge actually saw and said. Most fields
  * are optional because the shape varies across judge variants (OpenRouter
- * vs anthropic vs rumil:text vs rumil:ws/orch).
+ * vs anthropic vs rumil:text vs rumil:ws/orch vs human:*).
  */
 export type JudgmentDetail = {
     /**
@@ -1578,6 +1624,74 @@ export type JudgmentRow = {
      * Orphaned
      */
     orphaned: boolean;
+};
+
+/**
+ * JudgmentSubmit
+ */
+export type JudgmentSubmit = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Hash
+     */
+    prefix_hash: string;
+    /**
+     * A
+     */
+    a: string;
+    /**
+     * B
+     */
+    b: string;
+    /**
+     * First Source
+     */
+    first_source: string;
+    /**
+     * Second Source
+     */
+    second_source: string;
+    /**
+     * Verdict
+     */
+    verdict: string;
+    /**
+     * Note
+     */
+    note?: string;
+    /**
+     * Force
+     */
+    force?: boolean;
+};
+
+/**
+ * JudgmentSubmitResult
+ */
+export type JudgmentSubmitResult = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Winner Source
+     */
+    winner_source: string;
+    /**
+     * Duplicate
+     */
+    duplicate?: boolean;
 };
 
 /**
@@ -1883,6 +1997,78 @@ export type MovesExecutedEventOut = {
 };
 
 /**
+ * NextPair
+ */
+export type NextPair = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Hash
+     */
+    prefix_hash: string;
+    /**
+     * A
+     */
+    a: string;
+    /**
+     * B
+     */
+    b: string;
+    /**
+     * First Source
+     */
+    first_source: string;
+    /**
+     * Second Source
+     */
+    second_source: string;
+    /**
+     * First Text
+     */
+    first_text: string;
+    /**
+     * Second Text
+     */
+    second_text: string;
+    /**
+     * Prefix Text
+     */
+    prefix_text: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Criterion Desc
+     */
+    criterion_desc: string;
+    /**
+     * Done Count
+     */
+    done_count: number;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
+ * NextPairResponse
+ *
+ * Either a next pair to judge, or progress when nothing's left.
+ */
+export type NextPairResponse = {
+    pair: NextPair | null;
+    progress: JudgingProgress;
+};
+
+/**
  * Page
  */
 export type Page = {
@@ -2181,31 +2367,6 @@ export type PhaseSkippedEventOut = {
      * Reason
      */
     reason: string;
-};
-
-/**
- * PrefixVariantInfo
- *
- * One prefix variant available in the active config.
- *
- * Surfaced on ResultsBundle so the /versus/results UI can render a
- * variant selector. ``id`` matches the yaml ``prefix.id`` /
- * ``prefix_variants[].id`` and is the value the UI passes back as
- * ``?prefix_label=<id>``.
- */
-export type PrefixVariantInfo = {
-    /**
-     * Id
-     */
-    id: string;
-    /**
-     * N Paragraphs
-     */
-    n_paragraphs: number;
-    /**
-     * Include Headers
-     */
-    include_headers: boolean;
 };
 
 /**
@@ -2568,14 +2729,6 @@ export type ResultsBundle = {
      * Rows Total Before Filter
      */
     rows_total_before_filter: number;
-    /**
-     * Prefix Variants
-     */
-    prefix_variants: Array<PrefixVariantInfo>;
-    /**
-     * Active Prefix Label
-     */
-    active_prefix_label: string;
 };
 
 /**
@@ -3278,6 +3431,22 @@ export type WebResearchCompleteEventOut = {
  */
 export type Workspace = 'research' | 'prioritization';
 
+export type GetCriteriaApiVersusCriteriaGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/versus/criteria';
+};
+
+export type GetCriteriaApiVersusCriteriaGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CriteriaResponse;
+};
+
+export type GetCriteriaApiVersusCriteriaGetResponse = GetCriteriaApiVersusCriteriaGetResponses[keyof GetCriteriaApiVersusCriteriaGetResponses];
+
 export type ListEssaysApiVersusEssaysGetData = {
     body?: never;
     path?: never;
@@ -3304,12 +3473,7 @@ export type GetEssayApiVersusEssaysEssayIdGetData = {
          */
         essay_id: string;
     };
-    query?: {
-        /**
-         * Prefix Label
-         */
-        prefix_label?: string | null;
-    };
+    query?: never;
     url: '/api/versus/essays/{essay_id}';
 };
 
@@ -3339,12 +3503,7 @@ export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData = {
          */
         essay_id: string;
     };
-    query?: {
-        /**
-         * Prefix Label
-         */
-        prefix_label?: string | null;
-    };
+    query?: never;
     url: '/api/versus/essays/{essay_id}/sources';
 };
 
@@ -3376,12 +3535,7 @@ export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData = {
          */
         essay_id: string;
     };
-    query?: {
-        /**
-         * Prefix Label
-         */
-        prefix_label?: string | null;
-    };
+    query?: never;
     url: '/api/versus/essays/{essay_id}/judgments';
 };
 
@@ -3435,10 +3589,6 @@ export type GetResultsApiVersusResultsGetData = {
          * Filter Criterion
          */
         filter_criterion?: string | null;
-        /**
-         * Prefix Label
-         */
-        prefix_label?: string | null;
     };
     url: '/api/versus/results';
 };
@@ -3460,6 +3610,40 @@ export type GetResultsApiVersusResultsGetResponses = {
 };
 
 export type GetResultsApiVersusResultsGetResponse = GetResultsApiVersusResultsGetResponses[keyof GetResultsApiVersusResultsGetResponses];
+
+export type GetNextPairApiVersusNextPairGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Name
+         */
+        name: string;
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+    };
+    url: '/api/versus/next-pair';
+};
+
+export type GetNextPairApiVersusNextPairGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetNextPairApiVersusNextPairGetError = GetNextPairApiVersusNextPairGetErrors[keyof GetNextPairApiVersusNextPairGetErrors];
+
+export type GetNextPairApiVersusNextPairGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NextPairResponse;
+};
+
+export type GetNextPairApiVersusNextPairGetResponse = GetNextPairApiVersusNextPairGetResponses[keyof GetNextPairApiVersusNextPairGetResponses];
 
 export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetData = {
     body?: never;
@@ -3491,6 +3675,31 @@ export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses = {
 
 export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponse = GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses[keyof GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses];
 
+export type SubmitJudgmentApiVersusJudgmentsPostData = {
+    body: JudgmentSubmit;
+    path?: never;
+    query?: never;
+    url: '/api/versus/judgments';
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostError = SubmitJudgmentApiVersusJudgmentsPostErrors[keyof SubmitJudgmentApiVersusJudgmentsPostErrors];
+
+export type SubmitJudgmentApiVersusJudgmentsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: JudgmentSubmitResult;
+};
+
+export type SubmitJudgmentApiVersusJudgmentsPostResponse = SubmitJudgmentApiVersusJudgmentsPostResponses[keyof SubmitJudgmentApiVersusJudgmentsPostResponses];
+
 export type GetDiagnosticsApiVersusDiagnosticsGetData = {
     body?: never;
     path?: never;
@@ -3507,10 +3716,6 @@ export type GetDiagnosticsApiVersusDiagnosticsGetData = {
          * Include Stale
          */
         include_stale?: boolean;
-        /**
-         * Prefix Label
-         */
-        prefix_label?: string | null;
     };
     url: '/api/versus/diagnostics';
 };

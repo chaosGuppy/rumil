@@ -18,6 +18,7 @@ export function VersusHeader({
       {right}
       <Link href="/versus/inspect">inspect</Link>
       <Link href="/versus/results">results</Link>
+      <Link href="/versus">judge</Link>
       <Link href="/">rumil</Link>
     </header>
   );

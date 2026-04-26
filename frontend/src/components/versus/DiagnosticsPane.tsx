@@ -5,13 +5,11 @@ export async function fetchDiagnostics(
   criterion: string | undefined,
   includeContaminated: boolean,
   includeStale: boolean,
-  prefixLabel?: string,
 ): Promise<DiagnosticsBundle | null> {
   const qs = new URLSearchParams();
   if (criterion) qs.set("criterion", criterion);
   if (includeContaminated) qs.set("include_contaminated", "true");
   qs.set("include_stale", includeStale ? "true" : "false");
-  if (prefixLabel) qs.set("prefix_label", prefixLabel);
   const res = await serverFetch(`${API_BASE}/api/versus/diagnostics?${qs}`, {
     cache: "no-store",
   });

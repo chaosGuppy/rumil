@@ -22,7 +22,6 @@ async function getResults(
     condition?: string;
     criterion?: string;
   },
-  prefixLabel?: string,
 ): Promise<ResultsBundle | null> {
   const qs = new URLSearchParams();
   if (criterion) qs.set("criterion", criterion);
@@ -32,7 +31,6 @@ async function getResults(
   if (rowFilter.judge) qs.set("filter_judge", rowFilter.judge);
   if (rowFilter.condition) qs.set("filter_condition", rowFilter.condition);
   if (rowFilter.criterion) qs.set("filter_criterion", rowFilter.criterion);
-  if (prefixLabel) qs.set("prefix_label", prefixLabel);
   const res = await serverFetch(`${API_BASE}/api/versus/results?${qs}`, {
     cache: "no-store",
   });
@@ -57,7 +55,6 @@ export default async function VersusResultsPage({
     filter_judge?: string;
     filter_condition?: string;
     filter_criterion?: string;
-    prefix_label?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -67,23 +64,16 @@ export default async function VersusResultsPage({
   // against current essay text. Pass ?include_stale=true to mix in
   // historical rows tied to older prefix_config_hashes.
   const includeStale = sp.include_stale === "true";
-  const prefixLabel = sp.prefix_label;
   const rowFilter = {
     gen: sp.filter_gen,
     judge: sp.filter_judge,
     condition: sp.filter_condition,
     criterion: sp.filter_criterion,
   };
-  // Two-wave fetch: get the active variant's bundle first (also tells us
-  // which other variants exist), then fan out to the siblings + diagnostics
-  // in parallel. SSR, so the extra round trip is paid once at request time.
-  const data = await getResults(
-    criterion,
-    includeContaminated,
-    includeStale,
-    rowFilter,
-    prefixLabel,
-  );
+  const [data, diagnostics] = await Promise.all([
+    getResults(criterion, includeContaminated, includeStale, rowFilter),
+    fetchDiagnostics(criterion, includeContaminated, includeStale),
+  ]);
 
   if (!data) {
     return (
@@ -100,26 +90,14 @@ export default async function VersusResultsPage({
     );
   }
 
-  const otherVariantIds = data.prefix_variants
-    .map((v) => v.id)
-    .filter((id) => id !== data.active_prefix_label);
-  const [diagnostics, ...otherBundles] = await Promise.all([
-    fetchDiagnostics(criterion, includeContaminated, includeStale, prefixLabel),
-    ...otherVariantIds.map((id) =>
-      getResults(criterion, includeContaminated, includeStale, rowFilter, id),
-    ),
-  ]);
-  const variantBundles: ResultsBundle[] = [
-    data,
-    ...otherBundles.filter((b): b is ResultsBundle => b !== null),
-  ];
-
   const {
     criteria,
     active_criterion,
     gen_models,
     judge_models,
     judge_labels,
+    main_matrices,
+    completion_per_source,
     small_grid,
     rows,
     total_judgments,
@@ -131,8 +109,6 @@ export default async function VersusResultsPage({
     include_stale,
     row_filter,
     rows_total_before_filter,
-    prefix_variants,
-    active_prefix_label,
   } = data;
 
   const hasRowFilter =
@@ -147,7 +123,6 @@ export default async function VersusResultsPage({
     if (active_criterion) qs.set("criterion", active_criterion);
     qs.set("include_stale", includeStale ? "true" : "false");
     if (includeContaminated) qs.set("include_contaminated", "true");
-    if (prefix_variants.length > 1) qs.set("prefix_label", active_prefix_label);
     const s = qs.toString();
     return `/versus/results${s ? `?${s}` : ""}#judgments`;
   })();
@@ -189,18 +164,6 @@ export default async function VersusResultsPage({
                 ...criteria.map((c) => ({ value: c, label: c })),
               ]}
             />
-            {prefix_variants.length > 1 && (
-              <AutoSubmitSelect
-                name="prefix_label"
-                defaultValue={active_prefix_label}
-                className="versus-select"
-                style={{ padding: "4px 8px", fontSize: 13 }}
-                options={prefix_variants.map((v) => ({
-                  value: v.id,
-                  label: `rows: prefix=${v.id}`,
-                }))}
-              />
-            )}
             <AutoSubmitCheckbox
               name="include_stale"
               value="true"
@@ -219,15 +182,59 @@ export default async function VersusResultsPage({
           </form>
         </div>
 
-        {variantBundles.map((vb) => (
-          <VariantMatrices
-            key={vb.active_prefix_label}
-            bundle={vb}
-            showHeader={variantBundles.length > 1}
-            includeStale={includeStale}
-            includeContaminated={includeContaminated}
-          />
-        ))}
+        {empty ? (
+          <div className="versus-card">
+            <em className="versus-muted">No judgments yet.</em>
+          </div>
+        ) : (
+          <div className="main-matrices">
+            {main_matrices.map((mm) => (
+              <Fragment key={mm.condition}>
+                <section>
+                  <div className="cond-head">
+                    <span className="versus-pill">{mm.condition}</span>
+                    <span className="cond-title">{mm.meta.title}</span>
+                  </div>
+                  <div className="cond-desc">{mm.meta.pair}</div>
+                  <div className="cond-desc">{mm.meta.cell_meaning}</div>
+                  <MatrixTable
+                    cells={mm.cells}
+                    genModels={gen_models}
+                    judgeModels={judge_models}
+                    judgeLabels={judge_labels}
+                    condition={mm.condition}
+                    criterion={active_criterion}
+                    includeStale={includeStale}
+                    includeContaminated={includeContaminated}
+                  />
+                </section>
+                {mm.condition === "completion" && completion_per_source.length > 0 && (
+                  <div className="per-source-matrices">
+                    <div className="per-source-head">by essay source</div>
+                    {completion_per_source.map((sm) => (
+                      <section key={sm.source_id}>
+                        <div className="cond-head">
+                          <span className="versus-pill subtle">{sm.source_id}</span>
+                          <span className="cond-title">{sm.matrix.meta.title}</span>
+                        </div>
+                        <MatrixTable
+                          cells={sm.matrix.cells}
+                          genModels={gen_models}
+                          judgeModels={judge_models}
+                          judgeLabels={judge_labels}
+                          condition={sm.matrix.condition}
+                          criterion={active_criterion}
+                          includeStale={includeStale}
+                          includeContaminated={includeContaminated}
+                        />
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
+            ))}
+          </div>
+        )}
 
         {criteria.length > 1 && (
           <>
@@ -375,100 +382,6 @@ export default async function VersusResultsPage({
         </details>
       </main>
     </div>
-  );
-}
-
-function VariantMatrices({
-  bundle,
-  showHeader,
-  includeStale,
-  includeContaminated,
-}: {
-  bundle: ResultsBundle;
-  showHeader: boolean;
-  includeStale: boolean;
-  includeContaminated: boolean;
-}) {
-  const {
-    main_matrices,
-    completion_per_source,
-    gen_models,
-    judge_models,
-    judge_labels,
-    active_criterion,
-    active_prefix_label,
-    prefix_variants,
-  } = bundle;
-  const empty = gen_models.length === 0 || judge_models.length === 0;
-  const activeVariant = prefix_variants.find((v) => v.id === active_prefix_label);
-  return (
-    <section className="variant-matrices">
-      {showHeader && (
-        <div className="variant-head">
-          <span className="variant-label">prefix</span>
-          <span className="variant-id">{active_prefix_label}</span>
-          {activeVariant && (
-            <span className="variant-meta">
-              n_paragraphs={activeVariant.n_paragraphs} ·{" "}
-              {activeVariant.include_headers ? "with headers" : "no headers"}
-            </span>
-          )}
-        </div>
-      )}
-      {empty ? (
-        <div className="versus-card">
-          <em className="versus-muted">No judgments yet for this variant.</em>
-        </div>
-      ) : (
-        <div className="main-matrices">
-          {main_matrices.map((mm) => (
-            <Fragment key={mm.condition}>
-              <section>
-                <div className="cond-head">
-                  <span className="versus-pill">{mm.condition}</span>
-                  <span className="cond-title">{mm.meta.title}</span>
-                </div>
-                <div className="cond-desc">{mm.meta.pair}</div>
-                <div className="cond-desc">{mm.meta.cell_meaning}</div>
-                <MatrixTable
-                  cells={mm.cells}
-                  genModels={gen_models}
-                  judgeModels={judge_models}
-                  judgeLabels={judge_labels}
-                  condition={mm.condition}
-                  criterion={active_criterion}
-                  includeStale={includeStale}
-                  includeContaminated={includeContaminated}
-                />
-              </section>
-              {mm.condition === "completion" && completion_per_source.length > 0 && (
-                <div className="per-source-matrices">
-                  <div className="per-source-head">by essay source</div>
-                  {completion_per_source.map((sm) => (
-                    <section key={sm.source_id}>
-                      <div className="cond-head">
-                        <span className="versus-pill subtle">{sm.source_id}</span>
-                        <span className="cond-title">{sm.matrix.meta.title}</span>
-                      </div>
-                      <MatrixTable
-                        cells={sm.matrix.cells}
-                        genModels={gen_models}
-                        judgeModels={judge_models}
-                        judgeLabels={judge_labels}
-                        condition={sm.matrix.condition}
-                        criterion={active_criterion}
-                        includeStale={includeStale}
-                        includeContaminated={includeContaminated}
-                      />
-                    </section>
-                  ))}
-                </div>
-              )}
-            </Fragment>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 

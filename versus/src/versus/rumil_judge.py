@@ -116,16 +116,13 @@ def _plan_tasks(
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
     current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
 ) -> list[tuple]:
     from versus import prepare
 
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
     current_hashes = (
-        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir, prefix_cfg=prefix_cfg)
-        if current_only
-        else None
+        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir) if current_only else None
     )
     groups, prefix_texts = judge.load_sources_by_essay(cfg.storage.completions_log)
     existing = jsonl.keys(cfg.storage.judgments_log)
@@ -198,7 +195,6 @@ def run(
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
     current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
 ) -> None:
     if not models:
         print(
@@ -213,7 +209,6 @@ def run(
         contestants=contestants,
         current_only=current_only,
         vs_human=vs_human,
-        prefix_cfg=prefix_cfg,
     )
     if limit is not None:
         tasks = tasks[:limit]
@@ -284,7 +279,6 @@ def _plan_rumil_pairs(
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
     current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
 ) -> list[tuple[_PendingPair, str, bool, str]]:
     """Enumerate pending (pair, task_name, is_versus_criterion, judge_model) tuples.
 
@@ -297,16 +291,13 @@ def _plan_rumil_pairs(
     - ``contestants``: restrict to pairs where both source_ids are in this list
     - ``vs_human``: restrict to pairs where one side is ``"human"``
     - ``current_only``: skip groups whose prefix_hash isn't current
-    - ``prefix_cfg``: which prefix variant counts as current (default canonical)
     """
     from versus import prepare
 
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
     current_hashes = (
-        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir, prefix_cfg=prefix_cfg)
-        if current_only
-        else None
+        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir) if current_only else None
     )
     groups, prefix_texts = judge.load_sources_by_essay(cfg.storage.completions_log)
     existing = jsonl.keys(cfg.storage.judgments_log)
@@ -473,7 +464,6 @@ async def run_ws(
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
     current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
     persist: bool = False,
 ) -> None:
     """Run the workspace-aware rumil judge against pending pairs.
@@ -533,7 +523,6 @@ async def run_ws(
         contestants=contestants,
         vs_human=vs_human,
         current_only=current_only,
-        prefix_cfg=prefix_cfg,
     )
     if limit is not None:
         tasks = tasks[:limit]
@@ -657,7 +646,6 @@ async def run_orch(
     vs_human: bool = False,
     persist: bool = False,
     current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
 ) -> None:
     """Run the orchestrator rumil judge against pending pairs.
 
@@ -715,7 +703,6 @@ async def run_orch(
         contestants=contestants,
         vs_human=vs_human,
         current_only=current_only,
-        prefix_cfg=prefix_cfg,
     )
     if limit is not None:
         tasks = tasks[:limit]
@@ -860,7 +847,6 @@ def run_rumil_text(
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
     current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
     concurrency: int | None = None,
 ) -> None:
     """Run the single-turn rumil-prompt judge against pending pairs.
@@ -912,7 +898,6 @@ def run_rumil_text(
         contestants=contestants,
         vs_human=vs_human,
         current_only=current_only,
-        prefix_cfg=prefix_cfg,
     )
     if limit is not None:
         tasks = tasks[:limit]

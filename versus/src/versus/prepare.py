@@ -89,32 +89,7 @@ def prepare(
     )
 
 
-def active_prefix_configs(cfg) -> list:
-    """Canonical prefix + sibling variants, in declaration order.
-
-    Used by per-variant fan-out (status reporting, multi-variant API
-    aggregations). Run scripts default to the canonical entry only and
-    opt into a specific sibling via ``--prefix-label``.
-    """
-    return [cfg.prefix, *cfg.prefix_variants]
-
-
-def resolve_prefix_cfg(cfg, label: str | None):
-    """Return the prefix config with id ``label`` (None → canonical).
-
-    Raises ValueError if no variant has the requested id, with the list
-    of valid labels for callers to surface.
-    """
-    if label is None:
-        return cfg.prefix
-    for pcfg in active_prefix_configs(cfg):
-        if pcfg.id == label:
-            return pcfg
-    valid = [p.id for p in active_prefix_configs(cfg)]
-    raise ValueError(f"unknown prefix label {label!r}; valid: {valid}")
-
-
-def current_prefix_hashes(cfg, essays_dir, *, prefix_cfg=None) -> dict[str, str]:
+def current_prefix_hashes(cfg, essays_dir) -> dict[str, str]:
     """Return ``{essay_id: prefix_config_hash}`` for every cached essay.
 
     Loads each essay JSON in ``essays_dir`` (skipping ``.verdict.json``
@@ -122,15 +97,10 @@ def current_prefix_hashes(cfg, essays_dir, *, prefix_cfg=None) -> dict[str, str]
     that's a function of essay content + prefix params + prompt version.
     Used by judging scripts with ``--current-only`` to skip groups whose
     prefix_hash is no longer current.
-
-    ``prefix_cfg`` defaults to ``cfg.prefix``. Pass a sibling from
-    ``cfg.prefix_variants`` to compute live hashes under that variant
-    (the API uses this to scope staleness to a selected variant).
     """
     import json
     import pathlib
 
-    pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
     out: dict[str, str] = {}
     d = pathlib.Path(essays_dir)
     if not d.exists():
@@ -156,8 +126,8 @@ def current_prefix_hashes(cfg, essays_dir, *, prefix_cfg=None) -> dict[str, str]
         )
         task = prepare(
             essay,
-            n_paragraphs=pcfg.n_paragraphs,
-            include_headers=pcfg.include_headers,
+            n_paragraphs=cfg.prefix.n_paragraphs,
+            include_headers=cfg.prefix.include_headers,
             length_tolerance=cfg.completion.length_tolerance,
         )
         out[essay.id] = task.prefix_config_hash

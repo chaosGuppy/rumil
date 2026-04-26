@@ -62,17 +62,14 @@ def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
 
 
 def _current_prefix_hashes(
-    cfg: config.Config,
-    essays: dict[str, versus_essay.Essay],
-    prefix_cfg: config.PrefixCfg | None = None,
+    cfg: config.Config, essays: dict[str, versus_essay.Essay]
 ) -> dict[str, str]:
-    pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
     out: dict[str, str] = {}
     for eid, essay in essays.items():
         task = prepare.prepare(
             essay,
-            n_paragraphs=pcfg.n_paragraphs,
-            include_headers=pcfg.include_headers,
+            n_paragraphs=cfg.prefix.n_paragraphs,
+            include_headers=cfg.prefix.include_headers,
             length_tolerance=cfg.completion.length_tolerance,
         )
         out[eid] = task.prefix_config_hash
@@ -89,35 +86,18 @@ def _scan_jsonl(path: pathlib.Path) -> list[dict]:
     return list(jsonl.read(path))
 
 
-def _completions_per_variant(
-    rows: list[dict],
-    variant_hashes: dict[str, dict[str, str]],
-) -> tuple[dict[str, int], int, int]:
-    """Return (per_variant_current, orphaned, unknown_essay) counts.
-
-    ``variant_hashes`` is ``{variant_id: {essay_id: prefix_hash}}``. A
-    row counts toward variant V if its (essay_id, prefix_hash) matches
-    V's current map. ``orphaned`` is rows whose essay is known to at
-    least one variant but whose hash matches none — truly stale.
-    """
-    per_variant = dict.fromkeys(variant_hashes, 0)
-    orphaned = 0
-    unknown = 0
+def _stale_completions(rows: list[dict], current_prefix: dict[str, str]) -> Counter:
+    c = Counter({"current": 0, "stale_prefix": 0, "unknown_essay": 0})
     for r in rows:
         eid = r.get("essay_id")
         ph = r.get("prefix_config_hash")
-        if not any(eid in m for m in variant_hashes.values()):
-            unknown += 1
-            continue
-        matched = False
-        for vid, m in variant_hashes.items():
-            if m.get(eid) == ph:
-                per_variant[vid] += 1
-                matched = True
-                break
-        if not matched:
-            orphaned += 1
-    return per_variant, orphaned, unknown
+        if eid not in current_prefix:
+            c["unknown_essay"] += 1
+        elif ph != current_prefix[eid]:
+            c["stale_prefix"] += 1
+        else:
+            c["current"] += 1
+    return c
 
 
 def _stale_paraphrases(rows: list[dict], current_samp: set[str], known_essays: set[str]) -> Counter:
@@ -134,44 +114,37 @@ def _stale_paraphrases(rows: list[dict], current_samp: set[str], known_essays: s
     return c
 
 
-def _judgments_per_variant(
-    rows: list[dict],
-    variant_hashes: dict[str, dict[str, str]],
-) -> tuple[dict[str, int], dict[str, int], int, int]:
-    """Bucket judgments per variant.
+def _stale_judgments(rows: list[dict], current_prefix: dict[str, str]) -> Counter:
+    """Bucket judgment rows into current / stale_prefix / stale_prompt / unknown.
 
-    Returns ``(current_per_variant, prompt_stale_per_variant, orphaned, unknown)``.
-    A row is "current under V" if its essay+hash match V's current map
-    AND its judge prompt suffix is still current. If essay+hash match V
-    but the prompt suffix is stale, it counts toward
-    ``prompt_stale_per_variant[V]``. If the hash matches no variant's
-    current map for its essay, it's ``orphaned`` (essay drift).
+    A row is stale_prefix if its essay changed (``prefix_config_hash``
+    drift — same thing flagged for completions).
+
+    A row is stale_prompt if its ``judge_model`` suffix no longer matches
+    the current ``p<hash>:v<N>``. That fires when versus-judge-shell.md
+    or a versus-<dim>.md edit forks the prompt hash, or when
+    ``JUDGE_PROMPT_VERSION`` / ``BLIND_JUDGE_VERSION`` is bumped. Without
+    this bucket, prompt edits silently orphan existing rows and the
+    status banner reads "all current" right up until the judging-quality
+    regression shows up in /results.
     """
-    current = dict.fromkeys(variant_hashes, 0)
-    prompt_stale = dict.fromkeys(variant_hashes, 0)
-    orphaned = 0
-    unknown = 0
+    c = Counter({"current": 0, "stale_prefix": 0, "stale_prompt": 0, "unknown_essay": 0})
     for r in rows:
         eid = r.get("essay_id")
         ph = r.get("prefix_config_hash")
-        if not any(eid in m for m in variant_hashes.values()):
-            unknown += 1
+        if eid not in current_prefix:
+            c["unknown_essay"] += 1
             continue
-        matched_vid = None
-        for vid, m in variant_hashes.items():
-            if m.get(eid) == ph:
-                matched_vid = vid
-                break
-        if matched_vid is None:
-            orphaned += 1
+        if ph != current_prefix[eid]:
+            c["stale_prefix"] += 1
             continue
         judge_model = r.get("judge_model")
         criterion = r.get("criterion")
         if judge_model and criterion and not judge.judge_prompt_is_current(judge_model, criterion):
-            prompt_stale[matched_vid] += 1
-        else:
-            current[matched_vid] += 1
-    return current, prompt_stale, orphaned, unknown
+            c["stale_prompt"] += 1
+            continue
+        c["current"] += 1
+    return c
 
 
 def main() -> None:
@@ -186,80 +159,55 @@ def main() -> None:
     if not essays:
         print("no cached essays — run scripts/fetch_essays.py first")
         sys.exit(1)
-    variants = prepare.active_prefix_configs(cfg)
-    variant_hashes = {v.id: _current_prefix_hashes(cfg, essays, prefix_cfg=v) for v in variants}
+    current_prefix = _current_prefix_hashes(cfg, essays)
     current_samp = _current_paraphrase_sampling_hashes(cfg)
 
     completions = _scan_jsonl(VERSUS_ROOT / "data" / "completions.jsonl")
     paraphrases = _scan_jsonl(VERSUS_ROOT / "data" / "paraphrases.jsonl")
     judgments = _scan_jsonl(VERSUS_ROOT / "data" / "judgments.jsonl")
 
-    comp_per_variant, comp_orphaned, comp_unknown = _completions_per_variant(
-        completions, variant_hashes
-    )
+    comp_counts = _stale_completions(completions, current_prefix)
     para_counts = _stale_paraphrases(paraphrases, current_samp, set(essays))
-    judg_current, judg_prompt_stale, judg_orphaned, judg_unknown = _judgments_per_variant(
-        judgments, variant_hashes
-    )
+    judg_counts = _stale_judgments(judgments, current_prefix)
 
     payload = {
         "essays": len(essays),
-        "variants": [v.id for v in variants],
-        "completions": {
-            "per_variant": comp_per_variant,
-            "orphaned": comp_orphaned,
-            "unknown_essay": comp_unknown,
-            "total": len(completions),
-        },
+        "completions": dict(comp_counts),
         "paraphrases": dict(para_counts),
-        "judgments": {
-            "per_variant_current": judg_current,
-            "per_variant_prompt_stale": judg_prompt_stale,
-            "orphaned": judg_orphaned,
-            "unknown_essay": judg_unknown,
-            "total": len(judgments),
-        },
+        "judgments": dict(judg_counts),
     }
 
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
         any_stale = (
-            comp_orphaned
+            comp_counts["stale_prefix"]
             or para_counts["stale_prompt"]
-            or judg_orphaned
-            or sum(judg_prompt_stale.values())
+            or judg_counts["stale_prefix"]
+            or judg_counts["stale_prompt"]
         )
         if any_stale:
             print("=" * 60)
             print("WARNING: stale cached rows detected")
             print("=" * 60)
         print(f"essays cached: {len(essays)}")
-        print(f"prefix variants: {', '.join(v.id for v in variants)}")
-        for v in variants:
-            cur = comp_per_variant[v.id]
-            jcur = judg_current[v.id]
-            jps = judg_prompt_stale[v.id]
-            print(f"  variant {v.id!r}:")
-            print(f"    completions current = {cur:5d}")
-            ps_detail = f"  prompt_stale={jps}" if jps else ""
-            print(f"    judgments   current = {jcur:5d}{ps_detail}")
-        comp_total = len(completions)
-        judg_total = len(judgments)
-        print(
-            f"  completions total={comp_total:5d}  "
-            f"orphaned={comp_orphaned:5d}  unknown_essay={comp_unknown:3d}"
-        )
-        print(
-            f"  paraphrases total={sum(para_counts.values()):5d}  "
-            f"current={para_counts['current']:5d}  "
-            f"stale_prompt={para_counts['stale_prompt']:5d}  "
-            f"unknown_essay={para_counts['unknown_essay']:3d}"
-        )
-        print(
-            f"  judgments   total={judg_total:5d}  "
-            f"orphaned={judg_orphaned:5d}  unknown_essay={judg_unknown:3d}"
-        )
+        for label, counts, stale_keys in (
+            ("completions", comp_counts, ("stale_prefix",)),
+            ("paraphrases", para_counts, ("stale_prompt",)),
+            ("judgments", judg_counts, ("stale_prefix", "stale_prompt")),
+        ):
+            total = sum(counts.values())
+            cur = counts["current"]
+            stale = sum(counts[k] for k in stale_keys)
+            unk = counts["unknown_essay"]
+            mark = " <- STALE" if stale else ""
+            detail = ""
+            if len(stale_keys) > 1 and stale:
+                detail = "  (" + ", ".join(f"{k}={counts[k]}" for k in stale_keys) + ")"
+            print(
+                f"  {label:13s} total={total:5d}  current={cur:5d}  "
+                f"stale={stale:5d}  unknown_essay={unk:3d}{mark}{detail}"
+            )
         if any_stale:
             print()
             print(

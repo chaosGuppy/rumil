@@ -40,39 +40,30 @@ function deltaSlot(words: number, target: number): React.ReactNode {
 export default async function VersusInspectPage({
   searchParams,
 }: {
-  searchParams: Promise<{ essay?: string; prefix_label?: string }>;
+  searchParams: Promise<{ essay?: string }>;
 }) {
   const sp = await searchParams;
   const essays = (await fetchJson<EssayMeta[]>("/api/versus/essays")) ?? [];
 
   const selectedId = sp.essay ?? essays[0]?.id;
-  const prefixLabel = sp.prefix_label;
-  const prefixQs = prefixLabel ? `?prefix_label=${encodeURIComponent(prefixLabel)}` : "";
   const detail = selectedId
-    ? await fetchJson<EssayDetail>(
-        `/api/versus/essays/${encodeURIComponent(selectedId)}${prefixQs}`,
-      )
+    ? await fetchJson<EssayDetail>(`/api/versus/essays/${encodeURIComponent(selectedId)}`)
     : null;
   const sources = selectedId
     ? ((await fetchJson<Source[]>(
-        `/api/versus/essays/${encodeURIComponent(selectedId)}/sources${prefixQs}`,
+        `/api/versus/essays/${encodeURIComponent(selectedId)}/sources`,
       )) ?? [])
     : [];
   const judgmentsPayload = selectedId
     ? await fetchJson<EssayJudgmentsResponse>(
-        `/api/versus/essays/${encodeURIComponent(selectedId)}/judgments${prefixQs}`,
+        `/api/versus/essays/${encodeURIComponent(selectedId)}/judgments`,
       )
     : null;
   const judgments: Judgment[] = judgmentsPayload?.judgments ?? [];
   const staleHidden = judgmentsPayload?.stale_hidden ?? 0;
-  const otherVariantHidden = judgmentsPayload?.other_variant_hidden ?? 0;
 
   const essaySelector = (
-    <form
-      method="get"
-      action="/versus/inspect"
-      style={{ display: "flex", gap: 8, alignItems: "center" }}
-    >
+    <form method="get" action="/versus/inspect" style={{ display: "flex", gap: 8, alignItems: "center" }}>
       <label htmlFor="essay" className="versus-muted">essay</label>
       <AutoSubmitSelect
         id="essay"
@@ -82,22 +73,6 @@ export default async function VersusInspectPage({
         style={{ padding: "4px 8px", fontSize: 13 }}
         options={essays.map((e) => ({ value: e.id, label: e.title }))}
       />
-      {detail && detail.prefix_variants.length > 1 && (
-        <>
-          <label htmlFor="prefix_label" className="versus-muted">prefix</label>
-          <AutoSubmitSelect
-            id="prefix_label"
-            name="prefix_label"
-            defaultValue={detail.active_prefix_label}
-            className="versus-select"
-            style={{ padding: "4px 8px", fontSize: 13 }}
-            options={detail.prefix_variants.map((v) => ({
-              value: v.id,
-              label: v.id,
-            }))}
-          />
-        </>
-      )}
       <noscript>
         <button type="submit" className="versus-button">go</button>
       </noscript>
@@ -155,7 +130,7 @@ export default async function VersusInspectPage({
             </p>
             <PromptPane body={detail.paraphrase_prompt_template} maxHeight="60vh" />
 
-            {(judgments.length > 0 || staleHidden > 0 || otherVariantHidden > 0) && (
+            {(judgments.length > 0 || staleHidden > 0) && (
               <>
                 <h2 style={{ marginTop: 36, fontSize: 16, fontWeight: 500 }}>
                   Judgments for this essay
@@ -164,13 +139,6 @@ export default async function VersusInspectPage({
                   One row per judgment. Rumil-path judges show the raw 7-point preference label and a
                   link to the rumil trace.
                 </p>
-                {otherVariantHidden > 0 && (
-                  <p className="versus-muted" style={{ fontSize: 12, marginTop: -4 }}>
-                    <strong>{otherVariantHidden}</strong> judgment
-                    {otherVariantHidden === 1 ? "" : "s"} hidden because they belong to a different
-                    prefix variant. Switch the <code>prefix</code> dropdown above to view them.
-                  </p>
-                )}
                 {staleHidden > 0 && (
                   <p className="versus-muted" style={{ fontSize: 12, marginTop: -4 }}>
                     <strong>{staleHidden}</strong> judgment{staleHidden === 1 ? "" : "s"} hidden

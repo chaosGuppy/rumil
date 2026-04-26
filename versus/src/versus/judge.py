@@ -16,7 +16,6 @@ import itertools
 import json
 import pathlib
 import re
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -471,7 +470,6 @@ def run(
     contestants: list[str] | None = None,
     vs_human: bool = False,
     current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
     limit: int | None = None,
     dry_run: bool = False,
 ) -> None:
@@ -484,11 +482,8 @@ def run(
     - ``contestants``  -- only pairs where both source_ids are in this list
     - ``vs_human``     -- only pairs where one side is "human"
     - ``current_only`` -- skip groups whose prefix_hash isn't the current
-      one for the essay under ``prefix_cfg`` (defaults to canonical).
-      Avoids spending on judgments that would immediately be marked stale.
-    - ``prefix_cfg``   -- which prefix variant's hash counts as "current"
-      for the staleness gate. Also restricts pair enumeration to that
-      variant's hashes when ``current_only=True``.
+      one for the essay (i.e. they reference older essay markdown). Avoids
+      spending on judgments that would immediately be marked stale.
     """
     from versus import prepare
 
@@ -500,9 +495,7 @@ def run(
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
     current_hashes = (
-        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir, prefix_cfg=prefix_cfg)
-        if current_only
-        else None
+        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir) if current_only else None
     )
 
     tasks_to_run: list = []
@@ -569,20 +562,7 @@ def run(
     if not tasks_to_run:
         print("[info] no pending judgments")
         return
-    # Per-(judge base model) semaphores: same concurrency story as
-    # complete.run — slow reasoning judges shouldn't block fast ones.
-    # Tuple position 7 is base_model (the openrouter id, not the
-    # version-suffixed judge_model in slot 8).
-    semaphores: dict[str, threading.BoundedSemaphore] = {
-        bm: threading.BoundedSemaphore(cfg.per_model_concurrency)
-        for bm in {t[7] for t in tasks_to_run}
-    }
-    total_workers = cfg.per_model_concurrency * len(semaphores)
-    print(
-        f"[plan] {len(tasks_to_run)} judgment calls "
-        f"(per_model_concurrency={cfg.per_model_concurrency}, "
-        f"judges={len(semaphores)}, total_workers={total_workers})"
-    )
+    print(f"[plan] {len(tasks_to_run)} judgment calls (concurrency={cfg.concurrency})")
     if dry_run:
         for t in tasks_to_run[:20]:
             essay_id, _, a_id, b_id, _, _, crit, _, jm, _, _, _, _ = t
@@ -592,16 +572,11 @@ def run(
         return
     client = httpx.Client(timeout=600.0)
     try:
-        with ThreadPoolExecutor(max_workers=total_workers) as pool:
+        with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             futures = {
-                pool.submit(
-                    _call_with_semaphore,
-                    semaphores[t[7]],
-                    _call_one_judgment,
-                    *t,
-                    cfg.judging.max_tokens,
-                    client,
-                ): t[11]  # key is 12th element
+                pool.submit(_call_one_judgment, *t, cfg.judging.max_tokens, client): t[
+                    11
+                ]  # key is 12th element
                 for t in tasks_to_run
             }
             done = 0
@@ -618,8 +593,3 @@ def run(
                 print(f"[done {done}/{total}] {k}")
     finally:
         client.close()
-
-
-def _call_with_semaphore(sem: threading.BoundedSemaphore, fn, *args, **kwargs):
-    with sem:
-        return fn(*args, **kwargs)

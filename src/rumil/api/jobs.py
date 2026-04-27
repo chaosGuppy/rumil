@@ -15,6 +15,7 @@ of a valid Supabase JWT (FE-issued or CLI-minted) can submit and view.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Sequence
 from typing import cast
 
@@ -23,6 +24,7 @@ from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 
 from rumil.api.auth import AuthUser, get_current_user
+from rumil.database import DB
 from rumil.k8s import OrchestratorRunRequest, OrchestratorRunResponse
 from rumil.k8s.submit import (
     JOB_ANNOTATION_QUESTION,
@@ -56,12 +58,15 @@ def _build_trace_url(run_id: str) -> str:
     response_model=OrchestratorRunResponse,
     status_code=201,
 )
-def create_orchestrator_run(
+async def create_orchestrator_run(
     body: OrchestratorRunRequest,
     user: AuthUser = Depends(get_current_user),
 ) -> OrchestratorRunResponse:
+    annotation = await _resolve_question_annotation(body)
     try:
-        job_name, run_id = submit_orchestrator_job(body, owner_user_id=user.user_id)
+        job_name, run_id = submit_orchestrator_job(
+            body, owner_user_id=user.user_id, question_annotation=annotation
+        )
     except Exception as exc:
         log.exception("orchestrator job submission failed")
         raise HTTPException(status_code=500, detail="failed to submit orchestrator job") from exc
@@ -71,6 +76,23 @@ def create_orchestrator_run(
         logs_url=build_logs_url(job_name),
         trace_url=_build_trace_url(run_id),
     )
+
+
+async def _resolve_question_annotation(body: OrchestratorRunRequest) -> str | None:
+    """For continue runs, look up the question's headline so /jobs shows it
+    instead of just the bare ID. Returns None for new-question runs (the
+    submitter falls back to the user-typed question text)."""
+    if not body.continue_id:
+        return None
+    db = await DB.create(run_id=str(uuid.uuid4()), prod=get_settings().is_prod_db)
+    try:
+        page = await db.get_page(body.continue_id)
+    except Exception:
+        log.warning("failed to resolve continue_id headline for /jobs label", exc_info=True)
+        return None
+    finally:
+        await db.close()
+    return page.headline if page and page.headline else None
 
 
 @router.get("", response_model=list[JobListItem])

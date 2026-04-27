@@ -42,6 +42,7 @@ def test_mint_cli_jwt_rejects_missing_secret():
 def _args_namespace(**overrides) -> argparse.Namespace:
     base: dict = {
         "question": "is the sky blue?",
+        "continue_id": None,
         "budget": 1,
         "workspace_name": "ws",
         "smoke_test": False,
@@ -59,6 +60,16 @@ def _args_namespace(**overrides) -> argparse.Namespace:
     }
     base.update(overrides)
     return argparse.Namespace(**base)
+
+
+def test_request_from_args_forwards_continue_id():
+    """`--continue X --prod` must reach the API with continue_id set and no
+    question, so the in-pod CLI runs `--continue X` instead of treating
+    the ID as a positional question."""
+    args = _args_namespace(question=None, continue_id="qid-abcdef")
+    spec = _request_from_args(args)
+    assert spec.continue_id == "qid-abcdef"
+    assert spec.question is None
 
 
 def test_request_from_args_maps_field_names():

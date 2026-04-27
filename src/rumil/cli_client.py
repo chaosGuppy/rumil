@@ -56,6 +56,7 @@ def mint_cli_jwt(*, user_id: str, secret: str, ttl_s: int = _DEFAULT_JWT_TTL_S) 
 
 def _request_from_args(args: argparse.Namespace) -> OrchestratorRunRequest:
     question = args.question
+    continue_id = getattr(args, "continue_id", None)
     if isinstance(question, str) and question.endswith(".json") and Path(question).exists():
         # Structured-question file inputs aren't supported remotely yet — too
         # much new surface for v1. Users can always copy the headline text.
@@ -64,7 +65,8 @@ def _request_from_args(args: argparse.Namespace) -> OrchestratorRunRequest:
             "pass the question as a plain string."
         )
     return OrchestratorRunRequest(
-        question=question,
+        question=question or None,
+        continue_id=continue_id or None,
         budget=args.budget,
         workspace=args.workspace_name,
         smoke_test=bool(getattr(args, "smoke_test", False)),

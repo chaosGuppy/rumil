@@ -7,9 +7,9 @@ without dragging server-side modules.
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 JobStatus = Literal["pending", "running", "failed", "completed"]
 
@@ -27,9 +27,13 @@ class OrchestratorRunRequest(BaseModel):
     (--db, --executor, --staged, --env-file, --run-id-file, --cli-user-id)
     are intentionally absent — the in-pod run is always `--db prod
     --executor local`.
+
+    Exactly one of `question` (start a new investigation) or
+    `continue_id` (resume an existing question by ID) must be set.
     """
 
-    question: str = Field(min_length=1)
+    question: str | None = Field(default=None, min_length=1)
+    continue_id: str | None = Field(default=None, min_length=1)
     budget: int = Field(ge=1)
     workspace: str = Field(min_length=1)
 
@@ -56,6 +60,12 @@ class OrchestratorRunRequest(BaseModel):
     # rumil-api Deployment so a caller cannot point the Job at an arbitrary
     # registry. Used by scripts/remote_run.sh.
     container_tag: str | None = Field(default=None, pattern=_CONTAINER_TAG_PATTERN)
+
+    @model_validator(mode="after")
+    def _exactly_one_of_question_or_continue_id(self) -> Self:
+        if bool(self.question) == bool(self.continue_id):
+            raise ValueError("exactly one of `question` or `continue_id` must be set")
+        return self
 
 
 class OrchestratorRunResponse(BaseModel):

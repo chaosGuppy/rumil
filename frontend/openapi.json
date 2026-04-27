@@ -4379,9 +4379,28 @@
       "OrchestratorRunRequest": {
         "properties": {
           "question": {
-            "type": "string",
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Question"
+          },
+          "continue_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continue Id"
           },
           "budget": {
             "type": "integer",
@@ -4498,12 +4517,11 @@
         },
         "type": "object",
         "required": [
-          "question",
           "budget",
           "workspace"
         ],
         "title": "OrchestratorRunRequest",
-        "description": "Inputs for a remote orchestrator run.\n\nMirrors the subset of `main.py` flags that are forwarded into the\nin-pod CLI invocation. Flags that only make sense on the laptop\n(--db, --executor, --staged, --env-file, --run-id-file, --cli-user-id)\nare intentionally absent \u2014 the in-pod run is always `--db prod\n--executor local`."
+        "description": "Inputs for a remote orchestrator run.\n\nMirrors the subset of `main.py` flags that are forwarded into the\nin-pod CLI invocation. Flags that only make sense on the laptop\n(--db, --executor, --staged, --env-file, --run-id-file, --cli-user-id)\nare intentionally absent \u2014 the in-pod run is always `--db prod\n--executor local`.\n\nExactly one of `question` (start a new investigation) or\n`continue_id` (resume an existing question by ID) must be set."
       },
       "OrchestratorRunResponse": {
         "properties": {

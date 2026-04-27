@@ -131,7 +131,6 @@ def test_orchestrator_question_is_not_a_non_orchestrator_mode():
         ("add_question", "q"),
         ("summary_id", "s"),
         ("report_id", "r"),
-        ("continue_id", "c"),
         ("batch_file", "b.jsonl"),
         ("run_eval_id", "e"),
         ("ab_eval_ids", ["a", "b"]),
@@ -142,6 +141,21 @@ def test_orchestrator_question_is_not_a_non_orchestrator_mode():
 def test_each_non_orchestrator_flag_is_detected(flag, value):
     args = _make_namespace(**{flag: value})
     assert main_module._is_non_orchestrator_mode(args) is True
+
+
+def test_continue_id_is_orchestrator_mode():
+    """`--continue X --budget N` runs the orchestrator on an existing question
+    — it must NOT be classified as non-orchestrator, otherwise `--prod` would
+    silently downgrade to local."""
+    args = _make_namespace(continue_id="some-qid", budget=4)
+    assert main_module._is_non_orchestrator_mode(args) is False
+
+
+def test_prod_with_continue_resolves_to_prod_prod():
+    """Regression: `--continue X --prod` must hit the remote k8s path, not
+    silently fall back to a local run against prod Supabase."""
+    args = _make_namespace(prod_db=True, continue_id="some-qid", budget=4)
+    assert _resolve(args) == ("prod", "prod")
 
 
 def test_ingest_files_alone_is_non_orchestrator():

@@ -2568,12 +2568,17 @@
           "email": {
             "type": "string",
             "title": "Email"
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin"
           }
         },
         "type": "object",
         "required": [
           "user_id",
-          "email"
+          "email",
+          "is_admin"
         ],
         "title": "AuthUserOut"
       },

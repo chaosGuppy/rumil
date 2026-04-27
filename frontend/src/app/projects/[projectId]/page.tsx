@@ -9,6 +9,7 @@ import { CLIENT_API_BASE as API_BASE } from "@/api-config";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { withStagedRun } from "@/lib/staged-run-href";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
+import { useCurrentUser } from "@/lib/use-current-user";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
 const PAGE_TYPES: PageType[] = [
@@ -98,6 +99,8 @@ export default function PagesIndexPage() {
   const [showSuperseded, setShowSuperseded] = useState(false);
   const { activeStagedRunId, setActiveStagedRunId } = useStagedRun();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const currentUser = useCurrentUser();
+  const isAdmin = currentUser?.is_admin ?? false;
 
   useDocumentTitle(projectName);
 
@@ -139,12 +142,16 @@ export default function PagesIndexPage() {
   }, [projectId, showSuperseded, activeStagedRunId, debouncedSearch, activeType, currentOffset]);
 
   useEffect(() => {
+    if (!isAdmin) {
+      setRuns([]);
+      return;
+    }
     fetch(`${API_BASE}/api/projects/${projectId}/runs`, {
       cache: "no-store",
     })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: RunListItemOut[]) => setRuns(data));
-  }, [projectId]);
+  }, [projectId, isAdmin]);
 
   const toggleType = (t: PageType) => {
     setActiveType((prev) => (prev === t ? null : t));
@@ -822,9 +829,11 @@ export default function PagesIndexPage() {
           <h1>Pages</h1>
           <div className="subtitle">{totalCount} total</div>
         </div>
-        <div className="pages-header-nav">
-          <Link href={`/projects/${projectId}/stats`}>Stats</Link>
-        </div>
+        {isAdmin && (
+          <div className="pages-header-nav">
+            <Link href={`/projects/${projectId}/stats`}>Stats</Link>
+          </div>
+        )}
       </div>
 
       {runs.length > 0 && (

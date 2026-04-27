@@ -214,6 +214,10 @@ export type AuthUserOut = {
      * Email
      */
     email: string;
+    /**
+     * Is Admin
+     */
+    is_admin: boolean;
 };
 
 /**

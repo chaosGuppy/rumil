@@ -24,6 +24,7 @@ import jwt
 from fastapi import Header, HTTPException
 from jwt import PyJWKClient
 
+from rumil.database import DB
 from rumil.settings import Settings, get_settings
 
 
@@ -99,6 +100,17 @@ def get_current_user(authorization: str | None = Header(default=None)) -> AuthUs
     if not user_id:
         raise HTTPException(status_code=401, detail="Token missing subject")
     return AuthUser(user_id=user_id, email=email)
+
+
+async def is_admin(user: AuthUser, db: DB) -> bool:
+    """Authoritative admin check: queries the user_admins table.
+
+    `AUTH_ENABLED=0` grants admin so local dev keeps full access without
+    having to seed user_admins.
+    """
+    if not get_settings().auth_enabled:
+        return True
+    return await db.is_admin_user(user.user_id)
 
 
 def get_optional_user(authorization: str | None = Header(default=None)) -> AuthUser | None:

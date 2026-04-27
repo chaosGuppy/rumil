@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
+    "dev": "./scripts/with-env-overrides.sh next dev --turbopack",
+    "build": "./scripts/with-env-overrides.sh next build --turbopack",
+    "start": "./scripts/with-env-overrides.sh next start",
     "lint": "eslint",
     "generate-api": "openapi-ts"
   },

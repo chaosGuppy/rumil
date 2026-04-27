@@ -47,18 +47,15 @@ from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
 from rumil.tracing import get_langfuse
 
+log = logging.getLogger("rumil.cli")
 
-def _maybe_print_langfuse_session(db: DB, *, indent: str = "") -> None:
-    """Print the Langfuse session URL when Langfuse is configured.
 
-    Called alongside the in-house "Trace:" prints so users can jump straight
-    into Langfuse for LLM-call detail. No-op when Langfuse is disabled.
-    """
+def _maybe_log_langfuse_session(db: DB) -> None:
     if get_langfuse() is None:
         return
     settings = get_settings()
     lf_base = settings.langfuse_base_url.rstrip("/")
-    print(f"{indent}Langfuse: {lf_base}/sessions?sessionId={db.run_id}")
+    log.info("Langfuse: %s/sessions?sessionId=%s", lf_base, db.run_id)
 
 
 @dataclasses.dataclass
@@ -173,9 +170,7 @@ async def cmd_add_question(
     if parent_id:
         parent = await db.get_page(parent_id)
         if not parent:
-            print(
-                f"Warning: parent '{parent_id}' not found — question created without parent link."
-            )
+            log.warning("parent '%s' not found — question created without parent link.", parent_id)
         else:
             link = PageLink(
                 from_page_id=parent_id,
@@ -184,22 +179,23 @@ async def cmd_add_question(
                 reasoning="Manually added sub-question",
             )
             await db.save_link(link)
-            print(f"\nAdded as sub-question of: {parent.headline[:70]}")
+            log.info("Added as sub-question of: %s", parent.headline[:70])
 
-    print(f"\nQuestion added: {page.id}")
-    print(f"Headline:       {q.headline}")
+    log.info("Question added: %s", page.id)
+    log.info("Headline: %s", q.headline)
 
     effective_budget = _default_budget(budget, fallback=5)
     if effective_budget > 0:
-        print(
-            f"Budget:         {effective_budget} research call{'s' if effective_budget != 1 else ''}\n"
+        log.info(
+            "Budget: %d research call%s",
+            effective_budget,
+            "s" if effective_budget != 1 else "",
         )
         await db.init_budget(effective_budget)
         await Orchestrator(db).run(page.id)
         await _print_summary(db)
     else:
-        print("\nTo investigate it later:")
-        print(f"  python main.py --continue {page.id} --budget N")
+        log.info("To investigate it later: python main.py --continue %s --budget N", page.id)
 
 
 async def cmd_ingest(
@@ -216,34 +212,31 @@ async def cmd_ingest(
         return
 
     if not for_question_id:
-        print("\nSources stored. Use --for-question QUESTION_ID to extract considerations.")
-        print("To investigate later:  python main.py --ingest FILE --for-question ID --budget N")
+        log.info("Sources stored. Use --for-question QUESTION_ID to extract considerations.")
+        log.info("To investigate later: python main.py --ingest FILE --for-question ID --budget N")
         return
 
     question = await db.get_page(for_question_id)
     if not question:
-        print(
-            f"Error: question '{for_question_id}' not found. Run --list to see existing questions."
-        )
+        log.error("question '%s' not found. Run --list to see existing questions.", for_question_id)
         return
 
     effective_budget = len(source_pages) if budget is None else budget
     if effective_budget == 0:
-        print("\nSources stored (--budget 0, no extraction).")
+        log.info("Sources stored (--budget 0, no extraction).")
         return
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nExtracting considerations for: {question.headline[:80]}")
-    print(f"Budget: {effective_budget} call{'s' if effective_budget != 1 else ''}")
-    print(f"Trace:  {frontend}/traces/{db.run_id}")
-    _maybe_print_langfuse_session(db, indent=" ")
-    print()
+    log.info("Extracting considerations for: %s", question.headline[:80])
+    log.info("Budget: %d call%s", effective_budget, "s" if effective_budget != 1 else "")
+    log.info("Trace: %s/traces/%s", frontend, db.run_id)
+    _maybe_log_langfuse_session(db)
     await db.init_budget(effective_budget)
     made = await run_ingest_calls(source_pages, for_question_id, db)
     total, used = await db.get_budget()
-    print(f"\nIngest complete. {made} extraction call{'s' if made != 1 else ''} made.")
-    print(f"Budget used: {used}/{total}")
-    print("\nRun --chat to explore the results.")
+    log.info("Ingest complete. %d extraction call%s made.", made, "s" if made != 1 else "")
+    log.info("Budget used: %d/%d", used, total)
+    log.info("Run --chat to explore the results.")
 
 
 async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") -> None:
@@ -254,20 +247,19 @@ async def cmd_evaluate(question_id: str, db: DB, *, eval_type: str = "default") 
         if resolved:
             question = await db.get_page(resolved)
     if not question:
-        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        log.error("question '%s' not found. Run --list to see existing questions.", question_id)
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
         db.project_id = question.project_id
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nEvaluating judgement for: {question.headline[:80]}")
-    print(f"Trace: {frontend}/traces/{db.run_id}")
-    _maybe_print_langfuse_session(db)
-    print()
+    log.info("Evaluating judgement for: %s", question.headline[:80])
+    log.info("Trace: %s/traces/%s", frontend, db.run_id)
+    _maybe_log_langfuse_session(db)
 
     call = await run_evaluation(question.id, db, eval_type=eval_type)
-    print(f"\nEvaluation complete (call {call.id}).\n")
+    log.info("Evaluation complete (call %s).", call.id)
     _print_evaluation(call)
 
 
@@ -284,37 +276,40 @@ def _print_evaluation(call: Call) -> None:
 async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
     resolved_id = await db.resolve_call_id(eval_call_id)
     if not resolved_id:
-        print(f"Error: call '{eval_call_id}' not found.")
+        log.error("call '%s' not found.", eval_call_id)
         sys.exit(1)
     call = await db.get_call(resolved_id)
     if not call:
-        print(f"Error: call '{eval_call_id}' not found.")
+        log.error("call '%s' not found.", eval_call_id)
         sys.exit(1)
     if call.call_type != CallType.EVALUATE:
-        print(
-            f"Error: call '{eval_call_id}' is a {call.call_type.value} call, "
-            "not an evaluation. Pass the ID of a completed evaluation call."
+        log.error(
+            "call '%s' is a %s call, not an evaluation. "
+            "Pass the ID of a completed evaluation call.",
+            eval_call_id,
+            call.call_type.value,
         )
         sys.exit(1)
     if call.status != CallStatus.COMPLETE:
-        print(
-            f"Error: evaluation call '{eval_call_id}' has status "
-            f"'{call.status.value}'. It must be complete."
+        log.error(
+            "evaluation call '%s' has status '%s'. It must be complete.",
+            eval_call_id,
+            call.status.value,
         )
         sys.exit(1)
 
     evaluation_text = (call.review_json or {}).get("evaluation", "")
     if not evaluation_text:
-        print("Error: evaluation call has no evaluation output.")
+        log.error("evaluation call has no evaluation output.")
         sys.exit(1)
 
     if not call.scope_page_id:
-        print("Error: evaluation call has no scope question.")
+        log.error("evaluation call has no scope question.")
         sys.exit(1)
 
     question = await db.get_page(call.scope_page_id)
     if not question:
-        print(f"Error: scope question '{call.scope_page_id}' not found.")
+        log.error("scope question '%s' not found.", call.scope_page_id)
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
@@ -331,12 +326,11 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nRunning grounding feedback for: {question.headline[:80]}")
+    log.info("Running grounding feedback for: %s", question.headline[:80])
     if from_stage > 1:
-        print(f"Resuming from stage {from_stage}")
-    print(f"Trace: {frontend}/traces/{db.run_id}")
-    _maybe_print_langfuse_session(db)
-    print()
+        log.info("Resuming from stage %d", from_stage)
+    log.info("Trace: %s/traces/%s", frontend, db.run_id)
+    _maybe_log_langfuse_session(db)
 
     result = await run_grounding_feedback(
         call.scope_page_id,
@@ -345,7 +339,7 @@ async def cmd_ground(eval_call_id: str, db: DB, *, from_stage: int = 1) -> None:
         from_stage=from_stage,
         prior_checkpoints=prior_checkpoints,
     )
-    print(f"\nGrounding feedback complete (call {result.id}).")
+    log.info("Grounding feedback complete (call %s).", result.id)
     if result.result_summary:
         print(result.result_summary)
 
@@ -355,37 +349,40 @@ async def cmd_feedback_update(
 ) -> None:
     resolved_id = await db.resolve_call_id(eval_call_id)
     if not resolved_id:
-        print(f"Error: call '{eval_call_id}' not found.")
+        log.error("call '%s' not found.", eval_call_id)
         sys.exit(1)
     call = await db.get_call(resolved_id)
     if not call:
-        print(f"Error: call '{eval_call_id}' not found.")
+        log.error("call '%s' not found.", eval_call_id)
         sys.exit(1)
     if call.call_type != CallType.EVALUATE:
-        print(
-            f"Error: call '{eval_call_id}' is a {call.call_type.value} call, "
-            "not an evaluation. Pass the ID of a completed evaluation call."
+        log.error(
+            "call '%s' is a %s call, not an evaluation. "
+            "Pass the ID of a completed evaluation call.",
+            eval_call_id,
+            call.call_type.value,
         )
         sys.exit(1)
     if call.status != CallStatus.COMPLETE:
-        print(
-            f"Error: evaluation call '{eval_call_id}' has status "
-            f"'{call.status.value}'. It must be complete."
+        log.error(
+            "evaluation call '%s' has status '%s'. It must be complete.",
+            eval_call_id,
+            call.status.value,
         )
         sys.exit(1)
 
     evaluation_text = (call.review_json or {}).get("evaluation", "")
     if not evaluation_text:
-        print("Error: evaluation call has no evaluation output.")
+        log.error("evaluation call has no evaluation output.")
         sys.exit(1)
 
     if not call.scope_page_id:
-        print("Error: evaluation call has no scope question.")
+        log.error("evaluation call has no scope question.")
         sys.exit(1)
 
     question = await db.get_page(call.scope_page_id)
     if not question:
-        print(f"Error: scope question '{call.scope_page_id}' not found.")
+        log.error("scope question '%s' not found.", call.scope_page_id)
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
@@ -398,10 +395,9 @@ async def cmd_feedback_update(
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nRunning feedback update for: {question.headline[:80]}")
-    print(f"Trace: {frontend}/traces/{db.run_id}")
-    _maybe_print_langfuse_session(db)
-    print()
+    log.info("Running feedback update for: %s", question.headline[:80])
+    log.info("Trace: %s/traces/%s", frontend, db.run_id)
+    _maybe_log_langfuse_session(db)
 
     if investigation_budget is not None:
         get_settings().feedback_investigation_budget = investigation_budget
@@ -411,7 +407,7 @@ async def cmd_feedback_update(
         evaluation_text,
         db,
     )
-    print(f"\nFeedback update complete (call {result.id}).")
+    log.info("Feedback update complete (call %s).", result.id)
     if result.result_summary:
         print(result.result_summary)
 
@@ -426,22 +422,22 @@ async def cmd_feedback_update_from_file(
 
     path = Path(file_path)
     if not path.is_file():
-        print(f"Error: file '{file_path}' not found.")
+        log.error("file '%s' not found.", file_path)
         sys.exit(1)
 
     evaluation_text = path.read_text().strip()
     if not evaluation_text:
-        print(f"Error: file '{file_path}' is empty.")
+        log.error("file '%s' is empty.", file_path)
         sys.exit(1)
 
     resolved_id = await db.resolve_page_id(question_id)
     if not resolved_id:
-        print(f"Error: question '{question_id}' not found.")
+        log.error("question '%s' not found.", question_id)
         sys.exit(1)
 
     question = await db.get_page(resolved_id)
     if not question:
-        print(f"Error: question '{question_id}' not found.")
+        log.error("question '%s' not found.", question_id)
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
@@ -454,11 +450,10 @@ async def cmd_feedback_update_from_file(
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nRunning feedback update for: {question.headline[:80]}")
-    print(f"Source: {file_path}")
-    print(f"Trace: {frontend}/traces/{db.run_id}")
-    _maybe_print_langfuse_session(db)
-    print()
+    log.info("Running feedback update for: %s", question.headline[:80])
+    log.info("Source: %s", file_path)
+    log.info("Trace: %s/traces/%s", frontend, db.run_id)
+    _maybe_log_langfuse_session(db)
 
     if investigation_budget is not None:
         get_settings().feedback_investigation_budget = investigation_budget
@@ -468,7 +463,7 @@ async def cmd_feedback_update_from_file(
         evaluation_text,
         db,
     )
-    print(f"\nFeedback update complete (call {result.id}).")
+    log.info("Feedback update complete (call %s).", result.id)
     if result.result_summary:
         print(result.result_summary)
 
@@ -486,7 +481,7 @@ async def _load_prior_checkpoints(question_id: str, from_stage: int, db: DB) -> 
         .limit(1)
     )
     if not rows.data:
-        print("Error: no prior grounding call found for this question.")
+        log.error("no prior grounding call found for this question.")
         sys.exit(1)
 
     prior = rows.data[0]
@@ -500,32 +495,33 @@ async def _load_prior_checkpoints(question_id: str, from_stage: int, db: DB) -> 
     }
     missing = [k for k in required_keys.get(from_stage, []) if k not in checkpoints]
     if missing:
-        print(
-            f"Error: prior grounding call {prior['id'][:8]} is missing "
-            f"checkpoint data for: {', '.join(missing)}. "
-            f"Cannot resume from stage {from_stage}."
+        log.error(
+            "prior grounding call %s is missing checkpoint data for: %s. "
+            "Cannot resume from stage %d.",
+            prior["id"][:8],
+            ", ".join(missing),
+            from_stage,
         )
         sys.exit(1)
 
-    print(f"Loaded checkpoints from prior call {prior['id'][:8]}")
+    log.info("Loaded checkpoints from prior call %s", prior["id"][:8])
     return checkpoints
 
 
 async def cmd_show_evaluation(call_id: str, db: DB) -> None:
-
     call = await db.get_call(call_id)
     if not call:
-        print(f"Error: call '{call_id}' not found.")
+        log.error("call '%s' not found.", call_id)
         sys.exit(1)
 
     if call.call_type != CallType.EVALUATE:
-        print(f"Error: call '{call_id}' is a {call.call_type.value} call, not an evaluation.")
+        log.error("call '%s' is a %s call, not an evaluation.", call_id, call.call_type.value)
         sys.exit(1)
 
     scope = await db.get_page(call.scope_page_id) if call.scope_page_id else None
     if scope:
-        print(f"Evaluation for: {scope.headline[:80]}")
-    print(f"Call: {call.id[:8]}  Status: {call.status.value}\n")
+        log.info("Evaluation for: %s", scope.headline[:80])
+    log.info("Call: %s  Status: %s", call.id[:8], call.status.value)
     _print_evaluation(call)
 
 
@@ -537,11 +533,11 @@ async def cmd_summary(
 ) -> str:
     question = await db.get_page(question_id)
     if not question:
-        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        log.error("question '%s' not found. Run --list to see existing questions.", question_id)
         sys.exit(1)
 
-    print(f"\nGenerating summary for: {question.headline[:80]}")
-    print("(This will use one LLM call but does not count against research budget)\n")
+    log.info("Generating summary for: %s", question.headline[:80])
+    log.info("(This will use one LLM call but does not count against research budget)")
 
     summary_text = await generate_summary(
         question_id, db, max_depth=max_depth, summary_cutoff=summary_cutoff
@@ -549,7 +545,7 @@ async def cmd_summary(
     path = save_summary(summary_text, question.headline)
 
     print(summary_text)
-    print(f"\n---\nSummary saved to: {path}")
+    log.info("Summary saved to: %s", path)
     return summary_text
 
 
@@ -560,25 +556,24 @@ async def cmd_self_improve(question_id: str, db: DB) -> None:
         if resolved:
             question = await db.get_page(resolved)
     if not question:
-        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        log.error("question '%s' not found. Run --list to see existing questions.", question_id)
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
         db.project_id = question.project_id
 
-    print(f"\nSelf-improvement analysis for: {question.headline[:80]}")
-    print(
-        "(Uses one or more LLM calls with read-only tools, "
-        "does not count against research budget)\n"
+    log.info("Self-improvement analysis for: %s", question.headline[:80])
+    log.info(
+        "(Uses one or more LLM calls with read-only tools, does not count against research budget)"
     )
 
     text = await run_self_improvement(question.id, db)
     if not text.strip():
-        print("No analysis produced.")
+        log.info("No analysis produced.")
         return
     path = save_self_improvement(text, question.headline)
     print(text)
-    print(f"\n---\nSelf-improvement analysis saved to: {path}")
+    log.info("Self-improvement analysis saved to: %s", path)
 
 
 async def cmd_report(
@@ -588,17 +583,17 @@ async def cmd_report(
 ) -> None:
     question = await db.get_page(question_id)
     if not question:
-        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        log.error("question '%s' not found. Run --list to see existing questions.", question_id)
         sys.exit(1)
 
-    print(f"\nGenerating report for: {question.headline[:80]}")
-    print("(This will use multiple LLM calls but does not count against research budget)\n")
+    log.info("Generating report for: %s", question.headline[:80])
+    log.info("(This will use multiple LLM calls but does not count against research budget)")
 
     report_text = await generate_report(question_id, db, max_depth=max_depth)
     path = save_report(report_text, question.headline)
 
     print(report_text)
-    print(f"\n---\nReport saved to: {path}")
+    log.info("Report saved to: %s", path)
 
 
 async def cmd_list(db: DB, workspace_name: str) -> None:
@@ -652,11 +647,11 @@ async def cmd_new(
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nNew question: {question_id}")
-    print(f"Headline:     {q.headline}")
-    print(f"Budget:       {budget} research calls")
-    print(f"Trace:        {frontend}/traces/{db.run_id}")
-    _maybe_print_langfuse_session(db, indent="       ")
+    log.info("New question: %s", question_id)
+    log.info("Headline: %s", q.headline)
+    log.info("Budget: %d research calls", budget)
+    log.info("Trace: %s/traces/%s", frontend, db.run_id)
+    _maybe_log_langfuse_session(db)
 
     if ingest_files:
         source_pages = []
@@ -665,7 +660,7 @@ async def cmd_new(
             if page:
                 source_pages.append(page)
         if source_pages:
-            print(f"\nIngesting {len(source_pages)} source file(s)...")
+            log.info("Ingesting %d source file(s)...", len(source_pages))
             await run_ingest_calls(source_pages, question_id, db)
 
     await Orchestrator(db).run(question_id)
@@ -690,7 +685,7 @@ async def _run_one_batch_entry(entry: dict, index: int, total: int, template_db:
         project_id=template_db.project_id,
     )
 
-    print(f"\n[{index + 1}/{total}] Starting: {label} (budget={budget})")
+    log.info("[%d/%d] Starting: %s (budget=%d)", index + 1, total, label, budget)
 
     if "continue" in entry:
         await cmd_continue(entry["continue"], budget, db)
@@ -698,32 +693,32 @@ async def _run_one_batch_entry(entry: dict, index: int, total: int, template_db:
         q = parse_question_input(entry["question"])
         await cmd_new(q, budget, db, ingest_files=entry.get("ingest"))
 
-    print(f"\n[{index + 1}/{total}] Done: {label}")
+    log.info("[%d/%d] Done: %s", index + 1, total, label)
     return db.run_id
 
 
 async def cmd_batch(batch_file: str, db: DB) -> list[str]:
     path = Path(batch_file)
     if not path.exists():
-        print(f"Error: file not found: {batch_file}")
+        log.error("file not found: %s", batch_file)
         sys.exit(1)
 
     try:
         entries = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as e:
-        print(f"Error reading batch file: {e}")
+        log.error("reading batch file: %s", e)
         sys.exit(1)
 
     if not isinstance(entries, list) or not entries:
-        print("Error: batch file must contain a non-empty JSON array.")
+        log.error("batch file must contain a non-empty JSON array.")
         sys.exit(1)
 
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
-            print(f"Error: entry {i} must be a JSON object.")
+            log.error("entry %d must be a JSON object.", i)
             sys.exit(1)
         if "question" not in entry and "continue" not in entry:
-            print(f"Error: entry {i} must have a 'question' or 'continue' field.")
+            log.error("entry %d must have a 'question' or 'continue' field.", i)
             sys.exit(1)
 
     total_budget = sum(e.get("budget", 10) for e in entries)
@@ -734,8 +729,8 @@ async def cmd_batch(batch_file: str, db: DB) -> list[str]:
         parts.append(f"{new_count} new")
     if cont_count:
         parts.append(f"{cont_count} continue")
-    print(f"\nBatch: {' + '.join(parts)}, total budget {total_budget}")
-    print("Running concurrently...\n")
+    log.info("Batch: %s, total budget %d", " + ".join(parts), total_budget)
+    log.info("Running concurrently...")
 
     tasks = [_run_one_batch_entry(entry, i, len(entries), db) for i, entry in enumerate(entries)]
     return list(await asyncio.gather(*tasks))
@@ -820,10 +815,10 @@ async def cmd_continue(
     additional_budget = _default_budget(additional_budget)
     question = await db.get_page(question_id)
     if not question:
-        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        log.error("question '%s' not found. Run --list to see existing questions.", question_id)
         sys.exit(1)
     if question.page_type != PageType.QUESTION:
-        print(f"Error: page '{question_id}' is a {question.page_type.value}, not a question.")
+        log.error("page '%s' is a %s, not a question.", question_id, question.page_type.value)
         sys.exit(1)
 
     if question.project_id and question.project_id != db.project_id:
@@ -838,14 +833,16 @@ async def cmd_continue(
     )
 
     frontend = get_settings().frontend_url.rstrip("/")
-    print(f"\nContinuing investigation of: {question.headline[:80]}")
-    print(f"Question ID:  {question_id}")
-    print(
-        f"Existing:     {counts['considerations']} considerations, {counts['judgements']} judgements"
+    log.info("Continuing investigation of: %s", question.headline[:80])
+    log.info("Question ID: %s", question_id)
+    log.info(
+        "Existing: %d considerations, %d judgements",
+        counts["considerations"],
+        counts["judgements"],
     )
-    print(f"Budget:       {additional_budget} research calls")
-    print(f"Trace:        {frontend}/traces/{db.run_id}")
-    _maybe_print_langfuse_session(db, indent="       ")
+    log.info("Budget: %d research calls", additional_budget)
+    log.info("Trace: %s/traces/%s", frontend, db.run_id)
+    _maybe_log_langfuse_session(db)
 
     if chat_first:
         source_pages: list[Page] = []
@@ -874,7 +871,7 @@ async def cmd_continue(
                 source_pages.append(page)
                 ingested_source_names.append(page.headline)
         if source_pages:
-            print(f"\nIngesting {len(source_pages)} source file(s)...")
+            log.info("Ingesting %d source file(s)...", len(source_pages))
             await run_ingest_calls(source_pages, question_id, db)
 
     orch = Orchestrator(db)
@@ -901,9 +898,9 @@ async def cmd_continue(
 
 async def _print_summary(db: DB, suppress_hint: bool = False) -> None:
     total, used = await db.get_budget()
-    print(f"\nBudget used: {used}/{total} calls")
+    log.info("Budget used: %d/%d calls", used, total)
     if not suppress_hint:
-        print("\nRun --list to see all questions.")
+        log.info("Run --list to see all questions.")
 
 
 async def async_main():
@@ -1294,7 +1291,7 @@ async def async_main():
         level=logging.WARNING,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
-        stream=sys.stderr,
+        stream=sys.stdout,
     )
     logging.getLogger("rumil").setLevel(log_level)
 
@@ -1324,6 +1321,7 @@ async def async_main():
                 "--executor prod is only supported for orchestrator runs (a question with "
                 "--budget). For other modes, omit --executor or use --executor local."
             )
+        args.budget = _default_budget(args.budget)
         sys.exit(submit_remote_orchestrator_run(args))
 
     db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged)
@@ -1343,12 +1341,12 @@ async def async_main():
 
     if args.stage_run_id:
         await db.stage_run(args.stage_run_id)
-        print(f"Run {args.stage_run_id} has been staged.")
+        log.info("Run %s has been staged.", args.stage_run_id)
         return
 
     if args.commit_run_id:
         await db.commit_staged_run(args.commit_run_id)
-        print(f"Run {args.commit_run_id} has been committed.")
+        log.info("Run %s has been committed.", args.commit_run_id)
         return
 
     eval_agents = resolve_eval_agents(args.eval_agent_names)
@@ -1370,7 +1368,7 @@ async def async_main():
         from rumil.obsidian_export import export_obsidian
 
         out = await export_obsidian(db, args.obsidian_dir)
-        print(f"Exported to: {out}")
+        log.info("Exported to: %s", out)
         return
 
     if args.obsidian_dir and args.question:
@@ -1379,7 +1377,7 @@ async def async_main():
             from rumil.obsidian_export import export_obsidian
 
             out = await export_obsidian(db, args.obsidian_dir, question_id=resolved)
-            print(f"Exported to: {out}")
+            log.info("Exported to: %s", out)
             return
     run_ids: list[str] = []
 
@@ -1479,18 +1477,16 @@ async def async_main():
                 question_id=question_id,
                 summary_text=summary_text or None,
             )
-            print(f"\nObsidian vault exported to: {out}")
+            log.info("Obsidian vault exported to: %s", out)
         if do_self_improve:
             await cmd_self_improve(question_id, db)
     else:
         parser.print_help()
 
     if len(run_ids) == 1:
-        print(f"\nRun ID: {run_ids[0]}")
+        log.info("Run ID: %s", run_ids[0])
     elif run_ids:
-        print("\nRun IDs:")
-        for rid in run_ids:
-            print(f"  {rid}")
+        log.info("Run IDs: %s", ", ".join(run_ids))
 
 
 def main():

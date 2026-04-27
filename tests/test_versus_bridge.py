@@ -435,26 +435,29 @@ def test_compute_prompt_hash_changes_when_shell_file_changes(tmp_path, monkeypat
 # Shell composition: exact placeholder token ------------------------------
 
 
-def test_build_system_prompt_inserts_at_known_placeholder():
+def test_build_system_prompt_inserts_body_in_both_modes():
     body = "SENTINEL_BODY_TOKEN_7q"
     blind = build_system_prompt(body, with_tools=False)
     tools = build_system_prompt(body, with_tools=True)
-    # Body lands inside the dimension section in both modes.
     assert f"---\n\n{body}\n\n---" in blind
     assert f"---\n\n{body}\n\n---" in tools
-    # No unfilled placeholders survive.
+
+
+def test_build_system_prompt_substitutes_all_placeholders():
+    blind = build_system_prompt("body", with_tools=False)
+    tools = build_system_prompt("body", with_tools=True)
     assert "{task_body}" not in blind
     assert "{tool_section}" not in blind
     assert "{location_desc}" not in blind
+    assert "{task_body}" not in tools
     assert "{tool_section}" not in tools
+    assert "{location_desc}" not in tools
 
 
 def test_build_system_prompt_diverges_on_with_tools():
-    body = "SENTINEL"
-    assert build_system_prompt(body, with_tools=False) != build_system_prompt(body, with_tools=True)
-    # Tools-only content should appear only in with_tools=True.
-    tools = build_system_prompt(body, with_tools=True)
-    blind = build_system_prompt(body, with_tools=False)
+    blind = build_system_prompt("SENTINEL", with_tools=False)
+    tools = build_system_prompt("SENTINEL", with_tools=True)
+    assert blind != tools
     assert "load_page" in tools
     assert "load_page" not in blind
     assert "search_workspace" in tools

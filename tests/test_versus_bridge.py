@@ -42,8 +42,6 @@ _VERSUS_SRC = Path(__file__).resolve().parents[1] / "versus" / "src"
 if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
-from versus.rumil_judge import _build_rumil_text_user_message, _PendingPair  # noqa: E402
-
 
 def _make_pair(**overrides) -> PairContext:
     defaults = dict(
@@ -488,37 +486,6 @@ def test_versus_extra_does_not_leak_source_ids(a_id, b_id):
         assert v != a_id
         assert v != b_id
         assert "human" not in str(v).split(":")
-
-
-# rumil-text inline user message: no source id disclosure ------------------
-
-
-def test_build_rumil_text_user_message_does_not_leak_source_ids():
-    pair = _PendingPair(
-        essay_id="essay-xyz",
-        prefix_hash="prefix-abc",
-        prefix_text="PREFIX_SIGIL",
-        source_a_id="human",
-        source_a_text="CONT_HUMAN_TEXT",
-        source_b_id="anthropic/claude-opus-4-7",
-        source_b_text="CONT_OPUS_TEXT",
-        display_first_id="anthropic/claude-opus-4-7",
-        display_first_text="CONT_OPUS_TEXT",
-        display_second_id="human",
-        display_second_text="CONT_HUMAN_TEXT",
-    )
-    msg = _build_rumil_text_user_message(pair, "general_quality")
-
-    assert "anthropic/claude-opus-4-7" not in msg
-    assert "source_id" not in msg
-    assert "source_a" not in msg
-    assert "source_b" not in msg
-
-    a_idx = msg.index("CONT_OPUS_TEXT")
-    b_idx = msg.index("CONT_HUMAN_TEXT")
-    assert a_idx < b_idx
-    assert "PREFIX_SIGIL" in msg
-    assert "general_quality" in msg
 
 
 # JudgeResult contract guard -----------------------------------------------

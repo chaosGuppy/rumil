@@ -1,24 +1,21 @@
 """Structural regression tests for the versus blind-judging invariant.
 
-The four versus judge backends all accept a ``PairContext`` (or a
-``_PendingPair``) carrying raw ``source_a_id`` / ``source_b_id`` values
-— which can literally be the string ``"human"``. Every surface the
-judge model actually sees (system prompt, user message, Question page
-content/headline, ``page.extra`` keys rendered by
-``rumil.context.format_page``) must not disclose those ids.
+Every versus judge backend renders a system prompt + user message that
+the model sees. Surfaces must not disclose ``source_a_id`` /
+``source_b_id`` (which can literally be the string ``"human"``).
 
 These tests use sentinel strings (``__SOURCE_A_SENTINEL__...``) that
 can't collide with English prose, so any substring presence in the
 rendered payload is unambiguous evidence of a leak.
 
-The four backends covered:
+The two backends covered:
 
-1. OpenRouter text judge        (``versus/judge.py::render_judge_prompt``)
-2. Anthropic text judge         (same ``render_judge_prompt`` via ``rumil_judge._plan_tasks``)
-3. rumil:text                   (``rumil_judge._build_rumil_text_user_message``)
-4. rumil:ws / rumil:orch        (``versus_bridge._format_pair_content``,
-                                 ``_versus_extra``, ``ensure_versus_question``,
-                                 and the inline ws/orch user prompts)
+1. Blind judge (OpenRouter + Anthropic-direct): both share
+   ``versus/judge.py::render_judge_prompt`` — only the transport
+   differs.
+2. rumil:ws / rumil:orch: ``versus_bridge._format_pair_content``,
+   ``_versus_extra``, ``ensure_versus_question``, and the inline
+   ws/orch user prompts.
 
 The continuation *bodies* (``continuation_a_text`` / ``continuation_b_text``)
 may legitimately contain the literal word "human" as essay prose — the
@@ -48,7 +45,7 @@ if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
 from versus.judge import render_judge_prompt  # noqa: E402
-from versus.rumil_judge import _build_rumil_text_user_message, _PendingPair  # noqa: E402
+from versus.rumil_judge import _PendingPair  # noqa: E402
 
 SENTINEL_A = "__SOURCE_A_SENTINEL_7x3q1z__"
 SENTINEL_B = "__SOURCE_B_SENTINEL_9k2mvp__"
@@ -156,16 +153,6 @@ def test_anthropic_text_judge_does_not_leak_source_ids(source_a_id, source_b_id)
 
 
 @pytest.mark.parametrize(("source_a_id", "source_b_id"), ID_PAIRS)
-def test_rumil_text_judge_does_not_leak_source_ids(source_a_id, source_b_id):
-    """Backend 3: rumil:text inline user message."""
-    pair = _make_pending_pair(source_a_id=source_a_id, source_b_id=source_b_id)
-    msg = _build_rumil_text_user_message(pair, "general_quality")
-    _assert_no_id_leak(msg, source_a_id, source_b_id)
-    assert SENTINEL_A_TEXT in msg
-    assert SENTINEL_B_TEXT in msg
-
-
-@pytest.mark.parametrize(("source_a_id", "source_b_id"), ID_PAIRS)
 def test_rumil_ws_orch_agent_visible_surfaces_do_not_leak_source_ids(source_a_id, source_b_id):
     """Backend 4: rumil:ws / rumil:orch agent-visible surfaces.
 
@@ -263,7 +250,6 @@ def test_page_extra_keys_are_exactly_the_allowed_set():
 BLIND_JUDGE_BACKEND_TESTS = (
     ("openrouter_text", "test_openrouter_text_judge_does_not_leak_source_ids"),
     ("anthropic_text", "test_anthropic_text_judge_does_not_leak_source_ids"),
-    ("rumil_text", "test_rumil_text_judge_does_not_leak_source_ids"),
     ("rumil_ws_orch", "test_rumil_ws_orch_agent_visible_surfaces_do_not_leak_source_ids"),
 )
 
@@ -289,7 +275,7 @@ def test_each_backend_has_a_leak_absence_test():
 
     # Also pin the count so deleting a test (and forgetting to remove
     # it from BLIND_JUDGE_BACKEND_TESTS) fails loudly.
-    assert len(BLIND_JUDGE_BACKEND_TESTS) == 4, (
-        "expected exactly 4 backends; update this assertion deliberately "
+    assert len(BLIND_JUDGE_BACKEND_TESTS) == 3, (
+        "expected exactly 3 backends; update this assertion deliberately "
         "if a backend is added or removed"
     )

@@ -1,16 +1,20 @@
-"""Run pairwise versus judgments against rumil-style judge backends.
+"""Run pairwise versus judgments.
 
-Three variants, selected via ``--variant``:
+Three modes:
 
-- ``text`` (default): single-turn Anthropic call using the versus judge
-  prompt. No rumil imports, no DB. Fast and cheap.
+- **Blind** (default, no ``--variant``): single-turn LLM call with the
+  blind shell — no tools, no DB, no workspace. Each ``--model`` is
+  routed: claude-* go direct to Anthropic, anything else through
+  OpenRouter. This subsumes the previous ``text`` / ``rumil-text`` /
+  OpenRouter judge paths into one entry point.
 
-- ``ws``: one VERSUS_JUDGE agent call per pair via rumil's SDK agent,
-  with single-arm workspace-exploration tools against a user-chosen
-  rumil workspace. Requires ``--workspace`` + running Supabase.
+- ``--variant ws``: one VERSUS_JUDGE agent call per pair via rumil's
+  SDK agent, with single-arm workspace-exploration tools against a
+  user-chosen rumil workspace. Requires ``--workspace`` + running
+  Supabase.
 
-- ``orch``: full TwoPhaseOrchestrator run per pair + closing call.
-  Expensive. Requires ``--workspace`` + running Supabase.
+- ``--variant orch``: full TwoPhaseOrchestrator run per pair + closing
+  call. Expensive. Requires ``--workspace`` + running Supabase.
 
 Env resolution for ANTHROPIC_API_KEY / OPENROUTER_API_KEY: versus/.env,
 then <rumil-root>/.env, then the process environment.
@@ -40,7 +44,7 @@ envcascade.apply(
 )
 
 from rumil.settings import RUMIL_MODEL_ALIASES, resolve_model_alias  # noqa: E402
-from versus import config, prepare, rumil_judge  # noqa: E402
+from versus import config, judge, prepare, rumil_judge  # noqa: E402
 
 DEFAULT_DIMENSIONS = ("general_quality",)
 
@@ -57,12 +61,11 @@ def main() -> None:
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--variant",
-        choices=("text", "rumil-text", "ws", "orch"),
-        default="text",
+        choices=("ws", "orch"),
+        default=None,
         help=(
-            "Which rumil judge path to run (default: text). "
-            "rumil-text = single-turn Anthropic call with rumil dimension "
-            "prompts (isolates prompt effect from workspace/tools effect)."
+            "Tool-using variant. Omit for the default blind judge path. "
+            "ws/orch require --workspace and running Supabase."
         ),
     )
     ap.add_argument(
@@ -71,10 +74,13 @@ def main() -> None:
         default=None,
         help=(
             "Model selection. Accepts a short alias "
-            f"({'/'.join(RUMIL_MODEL_ALIASES)}) or a full Anthropic id. "
-            "For --variant text, repeat to judge with multiple models "
-            "(overrides judging.anthropic_models). For ws/orch/rumil-text, "
-            "pass at most one (default: opus)."
+            f"({'/'.join(RUMIL_MODEL_ALIASES)}), a bare Anthropic id "
+            "(claude-*), or an OpenRouter id (provider/model). For the "
+            "default blind path: repeat to judge with multiple models; "
+            "claude-* go direct to Anthropic, others via OpenRouter; "
+            "defaults to the union of cfg.judging.models and "
+            "cfg.judging.anthropic_models. For ws/orch: pass at most one "
+            "(default: opus)."
         ),
     )
     ap.add_argument(
@@ -107,7 +113,8 @@ def main() -> None:
         default=None,
         help=(
             "Concurrent judgments per LLM call. If unset, the variant picks "
-            "its own default: ws=2, rumil-text=cfg.concurrency (usually 8)."
+            "its own default: blind path = cfg.per_model_concurrency per "
+            "model (usually 8); ws = 2."
         ),
     )
     ap.add_argument("--limit", type=int, default=None, help="Cap on number of judgments.")
@@ -192,15 +199,20 @@ def main() -> None:
     prefix_cfg = prepare.resolve_prefix_cfg(cfg, args.prefix_label)
     print(f"[prefix] using variant {prefix_cfg.id!r}")
 
-    if args.variant == "text":
-        models = (
-            [resolve_model_alias(m) for m in args.model]
-            if args.model
-            else list(cfg.judging.anthropic_models)
-        )
-        rumil_judge.run(
+    if args.variant is None:
+        # Blind path: route claude-* direct to Anthropic, others via OpenRouter.
+        if args.model:
+            models = [resolve_model_alias(m) for m in args.model]
+        else:
+            # Default: union of configured OR + anthropic-direct lists.
+            models = [*cfg.judging.models, *cfg.judging.anthropic_models]
+        if not models:
+            ap.error("no models passed and config has no judging.models / anthropic_models")
+        dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
+        judge.run_blind(
             cfg,
-            models,
+            models=models,
+            dimensions=dimensions,
             limit=args.limit,
             dry_run=args.dry_run,
             essay_ids=essay_ids,
@@ -217,23 +229,6 @@ def main() -> None:
             f"(got {len(args.model)}: {args.model})"
         )
     model_id = resolve_model_alias(args.model[0]) if args.model else RUMIL_MODEL_ALIASES["opus"]
-
-    if args.variant == "rumil-text":
-        dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
-        rumil_judge.run_rumil_text(
-            cfg,
-            anthropic_model=model_id,
-            dimensions=dimensions,
-            limit=args.limit,
-            dry_run=args.dry_run,
-            essay_ids=essay_ids,
-            contestants=contestants,
-            vs_human=args.vs_human,
-            current_only=args.current_only,
-            prefix_cfg=prefix_cfg,
-            concurrency=args.concurrency,
-        )
-        return
 
     if not args.workspace:
         ap.error(f"--workspace is required for --variant {args.variant}")

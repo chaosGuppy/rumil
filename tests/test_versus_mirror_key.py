@@ -187,36 +187,35 @@ def test_mirror_row_key_matches_judgment_key():
 # Row-builder via the OpenRouter path ---------------------------------------
 
 
-def test_call_one_judgment_row_includes_order(mocker):
-    # Mock only at the OpenRouter boundary (external HTTP).
+def test_call_one_blind_row_includes_order(mocker):
     mocker.patch(
         "versus.openrouter.chat",
         return_value={"choices": [{"message": {"content": "A strongly preferred"}}]},
     )
     mocker.patch("versus.openrouter.extract_text", return_value="A strongly preferred")
 
-    from versus.judge import Source, _call_one_judgment
+    from versus.judge import Source, _BlindTask, _call_one_blind
 
     src_a = Source("human", "A body")
     src_b = Source("openai/gpt-5.4", "B body")
-    # order_pair is deterministic per (essay, sorted_pair); we pick the
-    # order explicitly here so the assertion is tied to the chosen value.
-    row = _call_one_judgment(
-        "essay-1",
-        "prefix-1",
-        "human",
-        "openai/gpt-5.4",
-        src_a,
-        src_b,
-        "general_quality",
-        "google/gemini-2.5-pro",
-        "google/gemini-2.5-pro:p1:v1:s1",
-        "SYS",
-        "USER",
-        "fake-key",
-        "ab",
-        2048,
-        client=None,  # pyright: ignore[reportArgumentType]
+    task = _BlindTask(
+        essay_id="essay-1",
+        prefix_hash="prefix-1",
+        a_id="human",
+        b_id="openai/gpt-5.4",
+        first=src_a,
+        second=src_b,
+        dimension="general_quality",
+        base_model="google/gemini-2.5-pro",
+        canonical_model="google/gemini-2.5-pro",
+        provider="openrouter",
+        judge_model="google/gemini-2.5-pro:general_quality:p1:v1:s1",
+        system_prompt="SYS",
+        user_prompt="USER",
+        key="fake-key",
+        order="ab",
+        sampling={"temperature": 0.0, "max_tokens": 2048},
     )
+    row = _call_one_blind(task, client=None)  # pyright: ignore[reportArgumentType]
     assert row["order"] == "ab"
     assert row["display_first"] == "human"

@@ -32,12 +32,13 @@ def _capture_field(**kwargs: Any) -> Any:
 
 
 class Settings(BaseSettings):
-    # ".env" is the shared (often symlinked) project env; ".env.local" is a
-    # worktree-local override file written by the workmux post_create hook
-    # (see /Users/chaos-guppy/differential/.workmux.yaml). Later files in the
-    # tuple override earlier ones, so .env.local wins.
+    # ".env" is the shared (often symlinked) project env; ".env.overrides"
+    # layers on top — typically written by the workmux post_create hook for
+    # per-worktree overrides (see /Users/chaos-guppy/differential/.workmux.yaml),
+    # but devs without a worktree setup can use it too. Later files in the
+    # tuple override earlier ones, so .env.overrides wins.
     model_config = {
-        "env_file": (".env", ".env.local"),
+        "env_file": (".env", ".env.overrides"),
         "extra": "ignore",
         "validate_assignment": True,
     }

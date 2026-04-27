@@ -293,7 +293,7 @@ Constraints:
 - `--db local --executor prod` is rejected — the cluster cannot reach a
   local Supabase.
 
-One-time setup on your laptop, in `.env` or `.env.local`:
+One-time setup on your laptop, in `.env` (or `.env.overrides` for local overrides):
 
 ```bash
 # Where the rumil API lives. Defaults to https://api.rumil.ink and only

@@ -165,6 +165,7 @@ activemq-data/
 # Environments
 .env
 .env.local
+.env.overrides
 .envrc
 .venv
 env/

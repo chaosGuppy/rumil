@@ -106,6 +106,24 @@ async def _assert_run_access(db: DB, run_id: str) -> None:
         raise HTTPException(status_code=404, detail="Run not found")
 
 
+async def _resolve_staged_read_db(db: DB, run_id: str) -> tuple[DB, bool, dict]:
+    """Look up a run's staging flag + config, returning a DB scoped for reads.
+
+    Staged runs (e.g. versus ws/orch judgments) write pages tagged with their
+    run_id; reading via the default baseline DB returns nulls for their
+    Question pages and scope-page summaries. This wraps the runs-row probe
+    so handlers can stay narrow and rebases against this file stay small.
+    """
+    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
+    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
+    if not run_data:
+        raise HTTPException(status_code=404, detail="Run not found")
+    is_staged = bool(run_data[0].get("staged"))
+    run_config: dict = run_data[0].get("config") or {}  # type: ignore[assignment]
+    read_db = db.view_as_staged(run_id) if is_staged else db
+    return read_db, is_staged, run_config
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -482,20 +500,7 @@ async def get_run_trace_tree(
     _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
-    # Detect staging from the runs row up front so page reads below use a
-    # DB with the right visibility. Without this, staged runs (including
-    # every versus ws/orch judgment) come back with a null Question page
-    # and empty scope-page summaries because the default DB is
-    # baseline-only.
-    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
-    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
-    if not run_data:
-        raise HTTPException(status_code=404, detail="Run not found")
-    is_staged = bool(run_data[0].get("staged"))
-    run_config: dict = run_data[0].get("config") or {}  # type: ignore[assignment]
-
-    read_db = db.view_as_staged(run_id) if is_staged else db
-
+    read_db, is_staged, run_config = await _resolve_staged_read_db(db, run_id)
     question_id = await read_db.get_run_question_id(run_id)
     question_page = None
     if question_id:

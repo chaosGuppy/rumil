@@ -17,7 +17,6 @@ from collections.abc import Iterable
 
 from versus import config as versus_config
 from versus import essay as versus_essay
-from versus import prepare as versus_prepare
 
 
 def is_current_schema(d: dict) -> bool:
@@ -28,6 +27,8 @@ def is_current_schema(d: dict) -> bool:
 def current_prefix_hashes_for(essay: versus_essay.Essay, cfg: versus_config.Config) -> set[str]:
     """All ``prefix_config_hash`` values that are currently in play for
     this essay, across every active prefix variant in the config."""
+    from versus import prepare as versus_prepare
+
     out: set[str] = set()
     for p in versus_prepare.active_prefix_configs(cfg):
         task = versus_prepare.prepare(

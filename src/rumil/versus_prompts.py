@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from pathlib import Path
 
-_PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
-
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 
 PREFERENCE_LABELS: Sequence[str] = (
     "A strongly preferred",

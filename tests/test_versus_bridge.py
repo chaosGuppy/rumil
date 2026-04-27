@@ -438,11 +438,11 @@ def test_compute_prompt_hash_changes_when_shell_file_changes(tmp_path, monkeypat
 
 
 def test_build_system_prompt_inserts_at_known_placeholder():
+    from rumil.prompts import PROMPTS_DIR
+
     body = "SENTINEL_BODY_TOKEN_7q"
     composed = build_system_prompt(body)
-    shell_raw = (
-        Path(__file__).resolve().parents[1] / "prompts" / "versus-judge-shell.md"
-    ).read_text()
+    shell_raw = (PROMPTS_DIR / "versus-judge-shell.md").read_text()
     assert "{task_body}" in shell_raw
     expected = shell_raw.replace("{task_body}", body)
     assert composed == expected

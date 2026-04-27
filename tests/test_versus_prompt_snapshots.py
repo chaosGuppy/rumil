@@ -11,8 +11,9 @@ message tells you which file changed and which version constant to
 bump alongside the edit. Regenerate pins below by running:
 
     uv run python -c "
-    import hashlib, pathlib
-    for p in sorted(pathlib.Path('prompts').glob('versus-*.md')):
+    import hashlib
+    from rumil.prompts import PROMPTS_DIR
+    for p in sorted(PROMPTS_DIR.glob('versus-*.md')):
         print(f'    \"{p.name}\": \"{hashlib.sha256(p.read_bytes()).hexdigest()[:16]}\",')
     "
 
@@ -26,7 +27,7 @@ import pathlib
 
 import pytest
 
-_PROMPTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "prompts"
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 
 # Bump-guidance: which version constant to bump when each prompt is
 # edited. Printed in the failure message so the fix is unambiguous.

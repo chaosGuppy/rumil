@@ -103,6 +103,9 @@ def submit_remote_orchestrator_run(args: argparse.Namespace) -> int:
         parsed = OrchestratorRunResponse.model_validate(resp.json())
 
     print(f"submitted job: {parsed.job_name}")
+    print(f"run id:        {parsed.run_id}")
+    if parsed.trace_url:
+        print(f"trace:         {parsed.trace_url}")
     if parsed.logs_url:
         print(f"follow logs:   {parsed.logs_url}")
     else:

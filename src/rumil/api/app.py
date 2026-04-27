@@ -2,8 +2,10 @@
 FastAPI application for the Rumil research workspace.
 
 Mostly read-only browsing endpoints (projects, pages, links, calls). Also
-exposes POST /api/jobs/orchestrator-runs, which creates Kubernetes Jobs to
-run orchestrator investigations remotely; see `rumil.api.jobs`.
+exposes the `/api/jobs` family for the job-monitoring UI: POST
+`/api/jobs/orchestrator-runs` creates a Kubernetes Job to run an
+orchestrator investigation remotely, and GET `/api/jobs` lists recent
+orchestrator Jobs in the cluster. See `rumil.api.jobs`.
 """
 
 import logging
@@ -15,7 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
-from rumil.api.auth import AuthUser, get_current_user
+from rumil.api.auth import AuthUser, get_current_user, is_admin
 from rumil.api.jobs import router as jobs_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
@@ -53,8 +55,10 @@ app = FastAPI(
     title="Rumil API",
     version="0.1.0",
     description=(
-        "Read-only browsing API for the Rumil research workspace, plus a "
-        "/api/jobs/orchestrator-runs endpoint that submits Kubernetes Jobs."
+        "Read-only browsing API for the Rumil research workspace, plus the "
+        "/api/jobs endpoints used by the job-monitoring UI: POST "
+        "/api/jobs/orchestrator-runs submits a Kubernetes Job and GET "
+        "/api/jobs lists recent orchestrator Jobs in the cluster."
     ),
 )
 
@@ -151,9 +155,42 @@ async def _get_db_maybe_staged(
         await db.close()
 
 
+async def _get_admin_db(
+    _user: AuthUser = Depends(get_current_user),
+) -> AsyncIterator[DB]:
+    """A no-query-param DB factory for admin-status lookups.
+
+    `_get_db` accepts `project_id`/`staged_run_id` as query params; routing
+    those through endpoints that don't care (like `/api/auth/me`) leaks
+    them into the OpenAPI surface, so admin checks use this instead.
+    """
+    prod = get_settings().is_prod_db
+    db = await DB.create(run_id=str(uuid.uuid4()), prod=prod)
+    try:
+        yield db
+    finally:
+        await db.close()
+
+
+async def require_admin(
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_admin_db),
+) -> AuthUser:
+    if not await is_admin(user, db):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 @app.get("/api/auth/me", response_model=AuthUserOut)
-async def get_me(user: AuthUser = Depends(get_current_user)):
-    return AuthUserOut(user_id=user.user_id, email=user.email)
+async def get_me(
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_admin_db),
+):
+    return AuthUserOut(
+        user_id=user.user_id,
+        email=user.email,
+        is_admin=await is_admin(user, db),
+    )
 
 
 @app.get("/api/projects", response_model=list[Project])
@@ -177,7 +214,11 @@ async def get_project(project_id: str, db: DB = Depends(_get_db)):
 
 
 @app.get("/api/projects/{project_id}/runs", response_model=list[RunListItemOut])
-async def list_project_runs(project_id: str, db: DB = Depends(_get_db)):
+async def list_project_runs(
+    project_id: str,
+    _admin: AuthUser = Depends(require_admin),
+    db: DB = Depends(_get_db),
+):
     return await db.list_runs_for_project(project_id)
 
 
@@ -313,7 +354,11 @@ async def get_page_counts(
 
 
 @app.get("/api/projects/{project_id}/stats", response_model=ProjectStatsOut)
-async def get_project_stats(project_id: str, db: DB = Depends(_get_db_maybe_staged)):
+async def get_project_stats(
+    project_id: str,
+    _admin: AuthUser = Depends(require_admin),
+    db: DB = Depends(_get_db_maybe_staged),
+):
     """Aggregate stats over all pages/links/calls in a project.
 
     Baseline rows are always included; when `staged_run_id` is provided as a
@@ -327,7 +372,7 @@ async def get_project_stats(project_id: str, db: DB = Depends(_get_db_maybe_stag
 @app.get("/api/pages/{page_id}/stats", response_model=QuestionStatsOut)
 async def get_question_stats(
     page_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db_maybe_staged),
 ):
     """Aggregate stats over the 2-hop undirected neighborhood around a question.
@@ -365,6 +410,7 @@ async def list_root_questions(
 async def list_calls(
     project_id: str,
     question_id: str | None = None,
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
     if question_id:
@@ -384,7 +430,7 @@ async def list_calls(
 @app.get("/api/calls/{call_id}", response_model=Call)
 async def get_call(
     call_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
     return await _assert_call_access(db, call_id)
@@ -393,7 +439,7 @@ async def get_call(
 @app.get("/api/calls/{call_id}/children", response_model=list[Call])
 async def get_child_calls(
     call_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
     await _assert_call_access(db, call_id)
@@ -429,7 +475,7 @@ def _count_trace_events(trace_json: list[dict] | None) -> tuple[int, int]:
 @app.get("/api/runs/{run_id}/trace-tree", response_model=RunTraceTreeOut)
 async def get_run_trace_tree(
     run_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
     await _assert_run_access(db, run_id)
@@ -477,7 +523,7 @@ async def get_run_trace_tree(
 @app.get("/api/calls/{call_id}/events", response_model=list[TraceEventOut])
 async def get_call_events(
     call_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
     await _assert_call_access(db, call_id)
@@ -488,7 +534,10 @@ async def get_call_events(
     "/api/ab-evals",
     response_model=list[ABEvalReportListItemOut],
 )
-async def list_ab_evals(db: DB = Depends(_get_db)):
+async def list_ab_evals(
+    _admin: AuthUser = Depends(require_admin),
+    db: DB = Depends(_get_db),
+):
     rows = await db.list_ab_eval_reports()
 
     question_ids = {
@@ -530,7 +579,11 @@ async def list_ab_evals(db: DB = Depends(_get_db)):
     "/api/ab-evals/{eval_id}",
     response_model=ABEvalReportOut,
 )
-async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
+async def get_ab_eval(
+    eval_id: str,
+    _admin: AuthUser = Depends(require_admin),
+    db: DB = Depends(_get_db),
+):
     row = await db.get_ab_eval_report(eval_id)
     if not row:
         raise HTTPException(status_code=404, detail="AB eval report not found")
@@ -576,7 +629,7 @@ async def get_ab_eval(eval_id: str, db: DB = Depends(_get_db)):
 )
 async def list_llm_exchanges(
     call_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
     await _assert_call_access(db, call_id)
@@ -599,7 +652,7 @@ async def list_llm_exchanges(
 @app.get("/api/llm-exchanges/{exchange_id}", response_model=LLMExchangeOut)
 async def get_llm_exchange(
     exchange_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
     row = await db.get_llm_exchange(exchange_id)
@@ -638,7 +691,7 @@ def get_realtime_config(_user: AuthUser = Depends(get_current_user)):
 )
 async def get_page_run(
     page_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db_maybe_staged),
 ):
     await _assert_page_access(db, page_id)
@@ -658,7 +711,7 @@ async def get_page_run(
 )
 async def get_page_load_stats(
     run_id: str,
-    user: AuthUser = Depends(get_current_user),
+    _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
     await _assert_run_access(db, run_id)

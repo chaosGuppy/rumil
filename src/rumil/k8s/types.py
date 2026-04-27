@@ -6,7 +6,12 @@ submitter (`rumil.k8s.submit`). Kept FastAPI-free so the CLI can import them
 without dragging server-side modules.
 """
 
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+JobStatus = Literal["pending", "running", "failed", "completed"]
 
 # Docker tag character set (https://docs.docker.com/reference/cli/docker/image/tag/),
 # bounded for safety. Validates the user-supplied container_tag so we never
@@ -55,6 +60,27 @@ class OrchestratorRunRequest(BaseModel):
 
 class OrchestratorRunResponse(BaseModel):
     job_name: str
+    run_id: str
     # Pre-built Cloud Logging URL filtered to this job's pod logs. Empty when
     # the API can't determine the GCP project (e.g. local dev).
+    logs_url: str = ""
+    # Pre-built trace URL: <frontend>/traces/<run_id>.
+    trace_url: str = ""
+
+
+class JobListItem(BaseModel):
+    """One row in GET /api/jobs. Built from a V1Job's metadata only."""
+
+    job_name: str
+    namespace: str
+    status: JobStatus
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    run_id: str
+    workspace: str
+    question: str
+    trace_url: str
+    owner_user_id: str = ""
+    # Empty when the API can't determine the GCP project (e.g. local dev).
     logs_url: str = ""

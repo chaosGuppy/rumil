@@ -498,6 +498,74 @@ class DB:
         rows = _rows(await self._execute(query))
         return [_row_to_project(r) for r in rows]
 
+    async def is_admin_user(self, user_id: str) -> bool:
+        if not user_id:
+            return False
+        rows = _rows(
+            await self._execute(
+                self.client.table("user_admins").select("user_id").eq("user_id", user_id).limit(1)
+            )
+        )
+        return bool(rows)
+
+    async def grant_admin(
+        self,
+        user_id: str,
+        granted_by: str | None = None,
+        note: str | None = None,
+    ) -> None:
+        payload: dict[str, str] = {"user_id": user_id}
+        if granted_by:
+            payload["granted_by"] = granted_by
+        if note:
+            payload["note"] = note
+        await self._execute(self.client.table("user_admins").upsert(payload, on_conflict="user_id"))
+
+    async def revoke_admin(self, user_id: str) -> None:
+        await self._execute(self.client.table("user_admins").delete().eq("user_id", user_id))
+
+    async def list_admin_users(self) -> list[dict[str, Any]]:
+        """user_admins rows enriched with email from the Supabase Auth admin API.
+
+        PostgREST does not expose the `auth` schema, so we fetch emails
+        through `client.auth.admin.get_user_by_id` rather than a direct join.
+        Returns list of {user_id, email, granted_at, granted_by, note}.
+        """
+        rows = _rows(
+            await self._execute(
+                self.client.table("user_admins")
+                .select("user_id, granted_at, granted_by, note")
+                .order("granted_at", desc=True)
+            )
+        )
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            email = ""
+            try:
+                resp = await self.client.auth.admin.get_user_by_id(r["user_id"])
+                email = (resp.user.email if resp and resp.user else "") or ""
+            except Exception:
+                pass
+            out.append({**r, "email": email})
+        return out
+
+    async def find_auth_user_id_by_email(self, email: str) -> str | None:
+        """Linear scan via the Auth admin API (no email-filter endpoint)."""
+        target = email.strip().lower()
+        page = 1
+        per_page = 200
+        while True:
+            users = await self.client.auth.admin.list_users(page=page, per_page=per_page) or []
+            if not users:
+                return None
+            for u in users:
+                u_email = (getattr(u, "email", "") or "").strip().lower()
+                if u_email == target:
+                    return getattr(u, "id", None)
+            if len(users) < per_page:
+                return None
+            page += 1
+
     async def save_page(self, page: Page) -> None:
         log.debug(
             "save_page: id=%s, type=%s, headline=%s",

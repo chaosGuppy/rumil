@@ -48,6 +48,11 @@ export default async function Home() {
 
         .ws-header {
           margin-bottom: 2.5rem;
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 1.5rem;
+          flex-wrap: wrap;
         }
         .ws-header h1 {
           font-size: 1.6rem;
@@ -59,6 +64,26 @@ export default async function Home() {
           font-size: 0.85rem;
           color: var(--color-muted, #888);
           font-family: var(--font-geist-mono), monospace;
+        }
+        .ws-nav {
+          display: flex;
+          gap: 0.4rem;
+        }
+        .ws-nav-link {
+          font-size: 0.72rem;
+          font-family: var(--font-geist-mono), monospace;
+          color: var(--color-muted, #888);
+          text-decoration: none;
+          padding: 0.3rem 0.6rem;
+          border: 1px solid var(--color-border, #ddd);
+          border-radius: 3px;
+          letter-spacing: 0.02em;
+          transition: border-color 0.1s, color 0.1s, background 0.1s;
+        }
+        .ws-nav-link:hover {
+          border-color: var(--color-accent, #444);
+          color: var(--foreground);
+          background: var(--color-surface, #f6f6f6);
         }
 
         .ws-results-meta {
@@ -151,8 +176,14 @@ export default async function Home() {
       `}</style>
 
       <div className="ws-header">
-        <h1>Rumil</h1>
-        <div className="subtitle">workspaces</div>
+        <div>
+          <h1>Rumil</h1>
+          <div className="subtitle">workspaces</div>
+        </div>
+        <nav className="ws-nav">
+          <Link className="ws-nav-link" href="/jobs">jobs</Link>
+          <Link className="ws-nav-link" href="/ab-evals">a/b evals</Link>
+        </nav>
       </div>
 
       {projects.length === 0 ? (

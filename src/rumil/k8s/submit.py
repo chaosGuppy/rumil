@@ -24,6 +24,7 @@ import re
 import secrets
 import threading
 import urllib.parse
+import uuid
 from collections.abc import Sequence
 from importlib import resources
 from typing import Any, cast
@@ -38,7 +39,12 @@ NAMESPACE = "rumil"
 API_DEPLOYMENT_NAME = "rumil-api"
 JOB_LABEL_RUN_KIND = "rumil.ink/run-kind"
 JOB_LABEL_OWNER = "rumil.ink/owner-user-id"
+JOB_LABEL_RUN_ID = "rumil.ink/run-id"
+JOB_LABEL_WORKSPACE = "rumil.ink/workspace"
 JOB_LABEL_RUN_KIND_VALUE = "orchestrator"
+JOB_ANNOTATION_WORKSPACE_NAME = "rumil.ink/workspace-name"
+JOB_ANNOTATION_QUESTION = "rumil.ink/question"
+QUESTION_ANNOTATION_MAX_CHARS = 200
 
 log = logging.getLogger(__name__)
 
@@ -128,7 +134,7 @@ def _job_name(spec: OrchestratorRunRequest) -> str:
     return name[:63]
 
 
-def _build_container_command(spec: OrchestratorRunRequest) -> Sequence[str]:
+def _build_container_command(spec: OrchestratorRunRequest, *, run_id: str) -> Sequence[str]:
     """Translate the request into the in-pod CLI invocation."""
     args: list[str] = [
         "python",
@@ -142,6 +148,8 @@ def _build_container_command(spec: OrchestratorRunRequest) -> Sequence[str]:
         "prod",
         "--executor",
         "local",
+        "--run-id",
+        run_id,
     ]
     if spec.smoke_test:
         args.append("--smoke-test")
@@ -175,6 +183,7 @@ def _build_job(
     *,
     name: str,
     owner_user_id: str,
+    run_id: str,
     image: str,
     env: Sequence[client.V1EnvVar],
     env_from: Sequence[client.V1EnvFromSource],
@@ -186,16 +195,24 @@ def _build_job(
     metadata["namespace"] = NAMESPACE
     labels = dict(metadata.get("labels") or {})
     labels[JOB_LABEL_RUN_KIND] = JOB_LABEL_RUN_KIND_VALUE
+    labels[JOB_LABEL_RUN_ID] = run_id
+    workspace_slug = _slug(spec.workspace)[:63].rstrip("-") or "ws"
+    labels[JOB_LABEL_WORKSPACE] = workspace_slug
     if owner_user_id:
         labels[JOB_LABEL_OWNER] = owner_user_id
     metadata["labels"] = labels
+
+    annotations = dict(metadata.get("annotations") or {})
+    annotations[JOB_ANNOTATION_WORKSPACE_NAME] = spec.workspace
+    annotations[JOB_ANNOTATION_QUESTION] = spec.question[:QUESTION_ANNOTATION_MAX_CHARS]
+    metadata["annotations"] = annotations
 
     spec_block: dict[str, Any] = manifest["spec"]
     pod_spec: dict[str, Any] = spec_block["template"]["spec"]
     containers: list[dict[str, Any]] = pod_spec["containers"]
     container = containers[0]
     container["image"] = image
-    container["command"] = _build_container_command(spec)
+    container["command"] = _build_container_command(spec, run_id=run_id)
     container["env"] = [_env_var_to_dict(e) for e in env]
     container["envFrom"] = [_env_from_to_dict(e) for e in env_from]
     return manifest
@@ -214,24 +231,37 @@ def _env_from_to_dict(e: client.V1EnvFromSource) -> dict[str, Any]:
     return cast(dict[str, Any], client.ApiClient().sanitize_for_serialization(e))
 
 
-def submit_orchestrator_job(spec: OrchestratorRunRequest, *, owner_user_id: str) -> str:
-    """Create the Job and return its name. Raises on k8s API errors."""
+def submit_orchestrator_job(spec: OrchestratorRunRequest, *, owner_user_id: str) -> tuple[str, str]:
+    """Create the Job and return (job_name, run_id). Raises on k8s API errors.
+
+    The run_id is generated here and threaded into both the Job's
+    `rumil.ink/run-id` label and the in-pod CLI's `--run-id` flag, so
+    callers know the trace URL the moment the Job is submitted.
+    """
     batch, apps = _kube_clients()
     image, env, env_from = _read_api_runtime(apps)
     if spec.container_tag:
         image = _override_image_tag(image, spec.container_tag)
     name = _job_name(spec)
+    run_id = str(uuid.uuid4())
     body = _build_job(
-        spec, name=name, owner_user_id=owner_user_id, image=image, env=env, env_from=env_from
+        spec,
+        name=name,
+        owner_user_id=owner_user_id,
+        run_id=run_id,
+        image=image,
+        env=env,
+        env_from=env_from,
     )
     batch.create_namespaced_job(namespace=NAMESPACE, body=body)
     log.info(
-        "submitted orchestrator job name=%s owner=%s image=%s",
+        "submitted orchestrator job name=%s run_id=%s owner=%s image=%s",
         name,
+        run_id,
         owner_user_id or "<anon>",
         image,
     )
-    return name
+    return name, run_id
 
 
 def build_logs_url(job_name: str) -> str:

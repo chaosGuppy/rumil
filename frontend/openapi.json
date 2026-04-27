@@ -2,10 +2,123 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rumil API",
-    "description": "Read-only API for the Rumil research workspace.",
+    "description": "Read-only browsing API for the Rumil research workspace, plus the /api/jobs endpoints used by the job-monitoring UI: POST /api/jobs/orchestrator-runs submits a Kubernetes Job and GET /api/jobs lists recent orchestrator Jobs in the cluster.",
     "version": "0.1.0"
   },
   "paths": {
+    "/api/jobs/orchestrator-runs": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create Orchestrator Run",
+        "operationId": "create_orchestrator_run_api_jobs_orchestrator_runs_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchestratorRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List Jobs",
+        "description": "List orchestrator Jobs (newest first), capped at 200 rows.\n\nFiltered to `rumil.ink/run-kind=orchestrator` so non-orchestrator Jobs\nin the namespace are excluded. Jobs that pre-date the run-id/workspace/\nquestion metadata rollout \u2014 or any other Job that happens to share the\nrun-kind label without our full metadata \u2014 are silently skipped.",
+        "operationId": "list_jobs_api_jobs_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobListItem"
+                  },
+                  "title": "Response List Jobs Api Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -2455,12 +2568,17 @@
           "email": {
             "type": "string",
             "title": "Email"
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin"
           }
         },
         "type": "object",
         "required": [
           "user_id",
-          "email"
+          "email",
+          "is_admin"
         ],
         "title": "AuthUserOut"
       },
@@ -2855,6 +2973,7 @@
           "generate_spec",
           "generate_artefact",
           "critique_artefact",
+          "critique_artefact_request_only",
           "refine_spec",
           "claude_code_direct"
         ],
@@ -3586,6 +3705,96 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "JobListItem": {
+        "properties": {
+          "job_name": {
+            "type": "string",
+            "title": "Job Name"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "failed",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "workspace": {
+            "type": "string",
+            "title": "Workspace"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "trace_url": {
+            "type": "string",
+            "title": "Trace Url"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "title": "Owner User Id",
+            "default": ""
+          },
+          "logs_url": {
+            "type": "string",
+            "title": "Logs Url",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_name",
+          "namespace",
+          "status",
+          "created_at",
+          "run_id",
+          "workspace",
+          "question",
+          "trace_url"
+        ],
+        "title": "JobListItem",
+        "description": "One row in GET /api/jobs. Built from a V1Job's metadata only."
+      },
       "LLMExchangeEventOut": {
         "properties": {
           "ts": {
@@ -4166,6 +4375,163 @@
           "moves"
         ],
         "title": "MovesExecutedEventOut"
+      },
+      "OrchestratorRunRequest": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Question"
+          },
+          "budget": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Budget"
+          },
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Workspace"
+          },
+          "smoke_test": {
+            "type": "boolean",
+            "title": "Smoke Test",
+            "default": false
+          },
+          "quiet": {
+            "type": "boolean",
+            "title": "Quiet",
+            "default": false
+          },
+          "debug": {
+            "type": "boolean",
+            "title": "Debug",
+            "default": false
+          },
+          "force_twophase_recurse": {
+            "type": "boolean",
+            "title": "Force Twophase Recurse",
+            "default": false
+          },
+          "no_trace": {
+            "type": "boolean",
+            "title": "No Trace",
+            "default": false
+          },
+          "auto_summary": {
+            "type": "boolean",
+            "title": "Auto Summary",
+            "default": false
+          },
+          "auto_self_improve": {
+            "type": "boolean",
+            "title": "Auto Self Improve",
+            "default": false
+          },
+          "available_moves": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Moves"
+          },
+          "available_calls": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Calls"
+          },
+          "view_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Variant"
+          },
+          "ingest_num_claims": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Num Claims"
+          },
+          "run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Name"
+          },
+          "container_tag": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Tag"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question",
+          "budget",
+          "workspace"
+        ],
+        "title": "OrchestratorRunRequest",
+        "description": "Inputs for a remote orchestrator run.\n\nMirrors the subset of `main.py` flags that are forwarded into the\nin-pod CLI invocation. Flags that only make sense on the laptop\n(--db, --executor, --staged, --env-file, --run-id-file, --cli-user-id)\nare intentionally absent \u2014 the in-pod run is always `--db prod\n--executor local`."
+      },
+      "OrchestratorRunResponse": {
+        "properties": {
+          "job_name": {
+            "type": "string",
+            "title": "Job Name"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "logs_url": {
+            "type": "string",
+            "title": "Logs Url",
+            "default": ""
+          },
+          "trace_url": {
+            "type": "string",
+            "title": "Trace Url",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_name",
+          "run_id"
+        ],
+        "title": "OrchestratorRunResponse"
       },
       "Page": {
         "properties": {

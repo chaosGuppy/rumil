@@ -49,6 +49,11 @@
   --type-view-item-bg: #f7f4f9;
   --type-view-item-bg-hover: #f0eaf4;
   --type-view-item-border: #c0aece;
+
+  --status-pending: #9ca3af;
+  --status-running: #d97706;
+  --status-completed: #16a34a;
+  --status-failed: #dc2626;
 }
 
 @theme inline {
@@ -108,6 +113,11 @@
     --type-view-item-bg: #150f1a;
     --type-view-item-bg-hover: #1e1526;
     --type-view-item-border: #32243e;
+
+    --status-pending: #71717a;
+    --status-running: #f59e0b;
+    --status-completed: #22c55e;
+    --status-failed: #ef4444;
   }
 }
 

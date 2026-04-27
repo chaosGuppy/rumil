@@ -369,7 +369,7 @@ def _build_tools(
             return f"Error: '{rel}' is not a directory."
         entries = []
         for child in sorted(path.iterdir()):
-            if child.name.startswith(".") and child.name not in {".env.example"}:
+            if child.name.startswith(".") and child.name not in {".env.template"}:
                 continue
             if child.is_dir() and child.name in IGNORED_DIR_NAMES:
                 continue

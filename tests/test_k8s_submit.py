@@ -13,10 +13,15 @@ from kubernetes import client
 from pydantic import ValidationError
 
 from rumil.k8s.submit import (
+    JOB_ANNOTATION_QUESTION,
+    JOB_ANNOTATION_WORKSPACE_NAME,
     JOB_LABEL_OWNER,
+    JOB_LABEL_RUN_ID,
     JOB_LABEL_RUN_KIND,
     JOB_LABEL_RUN_KIND_VALUE,
+    JOB_LABEL_WORKSPACE,
     NAMESPACE,
+    QUESTION_ANNOTATION_MAX_CHARS,
     _build_container_command,
     _build_job,
     _job_name,
@@ -28,6 +33,8 @@ from rumil.k8s.submit import (
 from rumil.k8s.types import OrchestratorRunRequest
 from rumil.settings import override_settings
 
+_RUN_ID = "00000000-0000-0000-0000-000000000001"
+
 
 def _spec(**overrides) -> OrchestratorRunRequest:
     payload: dict = {"question": "is the sky blue?", "budget": 1, "workspace": "wp"}
@@ -37,36 +44,41 @@ def _spec(**overrides) -> OrchestratorRunRequest:
 
 def test_container_command_starts_with_python_main_and_question():
     spec = _spec(question="why?", budget=3, workspace="myws")
-    cmd = _build_container_command(spec)
+    cmd = _build_container_command(spec, run_id=_RUN_ID)
     assert cmd[:3] == ["python", "main.py", "why?"]
 
 
 def test_container_command_forwards_budget_and_workspace():
     spec = _spec(budget=7, workspace="ws")
-    cmd = _build_container_command(spec)
+    cmd = _build_container_command(spec, run_id=_RUN_ID)
     assert "--budget" in cmd and cmd[cmd.index("--budget") + 1] == "7"
     assert "--workspace" in cmd and cmd[cmd.index("--workspace") + 1] == "ws"
 
 
+def test_container_command_forwards_run_id():
+    cmd = _build_container_command(_spec(), run_id=_RUN_ID)
+    assert "--run-id" in cmd and cmd[cmd.index("--run-id") + 1] == _RUN_ID
+
+
 def test_container_command_pins_db_prod_and_executor_local():
     """The in-pod CLI must NOT recurse: --db prod --executor local always."""
-    cmd = _build_container_command(_spec())
+    cmd = _build_container_command(_spec(), run_id=_RUN_ID)
     assert cmd[cmd.index("--db") + 1] == "prod"
     assert cmd[cmd.index("--executor") + 1] == "local"
 
 
 def test_container_command_does_not_forward_prod_shorthand():
-    cmd = _build_container_command(_spec())
+    cmd = _build_container_command(_spec(), run_id=_RUN_ID)
     assert "--prod" not in cmd
 
 
 def test_container_command_forwards_smoke_test_flag():
-    cmd = _build_container_command(_spec(smoke_test=True))
+    cmd = _build_container_command(_spec(smoke_test=True), run_id=_RUN_ID)
     assert "--smoke-test" in cmd
 
 
 def test_container_command_forwards_auto_summary_as_bare_summary_flag():
-    cmd = list(_build_container_command(_spec(auto_summary=True)))
+    cmd = list(_build_container_command(_spec(auto_summary=True), run_id=_RUN_ID))
     assert "--summary" in cmd
     # The flag must NOT be followed by a value; main.py's argparse uses
     # nargs="?" with const="__auto__", which only triggers when --summary
@@ -76,20 +88,20 @@ def test_container_command_forwards_auto_summary_as_bare_summary_flag():
 
 
 def test_container_command_forwards_auto_self_improve_as_bare_flag():
-    cmd = list(_build_container_command(_spec(auto_self_improve=True)))
+    cmd = list(_build_container_command(_spec(auto_self_improve=True), run_id=_RUN_ID))
     assert "--self-improve" in cmd
     idx = cmd.index("--self-improve")
     assert idx == len(cmd) - 1 or cmd[idx + 1].startswith("--")
 
 
 def test_container_command_omits_auto_flags_by_default():
-    cmd = _build_container_command(_spec())
+    cmd = _build_container_command(_spec(), run_id=_RUN_ID)
     assert "--summary" not in cmd
     assert "--self-improve" not in cmd
 
 
 def test_container_command_omits_unset_optional_flags():
-    cmd = _build_container_command(_spec())
+    cmd = _build_container_command(_spec(), run_id=_RUN_ID)
     assert "--smoke-test" not in cmd
     assert "--available-moves" not in cmd
     assert "--name" not in cmd
@@ -97,7 +109,7 @@ def test_container_command_omits_unset_optional_flags():
 
 def test_container_command_forwards_value_flags():
     spec = _spec(available_moves="extra", run_name="my-run", ingest_num_claims=8)
-    cmd = _build_container_command(spec)
+    cmd = _build_container_command(spec, run_id=_RUN_ID)
     assert cmd[cmd.index("--available-moves") + 1] == "extra"
     assert cmd[cmd.index("--name") + 1] == "my-run"
     assert cmd[cmd.index("--ingest-num-claims") + 1] == "8"
@@ -164,6 +176,7 @@ def test_build_job_stamps_dynamic_fields():
         spec,
         name="rumil-orch-ws-aaaa",
         owner_user_id="user-123",
+        run_id=_RUN_ID,
         image="image:tag",
         env=[client.V1EnvVar(name="A", value="1")],
         env_from=[
@@ -174,12 +187,50 @@ def test_build_job_stamps_dynamic_fields():
     assert body["metadata"]["namespace"] == NAMESPACE
     assert body["metadata"]["labels"][JOB_LABEL_RUN_KIND] == JOB_LABEL_RUN_KIND_VALUE
     assert body["metadata"]["labels"][JOB_LABEL_OWNER] == "user-123"
+    assert body["metadata"]["labels"][JOB_LABEL_RUN_ID] == _RUN_ID
+    assert body["metadata"]["labels"][JOB_LABEL_WORKSPACE] == "ws"
+    assert body["metadata"]["annotations"][JOB_ANNOTATION_WORKSPACE_NAME] == "ws"
+    assert body["metadata"]["annotations"][JOB_ANNOTATION_QUESTION] == "q"
 
     container = body["spec"]["template"]["spec"]["containers"][0]
     assert container["image"] == "image:tag"
     assert container["command"][:3] == ["python", "main.py", "q"]
+    assert "--run-id" in container["command"]
     assert {e["name"] for e in container["env"]} == {"A"}
     assert container["envFrom"][0]["secretRef"]["name"] == "rumil-api-secrets"
+
+
+def test_build_job_preserves_unslugged_workspace_in_annotation():
+    """Workspace label is DNS-1123 slugged, but annotation keeps the original."""
+    spec = _spec(workspace="My Research Project")
+    body = _build_job(
+        spec,
+        name="x",
+        owner_user_id="",
+        run_id=_RUN_ID,
+        image="img",
+        env=[],
+        env_from=[],
+    )
+    assert body["metadata"]["labels"][JOB_LABEL_WORKSPACE] == "my-research-project"
+    assert body["metadata"]["annotations"][JOB_ANNOTATION_WORKSPACE_NAME] == "My Research Project"
+
+
+def test_build_job_truncates_long_question_annotation():
+    spec = _spec(question="q" * 500)
+    body = _build_job(
+        spec,
+        name="x",
+        owner_user_id="",
+        run_id=_RUN_ID,
+        image="img",
+        env=[],
+        env_from=[],
+    )
+    assert (
+        len(body["metadata"]["annotations"][JOB_ANNOTATION_QUESTION])
+        == QUESTION_ANNOTATION_MAX_CHARS
+    )
 
 
 def test_build_job_preserves_static_lifecycle_settings():
@@ -187,6 +238,7 @@ def test_build_job_preserves_static_lifecycle_settings():
         _spec(),
         name="x",
         owner_user_id="",
+        run_id=_RUN_ID,
         image="img",
         env=[],
         env_from=[],
@@ -197,7 +249,9 @@ def test_build_job_preserves_static_lifecycle_settings():
 
 
 def test_build_job_omits_owner_label_when_anonymous():
-    body = _build_job(_spec(), name="x", owner_user_id="", image="img", env=[], env_from=[])
+    body = _build_job(
+        _spec(), name="x", owner_user_id="", run_id=_RUN_ID, image="img", env=[], env_from=[]
+    )
     assert JOB_LABEL_OWNER not in (body["metadata"]["labels"] or {})
 
 

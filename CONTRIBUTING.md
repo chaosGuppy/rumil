@@ -17,8 +17,8 @@ uv sync
 supabase start
 
 # 4. Env files
-cp .env.example .env                            # fill in ANTHROPIC_API_KEY
-cp frontend/.env.example frontend/.env
+cp .env.template .env                           # fill in ANTHROPIC_API_KEY
+cp frontend/.env.template frontend/.env
 
 # 5. Install git pre-commit hook
 uv run pre-commit install

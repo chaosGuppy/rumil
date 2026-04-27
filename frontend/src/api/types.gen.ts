@@ -2515,6 +2515,50 @@ export type ProposedSubquestion = {
 };
 
 /**
+ * ProvenanceSummary
+ *
+ * Per-axis ``value -> row_count`` describing what the aggregate
+ * averaged over.
+ *
+ * Lets the UI declare the slice each /results matrix sits on top of:
+ * a 60% cell averaged across one prompt_hash means something
+ * different than 60% across five. Keys are the axis name; values are
+ * a ``{value: count}`` map of how many surviving rows had that value.
+ */
+export type ProvenanceSummary = {
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: {
+        [key: string]: number;
+    };
+    /**
+     * Judge Model
+     */
+    judge_model: {
+        [key: string]: number;
+    };
+    /**
+     * Judge Prompt Hash
+     */
+    judge_prompt_hash: {
+        [key: string]: number;
+    };
+    /**
+     * Judge Version
+     */
+    judge_version: {
+        [key: string]: number;
+    };
+    /**
+     * Sampling Hash
+     */
+    sampling_hash: {
+        [key: string]: number;
+    };
+};
+
+/**
  * QuestionDedupeEventOut
  */
 export type QuestionDedupeEventOut = {
@@ -2788,6 +2832,7 @@ export type ResultsBundle = {
      * Active Prefix Label
      */
     active_prefix_label: string;
+    provenance: ProvenanceSummary;
 };
 
 /**

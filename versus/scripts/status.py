@@ -25,6 +25,7 @@ sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
 from versus import config, jsonl, judge, prepare  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
+from versus import mainline as versus_mainline  # noqa: E402
 from versus import paraphrase as _paraphrase  # noqa: E402
 
 
@@ -38,7 +39,7 @@ def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
         if "source_id" not in d:
             # Legacy pre-multi-source JSON — skip. Re-fetch to upgrade.
             continue
-        if d.get("schema_version") != versus_essay.SCHEMA_VERSION:
+        if not versus_mainline.is_current_schema(d):
             # Older schema — the API's staleness gate excludes these from
             # ``current_prefix_hashes`` so rows against them show as
             # "essay-not-current" in /versus. Match that here: drop the

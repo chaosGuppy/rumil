@@ -25,6 +25,7 @@ sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
 from versus import complete, config, prepare, sources  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
+from versus import mainline as versus_mainline  # noqa: E402
 
 
 def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_essay.Essay | None:
@@ -41,7 +42,7 @@ def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_ess
     d = json.loads(p.read_text())
     if "source_id" not in d:
         return None
-    if d.get("schema_version") != versus_essay.SCHEMA_VERSION:
+    if not versus_mainline.is_current_schema(d):
         return None
     return versus_essay.Essay(
         id=d["id"],

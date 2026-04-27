@@ -26,6 +26,7 @@ from versus import diagnostics as versus_diagnostics
 from versus import essay as versus_essay
 from versus import jsonl as versus_jsonl
 from versus import judge as versus_judge
+from versus import mainline as versus_mainline
 from versus import paraphrase as versus_paraphrase
 from versus import prepare as versus_prepare
 from versus import view as versus_view
@@ -157,7 +158,7 @@ def _build_essays_status(
             d = json.load(f)
         if "source_id" not in d:
             continue
-        if d.get("schema_version", 0) != versus_essay.SCHEMA_VERSION:
+        if not versus_mainline.is_current_schema(d):
             continue
         if d["id"] in exclude:
             continue
@@ -479,6 +480,23 @@ class PrefixVariantInfo(pydantic.BaseModel):
     include_headers: bool
 
 
+class ProvenanceSummary(pydantic.BaseModel):
+    """Per-axis ``value -> row_count`` describing what the aggregate
+    averaged over.
+
+    Lets the UI declare the slice each /results matrix sits on top of:
+    a 60% cell averaged across one prompt_hash means something
+    different than 60% across five. Keys are the axis name; values are
+    a ``{value: count}`` map of how many surviving rows had that value.
+    """
+
+    prefix_config_hash: dict[str, int]
+    judge_model: dict[str, int]
+    judge_prompt_hash: dict[str, int]
+    judge_version: dict[str, int]
+    sampling_hash: dict[str, int]
+
+
 class ResultsBundle(pydantic.BaseModel):
     conditions: list[str]
     criteria: list[str]
@@ -502,6 +520,7 @@ class ResultsBundle(pydantic.BaseModel):
     rows_total_before_filter: int
     prefix_variants: list[PrefixVariantInfo]
     active_prefix_label: str
+    provenance: ProvenanceSummary
 
 
 router = APIRouter(
@@ -553,7 +572,7 @@ def list_essays(include_legacy: bool = False) -> list[EssayMeta]:
             d = json.load(f)
         if d.get("id") in exclude:
             continue
-        if not include_legacy and d.get("schema_version", 0) != versus_essay.SCHEMA_VERSION:
+        if not include_legacy and not versus_mainline.is_current_schema(d):
             continue
         out.append(
             EssayMeta(
@@ -999,6 +1018,7 @@ def get_results(
     # null-verdict placeholder and drift from the rendered totals.
     source_index = _build_completion_source_index(cfg)
     rows: list[JudgmentRow] = []
+    matrix_input_rows: list[dict] = []
     total_judgments = 0
     rows_total_before_filter = 0
     stale_count = 0
@@ -1018,6 +1038,7 @@ def get_results(
         if not include_stale and is_stale:
             continue
         rows_total_before_filter += 1
+        matrix_input_rows.append(row)
         if any_filter and not _row_matches_filters(
             row,
             filter_gen=filter_gen,
@@ -1068,6 +1089,15 @@ def get_results(
         for sid, s in sorted(source_stats.items(), key=lambda x: (x[0] != "human", x[0]))
     ]
 
+    provenance_axes = versus_mainline.summarize_provenance(matrix_input_rows)
+    provenance = ProvenanceSummary(
+        prefix_config_hash=provenance_axes["prefix_config_hash"],
+        judge_model=provenance_axes["judge_model"],
+        judge_prompt_hash=provenance_axes["judge_prompt_hash"],
+        judge_version=provenance_axes["judge_version"],
+        sampling_hash=provenance_axes["sampling_hash"],
+    )
+
     return ResultsBundle(
         conditions=conditions,
         criteria=criteria,
@@ -1079,6 +1109,7 @@ def get_results(
         completion_per_source=completion_per_source,
         small_grid=small_grid,
         rows=rows,
+        provenance=provenance,
         total_judgments=total_judgments,
         total_completions=total_completions,
         sources_summary=sources_summary,

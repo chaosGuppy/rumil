@@ -12,6 +12,7 @@ Set ANTHROPIC_API_KEY in your environment before running.
 import argparse
 import asyncio
 import dataclasses
+import io
 import json
 import logging
 import sys
@@ -53,6 +54,19 @@ from rumil.settings import Settings, _settings_var, get_settings
 from rumil.sources import create_source_page, run_ingest_calls
 from rumil.summary import generate_summary, save_summary
 from rumil.tracing import get_langfuse
+
+
+def _reconfigure_stdout_utf8() -> None:
+    """Reconfigure stdout to UTF-8 with replacement on Windows consoles.
+
+    LLM output regularly contains characters outside the cp1252 default
+    Windows codepage (em-dashes, arrows, smart quotes). Without this, a
+    print() of such content raises UnicodeEncodeError. Safe to call
+    repeatedly. No-op when stdout isn't a TextIOWrapper (e.g. captured
+    in tests).
+    """
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 def _maybe_print_langfuse_session(db: DB, *, indent: str = "") -> None:
@@ -656,8 +670,7 @@ async def cmd_draft_memos(
         refine_max_rounds=refine_max_rounds,
     )
 
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _reconfigure_stdout_utf8()
 
     print("\n--- Draft summary ---\n")
     produced = 0
@@ -707,8 +720,7 @@ async def cmd_scan_memos(
     scan = await scan_for_memos(question.id, db, max_depth=max_depth)
     path = save_memo_scan(scan, question.headline)
 
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _reconfigure_stdout_utf8()
     print(render_scan_summary(scan))
     print(f"\n---\nMemo scan saved to: {path}")
 

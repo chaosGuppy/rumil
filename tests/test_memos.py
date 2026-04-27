@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import subprocess
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -32,20 +33,29 @@ from rumil.models import (
 )
 
 
-def _candidate(**overrides) -> MemoCandidate:
-    base = dict(
-        title="Default",
-        headline_claim="A headline.",
-        content_guess="A guess.",
-        importance=3,
-        surprise=3,
-        why_important="It is.",
-        why_surprising="It is.",
-        relevant_page_ids=["aaaaaaaa"],
-        epistemic_signals="",
+def _candidate(
+    *,
+    title: str = "Default",
+    headline_claim: str = "A headline.",
+    content_guess: str = "A guess.",
+    importance: int = 3,
+    surprise: int = 3,
+    why_important: str = "It is.",
+    why_surprising: str = "It is.",
+    relevant_page_ids: Sequence[str] = ("aaaaaaaa",),
+    epistemic_signals: str = "",
+) -> MemoCandidate:
+    return MemoCandidate(
+        title=title,
+        headline_claim=headline_claim,
+        content_guess=content_guess,
+        importance=importance,
+        surprise=surprise,
+        why_important=why_important,
+        why_surprising=why_surprising,
+        relevant_page_ids=relevant_page_ids,
+        epistemic_signals=epistemic_signals,
     )
-    base.update(overrides)
-    return MemoCandidate(**base)
 
 
 def test_memo_candidate_accepts_valid_scores():
@@ -238,7 +248,7 @@ async def test_scan_for_memos_end_to_end(tmp_db, question_page):
         PageLink(
             from_page_id=judgement.id,
             to_page_id=question_page.id,
-            link_type=LinkType.JUDGEMENT,
+            link_type=LinkType.ANSWERS,
         )
     )
 

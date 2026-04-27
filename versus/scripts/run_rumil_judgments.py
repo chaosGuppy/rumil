@@ -78,9 +78,8 @@ def main() -> None:
             "(claude-*), or an OpenRouter id (provider/model). For the "
             "default blind path: repeat to judge with multiple models; "
             "claude-* go direct to Anthropic, others via OpenRouter; "
-            "defaults to the union of cfg.judging.models and "
-            "cfg.judging.anthropic_models. For ws/orch: pass at most one "
-            "(default: opus)."
+            "defaults to cfg.judging.models. For ws/orch: pass at most "
+            "one (default: opus)."
         ),
     )
     ap.add_argument(
@@ -204,10 +203,9 @@ def main() -> None:
         if args.model:
             models = [resolve_model_alias(m) for m in args.model]
         else:
-            # Default: union of configured OR + anthropic-direct lists.
-            models = [*cfg.judging.models, *cfg.judging.anthropic_models]
+            models = list(cfg.judging.models)
         if not models:
-            ap.error("no models passed and config has no judging.models / anthropic_models")
+            ap.error("no models passed and cfg.judging.models is empty")
         dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
         judge.run_blind(
             cfg,

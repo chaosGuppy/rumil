@@ -51,7 +51,6 @@ class ParaphrasingCfg(pydantic.BaseModel):
 
 class JudgingCfg(pydantic.BaseModel):
     models: list[str]
-    anthropic_models: list[str] = pydantic.Field(default_factory=list)
     criteria: list[str] = pydantic.Field(default_factory=lambda: ["standalone_quality"])
     include_human_as_contestant: bool = True
     max_tokens: int = 32000

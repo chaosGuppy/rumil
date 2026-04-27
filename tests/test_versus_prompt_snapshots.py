@@ -57,7 +57,7 @@ _BUMP_GUIDANCE = {
 EXPECTED_HASHES = {
     "versus-general-quality.md": "8a68be48177decd3",
     "versus-grounding.md": "75f847187d73ca34",
-    "versus-judge-shell.md": "6ffb60a73631d148",
+    "versus-judge-shell.md": "18e4cfd2207c7ca8",
 }
 
 

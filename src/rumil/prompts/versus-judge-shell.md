@@ -4,18 +4,8 @@ You are judging two continuations — **Continuation A** and **Continuation B** 
 
 ## What you are looking at
 
-The essay opening and the two continuations are included in the question page at the scope of this call. Use `load_page` on the scope question to read them if they aren't already in your context.
-
-## Optional: use workspace material
-
-If the essay's subject matter overlaps with material in the active workspace, you have three tools available. Using them is optional — a judgment grounded purely in the two texts is fine. But where relevant workspace pages exist (prior claims on the topic, established positions, source material), consulting them can make the judgment better-grounded.
-
-- `explore_subgraph({"page_id": "..."})` — render a subtree of the workspace graph rooted at the given page.
-- `load_page({"page_id": "...", "detail": "content" | "abstract"})` — load one page's full content or abstract.
-- `search_workspace({"query": "..."})` — semantic search across the workspace. Useful for finding whether a topic the continuation engages with has existing coverage.
-
-Cite workspace pages by their short ID when they bear on the judgment.
-
+{location_desc}
+{tool_section}
 ## Preference scale
 
 End your response with exactly one of these ratings on its own line. **Match the label wording exactly** so it can be parsed.
@@ -42,10 +32,10 @@ The specific dimension you are judging on is below.
 
 Produce a structured comparison. Use whatever structure the dimension prompt above asks for, but the comparison must:
 
-- Be grounded in concrete observations from the two continuations (quote specific passages; reference workspace page IDs when you use them).
+- Be grounded in concrete observations from the two continuations (quote specific passages{output_extras}).
 - Explicitly contrast the two rather than describing each in isolation.
 - End with the preference rating on its own line, using one of the exact labels above.
 
 ## Convergence
 
-Don't stop until your sense of the difference between A and B has converged. But also don't over-explore — for short essay continuations, one careful pass through each text, optionally plus a small number of workspace lookups, is usually enough.
+Don't stop until your sense of the difference between A and B has converged. But also don't over-explore — for short essay continuations, one careful pass through each text{convergence_extras} is usually enough.

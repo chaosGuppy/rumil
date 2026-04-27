@@ -514,7 +514,9 @@ async def run_ws(
         compute_tool_prompt_hash,
     )
 
-    prompt_hash_cache = {k: compute_prompt_hash(b) for k, b in task_body_cache.items()}
+    prompt_hash_cache = {
+        k: compute_prompt_hash(b, with_tools=True) for k, b in task_body_cache.items()
+    }
     thash = compute_tool_prompt_hash()
     qhash = compute_pair_surface_hash()
 
@@ -695,7 +697,9 @@ async def run_orch(
         compute_tool_prompt_hash,
     )
 
-    prompt_hash_cache = {k: compute_prompt_hash(b) for k, b in task_body_cache.items()}
+    prompt_hash_cache = {
+        k: compute_prompt_hash(b, with_tools=True) for k, b in task_body_cache.items()
+    }
     thash = compute_tool_prompt_hash()
     qhash = compute_pair_surface_hash()
 

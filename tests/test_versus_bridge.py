@@ -438,14 +438,29 @@ def test_compute_prompt_hash_changes_when_shell_file_changes(tmp_path, monkeypat
 
 
 def test_build_system_prompt_inserts_at_known_placeholder():
-    from rumil.prompts import PROMPTS_DIR
-
     body = "SENTINEL_BODY_TOKEN_7q"
-    composed = build_system_prompt(body)
-    shell_raw = (PROMPTS_DIR / "versus-judge-shell.md").read_text()
-    assert "{task_body}" in shell_raw
-    expected = shell_raw.replace("{task_body}", body)
-    assert composed == expected
+    blind = build_system_prompt(body, with_tools=False)
+    tools = build_system_prompt(body, with_tools=True)
+    # Body lands inside the dimension section in both modes.
+    assert f"---\n\n{body}\n\n---" in blind
+    assert f"---\n\n{body}\n\n---" in tools
+    # No unfilled placeholders survive.
+    assert "{task_body}" not in blind
+    assert "{tool_section}" not in blind
+    assert "{location_desc}" not in blind
+    assert "{tool_section}" not in tools
+
+
+def test_build_system_prompt_diverges_on_with_tools():
+    body = "SENTINEL"
+    assert build_system_prompt(body, with_tools=False) != build_system_prompt(body, with_tools=True)
+    # Tools-only content should appear only in with_tools=True.
+    tools = build_system_prompt(body, with_tools=True)
+    blind = build_system_prompt(body, with_tools=False)
+    assert "load_page" in tools
+    assert "load_page" not in blind
+    assert "search_workspace" in tools
+    assert "search_workspace" not in blind
 
 
 # Question page extra metadata: no source id disclosure -------------------

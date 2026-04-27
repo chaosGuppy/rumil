@@ -79,19 +79,70 @@ def get_rumil_dimension_body(name: str) -> str:
     return path.read_text()
 
 
-def build_system_prompt(task_body: str) -> str:
-    """Compose the versus-judge shell with the task body slotted in."""
-    shell = (_PROMPTS_DIR / "versus-judge-shell.md").read_text()
-    return shell.replace("{task_body}", task_body)
+# Substitution dicts for the versus-judge-shell template. Edits to the shell
+# file (preference scale, dimension framing, output format) propagate to both
+# modes; edits to a dict change only that mode. Keep _TOOLS_VARS byte-equivalent
+# to the pre-split shell content so ws/orch prompt hashes stay stable.
+_BLIND_VARS: dict[str, str] = {
+    "location_desc": (
+        "The essay opening and the two continuations are inlined in the user message below."
+    ),
+    "tool_section": "",
+    "output_extras": "",
+    "convergence_extras": "",
+}
+
+_TOOLS_VARS: dict[str, str] = {
+    "location_desc": (
+        "The essay opening and the two continuations are included in "
+        "the question page at the scope of this call. Use `load_page` "
+        "on the scope question to read them if they aren't already in "
+        "your context."
+    ),
+    "tool_section": (
+        "\n## Optional: use workspace material\n\n"
+        "If the essay's subject matter overlaps with material in the "
+        "active workspace, you have three tools available. Using them "
+        "is optional — a judgment grounded purely in the two texts is "
+        "fine. But where relevant workspace pages exist (prior claims "
+        "on the topic, established positions, source material), "
+        "consulting them can make the judgment better-grounded.\n\n"
+        '- `explore_subgraph({"page_id": "..."})` — render a subtree '
+        "of the workspace graph rooted at the given page.\n"
+        '- `load_page({"page_id": "...", "detail": "content" | '
+        '"abstract"})` — load one page\'s full content or abstract.\n'
+        '- `search_workspace({"query": "..."})` — semantic search '
+        "across the workspace. Useful for finding whether a topic the "
+        "continuation engages with has existing coverage.\n\n"
+        "Cite workspace pages by their short ID when they bear on the "
+        "judgment.\n"
+    ),
+    "output_extras": "; reference workspace page IDs when you use them",
+    "convergence_extras": ", optionally plus a small number of workspace lookups,",
+}
 
 
-def compute_prompt_hash(task_body: str) -> str:
-    """Return a short hash of the composed system prompt.
+def build_system_prompt(task_body: str, *, with_tools: bool = False) -> str:
+    """Compose the versus-judge shell with the task body slotted in.
 
-    Covers both the shell and the task body, so any edit to either file
-    invalidates judge_model dedup keys naturally -- mirroring versus's
-    ``prefix_config_hash`` / ``sampling_hash`` discipline. 8 hex chars is
-    enough to distinguish prompt versions without cluttering the key.
+    ``with_tools=True`` produces the ws/orch shell (workspace-exploration
+    tools advertised, scope-question read instructions). ``with_tools=False``
+    (default) is the blind shell used by tool-less paths: the pair lives
+    inline in the user message, no tool guidance.
     """
     shell = (_PROMPTS_DIR / "versus-judge-shell.md").read_text()
-    return hashlib.sha256((shell + task_body).encode()).hexdigest()[:8]
+    vars_ = _TOOLS_VARS if with_tools else _BLIND_VARS
+    return shell.format(task_body=task_body, **vars_)
+
+
+def compute_prompt_hash(task_body: str, *, with_tools: bool = False) -> str:
+    """Return a short hash of the *composed* system prompt.
+
+    Hashes the rendered output, not the raw shell, so blind and tools modes
+    fork into independent hash spaces — editing tool-only content doesn't
+    shift blind hashes, and editing common content shifts both correctly.
+    8 hex chars is enough to distinguish prompt versions without cluttering
+    the key.
+    """
+    composed = build_system_prompt(task_body, with_tools=with_tools)
+    return hashlib.sha256(composed.encode()).hexdigest()[:8]

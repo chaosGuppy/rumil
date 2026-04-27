@@ -372,7 +372,7 @@ async def _judge_pair_ws_aware_inner(
         wrap_as_mcp_tool(search_llm_tool),
     ]
 
-    system_prompt = build_system_prompt(task_body)
+    system_prompt = build_system_prompt(task_body, with_tools=True)
     user_prompt = _build_ws_user_prompt(pair, question_id)
 
     allowed = [
@@ -516,7 +516,7 @@ async def _run_orch_closer(
         for t in (explore_llm_tool, load_page_llm_tool, search_llm_tool)
     ]
 
-    system_prompt = build_system_prompt(task_body)
+    system_prompt = build_system_prompt(task_body, with_tools=True)
     user_prompt = (
         "A research run has just finished investigating the pair comparison "
         "captured in the scope question. The rendered question (including "

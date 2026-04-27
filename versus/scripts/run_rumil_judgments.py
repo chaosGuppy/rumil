@@ -104,7 +104,7 @@ def main() -> None:
         help=(
             "Essay-adapted rumil dimension name, repeatable "
             "(default: general_quality). Requires a prompt at "
-            "prompts/versus-<name>.md."
+            "src/rumil/prompts/versus-<name>.md."
         ),
     )
     ap.add_argument(

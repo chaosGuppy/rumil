@@ -2,7 +2,7 @@
 name: rumil-versus-judge
 description: Run pairwise judgments on versus essay-continuation pairs using rumil-adjacent judge backends — direct Anthropic with versus prompt (text), Anthropic with rumil dimension prompt (rumil-text), rumil's SDK agent with workspace tools (ws), or a full orchestrator run per pair (orch). Use when the user wants to measure how well rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare Anthropic judges against OpenRouter judges in versus, evaluate whether workspace material improves judgment, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "--variant text|rumil-text|ws|orch [--workspace <name>] [--rumil-model opus|sonnet|haiku] [--dimension <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--model <id>...] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
+argument-hint: "--variant text|rumil-text|ws|orch [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -80,20 +80,18 @@ match what you see there.
 - `ANTHROPIC_API_KEY` resolves from `versus/.env`, then
   `<rumil-root>/.env`, then the process environment. Files override env
   so per-project `.env` takes precedence.
-- Anthropic models for the `text` variant come from
-  `versus/config.yaml` under `judging.anthropic_models`, overridable
-  via `--model`.
-- `rumil-text` / `ws` / `orch` variants take their model from
-  `--rumil-model opus|sonnet|haiku` (default: `opus`). The model is
-  passed explicitly through the bridge via
+- All variants take their model via `--model`. Accepts a short alias
+  (`opus` / `sonnet` / `haiku`) or a full Anthropic model id.
+- `text` variant: repeat `--model` for multi-model runs; defaults to
+  `judging.anthropic_models` in `versus/config.yaml`.
+- `rumil-text` / `ws` / `orch` variants: pass at most one `--model`
+  (default: `opus`). Passed explicitly through the bridge via
   `override_settings(rumil_model_override=...)` — no env-var
   ordering. Picking the model matters: opus and sonnet produce
   meaningfully different verdicts on the same pairs, so treat it as
   part of the judge identity.
-- `rumil-text` uses `--rumil-model` (default opus). It does not accept
-  `--model` — that flag is text-variant only. If you need a model not in
-  the alias list for `rumil-text`, add an entry to `RUMIL_MODEL_ALIASES`
-  in `run_rumil_judgments.py`.
+- New aliases land via `RUMIL_MODEL_ALIASES` in `src/rumil/settings.py`;
+  the script imports the dict from there.
 - Dimensions default to `general_quality`. Each dimension needs a
   prompt at `prompts/versus-<name>.md`. Currently available:
   `general_quality`, `grounding`. Adding more = drop a new prompt file
@@ -166,7 +164,7 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 - `--variant text --dry-run` — list pending Anthropic-text judgments
 - `--variant ws --workspace <WS> --dry-run` — list pending ws judgments
 - `--variant ws --workspace <WS> --limit 5` — run 5 ws judgments
-- `--variant ws --workspace <WS> --rumil-model sonnet --limit 5` — run on sonnet instead of opus
+- `--variant ws --workspace <WS> --model sonnet --limit 5` — run on sonnet instead of opus
 - `--variant ws --workspace <WS> --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
 - `--variant orch --workspace <WS> --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
 
@@ -215,7 +213,7 @@ are extrapolations.
 | orch | sonnet, budget=4 | ~$1-3 (varies with tool use + subtree depth) | $100-300 |
 | orch | opus, budget=4 | ~$3-10 | $300-1000 |
 
-Practical guidance: pair `--rumil-model sonnet` with the `ws` variant
+Practical guidance: pair `--model sonnet` with the `ws` variant
 for a much cheaper first pass that's still a real test of
 workspace-access discrimination (opus judges differently — see the
 methodology note below). For expensive paths, always start with
@@ -260,7 +258,7 @@ over-read any single number:
   discrimination.
 - **Opus and sonnet produce meaningfully different verdicts on the
   same pairs through ws.** Sonnet tracks OpenRouter consensus more
-  closely; opus is more human-biased. Treat `--rumil-model` as part
+  closely; opus is more human-biased. Treat `--model` as part
   of the judge identity, not an implementation detail.
 - **Rumil systematically disagrees with OpenRouter on the mini vs
   human pairs** (rumil prefers human, OpenRouter mostly picks mini)

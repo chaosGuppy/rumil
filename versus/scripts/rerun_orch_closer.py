@@ -151,7 +151,7 @@ async def main() -> None:
     ap.add_argument(
         "--model",
         required=True,
-        help="Anthropic model id (e.g. claude-sonnet-4-6). Same knob as --rumil-model.",
+        help="Anthropic model id (e.g. claude-sonnet-4-6). Same knob as run_rumil_judgments.py --model.",
     )
     ap.add_argument(
         "--task-name",

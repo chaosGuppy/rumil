@@ -39,7 +39,7 @@ envcascade.apply(
     rumil_root=RUMIL_ROOT,
 )
 
-from rumil.settings import RUMIL_MODEL_ALIASES  # noqa: E402
+from rumil.settings import RUMIL_MODEL_ALIASES, resolve_model_alias  # noqa: E402
 from versus import config, prepare, rumil_judge  # noqa: E402
 
 DEFAULT_DIMENSIONS = ("general_quality",)
@@ -70,27 +70,17 @@ def main() -> None:
         action="append",
         default=None,
         help=(
-            "Anthropic model id, repeatable. text variant only -- "
-            "rumil-text / ws / orch select their model via --rumil-model. "
-            "Overrides judging.anthropic_models."
+            "Model selection. Accepts a short alias "
+            f"({'/'.join(RUMIL_MODEL_ALIASES)}) or a full Anthropic id. "
+            "For --variant text, repeat to judge with multiple models "
+            "(overrides judging.anthropic_models). For ws/orch/rumil-text, "
+            "pass at most one (default: opus)."
         ),
     )
     ap.add_argument(
         "--workspace",
         default=None,
         help="Rumil workspace (project) name for ws/orch variants. Required for those variants; no default.",
-    )
-    ap.add_argument(
-        "--rumil-model",
-        choices=tuple(RUMIL_MODEL_ALIASES.keys()),
-        default="opus",
-        help=(
-            "Anthropic model for ws/orch/rumil-text variants "
-            "(opus=claude-opus-4-7, sonnet=claude-sonnet-4-6, "
-            "haiku=claude-haiku-4-5). Passed explicitly to the bridge "
-            "via a scoped settings override -- no env-var ordering. "
-            "Default: opus."
-        ),
     )
     ap.add_argument(
         "--dimension",
@@ -203,7 +193,11 @@ def main() -> None:
     print(f"[prefix] using variant {prefix_cfg.id!r}")
 
     if args.variant == "text":
-        models = args.model if args.model else list(cfg.judging.anthropic_models)
+        models = (
+            [resolve_model_alias(m) for m in args.model]
+            if args.model
+            else list(cfg.judging.anthropic_models)
+        )
         rumil_judge.run(
             cfg,
             models,
@@ -217,10 +211,14 @@ def main() -> None:
         )
         return
 
+    if args.model and len(args.model) > 1:
+        ap.error(
+            f"--variant {args.variant} takes at most one --model "
+            f"(got {len(args.model)}: {args.model})"
+        )
+    model_id = resolve_model_alias(args.model[0]) if args.model else RUMIL_MODEL_ALIASES["opus"]
+
     if args.variant == "rumil-text":
-        if args.model:
-            ap.error("--model is for --variant text only; use --rumil-model for rumil-text")
-        model_id = RUMIL_MODEL_ALIASES[args.rumil_model]
         dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
         rumil_judge.run_rumil_text(
             cfg,
@@ -240,7 +238,6 @@ def main() -> None:
     if not args.workspace:
         ap.error(f"--workspace is required for --variant {args.variant}")
 
-    model_id = RUMIL_MODEL_ALIASES[args.rumil_model]
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
 
     if args.variant == "ws":

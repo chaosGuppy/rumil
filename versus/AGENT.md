@@ -90,7 +90,7 @@ UI routes (`/versus`, `/versus/judge`, `/versus/inspect`, `/versus/results`) mou
 - `ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<ws>:<task>:p<hash>:v<N>:t<hash>:q<hash>`. Requires local Supabase.
 - `orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<ws>:b<N>:<task>:p<hash>:v<N>:t<hash>:q<hash>`. Requires local Supabase. Expensive.
 
-Model for ws/orch/rumil-text is passed explicitly through the bridge (`--rumil-model opus|sonnet|haiku`, default opus) — do not rely on `settings.model`. The bridge uses `override_settings(rumil_model_override=model)` to propagate to nested rumil calls.
+Model for ws/orch/rumil-text is passed explicitly through the bridge (`--model opus|sonnet|haiku|<full-id>`, default opus) — do not rely on `settings.model`. The bridge uses `override_settings(rumil_model_override=model)` to propagate to nested rumil calls.
 
 ## Known quirks
 

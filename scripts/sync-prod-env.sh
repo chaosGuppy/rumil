@@ -41,10 +41,7 @@ mkdir -p "$(dirname "$ENV_TARGET")"
 [[ -e "$ENV_TARGET" ]] || : > "$ENV_TARGET"
 chmod 600 "$ENV_TARGET" 2>/dev/null || true
 
-sops decrypt --output-type json "$SECRETS_FILE" | python3 - \
-    "$ENV_TARGET" \
-    "${#PROD_SECRET_KEYS[@]}" "${PROD_SECRET_KEYS[@]}" \
-    "${PROD_PLAIN_VALUES[@]}" <<'PY'
+read -r -d '' MERGE_PY <<'PY' || true
 import json
 import os
 import sys
@@ -107,3 +104,8 @@ except Exception:
 
 print(f"wrote {len(values)} prod var(s) to {env_path}: {', '.join(values)}")
 PY
+
+sops decrypt --output-type json "$SECRETS_FILE" | python3 -c "$MERGE_PY" \
+    "$ENV_TARGET" \
+    "${#PROD_SECRET_KEYS[@]}" "${PROD_SECRET_KEYS[@]}" \
+    "${PROD_PLAIN_VALUES[@]}"

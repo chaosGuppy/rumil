@@ -769,6 +769,20 @@
   font-size: 12px;
 }
 
+.trace-langfuse-link {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  margin-left: 14px;
+  color: #999;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+
+.trace-langfuse-link:hover {
+  color: #444;
+  text-decoration: underline;
+}
+
 .trace-info-text {
   color: #4a7a8a;
   font-size: 13px;
@@ -1537,6 +1551,8 @@
   .trace-cache-pct { color: #4dd88a; }
   .trace-token-count { color: #666; }
   .trace-duration { color: #666; }
+  .trace-langfuse-link { color: #666; }
+  .trace-langfuse-link:hover { color: #bbb; }
   .trace-info-text { color: #5ba8b8; }
   .trace-warning-text { color: #d4a017; }
   .trace-error-text { color: #e55; }

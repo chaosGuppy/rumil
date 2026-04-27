@@ -43,6 +43,7 @@ from rumil.api.schemas import (
     RunTraceTreeOut,
     TraceEventOut,
 )
+from rumil.api.versus_router import router as versus_router
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
@@ -80,6 +81,9 @@ app.add_middleware(
 )
 
 app.include_router(jobs_router)
+
+
+app.include_router(versus_router)
 
 
 async def _assert_page_access(db: DB, page_id: str) -> Page:
@@ -478,16 +482,29 @@ async def get_run_trace_tree(
     _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
-    await _assert_run_access(db, run_id)
-    question_id = await db.get_run_question_id(run_id)
+    # Detect staging from the runs row up front so page reads below use a
+    # DB with the right visibility. Without this, staged runs (including
+    # every versus ws/orch judgment) come back with a null Question page
+    # and empty scope-page summaries because the default DB is
+    # baseline-only.
+    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
+    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
+    if not run_data:
+        raise HTTPException(status_code=404, detail="Run not found")
+    is_staged = bool(run_data[0].get("staged"))
+    run_config: dict = run_data[0].get("config") or {}  # type: ignore[assignment]
+
+    read_db = db.view_as_staged(run_id) if is_staged else db
+
+    question_id = await read_db.get_run_question_id(run_id)
     question_page = None
     if question_id:
-        question_page = await db.get_page(question_id)
-    raw_rows = await db.get_call_rows_for_run(run_id)
+        question_page = await read_db.get_page(question_id)
+    raw_rows = await read_db.get_call_rows_for_run(run_id)
     calls = [_row_to_call(r) for r in raw_rows]
 
     scope_ids = [c.scope_page_id for c in calls if c.scope_page_id]
-    scope_pages = await db.get_pages_by_ids(scope_ids)
+    scope_pages = await read_db.get_pages_by_ids(scope_ids)
     scope_summaries = {pid: p.headline for pid, p in scope_pages.items()}
 
     nodes: list[CallNodeOut] = []
@@ -504,12 +521,6 @@ async def get_run_trace_tree(
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
-    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
-    is_staged = bool(run_data and run_data[0].get("staged"))
-    run_config: dict = {}
-    if run_data:
-        run_config = run_data[0].get("config") or {}  # type: ignore[assignment]
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,

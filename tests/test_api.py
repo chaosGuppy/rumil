@@ -1,11 +1,22 @@
 """Tests for the API endpoints."""
 
+import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from rumil.api.app import app, require_admin
 from rumil.api.auth import AuthUser, get_current_user
 from rumil.database import DB
+from rumil.models import (
+    Call,
+    CallStatus,
+    CallType,
+    Page,
+    PageLayer,
+    PageType,
+    Workspace,
+)
 
 
 @pytest.fixture
@@ -132,3 +143,98 @@ async def test_db_closed_even_when_endpoint_raises_http_exception(
     assert resp.status_code == 404
     assert db_close_spy.created == 1
     assert db_close_spy.closed == 1
+
+
+async def test_trace_tree_surfaces_staged_question_and_scope(api_client):
+    """Trace-tree for a staged run must return the Question page and scope
+    summaries, not nulls. Regression for the versus case where staged runs'
+    trace-tree responses came back with empty scope_page_summary because the
+    endpoint read through a baseline-only DB.
+    """
+    run_id = str(uuid.uuid4())
+    staged = await DB.create(run_id=run_id, staged=True)
+    project = await staged.get_or_create_project(f"test-tt-{run_id[:8]}")
+    staged.project_id = project.id
+    await staged.init_budget(100)
+
+    try:
+        question = Page(
+            page_type=PageType.QUESTION,
+            layer=PageLayer.SQUIDGY,
+            workspace=Workspace.RESEARCH,
+            content="Does view_as_staged surface staged pages to the trace-tree?",
+            headline="view_as_staged trace-tree question",
+        )
+        await staged.save_page(question)
+
+        call = Call(
+            call_type=CallType.FIND_CONSIDERATIONS,
+            workspace=Workspace.RESEARCH,
+            scope_page_id=question.id,
+            status=CallStatus.COMPLETE,
+        )
+        await staged.save_call(call)
+
+        await staged.create_run(
+            name="test staged trace-tree",
+            question_id=question.id,
+            config={},
+        )
+
+        resp = await api_client.get(f"/api/runs/{run_id}/trace-tree")
+        assert resp.status_code == 200
+        body = resp.json()
+
+        assert body["question"] is not None, (
+            "staged run's Question page came back null; view_as_staged not applied"
+        )
+        assert body["question"]["id"] == question.id
+        assert body["question"]["headline"] == "view_as_staged trace-tree question"
+
+        scoped_nodes = [n for n in body["calls"] if n["call"]["scope_page_id"] == question.id]
+        assert scoped_nodes, "expected a call scoped to the staged question"
+        assert scoped_nodes[0]["scope_page_summary"], (
+            "scope_page_summary came back empty; staged page not visible to trace-tree reads"
+        )
+    finally:
+        await staged.delete_run_data(delete_project=True)
+        await staged.close()
+
+
+async def test_trace_tree_staged_run_does_not_open_extra_db(api_client, db_close_spy):
+    """The staged-run path must not open a fresh Supabase client just to flip
+    the staging flags. view_as_staged reuses the dependency DB's client, so
+    exactly one DB should be created and closed per request."""
+    run_id = str(uuid.uuid4())
+    staged = await DB.create(run_id=run_id, staged=True)
+    project = await staged.get_or_create_project(f"test-tt2-{run_id[:8]}")
+    staged.project_id = project.id
+    await staged.init_budget(100)
+
+    try:
+        question = Page(
+            page_type=PageType.QUESTION,
+            layer=PageLayer.SQUIDGY,
+            workspace=Workspace.RESEARCH,
+            content="q",
+            headline="q",
+        )
+        await staged.save_page(question)
+        await staged.create_run(name="tt", question_id=question.id, config={})
+
+        created_before_request = db_close_spy.created
+        closed_before_request = db_close_spy.closed
+
+        resp = await api_client.get(f"/api/runs/{run_id}/trace-tree")
+        assert resp.status_code == 200
+
+        request_created = db_close_spy.created - created_before_request
+        request_closed = db_close_spy.closed - closed_before_request
+        assert request_created == 1, (
+            f"expected 1 DB.create for the request, got {request_created} — "
+            "did the staged path reintroduce a fresh client?"
+        )
+        assert request_closed == 1
+    finally:
+        await staged.delete_run_data(delete_project=True)
+        await staged.close()

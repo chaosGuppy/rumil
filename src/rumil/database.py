@@ -318,6 +318,23 @@ class DB:
         db._prod = self._prod
         return db
 
+    def view_as_staged(self, run_id: str) -> "DB":
+        """Return a sibling DB with staged visibility for ``run_id``.
+
+        Reuses the same Supabase client (no new HTTP connection, no close
+        needed) and only flips the staging flags. Use this for short-lived
+        reads that need to see a staged run's mutations — e.g. surfacing a
+        staged run's pages in the trace-tree API.
+        """
+        db = DB(
+            run_id=run_id,
+            client=self.client,
+            project_id=self.project_id,
+            staged=True,
+        )
+        db._prod = self._prod
+        return db
+
     async def close(self) -> None:
         """Close the underlying HTTP connections."""
         try:
@@ -490,12 +507,24 @@ class DB:
         include_hidden: bool = False,
         owner_user_id: str | None = None,
     ) -> list[Project]:
-        query = self.client.table("projects").select("*").order("created_at")
-        if not include_hidden:
-            query = query.eq("hidden", False)
-        if owner_user_id:
-            query = query.eq("owner_user_id", owner_user_id)
-        rows = _rows(await self._execute(query))
+        # PostgREST's max-rows caps .limit() at 1000, so we paginate with
+        # range() until we get a short page. Without this, newly created
+        # workspaces fall off the end once test-* projects accumulate past
+        # 1000 — list_projects would silently return a stale prefix.
+        page_size = 1000
+        start = 0
+        rows: list[dict] = []
+        while True:
+            query = self.client.table("projects").select("*").order("created_at")
+            if not include_hidden:
+                query = query.eq("hidden", False)
+            if owner_user_id:
+                query = query.eq("owner_user_id", owner_user_id)
+            page = _rows(await self._execute(query.range(start, start + page_size - 1)))
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+            start += page_size
         return [_row_to_project(r) for r in rows]
 
     async def is_admin_user(self, user_id: str) -> bool:

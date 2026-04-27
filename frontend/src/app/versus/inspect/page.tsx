@@ -11,6 +11,7 @@ import { API_BASE, serverFetch } from "@/lib/api-base";
 import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
 import { VersusHeader } from "@/components/versus/VersusHeader";
 import { InspectModelFilter } from "@/components/versus/InspectModelFilter";
+import { LineDiff } from "@/components/versus/LineDiff";
 import "../versus.css";
 
 export const metadata: Metadata = { title: "versus · inspect" };
@@ -258,15 +259,23 @@ export default async function VersusInspectPage({
                   <dd><code>{head.detail.schema_version}</code></dd>
                   <dt>prefix variants</dt>
                   <dd>
-                    {variantBundles.map((v, i) => (
+                    {variantBundles.map((v) => (
                       <span key={v.id} style={{ marginRight: 10 }}>
                         <VariantPill vid={v.id} />{" "}
                         <code className="versus-muted" style={{ fontSize: 11 }}>
                           {v.detail.prefix_config_hash}
                         </code>
-                        {i < variantBundles.length - 1 ? "" : ""}
                       </span>
                     ))}
+                  </dd>
+                  <dt>judge_prompt_hash</dt>
+                  <dd>
+                    <code className="versus-muted" style={{ fontSize: 11 }}>
+                      p{head.detail.judge_prompt_hash}
+                    </code>{" "}
+                    <span className="versus-muted" style={{ fontSize: 11 }}>
+                      (criteria[0]: <code>{head.detail.criteria[0]}</code>, blind path)
+                    </span>
                   </dd>
                 </dl>
               </details>
@@ -298,6 +307,23 @@ export default async function VersusInspectPage({
                     {v.detail.completion_prompt}
                   </CollapsibleBlock>
                 ))}
+                {variantBundles.length === 2 && (
+                  <details className="inspect-collapsible">
+                    <summary>
+                      diff{" "}
+                      <VariantPill vid={variantBundles[0].id} />{" → "}
+                      <VariantPill vid={variantBundles[1].id} />
+                    </summary>
+                    <div className="inspect-diff-wrap">
+                      <LineDiff
+                        a={variantBundles[0].detail.completion_prompt}
+                        b={variantBundles[1].detail.completion_prompt}
+                        labelA={variantBundles[0].id}
+                        labelB={variantBundles[1].id}
+                      />
+                    </div>
+                  </details>
+                )}
               </div>
               <div className="inspect-prompts-col" id="prompts-judging">
                 <h3 className="inspect-prompts-coltitle">judging</h3>
@@ -890,6 +916,55 @@ const INSPECT_STYLES = `
   background: var(--color-surface);
   padding: 10px 12px;
   display: flex; flex-direction: column; gap: 6px;
+}
+
+.inspect-diff-wrap {
+  border-top: 1px solid var(--color-border);
+  background: var(--background);
+}
+.line-diff {
+  font: 12px/1.5 ui-monospace, Menlo, monospace;
+}
+.line-diff-head {
+  display: flex; gap: 16px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 11px;
+}
+.line-diff-label.del { color: hsl(0 60% 40%); }
+.line-diff-label.add { color: hsl(140 50% 32%); }
+.line-diff-body {
+  margin: 0;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 60vh;
+  overflow: auto;
+}
+.line-diff-line { display: inline; }
+.line-diff-line.del {
+  background: hsl(0 70% 95%);
+  color: hsl(0 60% 35%);
+}
+.line-diff-line.add {
+  background: hsl(140 60% 94%);
+  color: hsl(140 50% 25%);
+}
+.line-diff-line.skip {
+  color: var(--color-muted);
+  font-style: italic;
+}
+@media (prefers-color-scheme: dark) {
+  .line-diff-line.del {
+    background: hsl(0 50% 15%);
+    color: hsl(0 60% 75%);
+  }
+  .line-diff-line.add {
+    background: hsl(140 40% 13%);
+    color: hsl(140 50% 75%);
+  }
+  .line-diff-label.del { color: hsl(0 60% 70%); }
+  .line-diff-label.add { color: hsl(140 50% 65%); }
 }
 
 .inspect-variant-pill {

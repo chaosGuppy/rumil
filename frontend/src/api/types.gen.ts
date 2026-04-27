@@ -895,6 +895,10 @@ export type EssayDetail = {
      */
     judge_user_prompt_template: string;
     /**
+     * Judge Prompt Hash
+     */
+    judge_prompt_hash: string;
+    /**
      * Paraphrase Prompt Template
      */
     paraphrase_prompt_template: string;

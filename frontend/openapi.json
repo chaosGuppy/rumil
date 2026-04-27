@@ -4316,6 +4316,10 @@
             "type": "string",
             "title": "Judge User Prompt Template"
           },
+          "judge_prompt_hash": {
+            "type": "string",
+            "title": "Judge Prompt Hash"
+          },
           "paraphrase_prompt_template": {
             "type": "string",
             "title": "Paraphrase Prompt Template"
@@ -4353,6 +4357,7 @@
           "completion_prompt",
           "judge_system_prompt_template",
           "judge_user_prompt_template",
+          "judge_prompt_hash",
           "paraphrase_prompt_template",
           "criteria",
           "prefix_variants",

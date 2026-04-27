@@ -222,6 +222,11 @@ class EssayDetail(pydantic.BaseModel):
     completion_prompt: str
     judge_system_prompt_template: str
     judge_user_prompt_template: str
+    # Hash of the rendered judge system prompt for criteria[0], blind
+    # path. Matches the ``p<hash>`` suffix in ``judge_model`` strings
+    # on judgment rows — lets the UI correlate "this template" with
+    # "rows that used it".
+    judge_prompt_hash: str
     paraphrase_prompt_template: str
     criteria: list[str]
     # Available prefix variants and the one this response was rendered
@@ -591,6 +596,7 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
     paraphrase_prompt_template = versus_paraphrase.PARAPHRASE_INSTRUCTIONS.replace(
         "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
     )
+    judge_prompt_hash = versus_judge.compute_prompt_hash(cfg.judging.criteria[0], with_tools=False)
     return EssayDetail(
         id=essay.id,
         title=essay.title,
@@ -604,6 +610,7 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         completion_prompt=completion_prompt,
         judge_system_prompt_template=judge_system,
         judge_user_prompt_template=judge_user,
+        judge_prompt_hash=judge_prompt_hash,
         paraphrase_prompt_template=paraphrase_prompt_template,
         criteria=list(cfg.judging.criteria),
         prefix_variants=[

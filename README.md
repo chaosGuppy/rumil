@@ -86,6 +86,12 @@ uv run python main.py "Your question here" --budget 20 --summary
 # Generate a multi-section research report
 uv run python main.py --report QUESTION_ID
 
+# Scan a completed investigation for the most important and surprising
+# findings. Outputs a ranked list of memo candidates (title, content
+# sketch, relevant page IDs, epistemic signals) as JSON to
+# pages/memo-scans/, ready for a downstream memo drafter.
+uv run python main.py --scan-memos QUESTION_ID
+
 # Self-improvement: analyse how an investigation went and get rumil
 # code/prompt improvement suggestions. Read-only; inspects the run plus
 # rumil's own source via LLM tools, then writes a markdown analysis to

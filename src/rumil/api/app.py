@@ -62,21 +62,12 @@ app = FastAPI(
     ),
 )
 
-_ALLOWED_FRONTEND_ORIGINS = [
-    o.strip()
-    for o in os.environ.get(
-        "RUMIL_ALLOWED_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3012,http://localhost:3013",
-    ).split(",")
-    if o.strip()
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_ALLOWED_FRONTEND_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(jobs_router)

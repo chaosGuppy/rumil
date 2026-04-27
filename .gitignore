@@ -9,6 +9,7 @@ CLAUDE.local.md
 .workmux.yaml
 .workmux-offset
 scripts/workmux-offset.sh
+scripts/write-worktree-env.sh
 
 # macOS
 .DS_Store

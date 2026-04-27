@@ -6,6 +6,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import type { Page, PageType, PaginatedPagesOut, Project, RunListItemOut } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import { clientFetch } from "@/lib/client-fetch";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { withStagedRun } from "@/lib/staged-run-href";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
@@ -114,7 +115,7 @@ export default function PagesIndexPage() {
   }, []);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
+    clientFetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: Project | null) => {
         if (data) setProjectName(data.name);
@@ -132,7 +133,7 @@ export default function PagesIndexPage() {
     params.set("limit", String(PAGE_SIZE));
     const qs = params.toString();
     const url = `${API_BASE}/api/projects/${projectId}/pages?${qs}`;
-    fetch(url, { cache: "no-store" })
+    clientFetch(url, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : { items: [], total_count: 0, offset: 0, limit: PAGE_SIZE }))
       .then((data: PaginatedPagesOut) => {
         setPages(data.items);
@@ -146,7 +147,7 @@ export default function PagesIndexPage() {
       setRuns([]);
       return;
     }
-    fetch(`${API_BASE}/api/projects/${projectId}/runs`, {
+    clientFetch(`${API_BASE}/api/projects/${projectId}/runs`, {
       cache: "no-store",
     })
       .then((res) => (res.ok ? res.json() : []))

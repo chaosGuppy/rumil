@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { PageDetailOut, QuestionStatsOut, Project } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import { clientFetch } from "@/lib/client-fetch";
 import StagedBanner from "@/components/staged-banner";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
@@ -47,7 +48,7 @@ export default function QuestionStatsPage() {
     let cancelled = false;
     async function load() {
       try {
-        const detailRes = await fetch(
+        const detailRes = await clientFetch(
           withStagedRun(`${API_BASE}/api/pages/${pageId}/detail`, stagedRunId),
           { cache: "no-store" },
         );
@@ -69,7 +70,7 @@ export default function QuestionStatsPage() {
           return;
         }
 
-        const statsRes = await fetch(
+        const statsRes = await clientFetch(
           withStagedRun(`${API_BASE}/api/pages/${pageId}/stats`, stagedRunId),
           { cache: "no-store" },
         );
@@ -96,7 +97,7 @@ export default function QuestionStatsPage() {
 
   useEffect(() => {
     if (!projectId) return;
-    fetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
+    clientFetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((d: Project | null) => {
         if (d) setProjectName(d.name);

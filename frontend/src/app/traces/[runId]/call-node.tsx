@@ -13,6 +13,7 @@ import type {
   PageRef,
 } from "@/api/types.gen";
 import { CLIENT_API_BASE as QUERY_API_BASE } from "@/api-config";
+import { clientFetch } from "@/lib/client-fetch";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { withStagedRun } from "@/lib/staged-run-href";
 import { traceKeys } from "@/lib/queries";
@@ -27,7 +28,7 @@ export type TreeNode = {
 };
 
 async function fetchCallEvents(callId: string): Promise<TraceEvent[]> {
-  const res = await fetch(`${QUERY_API_BASE}/api/calls/${callId}/events`);
+  const res = await clientFetch(`${QUERY_API_BASE}/api/calls/${callId}/events`);
   if (!res.ok) throw new Error(`Failed to fetch events: ${res.status}`);
   return res.json();
 }
@@ -859,7 +860,7 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
     }
     setExchangeLoading(true);
     try {
-      const res = await fetch(
+      const res = await clientFetch(
         `${API_BASE}/api/llm-exchanges/${event.exchange_id}`,
       );
       if (res.ok) {

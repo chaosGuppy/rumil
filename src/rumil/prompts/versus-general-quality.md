@@ -24,10 +24,9 @@ These are not exhaustive — use judgment to surface quality differences.
 
 ## How to work
 
-1. Read both continuations carefully (they're in the scope question page).
-2. Optionally consult workspace material if it bears on substantive claims either continuation makes.
-3. Contrast: where one is strong, check whether the other also got there.
-4. Be specific — quote passages, don't just paraphrase.
+1. Read both continuations carefully.
+2. Contrast: where one is strong, check whether the other also got there.
+3. Be specific — quote passages, don't just paraphrase.
 
 ## Output format
 

@@ -393,7 +393,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'refine_spec' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'claude_code_direct';
 
 /**
  * CallTypeFruitScoreItem
@@ -880,6 +880,62 @@ export type HttpValidationError = {
 };
 
 /**
+ * JobListItem
+ *
+ * One row in GET /api/jobs. Built from a V1Job's metadata only.
+ */
+export type JobListItem = {
+    /**
+     * Job Name
+     */
+    job_name: string;
+    /**
+     * Namespace
+     */
+    namespace: string;
+    /**
+     * Status
+     */
+    status: 'pending' | 'running' | 'failed' | 'completed';
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Completed At
+     */
+    completed_at?: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Workspace
+     */
+    workspace: string;
+    /**
+     * Question
+     */
+    question: string;
+    /**
+     * Trace Url
+     */
+    trace_url: string;
+    /**
+     * Owner User Id
+     */
+    owner_user_id?: string;
+    /**
+     * Logs Url
+     */
+    logs_url?: string;
+};
+
+/**
  * LLMExchangeEventOut
  */
 export type LlmExchangeEventOut = {
@@ -1164,6 +1220,106 @@ export type MovesExecutedEventOut = {
      * Moves
      */
     moves: Array<MoveTraceItem>;
+};
+
+/**
+ * OrchestratorRunRequest
+ *
+ * Inputs for a remote orchestrator run.
+ *
+ * Mirrors the subset of `main.py` flags that are forwarded into the
+ * in-pod CLI invocation. Flags that only make sense on the laptop
+ * (--db, --executor, --staged, --env-file, --run-id-file, --cli-user-id)
+ * are intentionally absent — the in-pod run is always `--db prod
+ * --executor local`.
+ */
+export type OrchestratorRunRequest = {
+    /**
+     * Question
+     */
+    question: string;
+    /**
+     * Budget
+     */
+    budget: number;
+    /**
+     * Workspace
+     */
+    workspace: string;
+    /**
+     * Smoke Test
+     */
+    smoke_test?: boolean;
+    /**
+     * Quiet
+     */
+    quiet?: boolean;
+    /**
+     * Debug
+     */
+    debug?: boolean;
+    /**
+     * Force Twophase Recurse
+     */
+    force_twophase_recurse?: boolean;
+    /**
+     * No Trace
+     */
+    no_trace?: boolean;
+    /**
+     * Auto Summary
+     */
+    auto_summary?: boolean;
+    /**
+     * Auto Self Improve
+     */
+    auto_self_improve?: boolean;
+    /**
+     * Available Moves
+     */
+    available_moves?: string | null;
+    /**
+     * Available Calls
+     */
+    available_calls?: string | null;
+    /**
+     * View Variant
+     */
+    view_variant?: string | null;
+    /**
+     * Ingest Num Claims
+     */
+    ingest_num_claims?: number | null;
+    /**
+     * Run Name
+     */
+    run_name?: string | null;
+    /**
+     * Container Tag
+     */
+    container_tag?: string | null;
+};
+
+/**
+ * OrchestratorRunResponse
+ */
+export type OrchestratorRunResponse = {
+    /**
+     * Job Name
+     */
+    job_name: string;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Logs Url
+     */
+    logs_url?: string;
+    /**
+     * Trace Url
+     */
+    trace_url?: string;
 };
 
 /**
@@ -2309,6 +2465,70 @@ export type WebResearchCompleteEventOut = {
  * Workspace
  */
 export type Workspace = 'research' | 'prioritization';
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostData = {
+    body: OrchestratorRunRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/jobs/orchestrator-runs';
+};
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostError = CreateOrchestratorRunApiJobsOrchestratorRunsPostErrors[keyof CreateOrchestratorRunApiJobsOrchestratorRunsPostErrors];
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: OrchestratorRunResponse;
+};
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostResponse = CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses[keyof CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses];
+
+export type ListJobsApiJobsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/jobs';
+};
+
+export type ListJobsApiJobsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListJobsApiJobsGetError = ListJobsApiJobsGetErrors[keyof ListJobsApiJobsGetErrors];
+
+export type ListJobsApiJobsGetResponses = {
+    /**
+     * Response List Jobs Api Jobs Get
+     *
+     * Successful Response
+     */
+    200: Array<JobListItem>;
+};
+
+export type ListJobsApiJobsGetResponse = ListJobsApiJobsGetResponses[keyof ListJobsApiJobsGetResponses];
 
 export type HealthzHealthzGetData = {
     body?: never;

@@ -1210,6 +1210,14 @@ async def async_main():
         help="Write the run_id to this file after DB creation (for scripted capture)",
     )
     parser.add_argument(
+        "--run-id",
+        dest="run_id",
+        metavar="UUID",
+        default=None,
+        help="Use this run_id instead of generating a new one. Set by the API "
+        "when launching an orchestrator Job so the trace URL is known at submit time.",
+    )
+    parser.add_argument(
         "--env-file",
         dest="env_file",
         metavar="PATH",
@@ -1324,7 +1332,9 @@ async def async_main():
         args.budget = _default_budget(args.budget)
         sys.exit(submit_remote_orchestrator_run(args))
 
-    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod_db, staged=args.staged)
+    db = await DB.create(
+        run_id=args.run_id or str(uuid.uuid4()), prod=args.prod_db, staged=args.staged
+    )
 
     if args.run_id_file:
         Path(args.run_id_file).write_text(db.run_id, encoding="utf-8")

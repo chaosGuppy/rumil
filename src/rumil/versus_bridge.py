@@ -273,14 +273,14 @@ def compute_pair_surface_hash() -> str:
       (values are pair-dependent and live in the content body instead;
       only the key schema is hashed).
 
-    Scope: ws/orch only. The rumil-text path (``_build_rumil_text_user_message``)
-    doesn't read the Question page, so a surface change there wouldn't
-    affect text judgments — forking text keys for a page-surface edit
+    Scope: ws/orch only. The blind path (single-turn LLM call, no DB)
+    doesn't read the Question page, so a page-surface edit there wouldn't
+    affect blind judgments — forking blind keys for a surface edit
     would force unnecessary re-judging. Manual :v<N>
     (:data:`BLIND_JUDGE_VERSION`) remains the fork mechanism for
     semantic changes the auto-hash can't catch (inline user prompts,
-    disallowed_tools, orchestrator-internal tool set, etc.) and is
-    still applied to all three variants.
+    disallowed_tools, orchestrator-internal tool set, etc.) and gates
+    all three judge paths (blind, ws, orch).
     """
     sentinel = PairContext(**_SURFACE_HASH_SENTINEL)
     blob = json.dumps(

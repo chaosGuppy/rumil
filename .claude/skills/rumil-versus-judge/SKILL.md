@@ -45,8 +45,8 @@ See `versus/AGENT.md` for the full interaction between these four knobs.
 
 | Intent | Skill / command |
 |---|---|
-| "run rumil judges on versus pairs" (any variant) | this skill |
-| "run OpenRouter judges (Gemini/GPT)" | `versus/scripts/run_judgments.py` — not this skill |
+| "run blind judges on versus pairs (any model — claude or otherwise)" | this skill (default mode) |
+| "run rumil ws/orch judges on versus pairs" | this skill (`--variant ws|orch`) |
 | "A/B eval two rumil research runs" | rumil's `main.py --ab-eval A B` — different system |
 
 Versus must already have completions cached
@@ -82,15 +82,19 @@ match what you see there.
 
 ## Env & config
 
-- `ANTHROPIC_API_KEY` resolves from `versus/.env`, then
-  `<rumil-root>/.env`, then the process environment. Files override env
-  so per-project `.env` takes precedence.
-- All variants take their model via `--model`. Accepts a short alias
-  (`opus` / `sonnet` / `haiku`) or a full Anthropic model id.
-- `text` variant: repeat `--model` for multi-model runs; defaults to
-  `judging.anthropic_models` in `versus/config.yaml`.
-- `rumil-text` / `ws` / `orch` variants: pass at most one `--model`
-  (default: `opus`). Passed explicitly through the bridge via
+- `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` resolve from `versus/.env`,
+  then `<rumil-root>/.env`, then the process environment. Files override
+  env so per-project `.env` takes precedence. The blind path may need
+  either or both depending on the models passed; ws/orch only need
+  `ANTHROPIC_API_KEY` (claude models only).
+- All modes take their model via `--model`. Accepts a short alias
+  (`opus` / `sonnet` / `haiku`), a bare Anthropic id (`claude-*`), or
+  an OpenRouter id (`provider/model`).
+- Blind (default): repeat `--model` for multi-model runs. Each model
+  routes by id — `claude-*` direct to Anthropic, anything else through
+  OpenRouter. Defaults to `cfg.judging.models` in `versus/config.yaml`.
+- `ws` / `orch` variants: pass at most one `--model` (default: `opus`).
+  Passed explicitly through the bridge via
   `override_settings(rumil_model_override=...)` — no env-var
   ordering. Picking the model matters: opus and sonnet produce
   meaningfully different verdicts on the same pairs, so treat it as
@@ -107,11 +111,11 @@ match what you see there.
   an essay re-import; pair with `scripts/status.py` to detect staleness.
 - `--persist` — ws/orch only. Disables the default staged mode and
   writes versus-created pages to the baseline workspace.
-- `--concurrency N` — concurrent LLM calls. Defaults: `ws` = 2,
-  `text` / `rumil-text` = `cfg.concurrency` (usually 8), `orch` = 1
-  (serial). Raise `orch` concurrency cautiously (each pair fires a full
-  TwoPhaseOrchestrator with lots of DB traffic); 2 is usually fine and
-  roughly halves wall time.
+- `--concurrency N` — concurrent LLM calls. Defaults: blind =
+  `cfg.per_model_concurrency` per model (usually 8), `ws` = 2,
+  `orch` = 1 (serial). Raise `orch` concurrency cautiously (each pair
+  fires a full TwoPhaseOrchestrator with lots of DB traffic); 2 is
+  usually fine and roughly halves wall time.
 
 ## Targeted pair selection (ws / orch)
 
@@ -166,7 +170,8 @@ Versus has its own `pyproject.toml` and isn't installed in rumil's
 
 Typical invocations (substitute the user's chosen workspace for `<WS>`):
 
-- `--variant text --dry-run` — list pending Anthropic-text judgments
+- `--dry-run` — list pending blind judgments (uses `cfg.judging.models`)
+- `--model sonnet --dry-run` — pending blind judgments restricted to sonnet
 - `--variant ws --workspace <WS> --dry-run` — list pending ws judgments
 - `--variant ws --workspace <WS> --limit 5` — run 5 ws judgments
 - `--variant ws --workspace <WS> --model sonnet --limit 5` — run on sonnet instead of opus
@@ -175,9 +180,9 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 
 ## What to surface
 
-All variants print:
+All modes print:
 - `[plan] N ... judgments ...` — pending count. Use this before confirming cost.
-- `[done i/N] <dedup_key>  label=... trace=<url>` (ws/orch) or `[done ...]` (text)
+- `[done i/N] <dedup_key>  label=... trace=<url>` (ws/orch) or `[done ...]` (blind)
 - `[run] <trace_url>` (ws session-level; orch per-pair)
 - `[err ] <key>: <msg>` on failure (run continues for other pairs)
 
@@ -206,12 +211,11 @@ Per-judgment estimates. **Bold** values are measured in practice on the
 versus forethought-essay pairs against the `redwood` workspace; others
 are extrapolations.
 
-| Variant | Model | $/judgment | 100 judgments |
+| Mode | Model | $/judgment | 100 judgments |
 |---|---|---|---|
-| text | sonnet (4-6) | $0.03-0.08 | $3-8 |
-| text | opus (4-7) | $0.20-0.40 | $20-40 |
-| rumil-text | sonnet (4-6) | $0.03-0.10 (similar to `text`; different prompt) | $3-10 |
-| rumil-text | opus (4-7) | $0.20-0.45 | $20-45 |
+| blind | sonnet (4-6) | $0.03-0.10 | $3-10 |
+| blind | opus (4-7) | $0.20-0.45 | $20-45 |
+| blind | gemini / gpt-5.4 (via OpenRouter) | ~$0.01-0.05 depending on model | $1-5 |
 | ws | haiku (4-5) | $0.05-0.25 | $5-25 |
 | ws | sonnet (4-6) | **~$0.12** (observed; range $0.09-0.14) | ~$12 |
 | ws | opus (4-7) | **~$0.53** (observed; range $0.35-0.73) | ~$53 |
@@ -296,18 +300,18 @@ over-read any single number:
 
 `BLIND_JUDGE_VERSION` (in `versus/src/versus/versions.py`;
 re-exported from `src/rumil/versus_bridge.py` for back-compat)
-is the manual version knob that forks `rumil:ws:*`, `rumil:orch:*`,
-and `rumil:text:*` judge_model keys when you make a semantic change
+is the manual version knob that forks all three judge_model shapes
+(blind, `rumil:ws:*`, `rumil:orch:*`) when you make a semantic change
 the automatic prompt hash doesn't catch. **Bump it when editing any
 of:**
 
 - `versus_bridge._format_pair_content` — the Question page body the
-  agent reads via `load_page`.
+  ws/orch agent reads via `load_page`.
 - `versus_bridge._versus_extra` — rendered verbatim in page views.
 - The inline user prompts constructed in code:
   - `judge_pair_ws_aware` (agent user prompt + allowed/disallowed tools)
   - `_run_orch_closer` (closer user prompt)
-  - `_build_rumil_text_user_message` (rumil-text user message)
+  - the blind-path user message in `versus.judge.run_blind`
 - The tool *list* / `disallowed_tools` config on `SdkAgentConfig` in
   `judge_pair_ws_aware` (adding/removing tools) — changing what the
   agent can reach changes its behavior. Tool *docstring* edits are
@@ -322,7 +326,7 @@ of:**
   pins the file shas, so a prompt edit without the corresponding version
   bump fails the snapshot test with a message pointing at the constant
   to roll.
-- The sampling dict passed to non-ws paths — covered by `:s<hash>`.
+- The sampling dict on the blind path — covered by `:s<hash>`.
 - Tool descriptions/docstrings for `search_workspace` / `load_page` /
   `explore_subgraph` — covered by `:t<hash>` for ws/orch.
 

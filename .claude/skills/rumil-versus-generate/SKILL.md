@@ -86,9 +86,11 @@ set, ~30 API calls at flash rates):
 --op paraphrases --active
 ```
 
-Default configured models come from `versus/config.yaml`:
-- `completion.models` → flash + gpt-5.4-mini + claude variants (Anthropic ids routed via OpenRouter)
-- `paraphrasing.models` → flash + gpt-5.4-mini + gpt-5.4
+Default configured models come from `versus/config.yaml` `completion.models`
+(flash + gpt-5.4-mini + claude variants). Each entry has a `paraphrase: bool`
+flag — paraphrases run only on the subset where `paraphrase: true`. The
+old top-level `paraphrasing.models` list was removed; `paraphrasing` now
+only carries `enabled: bool`.
 
 Override with `--model` (repeatable).
 

@@ -44,11 +44,15 @@ def _data_dir() -> pathlib.Path:
 
 
 @functools.lru_cache(maxsize=1)
+def _cfg_load_cached(path: str) -> versus_config.Config:
+    return versus_config.load(path)
+
+
 def _cfg_cached() -> versus_config.Config | None:
     p = _config_path()
     if not p.exists():
         return None
-    return versus_config.load(p)
+    return _cfg_load_cached(str(p))
 
 
 def _cfg_required() -> versus_config.Config:

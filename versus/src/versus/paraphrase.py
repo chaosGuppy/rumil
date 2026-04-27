@@ -23,23 +23,24 @@ from versus import essay as versus_essay
 from versus.judge import route_judge_model
 from versus.versions import PARAPHRASE_PROMPT_VERSION
 
-PARAPHRASE_INSTRUCTIONS = """\
-Rewrite the following essay in your own prose style while preserving the content exactly.
-
-Requirements:
-- Keep every section heading unchanged in wording and order.
-- Keep the same claims, arguments, examples, caveats, distinctions, and level of detail.
-- Keep the same semantic structure (same points made in the same order).
-- Do NOT add new content or remove substantive content.
-- Do NOT include the essay title — start directly with the body.
-- Use standard Markdown: headings with ## / ### / ####, plain paragraphs, lists with `- `.
-- The rewrite should read naturally in your voice.
-
----ESSAY BODY---
-{markdown}
----END---
-
-Output only the rewritten markdown body, nothing else."""
+PARAPHRASE_INSTRUCTIONS = (
+    "Rewrite the following essay in your own prose style while preserving the content exactly.\n"
+    "\n"
+    "Requirements:\n"
+    "- Keep every section heading unchanged in wording and order.\n"
+    "- Keep the same claims, arguments, examples, caveats, distinctions, and level of detail.\n"
+    "- Keep the same semantic structure (same points made in the same order).\n"
+    "- Do NOT add new content or remove substantive content.\n"
+    "- Do NOT include the essay title — start directly with the body.\n"
+    "- Use standard Markdown: headings with ## / ### / ####, plain paragraphs, lists with `- `.\n"
+    "- The rewrite should read naturally in your voice.\n"
+    "\n"
+    "---ESSAY BODY---\n"
+    "{markdown}\n"
+    "---END---\n"
+    "\n"
+    "Output only the rewritten markdown body, nothing else."
+)
 
 
 HEADING_RE = re.compile(r"^(#{2,4})\s+(.+?)\s*$")

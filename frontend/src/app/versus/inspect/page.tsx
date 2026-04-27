@@ -43,6 +43,17 @@ function modelOf(sourceId: string): string {
   return sourceId.startsWith("paraphrase:") ? sourceId.slice("paraphrase:".length) : sourceId;
 }
 
+/** HTML-id-safe rendering of a source_id or judge_model_base. */
+function anchorId(prefix: string, raw: string): string {
+  return `${prefix}-${raw.replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
+}
+
+/** Short label for a model id (drop the provider prefix). */
+function shortModel(id: string): string {
+  const after = id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
+  return id.startsWith("paraphrase:") ? `para:${shortModel(modelOf(id))}` : after;
+}
+
 type VariantBundle = {
   id: string;
   detail: EssayDetail;
@@ -142,6 +153,17 @@ export default async function VersusInspectPage({
   }
   const judgmentOrder = Array.from(judgmentRows.keys()).sort();
 
+  // First key per judge_model_base — the judgment-row that gets the
+  // anchor id, so a ToC click jumps to that judge's first row.
+  const firstKeyByJudge = new Map<string, string>();
+  for (const k of judgmentOrder) {
+    const j = judgmentRows.get(k)!.values().next().value as Judgment;
+    if (!firstKeyByJudge.has(j.judge_model_base)) {
+      firstKeyByJudge.set(j.judge_model_base, k);
+    }
+  }
+  const judgeOrder = Array.from(firstKeyByJudge.keys()).sort();
+
   // Essay dropdown grouped by source_id, alphabetised within group.
   const grouped: Record<string, { value: string; label: string }[]> = {};
   for (const e of essays) {
@@ -185,7 +207,13 @@ export default async function VersusInspectPage({
             No essays found yet. Run <code>uv run scripts/fetch_essays.py</code> first.
           </p>
         ) : (
-          <>
+          <div className="inspect-layout">
+            <InspectToc
+              variantBundles={variantBundles}
+              sourceOrder={sourceOrder}
+              judgeOrder={judgeOrder}
+            />
+            <div className="inspect-content">
             <div className="inspect-titlebar">
               <h1>{head.detail.title}</h1>
               <div className="inspect-meta">
@@ -208,14 +236,14 @@ export default async function VersusInspectPage({
               )}
             </div>
 
-            <section className="inspect-prompts">
-              <div className="inspect-prompts-col">
+            <section className="inspect-prompts" id="prompts">
+              <div className="inspect-prompts-col" id="prompts-original">
                 <h3 className="inspect-prompts-coltitle">original</h3>
                 <CollapsibleBlock summary="essay (normalized markdown)" prose>
                   {head.detail.markdown}
                 </CollapsibleBlock>
               </div>
-              <div className="inspect-prompts-col">
+              <div className="inspect-prompts-col" id="prompts-completions">
                 <h3 className="inspect-prompts-coltitle">completions</h3>
                 {variantBundles.map((v) => (
                   <CollapsibleBlock
@@ -231,7 +259,7 @@ export default async function VersusInspectPage({
                   </CollapsibleBlock>
                 ))}
               </div>
-              <div className="inspect-prompts-col">
+              <div className="inspect-prompts-col" id="prompts-judging">
                 <h3 className="inspect-prompts-coltitle">judging</h3>
                 <CollapsibleBlock
                   summary={
@@ -247,7 +275,7 @@ export default async function VersusInspectPage({
                   {head.detail.judge_user_prompt_template}
                 </CollapsibleBlock>
               </div>
-              <div className="inspect-prompts-col">
+              <div className="inspect-prompts-col" id="prompts-paraphrase">
                 <h3 className="inspect-prompts-coltitle">paraphrase</h3>
                 <CollapsibleBlock summary="prompt template">
                   {head.detail.paraphrase_prompt_template}
@@ -271,7 +299,7 @@ export default async function VersusInspectPage({
               </p>
             )}
 
-            <h2 className="inspect-section-head">continuations</h2>
+            <h2 className="inspect-section-head" id="continuations">continuations</h2>
             {sourceOrder.length === 0 ? (
               <p className="versus-muted">No completion rows for this essay yet.</p>
             ) : (
@@ -287,21 +315,27 @@ export default async function VersusInspectPage({
               </div>
             )}
 
-            <h2 className="inspect-section-head">judgments</h2>
+            <h2 className="inspect-section-head" id="judgments">judgments</h2>
             {judgmentOrder.length === 0 ? (
               <p className="versus-muted">No judgments yet for this essay.</p>
             ) : (
               <div className="inspect-judgments">
-                {judgmentOrder.map((k) => (
-                  <JudgmentRow
-                    key={k}
-                    perVariant={judgmentRows.get(k)!}
-                    variantIds={variantIds}
-                  />
-                ))}
+                {judgmentOrder.map((k) => {
+                  const sample = judgmentRows.get(k)!.values().next().value as Judgment;
+                  const isFirst = firstKeyByJudge.get(sample.judge_model_base) === k;
+                  return (
+                    <JudgmentRow
+                      key={k}
+                      perVariant={judgmentRows.get(k)!}
+                      variantIds={variantIds}
+                      anchorId={isFirst ? anchorId("judge", sample.judge_model_base) : undefined}
+                    />
+                  );
+                })}
               </div>
             )}
-          </>
+            </div>
+          </div>
         )}
       </main>
       <style>{INSPECT_STYLES}</style>
@@ -341,6 +375,7 @@ function SourceRow({
   const model = modelOf(sourceId);
   return (
     <section
+      id={anchorId("src", sourceId)}
       className="inspect-source-row"
       data-filterable
       data-model={isHuman ? "" : model}
@@ -376,7 +411,14 @@ function SourceRow({
                   <pre className="inspect-pre">{s.prompt}</pre>
                 </details>
               )}
-              {s && <pre className="inspect-pre prose tall">{s.text}</pre>}
+              {s && (isHuman ? (
+                <details className="inspect-collapsible inner">
+                  <summary>held-out remainder ({s.words} words)</summary>
+                  <pre className="inspect-pre prose tall">{s.text}</pre>
+                </details>
+              ) : (
+                <pre className="inspect-pre prose tall">{s.text}</pre>
+              ))}
             </div>
           );
         })}
@@ -388,9 +430,11 @@ function SourceRow({
 function JudgmentRow({
   perVariant,
   variantIds,
+  anchorId: id,
 }: {
   perVariant: Map<string, Judgment>;
   variantIds: string[];
+  anchorId?: string;
 }) {
   // Header values are identical across variants by construction (same
   // judge model, criterion, sources). Pull from any present cell.
@@ -403,6 +447,7 @@ function JudgmentRow({
 
   return (
     <article
+      id={id}
       className="inspect-judgment-row"
       data-filterable
       data-model={dataModel}
@@ -533,6 +578,75 @@ function JudgmentBody({ j }: { j: Judgment }) {
   );
 }
 
+function InspectToc({
+  variantBundles,
+  sourceOrder,
+  judgeOrder,
+}: {
+  variantBundles: VariantBundle[];
+  sourceOrder: string[];
+  judgeOrder: string[];
+}) {
+  return (
+    <nav className="inspect-toc" aria-label="Inspect contents">
+      <ul>
+        <li>
+          <a href="#prompts">prompts</a>
+          <ul>
+            <li><a href="#prompts-original">original</a></li>
+            <li><a href="#prompts-completions">completions</a></li>
+            <li><a href="#prompts-judging">judging</a></li>
+            <li><a href="#prompts-paraphrase">paraphrase</a></li>
+          </ul>
+        </li>
+        {sourceOrder.length > 0 && (
+          <li>
+            <a href="#continuations">continuations</a>
+            <ul>
+              {sourceOrder.map((sid) => {
+                const isHuman = sid === "human";
+                const model = modelOf(sid);
+                return (
+                  <li
+                    key={sid}
+                    data-filterable
+                    data-model={isHuman ? "" : model}
+                    data-always-show={isHuman ? "1" : undefined}
+                  >
+                    <a href={`#${anchorId("src", sid)}`}>
+                      {isHuman ? "human" : shortModel(sid)}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        )}
+        {judgeOrder.length > 0 && (
+          <li>
+            <a href="#judgments">judgments</a>
+            <ul>
+              {judgeOrder.map((jb) => (
+                <li
+                  key={jb}
+                  data-filterable
+                  data-model={jb}
+                  data-always-show="1"
+                >
+                  <a href={`#${anchorId("judge", jb)}`}>{shortModel(jb)}</a>
+                </li>
+              ))}
+            </ul>
+          </li>
+        )}
+      </ul>
+      <p className="inspect-toc-hint versus-muted">
+        {variantBundles.length} variant{variantBundles.length === 1 ? "" : "s"}
+      </p>
+    </nav>
+  );
+}
+
 function samplingTag(sampling: { [k: string]: unknown }): string {
   const bits: string[] = [];
   const t = sampling["temperature"];
@@ -543,7 +657,61 @@ function samplingTag(sampling: { [k: string]: unknown }): string {
 }
 
 const INSPECT_STYLES = `
-.inspect-main { max-width: 1400px; }
+.inspect-main { max-width: 1500px; }
+.inspect-layout {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+.inspect-content { min-width: 0; }
+.inspect-toc {
+  position: sticky;
+  top: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  align-self: start;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.inspect-toc ul {
+  list-style: none; padding: 0; margin: 0;
+}
+.inspect-toc > ul > li { margin-bottom: 8px; }
+.inspect-toc > ul > li > a {
+  font-weight: 600;
+  color: var(--foreground);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
+}
+.inspect-toc ul ul {
+  margin: 4px 0 0 0;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-border);
+}
+.inspect-toc ul ul li {
+  padding: 1px 0 1px 8px;
+}
+.inspect-toc ul ul a {
+  color: var(--color-muted);
+  text-decoration: none;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  display: block;
+  word-break: break-word;
+}
+.inspect-toc a:hover { color: var(--vaccent-fg); }
+.inspect-toc-hint {
+  margin-top: 14px;
+  font-size: 11px;
+}
+@media (max-width: 900px) {
+  .inspect-layout { grid-template-columns: minmax(0, 1fr); }
+  .inspect-toc { position: static; max-height: none; }
+}
 .inspect-titlebar h1 {
   font-weight: 400; font-size: 22px; margin: 0 0 6px;
   letter-spacing: -0.005em;

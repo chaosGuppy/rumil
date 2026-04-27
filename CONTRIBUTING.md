@@ -18,7 +18,7 @@ supabase start
 
 # 4. Env files
 cp .env.template .env                           # fill in ANTHROPIC_API_KEY
-cp frontend/.env.local.example frontend/.env.local
+cp frontend/.env.template frontend/.env
 
 # 5. Install git pre-commit hook
 uv run pre-commit install
@@ -30,8 +30,10 @@ If `pre-commit install` errors with `Cowardly refusing to install hooks with cor
 
 The deployed app has two gates: an invite password (`/welcome`) and Google OAuth via Supabase (`/sign-in`). For local dev you almost always want to skip both — the example env files do this by default.
 
-- Set `AUTH_ENABLED=0` in **both** `.env` (backend) and `frontend/.env.local` (frontend). The example files ship with this set. The middleware then skips the invite cookie and the Supabase session check, and the API skips JWT verification. The two sides must agree — if only the frontend has it, every `/api/*` call 401s.
-- To exercise the real flow locally, unset `AUTH_ENABLED` (or set to `1`) and fill in `INVITE_PASSWORD`, `INVITE_SECRET`, and the `NEXT_PUBLIC_SUPABASE_*` vars in `frontend/.env.local`. Local Google OAuth isn't wired up in `supabase/config.toml`, so the `/sign-in` button won't actually complete a flow against `supabase start` — you'd need to point at a real Supabase project.
+- Set `AUTH_ENABLED=0` in **both** `.env` (backend) and `frontend/.env` (frontend). The example files ship with this set. The middleware then skips the invite cookie and the Supabase session check, and the API skips JWT verification. The two sides must agree — if only the frontend has it, every `/api/*` call 401s.
+- To exercise the real flow locally, unset `AUTH_ENABLED` (or set to `1`) and fill in `INVITE_PASSWORD`, `INVITE_SECRET`, and the `NEXT_PUBLIC_SUPABASE_*` vars in `frontend/.env`. Local Google OAuth isn't wired up in `supabase/config.toml`, so the `/sign-in` button won't actually complete a flow against `supabase start` — you'd need to point at a real Supabase project.
+
+Local overrides (per-worktree port numbers, individual dev preferences) live in `.env.overrides` and `frontend/.env.overrides`, both `.gitignore`d and layered on top of `.env` / `frontend/.env` at runtime. The workmux `post_create` hook writes them automatically when you spin up a worktree, but they're plain files — you can also write them by hand without any worktree setup.
 
 ### Submitting orchestrator runs to Kubernetes (`--executor prod`)
 

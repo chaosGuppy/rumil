@@ -80,7 +80,7 @@ def _current_prefix_hashes(
 
 
 def _current_paraphrase_sampling_hashes(cfg: config.Config) -> set[str]:
-    return {_paraphrase.sampling_hash(m) for m in cfg.paraphrasing.models}
+    return {_paraphrase.sampling_hash(m) for m in _paraphrase.paraphrase_models(cfg)}
 
 
 def _scan_jsonl(path: pathlib.Path) -> list[dict]:

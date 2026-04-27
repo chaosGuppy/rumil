@@ -127,9 +127,15 @@ def _call_one_paraphrase(essay, m, sh, k, prompt, client):
     }
 
 
+def paraphrase_models(cfg: config.Config) -> list[config.ModelCfg]:
+    """Models flagged for paraphrasing in cfg.completion.models."""
+    return [m for m in cfg.completion.models if m.paraphrase]
+
+
 def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
-    if not cfg.paraphrasing.enabled or not cfg.paraphrasing.models:
-        print("[paraphrase] disabled or no models configured; skipping")
+    models = paraphrase_models(cfg)
+    if not cfg.paraphrasing.enabled or not models:
+        print("[paraphrase] disabled or no models flagged paraphrase=true; skipping")
         return
     log = cfg.storage.paraphrases_log
     existing = jsonl.keys(log)
@@ -137,7 +143,7 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
     tasks_to_run: list = []
     for essay in essays:
         prompt = PARAPHRASE_INSTRUCTIONS.format(markdown=essay.markdown)
-        for m in cfg.paraphrasing.models:
+        for m in models:
             sh = sampling_hash(m)
             k = paraphrase_key(essay.id, m.id, sh)
             if k in existing:

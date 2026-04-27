@@ -1,8 +1,8 @@
 ---
 name: rumil-versus-judge
-description: Run pairwise judgments on versus essay-continuation pairs using rumil-adjacent judge backends — direct Anthropic with versus prompt (text), Anthropic with rumil dimension prompt (rumil-text), rumil's SDK agent with workspace tools (ws), or a full orchestrator run per pair (orch). Use when the user wants to measure how well rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare Anthropic judges against OpenRouter judges in versus, evaluate whether workspace material improves judgment, or top up pending judgments after adding new dimensions or models.
+description: Run pairwise judgments on versus essay-continuation pairs. Default mode is the unified blind path (single-turn LLM call, no tools, no DB) — claude-* models route direct to Anthropic, others through OpenRouter. --variant ws adds a rumil SDK agent with workspace-exploration tools; --variant orch fires a full TwoPhaseOrchestrator run per pair. Use when the user wants to measure how rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare blind judges against workspace-aware ones, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "--variant text|rumil-text|ws|orch [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
+argument-hint: "[--variant ws|orch] [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -14,25 +14,30 @@ picks up the new rows automatically; rumil paths also mirror a trace
 URL + 7-point preference label + call/run/question IDs so the `/inspect`
 page can link back to the rumil trace.
 
-## Four variants
+## Three modes
 
-| Variant | What it does | judge_model format | Needs supabase? |
+| Mode | What it does | judge_model format | Needs supabase? |
 |---|---|---|---|
-| `text` (default) | Single-turn Anthropic call, versus judge prompt. Same shape as OpenRouter judges, different model axis. | `anthropic:<model>:p<hash>:v<N>:s<hash>` | no |
-| `rumil-text` | Single-turn Anthropic call with **rumil's** dimension prompt (judge-shell + essay-adapted dimension body). Isolates the prompt-source effect from the workspace/tools effect that `ws` bundles together. | `rumil:text:<model>:<dim>:p<hash>:v<N>:s<hash>` | no |
+| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `<canonical_model>:<dim>:p<hash>:v<N>:s<hash>` | no |
 | `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Uses the essay-adapted rumil dimension prompt selected via `--dimension`. | `rumil:ws:<model>:<ws_short>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
 | `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<ws_short>:b<N>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
 
-`<task>` is the rumil dimension name selected via `--dimension` (e.g.
-`general_quality`, `grounding`). Versus-style criterion prompts were
-retired in JUDGE_PROMPT_VERSION=2; use a rumil dimension instead.
+`<dim>` / `<task>` is the rumil dimension name selected via `--dimension`
+(e.g. `general_quality`, `grounding`). Blind keys carry the dimension
+inline; ws/orch keys carry it as the trailing `<task>` segment. The
+blind shell is **without** tool advertisements (no scope-question
+references, no `load_page`/`search_workspace` mentions); ws/orch shell
+keeps them. Both modes share the same template — see
+`rumil/versus_prompts.py` for the substitution dicts.
 
-Four tags appear in the key, three automatic and one manual:
+Four tags appear in the key:
 
-- `:p<hash>` — `compute_prompt_hash(task_body)` hashes `prompts/versus-judge-shell.md` + the task body. Any `.md` edit auto-invalidates the key.
-- `:v<N>` — `BLIND_JUDGE_VERSION` from `versus.versions`. Manual bump for semantic bridge changes the prompt hash doesn't catch (see "When to bump `BLIND_JUDGE_VERSION`" below).
-- `:t<hash>` (ws / orch only) — hash of the workspace-exploration tool description map. Tool docstring edits auto-invalidate.
-- `:s<hash>` (text / rumil-text / OpenRouter judges) — hash of the sampling dict (`{"temperature", "max_tokens"}`). Topups at a different temperature re-judge instead of silently no-opping.
+- `:p<hash>` — hash of the *composed* system prompt for this mode. Blind and tools modes hash to different spaces because the composed shell differs.
+- `:v<N>` — `BLIND_JUDGE_VERSION` (now gates everything, including blind judges). Bump for semantic changes the prompt hash misses.
+- `:t<hash>` (ws / orch only) — hash of the workspace-exploration tool description map.
+- `:s<hash>` (blind only) — hash of the sampling dict.
+
+Legacy keys (`anthropic:<model>:p..:v..`, `rumil:text:<model>:<dim>:...`, bare-OR `<provider>/<model>:p..:v..`) still parse for old jsonl rows; they read as stale because they hash the pre-collapse shell.
 
 See `versus/AGENT.md` for the full interaction between these four knobs.
 

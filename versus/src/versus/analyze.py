@@ -146,37 +146,47 @@ def judge_label(judge: str) -> dict:
     """Break a judge_model id into stacked header parts.
 
     Returns {variant, model, task, phash}. `phash` is the `:p<sha8>` prompt
-    version suffix (present on post-hash judgments; absent on legacy
-    pre-hash data). A `:v<N>` version suffix (after the phash) is folded
-    into `variant` so the phash remains separable. Applies to all
-    variants: rumil:*, anthropic:*, and OpenRouter bare-provider form.
+    version suffix; `:v<N>` is folded into `variant`. Handles the post-
+    collapse blind shape (``<canonical_model>:<dim>:p..:v..:s..``), the
+    rumil:ws / rumil:orch keys (unchanged), and the legacy shapes
+    (``rumil:text:*``, ``anthropic:*``, bare ``<provider>/<model>:p..``)
+    so old jsonl rows continue to render.
     """
-    if (
-        judge.startswith("rumil:orch:")
-        or judge.startswith("rumil:ws:")
-        or judge.startswith("rumil:text:")
-    ):
+    if judge.startswith("rumil:orch:") or judge.startswith("rumil:ws:"):
         parts, phash, version = _strip_phash_version(judge.split(":"))
         variant = f"{parts[0]}:{parts[1]}"
         model = parts[2] if len(parts) >= 3 else judge
-        if parts[1] == "text":
-            tail = parts[3:]
-        else:
-            tail = parts[4:]  # skip ws_short hash
-            if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
-                variant = f"{variant} {tail[0]}"
-                tail = tail[1:]
+        tail = parts[4:]  # skip ws_short hash
+        if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
+            variant = f"{variant} {tail[0]}"
+            tail = tail[1:]
         if version:
             variant = f"{variant} {version}"
         task = ":".join(tail) if tail else None
         return {"variant": variant, "model": model, "task": task, "phash": phash}
+    if judge.startswith("rumil:text:"):
+        # Legacy: rumil:text:<model>:<dim>:p..:v..:s..
+        parts, phash, version = _strip_phash_version(judge.split(":"))
+        variant = f"rumil:text {version}" if version else "rumil:text"
+        model = parts[2] if len(parts) > 2 else judge
+        task = ":".join(parts[3:]) if len(parts) > 3 else None
+        return {"variant": variant, "model": model, "task": task, "phash": phash}
     if judge.startswith("anthropic:"):
+        # Legacy: anthropic:<model>:p..:v..:s..
         parts, phash, version = _strip_phash_version(judge.split(":"))
         model = ":".join(parts[1:]) if len(parts) > 1 else judge
         variant = f"anthropic {version}" if version else "anthropic"
         return {"variant": variant, "model": model, "task": None, "phash": phash}
+    parts, phash, version = _strip_phash_version(judge.split(":"))
+    if len(parts) >= 2 and phash is not None:
+        # New blind shape: <canonical_model>:<dim>:p..:v..:s..
+        model = parts[0]
+        task = ":".join(parts[1:])
+        provider = model.split("/", 1)[0] if "/" in model else "anthropic"
+        variant = f"{provider} {version}" if version else provider
+        return {"variant": variant, "model": model, "task": task, "phash": phash}
     if "/" in judge:
-        parts, phash, version = _strip_phash_version(judge.split(":"))
+        # Legacy bare-OR: <provider>/<model>:p..:v..:s..
         base = ":".join(parts)
         provider, model = base.split("/", 1)
         variant = f"{provider} {version}" if version else provider

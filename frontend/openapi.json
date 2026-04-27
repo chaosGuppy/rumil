@@ -4292,6 +4292,10 @@
             "type": "string",
             "title": "Markdown"
           },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
           "prefix_config_hash": {
             "type": "string",
             "title": "Prefix Config Hash"
@@ -4343,6 +4347,7 @@
           "pub_date",
           "url",
           "markdown",
+          "schema_version",
           "prefix_config_hash",
           "target_words",
           "completion_prompt",
@@ -4458,6 +4463,10 @@
           "url": {
             "type": "string",
             "title": "Url"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
           }
         },
         "type": "object",
@@ -4467,7 +4476,8 @@
           "title",
           "author",
           "pub_date",
-          "url"
+          "url",
+          "schema_version"
         ],
         "title": "EssayMeta",
         "description": "Headline metadata for one cached essay."
@@ -5217,6 +5227,10 @@
           "orphaned": {
             "type": "boolean",
             "title": "Orphaned"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
           }
         },
         "type": "object",
@@ -5245,7 +5259,8 @@
           "rumil_run_id",
           "rumil_cost_usd",
           "contamination_note",
-          "orphaned"
+          "orphaned",
+          "prefix_config_hash"
         ],
         "title": "Judgment",
         "description": "One pairwise judgment row, shaped for the inspect view.\n\nIncludes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``\nso the inspect UI can render them inline (matching the standalone\nself-vs-human HTML viewer). Older rows may not have ``system_prompt``\nor ``prompt`` populated; both are optional."
@@ -7928,6 +7943,32 @@
               }
             ],
             "title": "Prompt"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
+          "sampling_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling Hash"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
           }
         },
         "type": "object",
@@ -7937,7 +7978,10 @@
           "text",
           "words",
           "target",
-          "prompt"
+          "prompt",
+          "prefix_config_hash",
+          "sampling_hash",
+          "model_id"
         ],
         "title": "Source",
         "description": "One generated continuation (or the held-out human remainder).\n\n``prompt`` is the verbatim completion prompt the model received,\nstored on the row (legacy rows and the human baseline have no\nprompt \u2014 the inspect UI falls back to the template in that case)."

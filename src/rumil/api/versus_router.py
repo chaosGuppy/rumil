@@ -204,6 +204,7 @@ class EssayMeta(pydantic.BaseModel):
     author: str
     pub_date: str
     url: str
+    schema_version: int
 
 
 class EssayDetail(pydantic.BaseModel):
@@ -215,6 +216,7 @@ class EssayDetail(pydantic.BaseModel):
     pub_date: str
     url: str
     markdown: str
+    schema_version: int
     prefix_config_hash: str
     target_words: int
     completion_prompt: str
@@ -243,6 +245,9 @@ class Source(pydantic.BaseModel):
     words: int
     target: int
     prompt: str | None
+    prefix_config_hash: str
+    sampling_hash: str | None
+    model_id: str | None
 
 
 class Judgment(pydantic.BaseModel):
@@ -279,6 +284,7 @@ class Judgment(pydantic.BaseModel):
     rumil_cost_usd: float | None
     contamination_note: str | None
     orphaned: bool
+    prefix_config_hash: str
 
 
 class JudgmentDetail(pydantic.BaseModel):
@@ -551,6 +557,7 @@ def list_essays(include_legacy: bool = False) -> list[EssayMeta]:
                 author=d.get("author", ""),
                 pub_date=d.get("pub_date", ""),
                 url=d.get("url", ""),
+                schema_version=d.get("schema_version", 0),
             )
         )
     return out
@@ -590,6 +597,7 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         pub_date=essay.pub_date,
         url=essay.url,
         markdown=essay.markdown,
+        schema_version=essay.schema_version,
         prefix_config_hash=task.prefix_config_hash,
         target_words=task.target_words,
         completion_prompt=completion_prompt,
@@ -636,6 +644,9 @@ def get_essay_sources(essay_id: str, prefix_label: str | None = None) -> list[So
             words=row.get("response_words") or 0,
             target=row.get("target_words") or 0,
             prompt=row.get("prompt"),
+            prefix_config_hash=row.get("prefix_config_hash", ""),
+            sampling_hash=row.get("sampling_hash"),
+            model_id=row.get("model_id"),
         )
     return sorted(by_source.values(), key=lambda s: (s.source_id != "human", s.source_id))
 
@@ -731,6 +742,7 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 rumil_cost_usd=row.get("rumil_cost_usd"),
                 contamination_note=row.get("contamination_note"),
                 orphaned=_is_orphaned(row, source_index),
+                prefix_config_hash=row.get("prefix_config_hash", ""),
             )
         )
     judgments.sort(key=lambda j: (j.judge_model, j.criterion, j.source_a, j.source_b))

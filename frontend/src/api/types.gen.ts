@@ -871,6 +871,10 @@ export type EssayDetail = {
      */
     markdown: string;
     /**
+     * Schema Version
+     */
+    schema_version: number;
+    /**
      * Prefix Config Hash
      */
     prefix_config_hash: string;
@@ -1005,6 +1009,10 @@ export type EssayMeta = {
      * Url
      */
     url: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
 };
 
 /**
@@ -1470,6 +1478,10 @@ export type Judgment = {
      * Orphaned
      */
     orphaned: boolean;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
 };
 
 /**
@@ -3019,6 +3031,18 @@ export type Source = {
      * Prompt
      */
     prompt: string | null;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Sampling Hash
+     */
+    sampling_hash: string | null;
+    /**
+     * Model Id
+     */
+    model_id: string | null;
 };
 
 /**

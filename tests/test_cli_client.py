@@ -147,7 +147,9 @@ def test_submit_prints_logs_url_when_present(mocker, capsys):
             201,
             json={
                 "job_name": "rumil-orch-ws-deadbeef",
+                "run_id": "00000000-0000-0000-0000-00000000abcd",
                 "logs_url": "https://console.cloud.google.com/logs/query;query=foo?project=p",
+                "trace_url": "http://app.test/traces/00000000-0000-0000-0000-00000000abcd",
             },
         )
 
@@ -171,7 +173,14 @@ def test_submit_prints_logs_url_when_present(mocker, capsys):
 
 def test_submit_prints_kubectl_fallback_when_logs_url_empty(mocker, capsys):
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(201, json={"job_name": "rumil-orch-ws-cafe", "logs_url": ""})
+        return httpx.Response(
+            201,
+            json={
+                "job_name": "rumil-orch-ws-cafe",
+                "run_id": "00000000-0000-0000-0000-00000000cafe",
+                "logs_url": "",
+            },
+        )
 
     mocker.patch(
         "rumil.cli_client.httpx.Client",

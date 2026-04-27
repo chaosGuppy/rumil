@@ -268,6 +268,7 @@ Every run automatically captures its configuration (model, budget, call variants
 | Flag | Description |
 |------|-------------|
 | `--run-id-file PATH` | Write the run_id to a file after DB creation (for scripted capture) |
+| `--run-id UUID` | Use this run_id instead of generating a new one. Set by the API when launching an orchestrator Job so the trace URL is known at submit time |
 | `--env-file PATH` | Load settings from this env file in addition to `.env` |
 
 ### Run on Kubernetes

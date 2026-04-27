@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rumil API",
-    "description": "Read-only browsing API for the Rumil research workspace, plus a /api/jobs/orchestrator-runs endpoint that submits Kubernetes Jobs.",
+    "description": "Read-only browsing API for the Rumil research workspace, plus the /api/jobs endpoints used by the job-monitoring UI: POST /api/jobs/orchestrator-runs submits a Kubernetes Job and GET /api/jobs lists recent orchestrator Jobs in the cluster.",
     "version": "0.1.0"
   },
   "paths": {
@@ -48,6 +48,60 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OrchestratorRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List Jobs",
+        "description": "List orchestrator Jobs (newest first), capped at 200 rows.\n\nFiltered to `rumil.ink/run-kind=orchestrator` so non-orchestrator Jobs\nin the namespace are excluded. Jobs that pre-date the run-id/workspace/\nquestion metadata rollout \u2014 or any other Job that happens to share the\nrun-kind label without our full metadata \u2014 are silently skipped.",
+        "operationId": "list_jobs_api_jobs_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobListItem"
+                  },
+                  "title": "Response List Jobs Api Jobs Get"
                 }
               }
             }
@@ -3651,6 +3705,96 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "JobListItem": {
+        "properties": {
+          "job_name": {
+            "type": "string",
+            "title": "Job Name"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "failed",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "workspace": {
+            "type": "string",
+            "title": "Workspace"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "trace_url": {
+            "type": "string",
+            "title": "Trace Url"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "title": "Owner User Id",
+            "default": ""
+          },
+          "logs_url": {
+            "type": "string",
+            "title": "Logs Url",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_name",
+          "namespace",
+          "status",
+          "created_at",
+          "run_id",
+          "workspace",
+          "question",
+          "trace_url"
+        ],
+        "title": "JobListItem",
+        "description": "One row in GET /api/jobs. Built from a V1Job's metadata only."
+      },
       "LLMExchangeEventOut": {
         "properties": {
           "ts": {
@@ -4367,15 +4511,25 @@
             "type": "string",
             "title": "Job Name"
           },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
           "logs_url": {
             "type": "string",
             "title": "Logs Url",
+            "default": ""
+          },
+          "trace_url": {
+            "type": "string",
+            "title": "Trace Url",
             "default": ""
           }
         },
         "type": "object",
         "required": [
-          "job_name"
+          "job_name",
+          "run_id"
         ],
         "title": "OrchestratorRunResponse"
       },

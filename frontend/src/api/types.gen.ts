@@ -884,6 +884,62 @@ export type HttpValidationError = {
 };
 
 /**
+ * JobListItem
+ *
+ * One row in GET /api/jobs. Built from a V1Job's metadata only.
+ */
+export type JobListItem = {
+    /**
+     * Job Name
+     */
+    job_name: string;
+    /**
+     * Namespace
+     */
+    namespace: string;
+    /**
+     * Status
+     */
+    status: 'pending' | 'running' | 'failed' | 'completed';
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Completed At
+     */
+    completed_at?: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Workspace
+     */
+    workspace: string;
+    /**
+     * Question
+     */
+    question: string;
+    /**
+     * Trace Url
+     */
+    trace_url: string;
+    /**
+     * Owner User Id
+     */
+    owner_user_id?: string;
+    /**
+     * Logs Url
+     */
+    logs_url?: string;
+};
+
+/**
  * LLMExchangeEventOut
  */
 export type LlmExchangeEventOut = {
@@ -1257,9 +1313,17 @@ export type OrchestratorRunResponse = {
      */
     job_name: string;
     /**
+     * Run Id
+     */
+    run_id: string;
+    /**
      * Logs Url
      */
     logs_url?: string;
+    /**
+     * Trace Url
+     */
+    trace_url?: string;
 };
 
 /**
@@ -2436,6 +2500,39 @@ export type CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses = {
 };
 
 export type CreateOrchestratorRunApiJobsOrchestratorRunsPostResponse = CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses[keyof CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses];
+
+export type ListJobsApiJobsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/jobs';
+};
+
+export type ListJobsApiJobsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListJobsApiJobsGetError = ListJobsApiJobsGetErrors[keyof ListJobsApiJobsGetErrors];
+
+export type ListJobsApiJobsGetResponses = {
+    /**
+     * Response List Jobs Api Jobs Get
+     *
+     * Successful Response
+     */
+    200: Array<JobListItem>;
+};
+
+export type ListJobsApiJobsGetResponse = ListJobsApiJobsGetResponses[keyof ListJobsApiJobsGetResponses];
 
 export type HealthzHealthzGetData = {
     body?: never;

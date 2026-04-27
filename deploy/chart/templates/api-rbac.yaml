@@ -34,10 +34,11 @@ metadata:
   labels:
     {{- include "rumil.labels" . | nindent 4 }}
 rules:
-  # Submit orchestrator-run Jobs from POST /api/jobs/orchestrator-runs.
+  # Submit orchestrator-run Jobs from POST /api/jobs/orchestrator-runs;
+  # list them for GET /api/jobs (the job-monitoring UI).
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["create"]
+    verbs: ["create", "list"]
   # Read the running rumil-api Deployment to copy image + env onto each Job.
   - apiGroups: ["apps"]
     resources: ["deployments"]

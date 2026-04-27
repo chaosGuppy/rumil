@@ -17,7 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
-from rumil.api.auth import AuthUser, get_current_user, is_admin
+from rumil.api.auth import AuthUser, _get_admin_db, get_current_user, is_admin, require_admin
 from rumil.api.jobs import router as jobs_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
@@ -175,32 +175,6 @@ async def _get_db_maybe_staged(
         yield db
     finally:
         await db.close()
-
-
-async def _get_admin_db(
-    _user: AuthUser = Depends(get_current_user),
-) -> AsyncIterator[DB]:
-    """A no-query-param DB factory for admin-status lookups.
-
-    `_get_db` accepts `project_id`/`staged_run_id` as query params; routing
-    those through endpoints that don't care (like `/api/auth/me`) leaks
-    them into the OpenAPI surface, so admin checks use this instead.
-    """
-    prod = get_settings().is_prod_db
-    db = await DB.create(run_id=str(uuid.uuid4()), prod=prod)
-    try:
-        yield db
-    finally:
-        await db.close()
-
-
-async def require_admin(
-    user: AuthUser = Depends(get_current_user),
-    db: DB = Depends(_get_admin_db),
-) -> AuthUser:
-    if not await is_admin(user, db):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
 
 
 @app.get("/api/auth/me", response_model=AuthUserOut)

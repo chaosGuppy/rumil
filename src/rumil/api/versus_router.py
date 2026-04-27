@@ -17,8 +17,9 @@ import os
 import pathlib
 
 import pydantic
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from rumil.api.auth import require_admin
 from versus import analyze as versus_analyze
 from versus import config as versus_config
 from versus import diagnostics as versus_diagnostics
@@ -470,7 +471,11 @@ class ResultsBundle(pydantic.BaseModel):
     active_prefix_label: str
 
 
-router = APIRouter(prefix="/api/versus", tags=["versus"])
+router = APIRouter(
+    prefix="/api/versus",
+    tags=["versus"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 def _load_essay(essay_id: str) -> versus_essay.Essay | None:

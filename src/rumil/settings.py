@@ -7,11 +7,28 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic.config import JsonDict
 from pydantic_settings import BaseSettings
 
 _CAPTURE: JsonDict = {"capture": True}
+
+RUMIL_MODEL_ALIASES: dict[str, str] = {
+    "opus": "claude-opus-4-7",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5-20251001",
+}
+
+_MODEL_OVERRIDE_PREFIXES = ("claude-opus-", "claude-sonnet-", "claude-haiku-")
+
+
+def resolve_model_alias(name: str) -> str:
+    """Map a short model alias (opus/sonnet/haiku) to its full Anthropic id.
+
+    Returns ``name`` unchanged if it isn't a known alias — entry points that
+    accept either an alias or a full id can call this unconditionally.
+    """
+    return RUMIL_MODEL_ALIASES.get(name, name)
 
 
 def _get_git_commit() -> str:
@@ -49,8 +66,21 @@ class Settings(BaseSettings):
     # Optional full model id ("claude-sonnet-4-6", etc.) that overrides
     # the default derived by the `model` property. Set via
     # RUMIL_MODEL_OVERRIDE env var. Intended for entry points (e.g.
-    # versus judging) that want to pick a model per invocation.
+    # versus judging) that want to pick a model per invocation. Validated
+    # against known Anthropic model id prefixes so typos fail fast at
+    # construction instead of leaking into a downstream API error.
     rumil_model_override: str = ""
+
+    @field_validator("rumil_model_override")
+    @classmethod
+    def _validate_model_override(cls, v: str) -> str:
+        if v and not v.startswith(_MODEL_OVERRIDE_PREFIXES):
+            raise ValueError(
+                f"rumil_model_override={v!r} must start with one of "
+                f"{_MODEL_OVERRIDE_PREFIXES} (or be empty/unset)"
+            )
+        return v
+
     force_twophase_recurse: bool = False
     use_prod_db: str = ""
     tracing_enabled: bool = True

@@ -39,15 +39,10 @@ envcascade.apply(
     rumil_root=RUMIL_ROOT,
 )
 
+from rumil.settings import RUMIL_MODEL_ALIASES  # noqa: E402
 from versus import config, prepare, rumil_judge  # noqa: E402
 
 DEFAULT_DIMENSIONS = ("general_quality",)
-
-RUMIL_MODEL_ALIASES = {
-    "opus": "claude-opus-4-7",
-    "sonnet": "claude-sonnet-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
-}
 
 
 def main() -> None:

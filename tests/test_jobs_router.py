@@ -83,6 +83,63 @@ async def test_post_orchestrator_run_returns_empty_logs_url_when_no_project(
 
 
 @pytest.mark.asyncio
+async def test_post_orchestrator_run_forwards_continue_id_with_resolved_headline(
+    mocker, auth_overridden_client
+):
+    """`--continue` runs reach the submitter with continue_id set, and the
+    API resolves the question's headline to use as the /jobs annotation."""
+    fake_submit = mocker.patch(
+        "rumil.api.jobs.submit_orchestrator_job",
+        return_value=("rumil-orch-ws-cont", _FAKE_RUN_ID),
+    )
+    mocker.patch("rumil.api.jobs.build_logs_url", return_value="")
+    fake_db = mocker.MagicMock()
+
+    async def fake_get_page(_):
+        page = mocker.MagicMock()
+        page.headline = "Why is the sky blue?"
+        return page
+
+    fake_db.get_page = fake_get_page
+
+    async def fake_close():
+        return None
+
+    fake_db.close = fake_close
+
+    async def fake_create(**_):
+        return fake_db
+
+    mocker.patch("rumil.api.jobs.DB.create", side_effect=fake_create)
+
+    body = {"continue_id": "qid-abcdef", "budget": 4, "workspace": "ws"}
+    resp = await auth_overridden_client.post("/api/jobs/orchestrator-runs", json=body)
+    assert resp.status_code == 201
+
+    fake_submit.assert_called_once()
+    _, kwargs = fake_submit.call_args
+    assert kwargs["question_annotation"] == "Why is the sky blue?"
+    spec_arg = fake_submit.call_args.args[0]
+    assert spec_arg.continue_id == "qid-abcdef"
+    assert spec_arg.question is None
+
+
+@pytest.mark.asyncio
+async def test_post_orchestrator_run_rejects_missing_question_and_continue_id(
+    mocker, auth_overridden_client
+):
+    """Pydantic validator: exactly one of question/continue_id must be set."""
+    mocker.patch(
+        "rumil.api.jobs.submit_orchestrator_job",
+        return_value=("should-not-be-called", _FAKE_RUN_ID),
+    )
+    resp = await auth_overridden_client.post(
+        "/api/jobs/orchestrator-runs", json={"budget": 1, "workspace": "ws"}
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_post_orchestrator_run_validates_request_body(mocker, auth_overridden_client):
     mocker.patch(
         "rumil.api.jobs.submit_orchestrator_job",

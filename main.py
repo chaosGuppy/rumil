@@ -132,7 +132,6 @@ _NON_ORCHESTRATOR_FLAGS: tuple[str, ...] = (
     "report_id",
     "scan_memos_id",
     "draft_memos_path",
-    "continue_id",
     "batch_file",
     "run_eval_id",
     "ab_eval_ids",
@@ -1491,10 +1490,11 @@ async def async_main():
         get_settings().force_twophase_recurse = True
 
     if executor_choice == "prod":
-        if not args.question or _is_non_orchestrator_mode(args):
+        if (not args.question and not args.continue_id) or _is_non_orchestrator_mode(args):
             parser.error(
-                "--executor prod is only supported for orchestrator runs (a question with "
-                "--budget). For other modes, omit --executor or use --executor local."
+                "--executor prod is only supported for orchestrator runs (a question or "
+                "--continue, with --budget). For other modes, omit --executor or use "
+                "--executor local."
             )
         args.budget = _default_budget(args.budget)
         sys.exit(submit_remote_orchestrator_run(args))

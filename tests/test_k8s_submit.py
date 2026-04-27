@@ -265,6 +265,65 @@ def test_request_validation_rejects_zero_budget():
         OrchestratorRunRequest(question="q", budget=0, workspace="ws")
 
 
+def test_request_validation_rejects_neither_question_nor_continue_id():
+    with pytest.raises(ValidationError, match="exactly one of"):
+        OrchestratorRunRequest(budget=1, workspace="ws")
+
+
+def test_request_validation_rejects_both_question_and_continue_id():
+    with pytest.raises(ValidationError, match="exactly one of"):
+        OrchestratorRunRequest(question="q", continue_id="qid", budget=1, workspace="ws")
+
+
+def test_request_accepts_continue_id_alone():
+    spec = OrchestratorRunRequest(continue_id="qid", budget=1, workspace="ws")
+    assert spec.continue_id == "qid"
+    assert spec.question is None
+
+
+def test_container_command_uses_continue_flag_when_continuing():
+    spec = OrchestratorRunRequest(continue_id="qid-xyz", budget=3, workspace="ws")
+    cmd = list(_build_container_command(spec, run_id=_RUN_ID))
+    assert cmd[:2] == ["python", "main.py"]
+    assert "--continue" in cmd and cmd[cmd.index("--continue") + 1] == "qid-xyz"
+    # The positional question slot must be empty so argparse doesn't think
+    # the run_id (or any later flag) is a new question.
+    assert "qid-xyz" not in cmd[: cmd.index("--continue")]
+
+
+def test_build_job_default_annotation_for_continue_run():
+    spec = OrchestratorRunRequest(continue_id="qid-abcdef", budget=1, workspace="ws")
+    body = _build_job(
+        spec,
+        name="x",
+        owner_user_id="",
+        run_id=_RUN_ID,
+        image="img",
+        env=[],
+        env_from=[],
+    )
+    annotation = body["metadata"]["annotations"][JOB_ANNOTATION_QUESTION]
+    assert "qid-abcdef" in annotation
+    assert "continue" in annotation.lower()
+
+
+def test_build_job_uses_question_annotation_override():
+    """Caller can supply a resolved headline (e.g. from a DB lookup) to
+    override the default `(continue) <id>` placeholder."""
+    spec = OrchestratorRunRequest(continue_id="qid", budget=1, workspace="ws")
+    body = _build_job(
+        spec,
+        name="x",
+        owner_user_id="",
+        run_id=_RUN_ID,
+        image="img",
+        env=[],
+        env_from=[],
+        question_annotation="Why is the sky blue?",
+    )
+    assert body["metadata"]["annotations"][JOB_ANNOTATION_QUESTION] == "Why is the sky blue?"
+
+
 @pytest.mark.parametrize(
     "image,expected",
     [

@@ -136,10 +136,14 @@ def _job_name(spec: OrchestratorRunRequest) -> str:
 
 def _build_container_command(spec: OrchestratorRunRequest, *, run_id: str) -> Sequence[str]:
     """Translate the request into the in-pod CLI invocation."""
-    args: list[str] = [
-        "python",
-        "main.py",
-        spec.question,
+    args: list[str] = ["python", "main.py"]
+    if spec.continue_id:
+        args += ["--continue", spec.continue_id]
+    else:
+        # Validated by OrchestratorRunRequest: exactly one of question/continue_id is set.
+        assert spec.question is not None
+        args.append(spec.question)
+    args += [
         "--budget",
         str(spec.budget),
         "--workspace",
@@ -178,6 +182,20 @@ def _build_container_command(spec: OrchestratorRunRequest, *, run_id: str) -> Se
     return args
 
 
+def _question_annotation(spec: OrchestratorRunRequest) -> str:
+    """Display string stored on the Job for the /jobs UI.
+
+    For new investigations, the user-typed question is the natural label.
+    For continue runs, we don't have the headline here (would require a DB
+    lookup), so a callable annotation overrider can supply a richer string;
+    by default we show the continue_id so the row is at least clickable.
+    """
+    if spec.question:
+        return spec.question
+    assert spec.continue_id is not None
+    return f"(continue) {spec.continue_id}"
+
+
 def _build_job(
     spec: OrchestratorRunRequest,
     *,
@@ -187,6 +205,7 @@ def _build_job(
     image: str,
     env: Sequence[client.V1EnvVar],
     env_from: Sequence[client.V1EnvFromSource],
+    question_annotation: str | None = None,
 ) -> dict[str, Any]:
     manifest = _load_manifest()
     manifest.setdefault("metadata", {})
@@ -204,7 +223,8 @@ def _build_job(
 
     annotations = dict(metadata.get("annotations") or {})
     annotations[JOB_ANNOTATION_WORKSPACE_NAME] = spec.workspace
-    annotations[JOB_ANNOTATION_QUESTION] = spec.question[:QUESTION_ANNOTATION_MAX_CHARS]
+    annotation_label = question_annotation or _question_annotation(spec)
+    annotations[JOB_ANNOTATION_QUESTION] = annotation_label[:QUESTION_ANNOTATION_MAX_CHARS]
     metadata["annotations"] = annotations
 
     spec_block: dict[str, Any] = manifest["spec"]
@@ -231,12 +251,21 @@ def _env_from_to_dict(e: client.V1EnvFromSource) -> dict[str, Any]:
     return cast(dict[str, Any], client.ApiClient().sanitize_for_serialization(e))
 
 
-def submit_orchestrator_job(spec: OrchestratorRunRequest, *, owner_user_id: str) -> tuple[str, str]:
+def submit_orchestrator_job(
+    spec: OrchestratorRunRequest,
+    *,
+    owner_user_id: str,
+    question_annotation: str | None = None,
+) -> tuple[str, str]:
     """Create the Job and return (job_name, run_id). Raises on k8s API errors.
 
     The run_id is generated here and threaded into both the Job's
     `rumil.ink/run-id` label and the in-pod CLI's `--run-id` flag, so
     callers know the trace URL the moment the Job is submitted.
+
+    `question_annotation` overrides the human-readable label stamped on
+    the Job for the /jobs UI. Useful for `continue_id` runs, where the
+    caller can resolve the question's headline before submission.
     """
     batch, apps = _kube_clients()
     image, env, env_from = _read_api_runtime(apps)
@@ -252,6 +281,7 @@ def submit_orchestrator_job(spec: OrchestratorRunRequest, *, owner_user_id: str)
         image=image,
         env=env,
         env_from=env_from,
+        question_annotation=question_annotation,
     )
     batch.create_namespaced_job(namespace=NAMESPACE, body=body)
     log.info(

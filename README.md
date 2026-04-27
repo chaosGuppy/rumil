@@ -294,9 +294,10 @@ fire-and-forget from the laptop's perspective.
 
 Constraints:
 
-- `--executor prod` is only supported for orchestrator runs (a question with
-  `--budget`). For `--list`, `--summary`, `--continue`, etc., use
-  `--db prod` (or `--db prod --executor local`).
+- `--executor prod` is only supported for orchestrator runs — either a
+  question with `--budget`, or `--continue QUESTION_ID --budget`. For
+  `--list`, `--summary`, etc., use `--db prod` (or `--db prod --executor
+  local`).
 - `--db local --executor prod` is rejected — the cluster cannot reach a
   local Supabase.
 

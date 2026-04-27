@@ -1236,12 +1236,19 @@ export type MovesExecutedEventOut = {
  * (--db, --executor, --staged, --env-file, --run-id-file, --cli-user-id)
  * are intentionally absent — the in-pod run is always `--db prod
  * --executor local`.
+ *
+ * Exactly one of `question` (start a new investigation) or
+ * `continue_id` (resume an existing question by ID) must be set.
  */
 export type OrchestratorRunRequest = {
     /**
      * Question
      */
-    question: string;
+    question?: string | null;
+    /**
+     * Continue Id
+     */
+    continue_id?: string | null;
     /**
      * Budget
      */

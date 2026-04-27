@@ -48,6 +48,30 @@ function anchorId(prefix: string, raw: string): string {
   return `${prefix}-${raw.replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
 }
 
+/** Deterministic light pastel + dark text color pair per variant slug.
+ *  Same slug → same color across the page; new variants get a stable
+ *  color without needing config. */
+function variantColors(vid: string): React.CSSProperties {
+  let hash = 0;
+  for (let i = 0; i < vid.length; i++) {
+    hash = (hash * 31 + vid.charCodeAt(i)) | 0;
+  }
+  const hue = ((hash % 360) + 360) % 360;
+  return {
+    background: `hsl(${hue} 55% 92%)`,
+    color: `hsl(${hue} 55% 28%)`,
+    borderColor: `hsl(${hue} 45% 70%)`,
+  };
+}
+
+function VariantPill({ vid }: { vid: string }) {
+  return (
+    <span className="inspect-variant-pill" style={variantColors(vid)}>
+      {vid}
+    </span>
+  );
+}
+
 /** Short label for a model id (drop the provider prefix). */
 function shortModel(id: string): string {
   const after = id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
@@ -225,8 +249,11 @@ export default async function VersusInspectPage({
                 <span className="versus-muted">·</span>
                 <span className="versus-muted">target {head.detail.target_words} words</span>
                 <span className="versus-muted">·</span>
-                <span className="versus-muted">
-                  variants: {variantBundles.map((v) => v.id).join(", ")}
+                <span className="versus-muted" style={{ display: "inline-flex", gap: 6, alignItems: "baseline" }}>
+                  variants:{" "}
+                  {variantBundles.map((v) => (
+                    <VariantPill key={v.id} vid={v.id} />
+                  ))}
                 </span>
               </div>
               {modelOptions.length > 0 && (
@@ -250,8 +277,7 @@ export default async function VersusInspectPage({
                     key={v.id}
                     summary={
                       <>
-                        prompt <span className="versus-muted">·</span>{" "}
-                        <code>variant={v.id}</code>
+                        prompt <VariantPill vid={v.id} />
                       </>
                     }
                   >
@@ -390,7 +416,7 @@ function SourceRow({
           return (
             <div key={vid} className="inspect-cell">
               <div className="inspect-cell-head">
-                <span className="versus-pill subtle">{vid}</span>
+                <VariantPill vid={vid} />
                 {s ? (
                   <>
                     <span className="versus-muted" style={{ fontSize: 12 }}>{s.kind}</span>
@@ -481,7 +507,7 @@ function JudgmentRow({
           return (
             <div key={vid} className="inspect-cell">
               <div className="inspect-cell-head">
-                <span className="versus-pill subtle">{vid}</span>
+                <VariantPill vid={vid} />
                 {j ? <JudgmentVerdict j={j} /> : (
                   <span className="versus-muted" style={{ fontSize: 12 }}>(no row)</span>
                 )}
@@ -815,6 +841,18 @@ const INSPECT_STYLES = `
   background: var(--color-surface);
   padding: 10px 12px;
   display: flex; flex-direction: column; gap: 6px;
+}
+
+.inspect-variant-pill {
+  display: inline-block;
+  padding: 1px 9px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: ui-monospace, Menlo, monospace;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .inspect-cell-head {

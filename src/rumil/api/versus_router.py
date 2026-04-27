@@ -606,16 +606,19 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         include_headers=active_prefix_cfg.include_headers,
         tolerance=cfg.completion.length_tolerance,
     )
+    if not cfg.judging.criteria:
+        raise HTTPException(503, "versus config has no judging.criteria configured")
+    primary_criterion = cfg.judging.criteria[0]
     judge_system, judge_user = versus_judge.render_judge_prompt(
         prefix_text="{{ PREFIX SHOWN TO JUDGE }}",
-        dimension=cfg.judging.criteria[0],
+        dimension=primary_criterion,
         source_a_text="{{ CONTINUATION A }}",
         source_b_text="{{ CONTINUATION B }}",
     )
     paraphrase_prompt_template = versus_paraphrase.PARAPHRASE_INSTRUCTIONS.replace(
         "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
     )
-    judge_prompt_hash = versus_judge.compute_prompt_hash(cfg.judging.criteria[0], with_tools=False)
+    judge_prompt_hash = versus_judge.compute_prompt_hash(primary_criterion, with_tools=False)
     return EssayDetail(
         id=essay.id,
         title=essay.title,

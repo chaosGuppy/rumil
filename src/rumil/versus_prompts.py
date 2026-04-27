@@ -89,7 +89,7 @@ _BLIND_VARS: dict[str, str] = {
     ),
     "tool_section": "",
     "output_extras": "",
-    "convergence_extras": "",
+    "convergence_section": "",
 }
 
 _TOOLS_VARS: dict[str, str] = {
@@ -118,7 +118,14 @@ _TOOLS_VARS: dict[str, str] = {
         "judgment.\n"
     ),
     "output_extras": "; reference workspace page IDs when you use them",
-    "convergence_extras": ", optionally plus a small number of workspace lookups,",
+    "convergence_section": (
+        "\n## Convergence\n\n"
+        "Don't stop until your sense of the difference between A and "
+        "B has converged. But also don't over-explore — for short "
+        "essay continuations, one careful pass through each text, "
+        "optionally plus a small number of workspace lookups, is "
+        "usually enough."
+    ),
 }
 
 

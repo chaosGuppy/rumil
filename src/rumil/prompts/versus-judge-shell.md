@@ -35,7 +35,4 @@ Produce a structured comparison. Use whatever structure the dimension prompt abo
 - Be grounded in concrete observations from the two continuations (quote specific passages{output_extras}).
 - Explicitly contrast the two rather than describing each in isolation.
 - End with the preference rating on its own line, using one of the exact labels above.
-
-## Convergence
-
-Don't stop until your sense of the difference between A and B has converged. But also don't over-explore — for short essay continuations, one careful pass through each text{convergence_extras} is usually enough.
+{convergence_section}

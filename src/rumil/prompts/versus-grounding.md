@@ -23,7 +23,7 @@ Both continuations make claims of various kinds — factual, conceptual, evaluat
 3. Verify the most important claims with whatever resources are available to you.
 4. Compare: where one cites well, does the other also? Where one gets vague, does the other also?
 
-## Output format
+## Comparison structure
 
 Produce a structured comparison with:
 

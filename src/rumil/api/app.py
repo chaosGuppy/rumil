@@ -2,8 +2,10 @@
 FastAPI application for the Rumil research workspace.
 
 Mostly read-only browsing endpoints (projects, pages, links, calls). Also
-exposes POST /api/jobs/orchestrator-runs, which creates Kubernetes Jobs to
-run orchestrator investigations remotely; see `rumil.api.jobs`.
+exposes the `/api/jobs` family for the job-monitoring UI: POST
+`/api/jobs/orchestrator-runs` creates a Kubernetes Job to run an
+orchestrator investigation remotely, and GET `/api/jobs` lists recent
+orchestrator Jobs in the cluster. See `rumil.api.jobs`.
 """
 
 import logging
@@ -53,8 +55,10 @@ app = FastAPI(
     title="Rumil API",
     version="0.1.0",
     description=(
-        "Read-only browsing API for the Rumil research workspace, plus a "
-        "/api/jobs/orchestrator-runs endpoint that submits Kubernetes Jobs."
+        "Read-only browsing API for the Rumil research workspace, plus the "
+        "/api/jobs endpoints used by the job-monitoring UI: POST "
+        "/api/jobs/orchestrator-runs submits a Kubernetes Job and GET "
+        "/api/jobs lists recent orchestrator Jobs in the cluster."
     ),
 )
 

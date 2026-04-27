@@ -93,13 +93,15 @@ export default async function JobsPage() {
 
       {error && <div className="jobs-error">{error}</div>}
 
-      {!error && items.length === 0 ? (
+      {!error && items.length === 0 && (
         <div className="jobs-empty">
           No jobs in the cluster.<br />
           Submit one with{" "}
           <code>uv run main.py &quot;...&quot; --executor prod --budget N</code>.
         </div>
-      ) : (
+      )}
+
+      {!error && items.length > 0 && (
         <div className="jobs-list">
           {items.map((job, i) => {
             const { label: timeLabel, iso: timeIso } = statusTime(job);

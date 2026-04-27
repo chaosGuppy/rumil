@@ -36,7 +36,9 @@ export const createOrchestratorRunApiJobsOrchestratorRunsPost = <ThrowOnError ex
  * List orchestrator Jobs (newest first), capped at 200 rows.
  *
  * Filtered to `rumil.ink/run-kind=orchestrator` so non-orchestrator Jobs
- * in the namespace (other tooling, future job kinds) are excluded.
+ * in the namespace are excluded. Jobs that pre-date the run-id/workspace/
+ * question metadata rollout — or any other Job that happens to share the
+ * run-kind label without our full metadata — are silently skipped.
  */
 export const listJobsApiJobsGet = <ThrowOnError extends boolean = false>(options?: Options<ListJobsApiJobsGetData, ThrowOnError>) => (options?.client ?? client).get<ListJobsApiJobsGetResponses, ListJobsApiJobsGetErrors, ThrowOnError>({ url: '/api/jobs', ...options });
 

@@ -248,14 +248,28 @@ export default async function VersusInspectPage({
                 </span>
                 <span className="versus-muted">·</span>
                 <span className="versus-muted">target {head.detail.target_words} words</span>
-                <span className="versus-muted">·</span>
-                <span className="versus-muted" style={{ display: "inline-flex", gap: 6, alignItems: "baseline" }}>
-                  variants:{" "}
-                  {variantBundles.map((v) => (
-                    <VariantPill key={v.id} vid={v.id} />
-                  ))}
-                </span>
               </div>
+              <details className="inspect-footprint" open>
+                <summary>provenance footprint</summary>
+                <dl className="inspect-footprint-grid">
+                  <dt>essay_id</dt>
+                  <dd><code>{head.detail.id}</code></dd>
+                  <dt>schema_version</dt>
+                  <dd><code>{head.detail.schema_version}</code></dd>
+                  <dt>prefix variants</dt>
+                  <dd>
+                    {variantBundles.map((v, i) => (
+                      <span key={v.id} style={{ marginRight: 10 }}>
+                        <VariantPill vid={v.id} />{" "}
+                        <code className="versus-muted" style={{ fontSize: 11 }}>
+                          {v.detail.prefix_config_hash}
+                        </code>
+                        {i < variantBundles.length - 1 ? "" : ""}
+                      </span>
+                    ))}
+                  </dd>
+                </dl>
+              </details>
               {modelOptions.length > 0 && (
                 <div className="inspect-modelfilter">
                   <InspectModelFilter options={modelOptions} />
@@ -748,6 +762,41 @@ const INSPECT_STYLES = `
 }
 .inspect-meta a { color: var(--vaccent-fg); }
 .inspect-modelfilter { margin: 6px 0 14px; }
+
+.inspect-footprint {
+  margin: 6px 0 12px;
+  font-size: 12px;
+}
+.inspect-footprint > summary {
+  cursor: pointer;
+  color: var(--color-muted);
+  user-select: none;
+  list-style: none;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.inspect-footprint > summary::-webkit-details-marker { display: none; }
+.inspect-footprint > summary::before {
+  content: "▸"; display: inline-block; margin-right: 6px;
+  transition: transform 120ms ease;
+}
+.inspect-footprint[open] > summary::before { transform: rotate(90deg); }
+.inspect-footprint-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 6px 0 0 14px;
+}
+.inspect-footprint-grid dt {
+  color: var(--color-muted);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, monospace;
+}
+.inspect-footprint-grid dd {
+  margin: 0;
+  font-size: 12px;
+}
 
 .inspect-section-head {
   font-size: 12px; font-weight: 600; text-transform: uppercase;

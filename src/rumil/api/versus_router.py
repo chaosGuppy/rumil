@@ -414,6 +414,7 @@ class JudgmentRow(pydantic.BaseModel):
 
     key: str
     essay_id: str
+    prefix_config_hash: str
     source_a: str
     source_b: str
     criterion: str
@@ -1022,6 +1023,7 @@ def get_results(
             JudgmentRow(
                 key=row.get("key", ""),
                 essay_id=row["essay_id"],
+                prefix_config_hash=row.get("prefix_config_hash", ""),
                 source_a=row["source_a"],
                 source_b=row["source_b"],
                 criterion=row["criterion"],

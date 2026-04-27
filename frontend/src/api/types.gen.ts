@@ -1628,6 +1628,10 @@ export type JudgmentRow = {
      */
     essay_id: string;
     /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
      * Source A
      */
     source_a: string;

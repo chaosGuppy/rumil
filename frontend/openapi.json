@@ -5549,6 +5549,10 @@
             "type": "string",
             "title": "Essay Id"
           },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
           "source_a": {
             "type": "string",
             "title": "Source A"
@@ -5616,6 +5620,7 @@
         "required": [
           "key",
           "essay_id",
+          "prefix_config_hash",
           "source_a",
           "source_b",
           "criterion",

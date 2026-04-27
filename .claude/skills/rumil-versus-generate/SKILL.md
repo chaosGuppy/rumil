@@ -1,34 +1,33 @@
 ---
-name: rumil-versus-openrouter
-description: Run the OpenRouter-backed versus scripts — completions, paraphrases, and pairwise judgments — via versus/scripts/run_{completions,paraphrases,judgments}.py. Handles the uv --with dance, the --config / path anchoring, and the --active canonical-set flag. Use when the user wants to produce or top up versus jsonl rows with OpenRouter models (GPT / Gemini / etc.), NOT rumil-adjacent judges (see rumil-versus-judge for those).
+name: rumil-versus-generate
+description: Run versus's generation scripts — completions and paraphrases — via versus/scripts/run_{completions,paraphrases}.py. Each model in the config routes to its provider (OpenRouter for non-claude ids today; claude-* may route direct to Anthropic in future iterations). Handles the uv --with dance, --config / path anchoring, and --active. Use when the user wants to produce or top up versus completion/paraphrase rows. **Judgments are not in this skill** — the unified judge entry point lives in rumil-versus-judge.
 allowed-tools: Bash, Read
-argument-hint: "--op completions|paraphrases|judgments [--model <id>...] [--judge-model <id>...] [--essay <id>...] [--active] [--vs-human] [--contestants <csv>] [--criterion <name>...] [--limit N] [--current-only] [--dry-run]"
+argument-hint: "--op completions|paraphrases [--model <id>...] [--essay <id>...] [--active] [--limit N] [--current-only] [--dry-run]"
 ---
 
-# rumil-versus-openrouter
+# rumil-versus-generate
 
-Wraps the three OpenRouter-backed versus scripts that write into
+Wraps the two versus generation scripts that write into
 `versus/data/*.jsonl`:
 
 | `--op` | Script | What it writes |
 |---|---|---|
 | `completions` | `run_completions.py` | `completions.jsonl` — model continuations + a human baseline row per essay |
-| `paraphrases` | `run_paraphrases.py` | `paraphrases.jsonl` — same-model-rewrites of each essay's remainder |
-| `judgments` | `run_judgments.py` | `judgments.jsonl` — blind pairwise verdicts over contestants in `completions.jsonl` |
+| `paraphrases` | `run_paraphrases.py` | `paraphrases.jsonl` — same-model rewrites of each essay's remainder |
 
-All three hit OpenRouter. For Anthropic-direct / rumil:ws / rumil:orch
-judges, use **`rumil-versus-judge`** instead — different backend, same
-output file.
+For judgments, use **`rumil-versus-judge`**. Its default (no `--variant`)
+runs the unified blind path that routes claude-* direct to Anthropic
+and everything else through OpenRouter, so there is no longer an
+OpenRouter-only judgment script.
 
 ## When to use
 
 | Intent | This skill? |
 |---|---|
 | "run a flash / gpt-5.4 / gemini completion on essay X" | yes |
-| "top up OpenRouter judgments after adding a model" | yes |
 | "regenerate paraphrases after a prompt bump" | yes |
+| "top up judgments (any model)" | **no** — use `rumil-versus-judge` |
 | "run a rumil:ws / rumil:orch judge" | **no** — use `rumil-versus-judge` |
-| "run an Anthropic-direct judge" | **no** — `rumil-versus-judge --variant text` |
 | "pre-flight check before a topup" | **no** — see `status.py` below |
 
 ## Before any run: check staleness
@@ -46,9 +45,9 @@ first if the user isn't explicit. Same gate `/versus` uses in the UI.
 
 ## The `--active` flag
 
-All three scripts now support `--active` — restrict to the canonical
-eval set: current `schema_version` and not in `cfg.essays.exclude_ids`.
-This is the 25-essay set `/versus` enumerates.
+Both scripts support `--active` — restrict to the canonical eval set:
+current `schema_version` and not in `cfg.essays.exclude_ids`. This is
+the 25-essay set `/versus` enumerates.
 
 Without `--active`, the scripts still honor `exclude_ids` (so excluded
 essays never get rows), but they'll happily touch older-schema essays
@@ -61,9 +60,8 @@ if it's also in the active set."
 
 ## Invocation
 
-All three scripts resolve paths relative to `versus/` regardless of
-cwd. Run from the rumil repo root so rumil is importable (the judge
-script imports `rumil.versus_bridge`):
+Both scripts resolve paths relative to `versus/` regardless of cwd.
+Run from the rumil repo root:
 
 ```!
 cd /Users/brian/code/rumil && uv run --with httpx --with pydantic --with pyyaml python versus/scripts/run_$OP.py $ARGUMENTS
@@ -75,63 +73,38 @@ scripts fail with `ModuleNotFoundError: httpx` or similar.
 
 ## Typical invocations
 
-**Flash completion + judgment across the active set** (the 25-essay
-canonical set, ~30 API calls at flash rates):
+**Flash completion across the active set** (the 25-essay canonical
+set, ~30 API calls at flash rates):
 
 ```
 --op completions --active --model google/gemini-3-flash-preview
---op judgments --active --judge-model google/gemini-3-flash-preview --vs-human --contestants human,google/gemini-3-flash-preview
 ```
 
-**Single-essay dry-run** (verify what would fire):
+**Top up paraphrases** (when prompt is bumped or new essays land):
 
 ```
---op judgments --essay redwood__my-picture-of-the-present-in-ai --vs-human --contestants human,google/gemini-3-flash-preview --dry-run
+--op paraphrases --active
 ```
 
-**Top up a new judge across existing pairs**:
+Default configured models come from `versus/config.yaml`:
+- `completion.models` → flash + gpt-5.4-mini + claude variants (Anthropic ids routed via OpenRouter)
+- `paraphrasing.models` → flash + gpt-5.4-mini + gpt-5.4
 
-```
---op judgments --active --judge-model openai/gpt-5.4
-```
+Override with `--model` (repeatable).
 
-Default configured models/judges/criteria come from
-`versus/config.yaml`:
-- `completion.models` → flash + gpt-5.4-mini
-- `judging.models` → flash + gpt-5.4-mini + gpt-5.4
-- `judging.criteria` → `general_quality` only (other versus-side
-  criteria like `substance_and_bite` were retired with
-  `JUDGE_PROMPT_VERSION=2`)
-
-Override with `--model` / `--judge-model` / `--criterion` (all
-repeatable).
-
-## Filter flags (judgments)
-
-Shared with `rumil-versus-judge` so muscle memory carries over:
+## Filter flags
 
 - `--essay <id>` (repeatable) — restrict to specific essays.
 - `--active` — the 25-essay canonical set.
-- `--contestants <csv>` — only pairs where BOTH `source_id`s are in
-  the list.
-- `--vs-human` — only pairs where one side is `human`.
-- `--current-only` — skip groups whose `prefix_config_hash` isn't
-  current (i.e. reference older essay markdown).
-- `--limit N` — cap number of judgments.
+- `--limit N` — cap number of calls.
 - `--dry-run` — print the plan and exit.
-
-The pattern `--vs-human --contestants human,<model>` restricts to
-exactly (model, human) pairs — useful for "did the judge pick human?"
-style evals.
 
 ## What to surface
 
-All three scripts print:
+Both scripts print:
 - `[plan] N ... calls (concurrency=K)` — count, use before confirming cost.
 - `[done i/N] <dedup_key>` — one line per successful row.
 - `[skip] <key>` — dedup hit, nothing written.
-- `[skip-refusal] <essay> / <model>` — judgments only; pair skipped because
-  a contestant's completion was flagged as a refusal. Expected; not an error.
 - `[err ] <key>: <msg>` — failure; other items still run.
 
 ## Cost
@@ -139,11 +112,11 @@ All three scripts print:
 OpenRouter pricing varies by model; rough per-call costs for this
 workflow's default max_tokens settings:
 
-| Model | Completion | Judgment |
-|---|---|---|
-| google/gemini-3-flash-preview | ~$0.002 | ~$0.005 |
-| openai/gpt-5.4-mini | ~$0.01 | ~$0.02 |
-| openai/gpt-5.4 | ~$0.05 | ~$0.10 |
+| Model | Completion |
+|---|---|
+| google/gemini-3-flash-preview | ~$0.002 |
+| openai/gpt-5.4-mini | ~$0.01 |
+| openai/gpt-5.4 | ~$0.05 |
 
 The 25-essay active set at flash = ~$0.15 for completions + ~$0.15
 per judge for vs-human judgments. Cheap enough to run without

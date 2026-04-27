@@ -17,7 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
-from rumil.api.auth import AuthUser, get_current_user, is_admin
+from rumil.api.auth import AuthUser, _get_admin_db, get_current_user, is_admin, require_admin
 from rumil.api.jobs import router as jobs_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
@@ -43,6 +43,7 @@ from rumil.api.schemas import (
     RunTraceTreeOut,
     TraceEventOut,
 )
+from rumil.api.versus_router import router as versus_router
 from rumil.database import DB, _row_to_call, _rows
 from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
@@ -73,6 +74,9 @@ app.add_middleware(
 app.include_router(jobs_router)
 
 
+app.include_router(versus_router)
+
+
 async def _assert_page_access(db: DB, page_id: str) -> Page:
     page = await db.get_page(page_id)
     if not page:
@@ -91,6 +95,24 @@ async def _assert_run_access(db: DB, run_id: str) -> None:
     rows = _rows(await db.client.table("runs").select("id").eq("id", run_id).execute())
     if not rows:
         raise HTTPException(status_code=404, detail="Run not found")
+
+
+async def _resolve_staged_read_db(db: DB, run_id: str) -> tuple[DB, bool, dict]:
+    """Look up a run's staging flag + config, returning a DB scoped for reads.
+
+    Staged runs (e.g. versus ws/orch judgments) write pages tagged with their
+    run_id; reading via the default baseline DB returns nulls for their
+    Question pages and scope-page summaries. This wraps the runs-row probe
+    so handlers can stay narrow and rebases against this file stay small.
+    """
+    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
+    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
+    if not run_data:
+        raise HTTPException(status_code=404, detail="Run not found")
+    is_staged = bool(run_data[0].get("staged"))
+    run_config: dict = run_data[0].get("config") or {}  # type: ignore[assignment]
+    read_db = db.view_as_staged(run_id) if is_staged else db
+    return read_db, is_staged, run_config
 
 
 @app.get("/healthz")
@@ -144,32 +166,6 @@ async def _get_db_maybe_staged(
         yield db
     finally:
         await db.close()
-
-
-async def _get_admin_db(
-    _user: AuthUser = Depends(get_current_user),
-) -> AsyncIterator[DB]:
-    """A no-query-param DB factory for admin-status lookups.
-
-    `_get_db` accepts `project_id`/`staged_run_id` as query params; routing
-    those through endpoints that don't care (like `/api/auth/me`) leaks
-    them into the OpenAPI surface, so admin checks use this instead.
-    """
-    prod = get_settings().is_prod_db
-    db = await DB.create(run_id=str(uuid.uuid4()), prod=prod)
-    try:
-        yield db
-    finally:
-        await db.close()
-
-
-async def require_admin(
-    user: AuthUser = Depends(get_current_user),
-    db: DB = Depends(_get_admin_db),
-) -> AuthUser:
-    if not await is_admin(user, db):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
 
 
 @app.get("/api/auth/me", response_model=AuthUserOut)
@@ -469,16 +465,16 @@ async def get_run_trace_tree(
     _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
-    await _assert_run_access(db, run_id)
-    question_id = await db.get_run_question_id(run_id)
+    read_db, is_staged, run_config = await _resolve_staged_read_db(db, run_id)
+    question_id = await read_db.get_run_question_id(run_id)
     question_page = None
     if question_id:
-        question_page = await db.get_page(question_id)
-    raw_rows = await db.get_call_rows_for_run(run_id)
+        question_page = await read_db.get_page(question_id)
+    raw_rows = await read_db.get_call_rows_for_run(run_id)
     calls = [_row_to_call(r) for r in raw_rows]
 
     scope_ids = [c.scope_page_id for c in calls if c.scope_page_id]
-    scope_pages = await db.get_pages_by_ids(scope_ids)
+    scope_pages = await read_db.get_pages_by_ids(scope_ids)
     scope_summaries = {pid: p.headline for pid, p in scope_pages.items()}
 
     nodes: list[CallNodeOut] = []
@@ -495,12 +491,6 @@ async def get_run_trace_tree(
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
-    run_resp = await db.client.table("runs").select("staged, config").eq("id", run_id).execute()
-    run_data: list[dict[str, object]] = run_resp.data or []  # type: ignore[assignment]
-    is_staged = bool(run_data and run_data[0].get("staged"))
-    run_config: dict = {}
-    if run_data:
-        run_config = run_data[0].get("config") or {}  # type: ignore[assignment]
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,

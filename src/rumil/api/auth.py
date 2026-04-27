@@ -18,10 +18,12 @@ caller awareness.
 empty `AuthUser` — used for local dev frictionless access.
 """
 
+import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import jwt
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 from jwt import PyJWKClient
 
 from rumil.database import DB
@@ -121,3 +123,29 @@ def get_optional_user(authorization: str | None = Header(default=None)) -> AuthU
         return get_current_user(authorization)
     except HTTPException:
         return None
+
+
+async def _get_admin_db(
+    _user: AuthUser = Depends(get_current_user),
+) -> AsyncIterator[DB]:
+    """A no-query-param DB factory for admin-status lookups.
+
+    The full request DB factory accepts ``project_id`` / ``staged_run_id`` as
+    query params; routing those through endpoints that don't care leaks them
+    into the OpenAPI surface, so admin checks use this instead.
+    """
+    prod = get_settings().is_prod_db
+    db = await DB.create(run_id=str(uuid.uuid4()), prod=prod)
+    try:
+        yield db
+    finally:
+        await db.close()
+
+
+async def require_admin(
+    user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_admin_db),
+) -> AuthUser:
+    if not await is_admin(user, db):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user

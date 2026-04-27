@@ -63,7 +63,7 @@ def _build_task_content(original_question: Page, candidate: MemoCandidate) -> st
         "Write a brief memo for the original asker of this question, "
         "highlighting something interesting, important, or surprising that "
         "came out of the investigation. The memo should approximate the "
-        f"topic: \"{candidate.title}\".\n\n"
+        f'topic: "{candidate.title}".\n\n'
         "You are free to contradict, reshape, or sharpen this title if a "
         "different framing seems more correct as you produce the memo. The "
         "title is a starting point, not a binding requirement.\n\n"
@@ -86,7 +86,7 @@ def _build_task_content(original_question: Page, candidate: MemoCandidate) -> st
         "against it. If you are offering a confident claim, walk the "
         "reader through the argument.\n\n"
         "Do not lead with speculative numerical estimates. Numbers like "
-        "\"20–30% probability\" or \"60/40 weighting\" are useful only "
+        '"20–30% probability" or "60/40 weighting" are useful only '
         "when you can show the Fermi-style calculation behind them — the "
         "components, their ranges, and how they combine — so the reader "
         "can argue with the reasoning rather than the figure. If you "
@@ -147,10 +147,7 @@ async def _render_source_pages(
             PageDetail.CONTENT,
             db=db,
         )
-        parts.append(
-            f"### `{pid[:8]}` — {page.page_type.value}: {page.headline}\n\n"
-            f"{rendered}\n"
-        )
+        parts.append(f"### `{pid[:8]}` — {page.page_type.value}: {page.headline}\n\n{rendered}\n")
     return "\n".join(parts)
 
 
@@ -186,8 +183,7 @@ class MemoGenerateSpecContext(ContextBuilder):
     async def build_context(self, infra: CallInfra) -> ContextResult:
         task = await infra.db.get_page(infra.question_id)
         task_section = (
-            f"# Artefact task\n\n{task.headline}\n\n"
-            f"{task.content or '(no further description)'}"
+            f"# Artefact task\n\n{task.headline}\n\n{task.content or '(no further description)'}"
             if task is not None
             else ""
         )
@@ -370,7 +366,7 @@ def save_memo_to_disk(
     path = root_dir / filename
 
     metadata = (
-        f"<!-- Drafted from candidate \"{candidate.title}\" "
+        f'<!-- Drafted from candidate "{candidate.title}" '
         f"(importance {candidate.importance}/5, surprise {candidate.surprise}/5).\n"
         f"     Investigation: {root_question_headline}\n"
         f"     Source pages: {', '.join(candidate.relevant_page_ids) or '(none)'}\n"
@@ -517,9 +513,7 @@ async def generate_memo_summary(
 
     memo_blocks: list[str] = []
     for i, (_candidate, artefact) in enumerate(drafted_with_artefacts, start=1):
-        memo_blocks.append(
-            f"### Memo {i}: {artefact.headline}\n\n{artefact.content.strip()}"
-        )
+        memo_blocks.append(f"### Memo {i}: {artefact.headline}\n\n{artefact.content.strip()}")
 
     user_message = (
         "## Original investigation question\n\n"
@@ -542,9 +536,7 @@ def save_memo_summary(
     root_dir = MEMOS_DIR / root_question_id[:8]
     root_dir.mkdir(parents=True, exist_ok=True)
     path = root_dir / "00-summary.md"
-    metadata = (
-        f"<!-- Memo summary index for investigation: {root_question_headline} -->\n\n"
-    )
+    metadata = f"<!-- Memo summary index for investigation: {root_question_headline} -->\n\n"
     body = text.strip()
     path.write_text(f"{metadata}{body}\n", encoding="utf-8")
     return path

@@ -87,10 +87,7 @@ async def scan_for_memos(
 
     log.info("Running memo scanner...")
     system_prompt = _load_prompt("memo-scanner.md")
-    user_message = (
-        "Here is the full body of research on this question:\n\n"
-        f"{research_tree}"
-    )
+    user_message = f"Here is the full body of research on this question:\n\n{research_tree}"
     result = await structured_call(
         system_prompt=system_prompt,
         user_message=user_message,
@@ -133,10 +130,7 @@ def render_scan_summary(scan: MemoScan) -> str:
         reverse=True,
     )
     for i, c in enumerate(ranked, start=1):
-        lines.append(
-            f"### {i}. {c.title}  "
-            f"[importance {c.importance}, surprise {c.surprise}]"
-        )
+        lines.append(f"### {i}. {c.title}  [importance {c.importance}, surprise {c.surprise}]")
         lines.append(f"**Headline:** {c.headline_claim}")
         lines.append("")
         lines.append(c.content_guess)

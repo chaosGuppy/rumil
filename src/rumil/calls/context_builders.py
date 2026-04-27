@@ -27,6 +27,7 @@ from rumil.llm import (
     build_user_message,
     structured_call,
 )
+from rumil.memo_mode import memo_source_pages
 from rumil.models import (
     CallType,
     LinkType,
@@ -1121,12 +1122,19 @@ class CritiqueContext(ContextBuilder):
         prior = await _latest_request_only_critique(artefact.id, infra.db)
         prior_section = _format_prior_request_only_critique(prior)
 
-        query = task.headline or task.content[:200]
-        embedding_result = await build_embedding_based_context(
-            query,
-            infra.db,
-            scope_question_id=infra.question_id,
-        )
+        memo_pages = memo_source_pages()
+        if memo_pages:
+            workspace_section = memo_pages
+            workspace_page_ids: list[str] = []
+        else:
+            query = task.headline or task.content[:200]
+            embedding_result = await build_embedding_based_context(
+                query,
+                infra.db,
+                scope_question_id=infra.question_id,
+            )
+            workspace_section = "# Broader workspace context\n\n" + embedding_result.context_text
+            workspace_page_ids = list(embedding_result.page_ids)
 
         parts: list[str] = [
             "# Artefact task",
@@ -1146,13 +1154,11 @@ class CritiqueContext(ContextBuilder):
             "---",
             "",
             *prior_section,
-            "# Broader workspace context",
-            "",
-            embedding_result.context_text,
+            workspace_section,
         ]
         context_text = "\n".join(parts)
 
-        working_page_ids = [task.id, artefact.id, *embedding_result.page_ids]
+        working_page_ids = [task.id, artefact.id, *workspace_page_ids]
         if prior is not None:
             working_page_ids.append(prior.id)
         return ContextResult(

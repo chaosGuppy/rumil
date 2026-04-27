@@ -24,6 +24,7 @@ from rumil.llm import (
     structured_call,
     text_call,
 )
+from rumil.memo_mode import is_memo_mode
 from rumil.models import CallType, MoveType, PageDetail, PageType
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
@@ -53,6 +54,11 @@ class StandardClosingReview(ClosingReviewer):
         context: ContextResult,
         creation: UpdateResult,
     ) -> None:
+        if is_memo_mode():
+            infra.call.review_json = {}
+            await mark_call_completed(infra.call, infra.db, self._result_summary(creation))
+            return
+
         review_context = self._review_context(creation)
         review = await run_closing_review(
             infra.call,

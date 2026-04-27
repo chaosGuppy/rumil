@@ -26,6 +26,13 @@ from rumil.cli_client import submit_remote_orchestrator_run
 from rumil.constants import MIN_TWOPHASE_BUDGET
 from rumil.database import DB
 from rumil.evaluate.runner import run_evaluation
+from rumil.memos import render_scan_summary, save_memo_scan, scan_for_memos
+from rumil.memos_to_artefacts import (
+    draft_memos_from_scan,
+    generate_memo_summary,
+    load_scan_from_path,
+    save_memo_summary,
+)
 from rumil.models import (
     Call,
     CallStatus,
@@ -112,6 +119,8 @@ _NON_ORCHESTRATOR_FLAGS: tuple[str, ...] = (
     "summary_id",
     "self_improve_id",
     "report_id",
+    "scan_memos_id",
+    "draft_memos_path",
     "continue_id",
     "batch_file",
     "run_eval_id",
@@ -601,6 +610,109 @@ async def cmd_report(
     print(f"\n---\nReport saved to: {path}")
 
 
+async def cmd_draft_memos(
+    scan_path: str,
+    db: DB,
+    *,
+    indices: Sequence[int] | None = None,
+    budget_per_memo: int = 30,
+    refine_max_rounds: int = 10,
+) -> None:
+    path = Path(scan_path)
+    if not path.exists():
+        print(f"Error: scan file '{scan_path}' not found.")
+        sys.exit(1)
+    scan = load_scan_from_path(path)
+    if not scan.root_question_id:
+        print(
+            f"Error: scan at '{scan_path}' has no root_question_id "
+            "(it may pre-date that field). Re-run --scan-memos and try again."
+        )
+        sys.exit(1)
+
+    root_question = await db.get_page(scan.root_question_id)
+    if root_question is None:
+        print(
+            f"Error: root question {scan.root_question_id[:8]} from the scan "
+            "is not present in this database. Are you in the right workspace?"
+        )
+        sys.exit(1)
+    if root_question.project_id and root_question.project_id != db.project_id:
+        db.project_id = root_question.project_id
+
+    n_to_draft = len(scan.candidates) if indices is None else len(indices)
+
+    budget = n_to_draft * budget_per_memo
+    await db.init_budget(budget)
+
+    print(f"\nDrafting {n_to_draft} memo(s) in parallel from scan: {path.name}")
+    print(f"Investigation: {scan.root_question_headline[:80]}")
+    print(f"Budget: {budget} ({budget_per_memo} per memo x {n_to_draft})\n")
+
+    results = await draft_memos_from_scan(
+        scan,
+        db,
+        indices=indices,
+        refine_max_rounds=refine_max_rounds,
+    )
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    print("\n--- Draft summary ---\n")
+    produced = 0
+    for candidate, result, file_path in results:
+        status = "ok" if result.artefact_id else "FAILED"
+        print(f"[{status}] {candidate.title[:70]}")
+        if result.artefact_id:
+            produced += 1
+            print(f"    artefact: {result.artefact_id[:8]}")
+            if file_path is not None:
+                print(f"    file:     {file_path}")
+            print(f"    finalized: {result.finalized}")
+        print()
+    print(f"Drafted {produced}/{n_to_draft} memos.")
+
+    if produced > 0:
+        print("\nWriting summary index...")
+        summary_text = await generate_memo_summary(scan, results, db)
+        summary_path = save_memo_summary(
+            summary_text,
+            scan.root_question_id,
+            scan.root_question_headline,
+        )
+        print(f"Summary saved to: {summary_path}")
+
+
+async def cmd_scan_memos(
+    question_id: str,
+    db: DB,
+    max_depth: int = 4,
+) -> None:
+    question = await db.get_page(question_id)
+    if not question:
+        resolved = await db.resolve_page_id(question_id)
+        if resolved:
+            question = await db.get_page(resolved)
+    if not question:
+        print(f"Error: question '{question_id}' not found. Run --list to see existing questions.")
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    print(f"\nScanning for memo candidates: {question.headline[:80]}")
+    print("(One LLM call, does not count against research budget)\n")
+
+    scan = await scan_for_memos(question.id, db, max_depth=max_depth)
+    path = save_memo_scan(scan, question.headline)
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    print(render_scan_summary(scan))
+    print(f"\n---\nMemo scan saved to: {path}")
+
+
 async def cmd_list(db: DB, workspace_name: str) -> None:
     questions = await db.get_root_questions()
     if not questions:
@@ -957,6 +1069,50 @@ async def async_main():
         dest="report_id",
         metavar="QUESTION_ID",
         help="Generate a multi-section research report for a question",
+    )
+    parser.add_argument(
+        "--scan-memos",
+        dest="scan_memos_id",
+        metavar="QUESTION_ID",
+        help=(
+            "Scan a completed investigation for the most important and "
+            "surprising findings. Outputs a ranked list of memo candidates "
+            "(title, content sketch, relevant page IDs, epistemic signals) "
+            "as JSON, ready for a downstream memo drafter."
+        ),
+    )
+    parser.add_argument(
+        "--draft-memos",
+        dest="draft_memos_path",
+        metavar="SCAN_JSON_PATH",
+        help=(
+            "Draft memos from a saved scan JSON file produced by "
+            "--scan-memos. Each candidate becomes one MemoOrchestrator run "
+            "(generate_spec -> refine_spec -> artefact). Memos land both as "
+            "ARTEFACT pages in the workspace and as markdown files under "
+            "pages/memos/{question_short_id}/."
+        ),
+    )
+    parser.add_argument(
+        "--memo-indices",
+        dest="memo_indices",
+        metavar="N1,N2,...",
+        default=None,
+        help=(
+            "Comma-separated 1-based candidate indices to draft (matches "
+            "the ranking shown by --scan-memos). Default: all."
+        ),
+    )
+    parser.add_argument(
+        "--budget-per-memo",
+        dest="budget_per_memo",
+        type=int,
+        default=30,
+        help=(
+            "Budget allocated per memo run (default: 30 — matches the "
+            "generative orchestrator's typical cost: spec + refine + ~9 "
+            "regenerate_and_critique cycles)."
+        ),
     )
     parser.add_argument(
         "--self-improve",
@@ -1432,6 +1588,26 @@ async def async_main():
             args.report_id,
             db,
             max_depth=args.max_depth,
+        )
+    elif args.scan_memos_id:
+        await cmd_scan_memos(
+            args.scan_memos_id,
+            db,
+            max_depth=args.max_depth,
+        )
+    elif args.draft_memos_path:
+        memo_indices: Sequence[int] | None = None
+        if args.memo_indices:
+            try:
+                memo_indices = [int(x) for x in args.memo_indices.split(",") if x.strip()]
+            except ValueError:
+                print("Error: --memo-indices must be a comma-separated list of integers.")
+                sys.exit(1)
+        await cmd_draft_memos(
+            args.draft_memos_path,
+            db,
+            indices=memo_indices,
+            budget_per_memo=args.budget_per_memo,
         )
     elif args.self_improve_id and args.self_improve_id != "__auto__":
         await cmd_self_improve(args.self_improve_id, db)

@@ -18,6 +18,7 @@ import pathlib
 import re
 import threading
 import time
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Literal
@@ -31,8 +32,10 @@ from rumil.versus_prompts import (
     get_rumil_dimension_body,
     label_to_verdict,
 )
-from versus import config, jsonl, openrouter
+from versus import anthropic_client, config, jsonl, openrouter
 from versus.versions import BLIND_JUDGE_VERSION, JUDGE_PROMPT_VERSION
+
+Provider = Literal["anthropic", "openrouter"]
 
 Order = Literal["ab", "ba"]
 
@@ -190,17 +193,59 @@ def base_judge_model(judge_model: str) -> str:
     return parse_judge_model_suffix(judge_model)[0]
 
 
-def compute_judge_prompt_hash(dimension: str) -> str:
+def compute_judge_prompt_hash(dimension: str, *, with_tools: bool = False) -> str:
     """Short hash of the composed judge prompt for ``dimension``.
 
-    Delegates to :func:`rumil.versus_bridge.compute_prompt_hash` so the
-    OpenRouter pathway and the ``rumil:text`` / ``rumil:ws`` pathways
-    produce the same ``p<hash>`` for the same dimension. Any edit to
-    ``versus-judge-shell.md`` or the dimension prompt forks the hash
-    naturally.
+    Delegates to :func:`rumil.versus_prompts.compute_prompt_hash`. ``with_tools``
+    distinguishes the blind shell (default) from the ws/orch shell so each
+    variant tracks its own hash space.
     """
     body = get_rumil_dimension_body(dimension)
-    return compute_prompt_hash(body)
+    return compute_prompt_hash(body, with_tools=with_tools)
+
+
+def route_judge_model(model: str) -> tuple[Provider, str]:
+    """Return (provider, canonical_id) for a judge model.
+
+    Claude models (with or without ``anthropic/`` prefix) route direct to
+    Anthropic. Everything else routes via OpenRouter. The canonical id is
+    the post-routing form: bare ``claude-...`` for Anthropic, OR id as-given
+    for OpenRouter — so ``anthropic/claude-opus-4-7`` and ``claude-opus-4-7``
+    canonicalise to the same key.
+    """
+    bare = model.removeprefix("anthropic/")
+    if bare.startswith("claude-"):
+        return ("anthropic", bare)
+    return ("openrouter", model)
+
+
+def _sampling_for(provider: Provider, canonical_model: str, max_tokens: int) -> dict:
+    """Per-provider sampling defaults.
+
+    Anthropic-direct: temperature is omitted for opus 4.7 (the Messages API
+    deprecated the param and 400s on it); 0.0 elsewhere. OpenRouter: always
+    0.0 (existing behaviour). Folded into the sampling-hash so topups at a
+    different temp re-judge instead of silently no-opping.
+    """
+    if provider == "anthropic":
+        use_temp = None if canonical_model.startswith("claude-opus-4-7") else 0.0
+        return {"temperature": use_temp, "max_tokens": max_tokens}
+    return {"temperature": JUDGE_TEMPERATURE, "max_tokens": max_tokens}
+
+
+def compose_blind_judge_model(canonical_model: str, dimension: str, sampling: dict) -> str:
+    """Build a blind judge_model dedup key.
+
+    Shape: ``<canonical_model>:<dimension>:p<phash>:v<BLIND_JUDGE_VERSION>:s<shash>``.
+    Single shape across providers — model id alone disambiguates route at
+    parse time. ``rumil:ws:`` / ``rumil:orch:`` keep their own prefixes.
+    """
+    ph = compute_judge_prompt_hash(dimension, with_tools=False)
+    sh = compute_sampling_hash(sampling)
+    suffix = f"p{ph}:v{BLIND_JUDGE_VERSION}"
+    if sh is not None:
+        suffix = f"{suffix}:s{sh}"
+    return f"{canonical_model}:{dimension}:{suffix}"
 
 
 def judge_prompt_is_current(judge_model: str, criterion: str) -> bool:
@@ -208,32 +253,28 @@ def judge_prompt_is_current(judge_model: str, criterion: str) -> bool:
 
     Catches the staleness class that ``prefix_config_hash`` doesn't: when
     ``versus-judge-shell.md`` / ``versus-<dim>.md`` get edited, or
-    ``JUDGE_PROMPT_VERSION`` / ``BLIND_JUDGE_VERSION`` get bumped, previously
-    cached judgment rows point at an old prompt. Status.py uses this to
-    surface them in the STALE banner; without it, a prompt/version bump
-    silently leaves rows that look current.
+    ``BLIND_JUDGE_VERSION`` gets bumped, previously cached judgment rows
+    point at an old prompt. Status.py uses this to surface them in the
+    STALE banner.
 
-    Rumil-style judges (``rumil:ws:*``, ``rumil:orch:*``, ``rumil:text:*``)
-    gate on ``BLIND_JUDGE_VERSION``; everyone else gates on
-    ``JUDGE_PROMPT_VERSION``. We recover dimension from the row's
-    ``criterion`` column (passed in here) rather than re-parsing the
-    judge_model string, which differs in shape per variant.
+    All non-legacy keys gate on ``BLIND_JUDGE_VERSION``. Tools-mode keys
+    (``rumil:ws:*``, ``rumil:orch:*``) hash the tools-shell composed output;
+    blind keys (everything else) hash the blind-shell composed output.
+    Legacy ``anthropic:<model>`` and bare-OR ``<id>:p..:v..`` keys (pinned
+    to the retired ``JUDGE_PROMPT_VERSION``) read as stale by construction
+    — their version tag won't match.
     """
     _, phash, version = parse_judge_model_suffix(judge_model)
     if phash is None or version is None:
-        # Legacy pre-hash judge_model — predates the dedup-version
-        # regime entirely. Flag as stale so the operator can decide to
-        # regenerate.
+        # Legacy pre-hash judge_model — predates the dedup-version regime.
         return False
+    is_tools = judge_model.startswith(("rumil:ws:", "rumil:orch:"))
     try:
-        expected_ph = f"p{compute_judge_prompt_hash(criterion)}"
+        expected_ph = f"p{compute_judge_prompt_hash(criterion, with_tools=is_tools)}"
     except ValueError:
         # Dimension prompt was removed; row can't match current set.
         return False
-    version_const = (
-        BLIND_JUDGE_VERSION if judge_model.startswith("rumil:") else JUDGE_PROMPT_VERSION
-    )
-    expected_v = f"v{version_const}"
+    expected_v = f"v{BLIND_JUDGE_VERSION}"
     return phash == expected_ph and version == expected_v
 
 
@@ -399,6 +440,233 @@ def load_sources_by_essay(
 
 
 JUDGE_TEMPERATURE = 0.0
+
+
+@dataclass(frozen=True)
+class _BlindTask:
+    essay_id: str
+    prefix_hash: str
+    a_id: str
+    b_id: str
+    first: Source
+    second: Source
+    dimension: str
+    base_model: str  # as the user typed it (alias resolved, anthropic/ prefix retained if given)
+    canonical_model: str  # post-routing id
+    provider: Provider
+    judge_model: str
+    system_prompt: str
+    user_prompt: str
+    key: str
+    order: Order
+    sampling: dict
+
+
+def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
+    """Run one blind judgment, dispatching by provider."""
+    t0 = time.time()
+    if task.provider == "anthropic":
+        resp = anthropic_client.chat(
+            model=task.canonical_model,
+            system=task.system_prompt,
+            messages=[{"role": "user", "content": task.user_prompt}],
+            temperature=task.sampling["temperature"],
+            max_tokens=task.sampling["max_tokens"],
+            client=client,
+        )
+        text = anthropic_client.extract_text(resp)
+    else:
+        resp = openrouter.chat(
+            model=task.canonical_model,
+            messages=[
+                {"role": "system", "content": task.system_prompt},
+                {"role": "user", "content": task.user_prompt},
+            ],
+            temperature=task.sampling["temperature"],
+            max_tokens=task.sampling["max_tokens"],
+            client=client,
+        )
+        text = openrouter.extract_text(resp)
+    verdict, preference_label = parse_verdict_from_label(text)
+    winner_source = None
+    if verdict == "A":
+        winner_source = task.first.source_id
+    elif verdict == "B":
+        winner_source = task.second.source_id
+    elif verdict == "tie":
+        winner_source = "tie"
+    return {
+        "key": task.key,
+        "essay_id": task.essay_id,
+        "prefix_config_hash": task.prefix_hash,
+        "source_a": task.a_id,
+        "source_b": task.b_id,
+        "display_first": task.first.source_id,
+        "display_second": task.second.source_id,
+        "order": task.order,
+        "criterion": task.dimension,
+        "judge_model": task.judge_model,
+        "verdict": verdict,
+        "winner_source": winner_source,
+        "preference_label": preference_label,
+        "reasoning_text": text,
+        "prompt": task.user_prompt,
+        "system_prompt": task.system_prompt,
+        "ts": dt.datetime.utcnow().isoformat() + "Z",
+        "duration_s": round(time.time() - t0, 2),
+        "raw_response": resp,
+        "sampling": task.sampling,
+        "provider": task.provider,
+    }
+
+
+def run_blind(
+    cfg: config.Config,
+    *,
+    models: Sequence[str],
+    dimensions: Sequence[str] | None = None,
+    essay_ids: Sequence[str] | None = None,
+    contestants: Sequence[str] | None = None,
+    vs_human: bool = False,
+    current_only: bool = False,
+    prefix_cfg: config.PrefixCfg | None = None,
+    limit: int | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Run pairwise blind judgments across a mixed list of models.
+
+    Each model is routed via :func:`route_judge_model`: claude-* go direct
+    to Anthropic, others via OpenRouter. Same prompt construction across
+    all (the blind shell — no tool advertisements, pair inlined in user
+    message). Single key shape per row:
+    ``<canonical_model>:<dimension>:p<phash>:v<BLIND_JUDGE_VERSION>:s<shash>``.
+    """
+    from versus import prepare
+
+    if not models:
+        print("[info] no models passed to run_blind; nothing to do")
+        return
+
+    groups, prefix_texts = load_sources_by_essay(cfg.storage.completions_log)
+    existing = jsonl.keys(cfg.storage.judgments_log)
+
+    effective_dimensions = (
+        list(dimensions) if dimensions is not None else list(cfg.judging.criteria)
+    )
+    essay_id_set = set(essay_ids) if essay_ids else None
+    contestants_set = set(contestants) if contestants else None
+    current_hashes = (
+        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir, prefix_cfg=prefix_cfg)
+        if current_only
+        else None
+    )
+
+    tasks: list[_BlindTask] = []
+    for (essay_id, prefix_hash), sources in groups.items():
+        if essay_id_set is not None and essay_id not in essay_id_set:
+            continue
+        if current_hashes is not None and current_hashes.get(essay_id) != prefix_hash:
+            continue
+        source_ids = list(sources.keys())
+        if not cfg.judging.include_human_as_contestant:
+            source_ids = [s for s in source_ids if s != "human"]
+        if contestants_set is not None:
+            source_ids = [s for s in source_ids if s in contestants_set]
+        if len(source_ids) < 2:
+            continue
+        prefix_text = prefix_texts.get((essay_id, prefix_hash), "")
+        for a_id, b_id in itertools.combinations(sorted(source_ids), 2):
+            if vs_human and "human" not in (a_id, b_id):
+                continue
+            src_a = Source(a_id, sources[a_id])
+            src_b = Source(b_id, sources[b_id])
+            first, second = order_pair(essay_id, src_a, src_b)
+            order = order_from_display_first(a_id, b_id, first.source_id)
+            for dimension in effective_dimensions:
+                for base_model in models:
+                    provider, canonical_model = route_judge_model(base_model)
+                    sampling = _sampling_for(provider, canonical_model, cfg.judging.max_tokens)
+                    judge_model = compose_blind_judge_model(canonical_model, dimension, sampling)
+                    k = judgment_key(
+                        essay_id, prefix_hash, a_id, b_id, dimension, judge_model, order
+                    )
+                    if k in existing:
+                        continue
+                    system_prompt, user_prompt = render_judge_prompt(
+                        prefix_text=prefix_text,
+                        dimension=dimension,
+                        source_a_text=first.text,
+                        source_b_text=second.text,
+                    )
+                    tasks.append(
+                        _BlindTask(
+                            essay_id=essay_id,
+                            prefix_hash=prefix_hash,
+                            a_id=a_id,
+                            b_id=b_id,
+                            first=first,
+                            second=second,
+                            dimension=dimension,
+                            base_model=base_model,
+                            canonical_model=canonical_model,
+                            provider=provider,
+                            judge_model=judge_model,
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            key=k,
+                            order=order,
+                            sampling=sampling,
+                        )
+                    )
+                    existing.add(k)
+
+    if limit is not None:
+        tasks = tasks[:limit]
+    if not tasks:
+        print("[info] no pending blind judgments")
+        return
+
+    # Per-canonical-model semaphores so a slow reasoning judge can't starve fast ones.
+    semaphores: dict[str, threading.BoundedSemaphore] = {
+        cm: threading.BoundedSemaphore(cfg.per_model_concurrency)
+        for cm in {t.canonical_model for t in tasks}
+    }
+    total_workers = cfg.per_model_concurrency * len(semaphores)
+    print(
+        f"[plan] {len(tasks)} blind judgment calls "
+        f"(per_model_concurrency={cfg.per_model_concurrency}, "
+        f"judges={len(semaphores)}, total_workers={total_workers})"
+    )
+    if dry_run:
+        for t in tasks[:20]:
+            print(f"  * {t.essay_id} {t.a_id} vs {t.b_id} [{t.dimension}] -> {t.judge_model}")
+        if len(tasks) > 20:
+            print(f"  ... and {len(tasks) - 20} more")
+        return
+
+    client = httpx.Client(timeout=600.0)
+    try:
+        with ThreadPoolExecutor(max_workers=total_workers) as pool:
+            futures = {
+                pool.submit(
+                    _call_with_semaphore, semaphores[t.canonical_model], _call_one_blind, t, client
+                ): t.key
+                for t in tasks
+            }
+            done = 0
+            total = len(tasks)
+            for fut in as_completed(futures):
+                k = futures[fut]
+                try:
+                    row = fut.result()
+                except Exception as e:
+                    print(f"[err ] {k}: {e}")
+                    continue
+                jsonl.append(cfg.storage.judgments_log, row)
+                done += 1
+                print(f"[done {done}/{total}] {k}")
+    finally:
+        client.close()
 
 
 def _call_one_judgment(

@@ -6,6 +6,7 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
         exclude: ^deploy/chart/templates/  # Helm templates contain Go-template syntax
+        args: ["--allow-multiple-documents"]  # k8s manifests bundle Role + RoleBinding
       - id: check-toml
       - id: check-json
         exclude: ^frontend/tsconfig\.json$

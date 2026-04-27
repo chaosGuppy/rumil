@@ -293,21 +293,27 @@ Constraints:
 - `--db local --executor prod` is rejected — the cluster cannot reach a
   local Supabase.
 
-One-time setup on your laptop, in `.env` (or `.env.overrides` for local overrides):
+One-time setup on your laptop:
 
 ```bash
-# Where the rumil API lives. Defaults to https://api.rumil.ink and only
-# needs to be set if you're targeting a different deployment.
-RUMIL_API_URL=https://api.rumil.ink
+./scripts/sync-prod-env.sh
+```
 
-# Supabase HS256 secret used to mint short-lived CLI tokens. Same value as
-# the cluster's rumil-api-secrets — get it from the prod env you already
-# have, or ask in #infra.
-SUPABASE_JWT_SECRET=...
+This decrypts `deploy/chart/secrets.enc.yaml` via SOPS and merges the
+prod-only values (`SUPABASE_JWT_SECRET`, `SUPABASE_PROD_KEY`,
+`SUPABASE_PROD_URL`, `RUMIL_API_URL`) into your `.env` in place. The
+decrypted secrets are streamed in memory only — no plaintext file is
+written to disk. Re-run any time the upstream secrets rotate.
 
-# Optional: override the shared CLI service-account user (default lives in
-# Settings). Set to your own Supabase user_id to attribute jobs to yourself.
-# DEFAULT_CLI_USER_ID=...
+Prerequisites are the SOPS onboarding steps in
+[deploy/README.md](deploy/README.md) (`brew install sops`,
+`gcloud auth application-default login`, KMS-key access).
+
+To attribute remote runs to your own Supabase user instead of the shared
+service account, also set in `.env`:
+
+```bash
+# DEFAULT_CLI_USER_ID=<your supabase user_id>
 ```
 
 Then:

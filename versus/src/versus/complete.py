@@ -13,9 +13,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
-from versus import config, jsonl, openrouter, prepare
+from versus import anthropic_client, config, jsonl, openrouter, prepare
 from versus import essay as versus_essay
-from versus.judge import REFUSAL_FINISH_REASONS, REFUSAL_NATIVE_REASONS
+from versus.judge import REFUSAL_FINISH_REASONS, REFUSAL_NATIVE_REASONS, route_judge_model
 
 HUMAN_SOURCE_ID = "human"
 
@@ -157,15 +157,34 @@ def _call_one_completion(task, prompt, m, sh, k, client, semaphore: threading.Bo
 
 def _call_one_completion_inner(task, prompt, m, sh, k, client):
     t0 = time.time()
-    resp = openrouter.chat(
-        model=m.id,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=m.temperature,
-        max_tokens=m.max_tokens,
-        top_p=m.top_p,
-        client=client,
-    )
-    raw_text = openrouter.extract_text(resp)
+    provider, canonical_model = route_judge_model(m.id)
+    if provider == "anthropic":
+        # Opus 4.7 deprecates explicit temperature on Messages (returns 400). top_p
+        # behaviour on opus 4.7 isn't documented; drop it too out of caution. If a
+        # caller really wants top_p on opus, revisit with a doc-confirmed test.
+        if canonical_model.startswith("claude-opus-4-7"):
+            temp, top_p = None, None
+        else:
+            temp, top_p = m.temperature, m.top_p
+        resp = anthropic_client.chat(
+            model=canonical_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temp,
+            max_tokens=m.max_tokens,
+            top_p=top_p,
+            client=client,
+        )
+        raw_text = anthropic_client.extract_text(resp)
+    else:
+        resp = openrouter.chat(
+            model=canonical_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=m.temperature,
+            max_tokens=m.max_tokens,
+            top_p=m.top_p,
+            client=client,
+        )
+        raw_text = openrouter.extract_text(resp)
     text = extract_continuation(raw_text)
     return {
         "key": k,
@@ -184,6 +203,7 @@ def _call_one_completion_inner(task, prompt, m, sh, k, client):
         "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
         "raw_response": resp,
+        "provider": provider,
     }
 
 

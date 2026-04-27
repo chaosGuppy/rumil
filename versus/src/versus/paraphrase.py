@@ -18,8 +18,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
-from versus import config, jsonl, openrouter
+from versus import anthropic_client, config, jsonl, openrouter
 from versus import essay as versus_essay
+from versus.judge import route_judge_model
 from versus.versions import PARAPHRASE_PROMPT_VERSION
 
 PARAPHRASE_INSTRUCTIONS = """\
@@ -82,15 +83,33 @@ def markdown_to_blocks(md: str) -> list[versus_essay.Block]:
 
 def _call_one_paraphrase(essay, m, sh, k, prompt, client):
     t0 = time.time()
-    resp = openrouter.chat(
-        model=m.id,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=m.temperature,
-        max_tokens=m.max_tokens,
-        top_p=m.top_p,
-        client=client,
-    )
-    text = openrouter.extract_text(resp)
+    provider, canonical_model = route_judge_model(m.id)
+    if provider == "anthropic":
+        # Opus 4.7 deprecates explicit temperature; drop top_p too out of caution
+        # (see complete.py for context).
+        if canonical_model.startswith("claude-opus-4-7"):
+            temp, top_p = None, None
+        else:
+            temp, top_p = m.temperature, m.top_p
+        resp = anthropic_client.chat(
+            model=canonical_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temp,
+            max_tokens=m.max_tokens,
+            top_p=top_p,
+            client=client,
+        )
+        text = anthropic_client.extract_text(resp)
+    else:
+        resp = openrouter.chat(
+            model=canonical_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=m.temperature,
+            max_tokens=m.max_tokens,
+            top_p=m.top_p,
+            client=client,
+        )
+        text = openrouter.extract_text(resp)
     blocks = markdown_to_blocks(text)
     return {
         "key": k,

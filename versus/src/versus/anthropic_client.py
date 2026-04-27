@@ -40,6 +40,7 @@ def chat(
     messages: list[dict],
     temperature: float | None = None,
     max_tokens: int = 8000,
+    top_p: float | None = None,
     timeout: float = 600.0,
     client: httpx.Client | None = None,
     retries: int = 2,
@@ -53,6 +54,8 @@ def chat(
     }
     if temperature is not None:
         payload["temperature"] = temperature
+    if top_p is not None:
+        payload["top_p"] = top_p
     if system is not None:
         payload["system"] = system
 

@@ -6,7 +6,7 @@ import type { PageDetailOut, LinkedPageOut, Page, RunSummaryOut } from "@/api";
 import LinksContainer from "./links-container";
 import StagedBanner from "@/components/staged-banner";
 
-import { API_BASE } from "@/lib/api-base";
+import { API_BASE, serverFetch } from "@/lib/api-base";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { isAdmin as getIsAdmin } from "@/lib/current-user";
 import { fetchProjectName } from "@/lib/fetch-project-name";
@@ -71,7 +71,7 @@ async function getPageDetail(
   pageId: string,
   stagedRunId?: string,
 ): Promise<PageDetailOut | null> {
-  const res = await fetch(
+  const res = await serverFetch(
     withStagedRun(`${API_BASE}/api/pages/${pageId}/detail`, stagedRunId),
     { cache: "no-store" },
   );
@@ -83,7 +83,7 @@ async function getPageHeadline(
   pageId: string,
   stagedRunId?: string,
 ): Promise<{ headline: string; page_type: string } | null> {
-  const res = await fetch(
+  const res = await serverFetch(
     withStagedRun(`${API_BASE}/api/pages/${pageId}/detail`, stagedRunId),
     { cache: "no-store" },
   );
@@ -124,7 +124,7 @@ async function buildCitationMap(
   if (missing.length > 0) {
     const results = await Promise.all(
       missing.map(async (shortId) => {
-        const res = await fetch(
+        const res = await serverFetch(
           withStagedRun(`${API_BASE}/api/pages/short/${shortId}`, stagedRunId),
           { cache: "no-store" },
         );
@@ -169,7 +169,7 @@ async function getPageRun(
   pageId: string,
   stagedRunId?: string,
 ): Promise<RunSummaryOut | null> {
-  const res = await fetch(
+  const res = await serverFetch(
     withStagedRun(`${API_BASE}/api/pages/${pageId}/run`, stagedRunId),
     { cache: "no-store" },
   );

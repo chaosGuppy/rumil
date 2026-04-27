@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ProjectStatsOut, Project } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import { clientFetch } from "@/lib/client-fetch";
 import StagedBanner from "@/components/staged-banner";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
 import { StatsView } from "@/components/stats-view";
@@ -26,7 +27,7 @@ export default function ProjectStatsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
+    clientFetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((d: Project | null) => {
         if (d) setProjectName(d.name);
@@ -36,7 +37,7 @@ export default function ProjectStatsPage() {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(withStagedRun(`${API_BASE}/api/projects/${projectId}/stats`, stagedRunId), {
+    clientFetch(withStagedRun(`${API_BASE}/api/projects/${projectId}/stats`, stagedRunId), {
       cache: "no-store",
     })
       .then(async (res) => {

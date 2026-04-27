@@ -5,6 +5,7 @@ import type {
   EssayJudgmentsResponse,
   EssayMeta,
   Judgment,
+  ResultsBundle,
   Source,
 } from "@/api/types.gen";
 import { API_BASE, serverFetch } from "@/lib/api-base";
@@ -130,6 +131,40 @@ export default async function VersusInspectPage({
         }),
       )
     : [];
+
+  // Corpus baseline: per-variant pick-human rate, averaged across judges
+  // for each gen_model. Used by the essay-vs-corpus outlier block. Fetches
+  // run in parallel with the variant bundles' downstream rendering; if any
+  // request fails we just hide the outlier sub-block.
+  const corpusByVariant = new Map<string, Map<string, number>>();
+  if (variantIds.length > 0) {
+    const settled = await Promise.all(
+      variantIds.map((id) =>
+        fetchJson<ResultsBundle>(
+          `/api/versus/results?include_stale=true&prefix_label=${encodeURIComponent(id)}`,
+        ),
+      ),
+    );
+    for (let i = 0; i < variantIds.length; i++) {
+      const bundle = settled[i];
+      if (!bundle) continue;
+      const compMatrix = bundle.main_matrices.find((m) => m.condition === "completion");
+      if (!compMatrix) continue;
+      const byGen = new Map<string, { num: number; den: number }>();
+      for (const c of compMatrix.cells) {
+        if (c.cell.pct === null || c.cell.pct === undefined) continue;
+        const acc = byGen.get(c.gen_model) ?? { num: 0, den: 0 };
+        acc.num += c.cell.pct * c.cell.n;
+        acc.den += c.cell.n;
+        byGen.set(c.gen_model, acc);
+      }
+      const rates = new Map<string, number>();
+      for (const [gen, acc] of byGen) {
+        if (acc.den > 0) rates.set(gen, acc.num / acc.den);
+      }
+      corpusByVariant.set(variantIds[i], rates);
+    }
+  }
 
   // The non-variant-specific bits (title, markdown, judge templates,
   // paraphrase template) — pull from the first bundle. They'd be
@@ -381,6 +416,11 @@ export default async function VersusInspectPage({
               </div>
             )}
 
+            <ResultsPanel
+              variantBundles={variantBundles}
+              corpusByVariant={corpusByVariant}
+            />
+
             <h2 className="inspect-section-head" id="judgments">judgments</h2>
             {judgmentOrder.length === 0 ? (
               <p className="versus-muted">No judgments yet for this essay.</p>
@@ -406,6 +446,500 @@ export default async function VersusInspectPage({
       </main>
       <style>{INSPECT_STYLES}</style>
     </div>
+  );
+}
+
+type WinAccum = { wins: number; ties: number; losses: number; n: number };
+
+function emptyAccum(): WinAccum {
+  return { wins: 0, ties: 0, losses: 0, n: 0 };
+}
+
+/** Aggregate one judgment into a (gen, judge) accum where gen is the
+ *  non-human side and the verdict is reframed as: gen wins iff
+ *  winner_source == gen, gen loses iff winner_source == "human", tie
+ *  otherwise. Returns null when neither side is human (block 1 only
+ *  cares about gen-vs-human pairings). */
+function genVsHumanAccum(j: Judgment): { gen: string; outcome: "win" | "tie" | "loss" } | null {
+  const aHuman = j.source_a === "human";
+  const bHuman = j.source_b === "human";
+  if (aHuman === bHuman) return null;
+  const gen = aHuman ? modelOf(j.source_b) : modelOf(j.source_a);
+  if (j.verdict === "tie" || j.winner_source === "tie" || !j.winner_source) {
+    return { gen, outcome: "tie" };
+  }
+  if (j.winner_source === "human") return { gen, outcome: "loss" };
+  return { gen, outcome: "win" };
+}
+
+/** Server-side mirror of the matrix-cell color treatment. Pure HSL —
+ *  no theme tokens — so it renders consistently on first paint. The
+ *  hue ramps red → yellow → green as pct moves 0 → 0.5 → 1. */
+function pctColor(pct: number, n: number): { bg: string; fg: string } {
+  if (n === 0) return { bg: "transparent", fg: "var(--color-muted)" };
+  const hue = Math.round(pct * 120);
+  const sat = n < 5 ? 25 : 55;
+  const lightBg = n < 5 ? 94 : 88;
+  return {
+    bg: `hsl(${hue} ${sat}% ${lightBg}%)`,
+    fg: `hsl(${hue} 60% 22%)`,
+  };
+}
+
+function ResultsPanel({
+  variantBundles,
+  corpusByVariant,
+}: {
+  variantBundles: VariantBundle[];
+  corpusByVariant: Map<string, Map<string, number>>;
+}) {
+  const hasAnyJudgments = variantBundles.some((v) => v.judgments.length > 0);
+  return (
+    <>
+      <h2 className="inspect-section-head" id="results">results</h2>
+      {!hasAnyJudgments ? (
+        <p className="versus-muted">No judgments yet for this essay — nothing to summarise.</p>
+      ) : (
+        <details className="inspect-collapsible inspect-results" open>
+          <summary>per-essay aggregates across the {variantBundles.length} active variant
+            {variantBundles.length === 1 ? "" : "s"}</summary>
+          <div className="inspect-results-body">
+            <ResultsWinMatrix variantBundles={variantBundles} />
+            <ResultsConsistency variantBundles={variantBundles} />
+            <ResultsOutlier
+              variantBundles={variantBundles}
+              corpusByVariant={corpusByVariant}
+            />
+            <ResultsVariantFlip variantBundles={variantBundles} />
+          </div>
+        </details>
+      )}
+    </>
+  );
+}
+
+function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] }) {
+  return (
+    <section id="results-winmatrix" className="inspect-results-block">
+      <header className="inspect-results-blockhead">
+        <h3>win matrix</h3>
+        <p className="versus-muted">
+          % of judgments that picked the human continuation, per (gen × judge). Cells with
+          n=0 are blank. Aggregated within this essay only.
+        </p>
+      </header>
+      <div className="inspect-winmatrix-grid">
+        {variantBundles.map((v) => {
+          const acc = new Map<string, Map<string, WinAccum>>();
+          const judgesSet = new Set<string>();
+          const gensSet = new Set<string>();
+          for (const j of v.judgments) {
+            const r = genVsHumanAccum(j);
+            if (!r) continue;
+            const judge = j.judge_model_base;
+            judgesSet.add(judge);
+            gensSet.add(r.gen);
+            const row = acc.get(r.gen) ?? new Map<string, WinAccum>();
+            const cell = row.get(judge) ?? emptyAccum();
+            cell.n += 1;
+            if (r.outcome === "win") cell.wins += 1;
+            else if (r.outcome === "tie") cell.ties += 1;
+            else cell.losses += 1;
+            row.set(judge, cell);
+            acc.set(r.gen, row);
+          }
+          const judges = Array.from(judgesSet).sort();
+          const gens = Array.from(gensSet).sort();
+          return (
+            <div key={v.id} className="inspect-winmatrix-card">
+              <div className="inspect-winmatrix-cardhead">
+                <VariantPill vid={v.id} />
+                <span className="versus-muted" style={{ fontSize: 11 }}>
+                  vs human · pick-human %
+                </span>
+              </div>
+              {gens.length === 0 ? (
+                <p className="versus-muted" style={{ fontSize: 12, padding: "6px 2px" }}>
+                  No gen-vs-human pairs under this variant.
+                </p>
+              ) : (
+                <table className="matrix-table small inspect-winmatrix-table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      {judges.map((jb) => (
+                        <th key={jb} title={jb}>{shortModel(jb)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gens.map((g) => (
+                      <tr
+                        key={g}
+                        data-filterable
+                        data-model={g}
+                      >
+                        <th title={g}>{shortModel(g)}</th>
+                        {judges.map((jb) => {
+                          const cell = acc.get(g)?.get(jb);
+                          if (!cell || cell.n === 0) {
+                            return <td key={jb} className="matrix-cell-empty"></td>;
+                          }
+                          const decisive = cell.wins + cell.losses;
+                          const pct = decisive === 0 ? 0.5 : cell.wins / decisive;
+                          const colors = pctColor(pct, cell.n);
+                          const lowN = cell.n < 5;
+                          const tooltip =
+                            `pick-human ${Math.round(pct * 100)}% · n=${cell.n}` +
+                            ` (${cell.wins}H / ${cell.ties}T / ${cell.losses}M)`;
+                          return (
+                            <td
+                              key={jb}
+                              className={lowN ? "matrix-cell low-n" : "matrix-cell"}
+                              style={{ background: colors.bg, color: colors.fg }}
+                              title={tooltip}
+                            >
+                              {lowN && <span className="low-n-mark">~</span>}
+                              {Math.round(pct * 100)}
+                              <span className="n">{cell.n}</span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+type ConsistencyKey = {
+  variantId: string;
+  source_a: string;
+  source_b: string;
+  criterion: string;
+  human: number;
+  other: number;
+  ties: number;
+  total: number;
+};
+
+function ResultsConsistency({ variantBundles }: { variantBundles: VariantBundle[] }) {
+  const groups: ConsistencyKey[] = [];
+  for (const v of variantBundles) {
+    const buckets = new Map<string, ConsistencyKey>();
+    for (const j of v.judgments) {
+      const k = `${j.source_a}|${j.source_b}|${j.criterion}`;
+      const slot = buckets.get(k) ?? {
+        variantId: v.id,
+        source_a: j.source_a,
+        source_b: j.source_b,
+        criterion: j.criterion,
+        human: 0,
+        other: 0,
+        ties: 0,
+        total: 0,
+      };
+      slot.total += 1;
+      const w = j.winner_source;
+      if (w === "human") slot.human += 1;
+      else if (w === "tie" || j.verdict === "tie" || !w) slot.ties += 1;
+      else slot.other += 1;
+      buckets.set(k, slot);
+    }
+    for (const g of buckets.values()) groups.push(g);
+  }
+  groups.sort((a, b) => {
+    if (a.total === 0 || b.total === 0) return b.total - a.total;
+    const aDecisive = Math.max(a.human, a.other, a.ties) / a.total;
+    const bDecisive = Math.max(b.human, b.other, b.ties) / b.total;
+    if (bDecisive !== aDecisive) return bDecisive - aDecisive;
+    return b.total - a.total;
+  });
+  return (
+    <section id="results-consistency" className="inspect-results-block">
+      <header className="inspect-results-blockhead">
+        <h3>verdict consistency per pair</h3>
+        <p className="versus-muted">
+          Each row is a (variant, source_a, source_b, criterion) group across all judges.
+          Sorted most-decisive first — pairs where judges agreed most strongly bubble up.
+        </p>
+      </header>
+      {groups.length === 0 ? (
+        <p className="versus-muted" style={{ fontSize: 12 }}>No grouped verdicts to show.</p>
+      ) : (
+        <ul className="inspect-consistency-list">
+          {groups.map((g, idx) => {
+            const sides = [g.source_a, g.source_b]
+              .filter((s) => s !== "human")
+              .map(modelOf);
+            const dataModel = sides.length > 0 ? sides.join(" ") : "";
+            const alwaysShow = sides.length === 0 ? "1" : undefined;
+            const labelParts: string[] = [];
+            if (g.human > 0) labelParts.push(`${g.human} human`);
+            if (g.ties > 0) labelParts.push(`${g.ties} tie`);
+            if (g.other > 0) labelParts.push(`${g.other} model`);
+            const label = labelParts.join(" / ") || `${g.total} undecided`;
+            return (
+              <li
+                key={`${g.variantId}|${g.source_a}|${g.source_b}|${g.criterion}|${idx}`}
+                className="inspect-consistency-row"
+                data-filterable
+                data-model={dataModel}
+                data-always-show={alwaysShow}
+              >
+                <div className="inspect-consistency-meta">
+                  <VariantPill vid={g.variantId} />
+                  <span className="versus-mono inspect-consistency-pair">
+                    {g.source_a} <span className="versus-muted">vs</span> {g.source_b}
+                  </span>
+                  <span className="versus-muted" style={{ fontSize: 11 }}>{g.criterion}</span>
+                </div>
+                <div className="inspect-consistency-bar" aria-hidden="true">
+                  {g.human > 0 && (
+                    <span
+                      className="inspect-bar-seg seg-human"
+                      style={{ flex: g.human }}
+                      title={`${g.human} pick human`}
+                    />
+                  )}
+                  {g.ties > 0 && (
+                    <span
+                      className="inspect-bar-seg seg-tie"
+                      style={{ flex: g.ties }}
+                      title={`${g.ties} tie`}
+                    />
+                  )}
+                  {g.other > 0 && (
+                    <span
+                      className="inspect-bar-seg seg-other"
+                      style={{ flex: g.other }}
+                      title={`${g.other} pick model`}
+                    />
+                  )}
+                </div>
+                <div className="inspect-consistency-label">
+                  <strong>{label}</strong>
+                  <span className="versus-muted" style={{ fontSize: 11 }}>n={g.total}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function ResultsOutlier({
+  variantBundles,
+  corpusByVariant,
+}: {
+  variantBundles: VariantBundle[];
+  corpusByVariant: Map<string, Map<string, number>>;
+}) {
+  if (corpusByVariant.size === 0) return null;
+  type Row = {
+    variantId: string;
+    gen: string;
+    essayPct: number;
+    corpusPct: number | null;
+    deltaPp: number | null;
+    n: number;
+  };
+  const rows: Row[] = [];
+  for (const v of variantBundles) {
+    const perGen = new Map<string, WinAccum>();
+    for (const j of v.judgments) {
+      const r = genVsHumanAccum(j);
+      if (!r) continue;
+      const slot = perGen.get(r.gen) ?? emptyAccum();
+      slot.n += 1;
+      if (r.outcome === "win") slot.wins += 1;
+      else if (r.outcome === "loss") slot.losses += 1;
+      else slot.ties += 1;
+      perGen.set(r.gen, slot);
+    }
+    const corpus = corpusByVariant.get(v.id);
+    for (const [gen, acc] of perGen) {
+      const decisive = acc.wins + acc.losses;
+      if (decisive === 0) continue;
+      const essayPct = acc.wins / decisive;
+      const corpusPct = corpus?.get(gen) ?? null;
+      const deltaPp = corpusPct === null ? null : (essayPct - corpusPct) * 100;
+      rows.push({ variantId: v.id, gen, essayPct, corpusPct, deltaPp, n: acc.n });
+    }
+  }
+  rows.sort((a, b) => {
+    const ad = a.deltaPp === null ? -1 : Math.abs(a.deltaPp);
+    const bd = b.deltaPp === null ? -1 : Math.abs(b.deltaPp);
+    return bd - ad;
+  });
+  return (
+    <section id="results-outlier" className="inspect-results-block">
+      <header className="inspect-results-blockhead">
+        <h3>essay vs corpus</h3>
+        <p className="versus-muted">
+          For each (gen, variant): pick-human rate on this essay vs the corpus average
+          (averaged across judges). Cells whose delta exceeds 20pp are flagged — this
+          essay over- or under-performs that gen-model relative to its baseline.
+        </p>
+      </header>
+      {rows.length === 0 ? (
+        <p className="versus-muted" style={{ fontSize: 12 }}>
+          Not enough decisive judgments for any (gen, variant) cell.
+        </p>
+      ) : (
+        <ul className="inspect-outlier-list">
+          {rows.map((r) => {
+            const flagged = r.deltaPp !== null && Math.abs(r.deltaPp) >= 20;
+            const klass = flagged
+              ? r.deltaPp! > 0
+                ? "outlier-up"
+                : "outlier-down"
+              : "outlier-flat";
+            return (
+              <li
+                key={`${r.variantId}|${r.gen}`}
+                className={`inspect-outlier-row ${klass}`}
+                data-filterable
+                data-model={r.gen}
+              >
+                <div className="inspect-outlier-id">
+                  <VariantPill vid={r.variantId} />
+                  <strong className="versus-mono">{shortModel(r.gen)}</strong>
+                </div>
+                <div className="inspect-outlier-nums">
+                  <span title="this essay">
+                    <span className="versus-muted">essay</span>{" "}
+                    <strong>{Math.round(r.essayPct * 100)}%</strong>
+                    <span className="versus-muted" style={{ fontSize: 11 }}> n={r.n}</span>
+                  </span>
+                  <span title="corpus average for this gen × variant">
+                    <span className="versus-muted">corpus</span>{" "}
+                    {r.corpusPct === null ? (
+                      <span className="versus-muted">—</span>
+                    ) : (
+                      <strong>{Math.round(r.corpusPct * 100)}%</strong>
+                    )}
+                  </span>
+                  <span title="delta in percentage points">
+                    <span className="versus-muted">Δ</span>{" "}
+                    {r.deltaPp === null ? (
+                      <span className="versus-muted">—</span>
+                    ) : (
+                      <strong className={`outlier-delta ${klass}`}>
+                        {r.deltaPp > 0 ? "+" : ""}
+                        {r.deltaPp.toFixed(0)}pp
+                      </strong>
+                    )}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[] }) {
+  if (variantBundles.length < 2) return null;
+  type Pair = {
+    gen: string;
+    judge: string;
+    criterion: string;
+    source_a: string;
+    source_b: string;
+    perVariant: Map<string, string>;
+  };
+  const byKey = new Map<string, Pair>();
+  for (const v of variantBundles) {
+    for (const j of v.judgments) {
+      const k = `${j.judge_model_base}|${j.criterion}|${j.source_a}|${j.source_b}`;
+      const slot = byKey.get(k) ?? {
+        gen: [j.source_a, j.source_b].filter((s) => s !== "human").map(modelOf).join("+") ||
+          "human",
+        judge: j.judge_model_base,
+        criterion: j.criterion,
+        source_a: j.source_a,
+        source_b: j.source_b,
+        perVariant: new Map<string, string>(),
+      };
+      slot.perVariant.set(v.id, j.winner_source ?? "?");
+      byKey.set(k, slot);
+    }
+  }
+  const comparable = Array.from(byKey.values()).filter((p) => p.perVariant.size >= 2);
+  const flips = comparable.filter((p) => {
+    const winners = Array.from(p.perVariant.values());
+    return winners.some((w) => w !== winners[0]);
+  });
+  return (
+    <section id="results-flip" className="inspect-results-block">
+      <header className="inspect-results-blockhead">
+        <h3>variant flips</h3>
+        <p className="versus-muted">
+          Pairs where the judged winner differs across active prefix variants — same gen,
+          same judge, same criterion, same sides.
+        </p>
+      </header>
+      <p className="inspect-flip-summary">
+        <strong>{flips.length}</strong> pair{flips.length === 1 ? "" : "s"} flip winner
+        across variants{" "}
+        <span className="versus-muted">out of {comparable.length} comparable</span>
+      </p>
+      {flips.length > 0 && (
+        <ul className="inspect-flip-list">
+          {flips.map((p, idx) => {
+            const sides = [p.source_a, p.source_b].filter((s) => s !== "human").map(modelOf);
+            const dataModel = sides.length > 0 ? sides.join(" ") : "";
+            const alwaysShow = sides.length === 0 ? "1" : undefined;
+            return (
+              <li
+                key={`${p.judge}|${p.criterion}|${p.source_a}|${p.source_b}|${idx}`}
+                className="inspect-flip-row"
+                data-filterable
+                data-model={dataModel}
+                data-always-show={alwaysShow}
+              >
+                <div className="inspect-flip-pair">
+                  <span className="versus-mono">{shortModel(p.judge)}</span>{" "}
+                  <span className="versus-muted">·</span>{" "}
+                  <span className="versus-muted" style={{ fontSize: 11 }}>{p.criterion}</span>{" "}
+                  <span className="versus-muted">·</span>{" "}
+                  <span className="versus-mono inspect-flip-sides">
+                    {p.source_a} <span className="versus-muted">vs</span> {p.source_b}
+                  </span>
+                </div>
+                <div className="inspect-flip-winners">
+                  {Array.from(p.perVariant.entries()).map(([vid, winner]) => {
+                    const wclass =
+                      winner === "human"
+                        ? "winner-human"
+                        : winner === "tie"
+                          ? "winner-tie"
+                          : "winner-other";
+                    return (
+                      <span key={vid} className="inspect-flip-winner-cell">
+                        <VariantPill vid={vid} />
+                        <span className={`inspect-winner ${wclass}`}>{winner}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -688,6 +1222,15 @@ function InspectToc({
             </ul>
           </li>
         )}
+        <li>
+          <a href="#results">results</a>
+          <ul>
+            <li><a href="#results-winmatrix">win matrix</a></li>
+            <li><a href="#results-consistency">verdict consistency</a></li>
+            <li><a href="#results-outlier">essay vs corpus</a></li>
+            <li><a href="#results-flip">variant flips</a></li>
+          </ul>
+        </li>
         {judgeOrder.length > 0 && (
           <li>
             <a href="#judgments">judgments</a>
@@ -999,5 +1542,184 @@ const INSPECT_STYLES = `
 @media (prefers-color-scheme: dark) {
   .inspect-winner.winner-human { color: #4ec97a; }
   .inspect-winner.winner-other { color: #e08855; }
+}
+
+.inspect-results > summary {
+  font-size: 13px;
+  color: var(--foreground);
+}
+.inspect-results-body {
+  display: flex; flex-direction: column; gap: 22px;
+  padding: 14px 14px 18px;
+  border-top: 1px solid var(--color-border);
+}
+.inspect-results-block {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.inspect-results-blockhead { display: flex; flex-direction: column; gap: 2px; }
+.inspect-results-blockhead h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--foreground);
+}
+.inspect-results-blockhead p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.inspect-winmatrix-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+.inspect-winmatrix-card {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.inspect-winmatrix-cardhead {
+  display: flex; gap: 8px; align-items: baseline;
+}
+.inspect-winmatrix-table th {
+  font-size: 11px;
+}
+.inspect-winmatrix-table .matrix-cell-empty {
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.inspect-consistency-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.inspect-consistency-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(80px, 200px) minmax(120px, max-content);
+  gap: 12px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+.inspect-consistency-row:hover { background: var(--color-surface); }
+.inspect-consistency-meta {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  font-size: 12px;
+  min-width: 0;
+}
+.inspect-consistency-pair {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspect-consistency-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.inspect-bar-seg { display: block; }
+.inspect-bar-seg.seg-human { background: hsl(135 45% 48%); }
+.inspect-bar-seg.seg-tie { background: hsl(0 0% 70%); }
+.inspect-bar-seg.seg-other { background: hsl(20 75% 55%); }
+@media (prefers-color-scheme: dark) {
+  .inspect-bar-seg.seg-human { background: hsl(135 45% 42%); }
+  .inspect-bar-seg.seg-tie { background: hsl(0 0% 45%); }
+  .inspect-bar-seg.seg-other { background: hsl(20 70% 50%); }
+}
+.inspect-consistency-label {
+  display: flex; gap: 8px; align-items: baseline;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspect-outlier-list {
+  list-style: none; padding: 0; margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 6px;
+}
+.inspect-outlier-row {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 12px;
+}
+.inspect-outlier-row.outlier-up {
+  border-left: 3px solid hsl(135 50% 40%);
+  background: hsl(135 45% 96%);
+}
+.inspect-outlier-row.outlier-down {
+  border-left: 3px solid hsl(15 75% 50%);
+  background: hsl(15 70% 96%);
+}
+@media (prefers-color-scheme: dark) {
+  .inspect-outlier-row.outlier-up {
+    background: hsl(135 35% 12%);
+  }
+  .inspect-outlier-row.outlier-down {
+    background: hsl(15 50% 14%);
+  }
+}
+.inspect-outlier-id {
+  display: flex; gap: 8px; align-items: baseline;
+}
+.inspect-outlier-nums {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+.outlier-delta.outlier-up { color: hsl(135 55% 32%); }
+.outlier-delta.outlier-down { color: hsl(15 75% 38%); }
+@media (prefers-color-scheme: dark) {
+  .outlier-delta.outlier-up { color: hsl(135 50% 65%); }
+  .outlier-delta.outlier-down { color: hsl(15 75% 65%); }
+}
+
+.inspect-flip-summary {
+  margin: 0;
+  font-size: 13px;
+}
+.inspect-flip-list {
+  list-style: none; padding: 0; margin: 4px 0 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.inspect-flip-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, max-content);
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 12px;
+}
+.inspect-flip-pair {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline;
+  min-width: 0;
+}
+.inspect-flip-sides {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspect-flip-winners {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  align-items: baseline;
+}
+.inspect-flip-winner-cell {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
 }
 `;

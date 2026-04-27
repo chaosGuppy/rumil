@@ -52,6 +52,7 @@ class AuthUserOut(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
     user_id: str
     email: str
+    is_admin: bool
 
 
 class LinkedPageOut(BaseModel):

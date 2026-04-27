@@ -8,6 +8,7 @@ import StagedBanner from "@/components/staged-banner";
 
 import { API_BASE } from "@/lib/api-base";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
+import { isAdmin as getIsAdmin } from "@/lib/current-user";
 import { fetchProjectName } from "@/lib/fetch-project-name";
 import { truncateHeadline } from "@/lib/page-titles";
 import { withStagedRun } from "@/lib/staged-run-href";
@@ -395,9 +396,10 @@ export default async function PageDetailPage({
 }) {
   const { pageId } = await params;
   const { staged_run_id: stagedRunId } = await searchParams;
+  const isAdmin = await getIsAdmin();
   const [detail, run] = await Promise.all([
     getPageDetail(pageId, stagedRunId),
-    getPageRun(pageId, stagedRunId),
+    isAdmin ? getPageRun(pageId, stagedRunId) : Promise.resolve(null),
   ]);
 
   if (!detail) {
@@ -470,7 +472,7 @@ export default async function PageDetailPage({
             ) : page.is_superseded ? (
               <span className="superseded-tag">superseded</span>
             ) : null}
-            {page.page_type === "question" && (
+            {isAdmin && page.page_type === "question" && (
               <Link
                 href={withStagedRun(`/pages/${pageId}/stats`, stagedRunId)}
                 className="page-stats-link"

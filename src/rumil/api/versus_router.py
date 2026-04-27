@@ -199,6 +199,7 @@ class EssayMeta(pydantic.BaseModel):
     """Headline metadata for one cached essay."""
 
     id: str
+    source_id: str
     title: str
     author: str
     pub_date: str
@@ -217,7 +218,8 @@ class EssayDetail(pydantic.BaseModel):
     prefix_config_hash: str
     target_words: int
     completion_prompt: str
-    judge_prompt_template: str
+    judge_system_prompt_template: str
+    judge_user_prompt_template: str
     paraphrase_prompt_template: str
     criteria: list[str]
     # Available prefix variants and the one this response was rendered
@@ -228,17 +230,29 @@ class EssayDetail(pydantic.BaseModel):
 
 
 class Source(pydantic.BaseModel):
-    """One generated continuation (or the held-out human remainder)."""
+    """One generated continuation (or the held-out human remainder).
+
+    ``prompt`` is the verbatim completion prompt the model received,
+    stored on the row (legacy rows and the human baseline have no
+    prompt — the inspect UI falls back to the template in that case).
+    """
 
     source_id: str
     kind: str
     text: str
     words: int
     target: int
+    prompt: str | None
 
 
 class Judgment(pydantic.BaseModel):
-    """One pairwise judgment row, shaped for the inspect view."""
+    """One pairwise judgment row, shaped for the inspect view.
+
+    Includes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``
+    so the inspect UI can render them inline (matching the standalone
+    self-vs-human HTML viewer). Older rows may not have ``system_prompt``
+    or ``prompt`` populated; both are optional.
+    """
 
     judge_model: str
     judge_model_base: str
@@ -254,6 +268,9 @@ class Judgment(pydantic.BaseModel):
     winner_source: str | None
     preference_label: str | None
     reasoning_preview: str
+    reasoning_text: str | None
+    prompt: str | None
+    system_prompt: str | None
     is_rumil: bool
     rumil_trace_url: str | None
     rumil_question_id: str | None
@@ -504,7 +521,15 @@ def _load_essay(essay_id: str) -> versus_essay.Essay | None:
 
 
 @router.get("/essays", response_model=list[EssayMeta])
-def list_essays() -> list[EssayMeta]:
+def list_essays(include_legacy: bool = False) -> list[EssayMeta]:
+    """List essays at the current essay-cache schema version.
+
+    Old cached snapshots (pre-rename, ``schema_version < SCHEMA_VERSION``)
+    are skipped by default — they often have stale prefix_config_hashes
+    and would show up as a near-duplicate of the freshly-cached entry,
+    confusing the inspect dropdown. Pass ``include_legacy=true`` to
+    include them anyway (no UI surfaces this yet; it's a debug escape).
+    """
     paths = _iter_essay_paths()
     if not paths and not _essays_dir().exists():
         raise HTTPException(503, f"versus essays dir not found: {_essays_dir()}")
@@ -516,9 +541,12 @@ def list_essays() -> list[EssayMeta]:
             d = json.load(f)
         if d.get("id") in exclude:
             continue
+        if not include_legacy and d.get("schema_version", 0) != versus_essay.SCHEMA_VERSION:
+            continue
         out.append(
             EssayMeta(
                 id=d["id"],
+                source_id=d.get("source_id", ""),
                 title=d["title"],
                 author=d.get("author", ""),
                 pub_date=d.get("pub_date", ""),
@@ -552,9 +580,6 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         source_a_text="{{ CONTINUATION A }}",
         source_b_text="{{ CONTINUATION B }}",
     )
-    judge_prompt_template = (
-        f"## SYSTEM PROMPT\n\n{judge_system}\n\n---\n\n## USER MESSAGE\n\n{judge_user}"
-    )
     paraphrase_prompt_template = versus_paraphrase.PARAPHRASE_INSTRUCTIONS.replace(
         "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
     )
@@ -568,7 +593,8 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         prefix_config_hash=task.prefix_config_hash,
         target_words=task.target_words,
         completion_prompt=completion_prompt,
-        judge_prompt_template=judge_prompt_template,
+        judge_system_prompt_template=judge_system,
+        judge_user_prompt_template=judge_user,
         paraphrase_prompt_template=paraphrase_prompt_template,
         criteria=list(cfg.judging.criteria),
         prefix_variants=[
@@ -609,6 +635,7 @@ def get_essay_sources(essay_id: str, prefix_label: str | None = None) -> list[So
             text=row.get("response_text") or "",
             words=row.get("response_words") or 0,
             target=row.get("target_words") or 0,
+            prompt=row.get("prompt"),
         )
     return sorted(by_source.values(), key=lambda s: (s.source_id != "human", s.source_id))
 
@@ -693,6 +720,9 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 winner_source=row.get("winner_source"),
                 preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
                 reasoning_preview=(row.get("reasoning_text") or "")[:400],
+                reasoning_text=row.get("reasoning_text"),
+                prompt=row.get("prompt"),
+                system_prompt=row.get("system_prompt"),
                 is_rumil=jm.startswith("rumil:"),
                 rumil_trace_url=row.get("rumil_trace_url"),
                 rumil_question_id=row.get("rumil_question_id"),

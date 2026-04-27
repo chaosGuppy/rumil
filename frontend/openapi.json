@@ -125,18 +125,57 @@
           "versus"
         ],
         "summary": "List Essays",
+        "description": "List essays at the current essay-cache schema version.\n\nOld cached snapshots (pre-rename, ``schema_version < SCHEMA_VERSION``)\nare skipped by default \u2014 they often have stale prefix_config_hashes\nand would show up as a near-duplicate of the freshly-cached entry,\nconfusing the inspect dropdown. Pass ``include_legacy=true`` to\ninclude them anyway (no UI surfaces this yet; it's a debug escape).",
         "operationId": "list_essays_api_versus_essays_get",
+        "parameters": [
+          {
+            "name": "include_legacy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Legacy"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/EssayMeta"
                   },
-                  "type": "array",
                   "title": "Response List Essays Api Versus Essays Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -175,6 +214,22 @@
                 }
               ],
               "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -233,6 +288,22 @@
                 }
               ],
               "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -295,6 +366,22 @@
                 }
               ],
               "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -445,6 +532,22 @@
               ],
               "title": "Prefix Label"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -487,6 +590,22 @@
             "schema": {
               "type": "string",
               "title": "Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -573,6 +692,22 @@
                 }
               ],
               "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -4169,9 +4304,13 @@
             "type": "string",
             "title": "Completion Prompt"
           },
-          "judge_prompt_template": {
+          "judge_system_prompt_template": {
             "type": "string",
-            "title": "Judge Prompt Template"
+            "title": "Judge System Prompt Template"
+          },
+          "judge_user_prompt_template": {
+            "type": "string",
+            "title": "Judge User Prompt Template"
           },
           "paraphrase_prompt_template": {
             "type": "string",
@@ -4207,7 +4346,8 @@
           "prefix_config_hash",
           "target_words",
           "completion_prompt",
-          "judge_prompt_template",
+          "judge_system_prompt_template",
+          "judge_user_prompt_template",
           "paraphrase_prompt_template",
           "criteria",
           "prefix_variants",
@@ -4299,6 +4439,10 @@
             "type": "string",
             "title": "Id"
           },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
           "title": {
             "type": "string",
             "title": "Title"
@@ -4319,6 +4463,7 @@
         "type": "object",
         "required": [
           "id",
+          "source_id",
           "title",
           "author",
           "pub_date",
@@ -4966,6 +5111,39 @@
             "type": "string",
             "title": "Reasoning Preview"
           },
+          "reasoning_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Text"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt"
+          },
           "is_rumil": {
             "type": "boolean",
             "title": "Is Rumil"
@@ -5057,6 +5235,9 @@
           "winner_source",
           "preference_label",
           "reasoning_preview",
+          "reasoning_text",
+          "prompt",
+          "system_prompt",
           "is_rumil",
           "rumil_trace_url",
           "rumil_question_id",
@@ -5067,7 +5248,7 @@
           "orphaned"
         ],
         "title": "Judgment",
-        "description": "One pairwise judgment row, shaped for the inspect view."
+        "description": "One pairwise judgment row, shaped for the inspect view.\n\nIncludes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``\nso the inspect UI can render them inline (matching the standalone\nself-vs-human HTML viewer). Older rows may not have ``system_prompt``\nor ``prompt`` populated; both are optional."
       },
       "JudgmentDetail": {
         "properties": {
@@ -7736,6 +7917,17 @@
           "target": {
             "type": "integer",
             "title": "Target"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
           }
         },
         "type": "object",
@@ -7744,10 +7936,11 @@
           "kind",
           "text",
           "words",
-          "target"
+          "target",
+          "prompt"
         ],
         "title": "Source",
-        "description": "One generated continuation (or the held-out human remainder)."
+        "description": "One generated continuation (or the held-out human remainder).\n\n``prompt`` is the verbatim completion prompt the model received,\nstored on the row (legacy rows and the human baseline have no\nprompt \u2014 the inspect UI falls back to the template in that case)."
       },
       "SourceMatrix": {
         "properties": {

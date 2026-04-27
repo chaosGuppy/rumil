@@ -883,9 +883,13 @@ export type EssayDetail = {
      */
     completion_prompt: string;
     /**
-     * Judge Prompt Template
+     * Judge System Prompt Template
      */
-    judge_prompt_template: string;
+    judge_system_prompt_template: string;
+    /**
+     * Judge User Prompt Template
+     */
+    judge_user_prompt_template: string;
     /**
      * Paraphrase Prompt Template
      */
@@ -981,6 +985,10 @@ export type EssayMeta = {
      * Id
      */
     id: string;
+    /**
+     * Source Id
+     */
+    source_id: string;
     /**
      * Title
      */
@@ -1353,6 +1361,11 @@ export type JudgeLabel = {
  * Judgment
  *
  * One pairwise judgment row, shaped for the inspect view.
+ *
+ * Includes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``
+ * so the inspect UI can render them inline (matching the standalone
+ * self-vs-human HTML viewer). Older rows may not have ``system_prompt``
+ * or ``prompt`` populated; both are optional.
  */
 export type Judgment = {
     /**
@@ -1413,6 +1426,18 @@ export type Judgment = {
      * Reasoning Preview
      */
     reasoning_preview: string;
+    /**
+     * Reasoning Text
+     */
+    reasoning_text: string | null;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * System Prompt
+     */
+    system_prompt: string | null;
     /**
      * Is Rumil
      */
@@ -2964,6 +2989,10 @@ export type SmallNCellOut = {
  * Source
  *
  * One generated continuation (or the held-out human remainder).
+ *
+ * ``prompt`` is the verbatim completion prompt the model received,
+ * stored on the row (legacy rows and the human baseline have no
+ * prompt — the inspect UI falls back to the template in that case).
  */
 export type Source = {
     /**
@@ -2986,6 +3015,10 @@ export type Source = {
      * Target
      */
     target: number;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
 };
 
 /**
@@ -3511,10 +3544,30 @@ export type ListJobsApiJobsGetResponse = ListJobsApiJobsGetResponses[keyof ListJ
 
 export type ListEssaysApiVersusEssaysGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Include Legacy
+         */
+        include_legacy?: boolean;
+    };
     url: '/api/versus/essays';
 };
+
+export type ListEssaysApiVersusEssaysGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEssaysApiVersusEssaysGetError = ListEssaysApiVersusEssaysGetErrors[keyof ListEssaysApiVersusEssaysGetErrors];
 
 export type ListEssaysApiVersusEssaysGetResponses = {
     /**
@@ -3529,6 +3582,12 @@ export type ListEssaysApiVersusEssaysGetResponse = ListEssaysApiVersusEssaysGetR
 
 export type GetEssayApiVersusEssaysEssayIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Essay Id
@@ -3564,6 +3623,12 @@ export type GetEssayApiVersusEssaysEssayIdGetResponse = GetEssayApiVersusEssaysE
 
 export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Essay Id
@@ -3601,6 +3666,12 @@ export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponse = GetEssaySo
 
 export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Essay Id
@@ -3636,6 +3707,12 @@ export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponse = GetEss
 
 export type GetResultsApiVersusResultsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -3694,6 +3771,12 @@ export type GetResultsApiVersusResultsGetResponse = GetResultsApiVersusResultsGe
 
 export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query: {
         /**
@@ -3724,6 +3807,12 @@ export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponse = GetJudgmentByKe
 
 export type GetDiagnosticsApiVersusDiagnosticsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**

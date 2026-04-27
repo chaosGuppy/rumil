@@ -10,6 +10,7 @@ import type {
 import { API_BASE, serverFetch } from "@/lib/api-base";
 import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
 import { VersusHeader } from "@/components/versus/VersusHeader";
+import { InspectModelFilter } from "@/components/versus/InspectModelFilter";
 import "../versus.css";
 
 export const metadata: Metadata = { title: "versus · inspect" };
@@ -37,67 +38,138 @@ function deltaSlot(words: number, target: number): React.ReactNode {
   );
 }
 
+/** Strip a leading `paraphrase:` prefix; otherwise return source_id verbatim. */
+function modelOf(sourceId: string): string {
+  return sourceId.startsWith("paraphrase:") ? sourceId.slice("paraphrase:".length) : sourceId;
+}
+
+type VariantBundle = {
+  id: string;
+  detail: EssayDetail;
+  sources: Source[];
+  judgments: Judgment[];
+  staleHidden: number;
+  otherVariantHidden: number;
+};
+
 export default async function VersusInspectPage({
   searchParams,
 }: {
-  searchParams: Promise<{ essay?: string; prefix_label?: string }>;
+  searchParams: Promise<{ essay?: string }>;
 }) {
   const sp = await searchParams;
   const essays = (await fetchJson<EssayMeta[]>("/api/versus/essays")) ?? [];
-
   const selectedId = sp.essay ?? essays[0]?.id;
-  const prefixLabel = sp.prefix_label;
-  const prefixQs = prefixLabel ? `?prefix_label=${encodeURIComponent(prefixLabel)}` : "";
-  const detail = selectedId
-    ? await fetchJson<EssayDetail>(
-        `/api/versus/essays/${encodeURIComponent(selectedId)}${prefixQs}`,
-      )
+
+  // Bootstrap call to discover the active prefix variants for this
+  // essay; subsequent fetches happen in parallel, one per variant.
+  const bootstrap = selectedId
+    ? await fetchJson<EssayDetail>(`/api/versus/essays/${encodeURIComponent(selectedId)}`)
     : null;
-  const sources = selectedId
-    ? ((await fetchJson<Source[]>(
-        `/api/versus/essays/${encodeURIComponent(selectedId)}/sources${prefixQs}`,
-      )) ?? [])
+  const variantIds = bootstrap?.prefix_variants.map((v) => v.id) ?? [];
+
+  const variantBundles: VariantBundle[] = selectedId
+    ? await Promise.all(
+        variantIds.map(async (id) => {
+          const qs = `?prefix_label=${encodeURIComponent(id)}`;
+          const [detail, sources, judgments] = await Promise.all([
+            fetchJson<EssayDetail>(
+              `/api/versus/essays/${encodeURIComponent(selectedId)}${qs}`,
+            ),
+            fetchJson<Source[]>(
+              `/api/versus/essays/${encodeURIComponent(selectedId)}/sources${qs}`,
+            ),
+            fetchJson<EssayJudgmentsResponse>(
+              `/api/versus/essays/${encodeURIComponent(selectedId)}/judgments${qs}`,
+            ),
+          ]);
+          return {
+            id,
+            detail: detail!,
+            sources: sources ?? [],
+            judgments: judgments?.judgments ?? [],
+            staleHidden: judgments?.stale_hidden ?? 0,
+            otherVariantHidden: judgments?.other_variant_hidden ?? 0,
+          };
+        }),
+      )
     : [];
-  const judgmentsPayload = selectedId
-    ? await fetchJson<EssayJudgmentsResponse>(
-        `/api/versus/essays/${encodeURIComponent(selectedId)}/judgments${prefixQs}`,
-      )
-    : null;
-  const judgments: Judgment[] = judgmentsPayload?.judgments ?? [];
-  const staleHidden = judgmentsPayload?.stale_hidden ?? 0;
-  const otherVariantHidden = judgmentsPayload?.other_variant_hidden ?? 0;
+
+  // The non-variant-specific bits (title, markdown, judge templates,
+  // paraphrase template) — pull from the first bundle. They'd be
+  // identical across variants by construction.
+  const head = variantBundles[0];
+
+  // Models seen across all variants, for the model filter.
+  const modelSet = new Set<string>();
+  for (const v of variantBundles) {
+    for (const s of v.sources) {
+      if (s.source_id !== "human") modelSet.add(modelOf(s.source_id));
+    }
+    for (const j of v.judgments) {
+      if (j.source_a !== "human") modelSet.add(modelOf(j.source_a));
+      if (j.source_b !== "human") modelSet.add(modelOf(j.source_b));
+    }
+  }
+  const modelOptions = Array.from(modelSet).sort().map((m) => ({ value: m, label: m }));
+
+  // Source rows: source_id -> { variantId -> Source }. Renders as one
+  // card per source, with one cell per variant.
+  const sourceRows = new Map<string, Map<string, Source>>();
+  for (const v of variantBundles) {
+    for (const s of v.sources) {
+      if (!sourceRows.has(s.source_id)) sourceRows.set(s.source_id, new Map());
+      sourceRows.get(s.source_id)!.set(v.id, s);
+    }
+  }
+  const sourceOrder = Array.from(sourceRows.keys()).sort((a, b) => {
+    if (a === "human") return -1;
+    if (b === "human") return 1;
+    return a.localeCompare(b);
+  });
+
+  // Judgment rows: pair-key -> { variantId -> Judgment }. The pair
+  // key is (judge_model, criterion, source_a, source_b) — identical
+  // across variants by construction so the same pair lines up.
+  const pairKey = (j: Judgment) => `${j.judge_model}|${j.criterion}|${j.source_a}|${j.source_b}`;
+  const judgmentRows = new Map<string, Map<string, Judgment>>();
+  for (const v of variantBundles) {
+    for (const j of v.judgments) {
+      const k = pairKey(j);
+      if (!judgmentRows.has(k)) judgmentRows.set(k, new Map());
+      judgmentRows.get(k)!.set(v.id, j);
+    }
+  }
+  const judgmentOrder = Array.from(judgmentRows.keys()).sort();
+
+  // Essay dropdown grouped by source_id, alphabetised within group.
+  const grouped: Record<string, { value: string; label: string }[]> = {};
+  for (const e of essays) {
+    const k = e.source_id || "other";
+    (grouped[k] ??= []).push({ value: e.id, label: e.title });
+  }
+  for (const k of Object.keys(grouped)) {
+    grouped[k].sort((a, b) => a.label.localeCompare(b.label));
+  }
+  const essayGroups = Object.keys(grouped)
+    .sort()
+    .map((k) => ({ label: k, options: grouped[k] }));
 
   const essaySelector = (
     <form
       method="get"
       action="/versus/inspect"
-      style={{ display: "flex", gap: 8, alignItems: "center" }}
+      style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}
     >
-      <label htmlFor="essay" className="versus-muted">essay</label>
+      <label htmlFor="essay" className="versus-muted" style={{ fontSize: 13 }}>essay</label>
       <AutoSubmitSelect
         id="essay"
         name="essay"
         defaultValue={selectedId ?? ""}
         className="versus-select"
-        style={{ padding: "4px 8px", fontSize: 13 }}
-        options={essays.map((e) => ({ value: e.id, label: e.title }))}
+        style={{ padding: "4px 8px", fontSize: 13, minWidth: 240 }}
+        groups={essayGroups}
       />
-      {detail && detail.prefix_variants.length > 1 && (
-        <>
-          <label htmlFor="prefix_label" className="versus-muted">prefix</label>
-          <AutoSubmitSelect
-            id="prefix_label"
-            name="prefix_label"
-            defaultValue={detail.active_prefix_label}
-            className="versus-select"
-            style={{ padding: "4px 8px", fontSize: 13 }}
-            options={detail.prefix_variants.map((v) => ({
-              value: v.id,
-              label: v.id,
-            }))}
-          />
-        </>
-      )}
       <noscript>
         <button type="submit" className="versus-button">go</button>
       </noscript>
@@ -107,294 +179,495 @@ export default async function VersusInspectPage({
   return (
     <div className="versus-shell">
       <VersusHeader breadcrumb="inspect" right={essaySelector} />
-      <main className="versus-main">
-        {!detail ? (
+      <main className="versus-main inspect-main">
+        {!head ? (
           <p className="versus-muted">
             No essays found yet. Run <code>uv run scripts/fetch_essays.py</code> first.
           </p>
         ) : (
           <>
-            <h1 style={{ fontWeight: 300, fontSize: 26, margin: "0 0 8px" }}>{detail.title}</h1>
-            <p className="versus-muted">
-              prefix_config_hash: <code>{detail.prefix_config_hash}</code> · target words for completion:{" "}
-              <strong>{detail.target_words}</strong>
-            </p>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
-                gap: 16,
-                marginTop: 16,
-              }}
-            >
-              <PromptPane title="Original essay (normalized markdown)" body={detail.markdown} prose />
-              <PromptPane
-                title="Completion prompt"
-                subtitle="What each completion model receives."
-                body={detail.completion_prompt}
-              />
-              <PromptPane
-                title="Judge prompt template"
-                subtitle={
-                  <>
-                    Criterion shown: <code>{detail.criteria[0]}</code>. Placeholders are substituted
-                    at run time.
-                  </>
-                }
-                body={detail.judge_prompt_template}
-              />
+            <div className="inspect-titlebar">
+              <h1>{head.detail.title}</h1>
+              <div className="inspect-meta">
+                <a href={head.detail.url} target="_blank" rel="noreferrer">source</a>
+                <span className="versus-muted">·</span>
+                <span className="versus-muted">
+                  {head.detail.author}{head.detail.pub_date ? ` · ${head.detail.pub_date}` : ""}
+                </span>
+                <span className="versus-muted">·</span>
+                <span className="versus-muted">target {head.detail.target_words} words</span>
+                <span className="versus-muted">·</span>
+                <span className="versus-muted">
+                  variants: {variantBundles.map((v) => v.id).join(", ")}
+                </span>
+              </div>
+              {modelOptions.length > 0 && (
+                <div className="inspect-modelfilter">
+                  <InspectModelFilter options={modelOptions} />
+                </div>
+              )}
             </div>
 
-            <h2 style={{ marginTop: 30, fontSize: 16, fontWeight: 500 }}>
-              Paraphrase prompt template
-            </h2>
-            <p className="versus-muted">
-              Sent once per essay × paraphrase model; the output becomes a new contestant{" "}
-              <code>paraphrase:&lt;model&gt;</code>.
-            </p>
-            <PromptPane body={detail.paraphrase_prompt_template} maxHeight="60vh" />
+            <section className="inspect-prompts">
+              <div className="inspect-prompts-col">
+                <h3 className="inspect-prompts-coltitle">original</h3>
+                <CollapsibleBlock summary="essay (normalized markdown)" prose>
+                  {head.detail.markdown}
+                </CollapsibleBlock>
+              </div>
+              <div className="inspect-prompts-col">
+                <h3 className="inspect-prompts-coltitle">completions</h3>
+                {variantBundles.map((v) => (
+                  <CollapsibleBlock
+                    key={v.id}
+                    summary={
+                      <>
+                        prompt <span className="versus-muted">·</span>{" "}
+                        <code>variant={v.id}</code>
+                      </>
+                    }
+                  >
+                    {v.detail.completion_prompt}
+                  </CollapsibleBlock>
+                ))}
+              </div>
+              <div className="inspect-prompts-col">
+                <h3 className="inspect-prompts-coltitle">judging</h3>
+                <CollapsibleBlock
+                  summary={
+                    <>
+                      system prompt template <span className="versus-muted">·</span>{" "}
+                      <code>{head.detail.criteria[0]}</code>
+                    </>
+                  }
+                >
+                  {head.detail.judge_system_prompt_template}
+                </CollapsibleBlock>
+                <CollapsibleBlock summary="user prompt template (full essay prefix + both continuations)">
+                  {head.detail.judge_user_prompt_template}
+                </CollapsibleBlock>
+              </div>
+              <div className="inspect-prompts-col">
+                <h3 className="inspect-prompts-coltitle">paraphrase</h3>
+                <CollapsibleBlock summary="prompt template">
+                  {head.detail.paraphrase_prompt_template}
+                </CollapsibleBlock>
+              </div>
+            </section>
 
-            {(judgments.length > 0 || staleHidden > 0 || otherVariantHidden > 0) && (
-              <>
-                <h2 style={{ marginTop: 36, fontSize: 16, fontWeight: 500 }}>
-                  Judgments for this essay
-                </h2>
-                <p className="versus-muted">
-                  One row per judgment. Rumil-path judges show the raw 7-point preference label and a
-                  link to the rumil trace.
-                </p>
-                {otherVariantHidden > 0 && (
-                  <p className="versus-muted" style={{ fontSize: 12, marginTop: -4 }}>
-                    <strong>{otherVariantHidden}</strong> judgment
-                    {otherVariantHidden === 1 ? "" : "s"} hidden because they belong to a different
-                    prefix variant. Switch the <code>prefix</code> dropdown above to view them.
-                  </p>
+            {variantBundles.some((v) => v.otherVariantHidden + v.staleHidden > 0) && (
+              <p className="versus-muted" style={{ fontSize: 12 }}>
+                {variantBundles.flatMap((v) =>
+                  v.staleHidden > 0
+                    ? [
+                        <span key={v.id}>
+                          <strong>{v.staleHidden}</strong> stale judgment
+                          {v.staleHidden === 1 ? "" : "s"} hidden under <code>{v.id}</code>{" "}
+                          (prefix_config_hash drift).{" "}
+                        </span>,
+                      ]
+                    : [],
                 )}
-                {staleHidden > 0 && (
-                  <p className="versus-muted" style={{ fontSize: 12, marginTop: -4 }}>
-                    <strong>{staleHidden}</strong> judgment{staleHidden === 1 ? "" : "s"} hidden
-                    because they reference an older <code>prefix_config_hash</code> for this essay
-                    (re-import changed the text or prompt version). Still on disk; not aggregated here.
-                  </p>
-                )}
-                <div className="versus-card" style={{ padding: 0, overflow: "auto" }}>
-                  <table className="judgments">
-                    <thead>
-                      <tr>
-                        <th>judge</th>
-                        <th>criterion</th>
-                        <th>pair</th>
-                        <th>verdict</th>
-                        <th>rumil label</th>
-                        <th>trace</th>
-                        <th>reasoning (preview)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {judgments.map((j) => (
-                        <JudgmentRow
-                          key={`${j.judge_model}|${j.criterion}|${j.source_a}|${j.source_b}`}
-                          j={j}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
+              </p>
             )}
 
-            {sources.length > 0 && (
-              <>
-                <h2 style={{ marginTop: 36, fontSize: 16, fontWeight: 500 }}>
-                  Generated sources side-by-side
-                </h2>
-                <p className="versus-muted">
-                  Each column is a &ldquo;contestant&rdquo; that the judges pair up. Target was{" "}
-                  <strong>{detail.target_words}</strong> words.
-                </p>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: `repeat(${sources.length}, 1fr)`,
-                    gap: 14,
-                    marginTop: 8,
-                  }}
-                >
-                  {sources.map((s) => (
-                    <section key={s.source_id}>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          alignItems: "baseline",
-                          marginBottom: 6,
-                        }}
-                      >
-                        <span className="versus-pill">{s.kind}</span>
-                        <code style={{ fontSize: 13 }}>{s.source_id}</code>
-                        <span
-                          className="versus-muted"
-                          style={{ marginLeft: "auto", fontSize: 12 }}
-                        >
-                          {s.words} w {deltaSlot(s.words, s.target)}
-                        </span>
-                      </div>
-                      <div
-                        className="versus-card judging-prose"
-                        style={{ maxHeight: "70vh", overflow: "auto", fontSize: 14 }}
-                      >
-                        <pre
-                          style={{
-                            whiteSpace: "pre-wrap",
-                            fontFamily: "Georgia, serif",
-                            margin: 0,
-                          }}
-                        >
-                          {s.text}
-                        </pre>
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              </>
+            <h2 className="inspect-section-head">continuations</h2>
+            {sourceOrder.length === 0 ? (
+              <p className="versus-muted">No completion rows for this essay yet.</p>
+            ) : (
+              <div className="inspect-source-list">
+                {sourceOrder.map((sid) => (
+                  <SourceRow
+                    key={sid}
+                    sourceId={sid}
+                    perVariant={sourceRows.get(sid)!}
+                    variantIds={variantIds}
+                  />
+                ))}
+              </div>
+            )}
+
+            <h2 className="inspect-section-head">judgments</h2>
+            {judgmentOrder.length === 0 ? (
+              <p className="versus-muted">No judgments yet for this essay.</p>
+            ) : (
+              <div className="inspect-judgments">
+                {judgmentOrder.map((k) => (
+                  <JudgmentRow
+                    key={k}
+                    perVariant={judgmentRows.get(k)!}
+                    variantIds={variantIds}
+                  />
+                ))}
+              </div>
             )}
           </>
         )}
       </main>
+      <style>{INSPECT_STYLES}</style>
     </div>
   );
 }
 
-function PromptPane({
-  title,
-  subtitle,
-  body,
+function CollapsibleBlock({
+  summary,
+  children,
   prose = false,
-  maxHeight = "80vh",
+  open = false,
 }: {
-  title?: string;
-  subtitle?: React.ReactNode;
-  body: string;
+  summary: React.ReactNode;
+  children: string;
   prose?: boolean;
-  maxHeight?: string;
+  open?: boolean;
 }) {
   return (
-    <section>
-      {title && <h2 style={{ fontSize: 16, fontWeight: 500, margin: "0 0 6px" }}>{title}</h2>}
-      {subtitle && <p className="versus-muted">{subtitle}</p>}
-      <div
-        className={prose ? "versus-card judging-prose" : "versus-card"}
-        style={{ maxHeight, overflow: "auto" }}
-      >
-        <pre
-          style={{
-            whiteSpace: "pre-wrap",
-            fontFamily: prose
-              ? "Georgia, serif"
-              : "ui-monospace, Menlo, monospace",
-            fontSize: prose ? 15 : 13,
-            margin: 0,
-          }}
-        >
-          {body}
-        </pre>
+    <details className="inspect-collapsible" open={open}>
+      <summary>{summary}</summary>
+      <pre className={prose ? "inspect-pre prose" : "inspect-pre"}>{children}</pre>
+    </details>
+  );
+}
+
+function SourceRow({
+  sourceId,
+  perVariant,
+  variantIds,
+}: {
+  sourceId: string;
+  perVariant: Map<string, Source>;
+  variantIds: string[];
+}) {
+  const isHuman = sourceId === "human";
+  const model = modelOf(sourceId);
+  return (
+    <section
+      className="inspect-source-row"
+      data-filterable
+      data-model={isHuman ? "" : model}
+      data-always-show={isHuman ? "1" : undefined}
+    >
+      <header className="inspect-source-row-head">
+        <code className="versus-mono">{sourceId}</code>
+      </header>
+      <div className="inspect-cells">
+        {variantIds.map((vid) => {
+          const s = perVariant.get(vid);
+          return (
+            <div key={vid} className="inspect-cell">
+              <div className="inspect-cell-head">
+                <span className="versus-pill subtle">{vid}</span>
+                {s ? (
+                  <>
+                    <span className="versus-muted" style={{ fontSize: 12 }}>{s.kind}</span>
+                    <span
+                      className="versus-muted"
+                      style={{ marginLeft: "auto", fontSize: 12 }}
+                    >
+                      {s.words}w {deltaSlot(s.words, s.target)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="versus-muted" style={{ fontSize: 12 }}>(no row)</span>
+                )}
+              </div>
+              {s?.prompt && (
+                <details className="inspect-collapsible inner">
+                  <summary>completion prompt (verbatim from row)</summary>
+                  <pre className="inspect-pre">{s.prompt}</pre>
+                </details>
+              )}
+              {s && <pre className="inspect-pre prose tall">{s.text}</pre>}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function JudgeVersionTags({ j }: { j: Judgment }) {
-  const bits: string[] = [];
-  if (j.prompt_hash) bits.push(j.prompt_hash);
-  if (j.judge_version) bits.push(j.judge_version);
-  if (j.sampling) {
-    const t = j.sampling["temperature"];
-    const m = j.sampling["max_tokens"];
-    if (t !== undefined && t !== null) bits.push(`T=${t}`);
-    if (m !== undefined && m !== null) bits.push(`mt=${m}`);
-  }
-  if (bits.length === 0) return null;
+function JudgmentRow({
+  perVariant,
+  variantIds,
+}: {
+  perVariant: Map<string, Judgment>;
+  variantIds: string[];
+}) {
+  // Header values are identical across variants by construction (same
+  // judge model, criterion, sources). Pull from any present cell.
+  const sample = perVariant.values().next().value as Judgment;
+  const sides = [sample.source_a, sample.source_b]
+    .filter((s) => s !== "human")
+    .map(modelOf);
+  const dataModel = sides.length > 0 ? sides.join(" ") : "";
+  const alwaysShow = sides.length === 0 ? "1" : undefined;
+
   return (
-    <div className="versus-muted" style={{ fontSize: 11, marginTop: 2 }}>
-      {bits.join(" · ")}
-    </div>
+    <article
+      className="inspect-judgment-row"
+      data-filterable
+      data-model={dataModel}
+      data-always-show={alwaysShow}
+    >
+      <header className="inspect-judgment-rowhead">
+        <div className="inspect-judgment-id">
+          {sample.is_rumil && <span className="versus-pill rumil">rumil</span>}
+          <strong className="versus-mono">{sample.judge_model_base}</strong>
+          {(sample.prompt_hash || sample.judge_version) && (
+            <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
+              {[sample.prompt_hash, sample.judge_version].filter(Boolean).join(" · ")}
+            </span>
+          )}
+          {sample.sampling && (
+            <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
+              {samplingTag(sample.sampling)}
+            </span>
+          )}
+        </div>
+        <div className="versus-muted" style={{ fontSize: 12 }}>
+          {sample.criterion} ·{" "}
+          <span className="versus-mono">
+            {sample.source_a} <span className="versus-muted">vs</span> {sample.source_b}
+          </span>
+        </div>
+      </header>
+      <div className="inspect-cells">
+        {variantIds.map((vid) => {
+          const j = perVariant.get(vid);
+          return (
+            <div key={vid} className="inspect-cell">
+              <div className="inspect-cell-head">
+                <span className="versus-pill subtle">{vid}</span>
+                {j ? <JudgmentVerdict j={j} /> : (
+                  <span className="versus-muted" style={{ fontSize: 12 }}>(no row)</span>
+                )}
+              </div>
+              {j && <JudgmentBody j={j} />}
+            </div>
+          );
+        })}
+      </div>
+    </article>
   );
 }
 
-function JudgmentRow({ j }: { j: Judgment }) {
+function JudgmentVerdict({ j }: { j: Judgment }) {
+  const verdict = j.verdict ?? "?";
+  const winner = j.winner_source ?? "?";
+  let wclass = "winner-other";
+  if (winner === "human") wclass = "winner-human";
+  else if (winner === "tie" || verdict === "tie") wclass = "winner-tie";
   const localPath = localTracePath(j.rumil_trace_url);
-  const rowClass = j.contamination_note
-    ? "is-contam"
-    : j.is_rumil
-      ? "is-rumil"
-      : undefined;
-
   return (
-    <tr className={rowClass}>
-      <td
-        style={{
-          fontFamily: "ui-monospace, Menlo, monospace",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {j.contamination_note && (
-          <span className="versus-pill contam" title={j.contamination_note}>
-            ⚠ contaminated
-          </span>
-        )}
-        {j.orphaned && (
-          <span
-            className="versus-pill stale"
-            title="No matching completion row for source_a / source_b at the current prefix_config_hash"
-          >
-            orphan
-          </span>
-        )}
-        {j.is_rumil && <span className="versus-pill rumil">rumil</span>}{" "}
-        {j.judge_model_base}
-        <JudgeVersionTags j={j} />
-      </td>
-      <td>{j.criterion}</td>
-      <td style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 }}>
-        {j.source_a} vs {j.source_b}
-      </td>
-      <td>
-        <strong>{j.verdict ?? "?"}</strong>{" "}
-        {j.winner_source && j.winner_source !== "tie" && j.verdict !== "tie" && (
-          <span className="versus-muted">({j.winner_source})</span>
-        )}
-      </td>
-      <td style={{ fontSize: 12 }}>
-        {j.preference_label ?? <span className="versus-muted">-</span>}
-      </td>
-      <td style={{ fontSize: 12 }}>
-        {j.rumil_trace_url ? (
-          <>
-            {localPath ? (
-              <Link href={localPath}>trace</Link>
-            ) : (
-              <a href={j.rumil_trace_url} target="_blank" rel="noreferrer">
-                trace
-              </a>
-            )}{" "}
-            {j.rumil_cost_usd != null && (
-              <span className="versus-muted">${j.rumil_cost_usd.toFixed(3)}</span>
-            )}
-          </>
-        ) : (
-          <span className="versus-muted">-</span>
-        )}
-      </td>
-      <td style={{ maxWidth: 420 }}>
-        <span
-          className="versus-muted"
-          style={{ fontFamily: "Georgia, serif", fontSize: 12 }}
-        >
-          {j.reasoning_preview}
-          {j.reasoning_preview.length >= 400 && "…"}
+    <span style={{ fontSize: 13 }}>
+      verdict <strong>{verdict}</strong> · winner{" "}
+      <span className={`inspect-winner ${wclass}`}>{winner}</span>
+      {j.preference_label && (
+        <>
+          {" "}· label <span className="versus-mono">{j.preference_label}</span>
+        </>
+      )}
+      {j.contamination_note && (
+        <span className="versus-pill contam" title={j.contamination_note} style={{ marginLeft: 6 }}>
+          ⚠ contaminated
         </span>
-      </td>
-    </tr>
+      )}
+      {j.orphaned && (
+        <span
+          className="versus-pill stale"
+          title="No matching completion row for source_a / source_b"
+          style={{ marginLeft: 6 }}
+        >
+          orphan
+        </span>
+      )}
+      {j.rumil_trace_url && (
+        <span style={{ marginLeft: 8, fontSize: 12 }}>
+          {localPath ? (
+            <Link href={localPath}>trace</Link>
+          ) : (
+            <a href={j.rumil_trace_url} target="_blank" rel="noreferrer">
+              trace
+            </a>
+          )}
+          {j.rumil_cost_usd != null && (
+            <span className="versus-muted">{" "}· ${j.rumil_cost_usd.toFixed(3)}</span>
+          )}
+        </span>
+      )}
+    </span>
   );
 }
+
+function JudgmentBody({ j }: { j: Judgment }) {
+  return (
+    <>
+      {j.system_prompt && (
+        <details className="inspect-collapsible inner">
+          <summary>judge system prompt</summary>
+          <pre className="inspect-pre">{j.system_prompt}</pre>
+        </details>
+      )}
+      {j.prompt && (
+        <details className="inspect-collapsible inner">
+          <summary>judge user prompt</summary>
+          <pre className="inspect-pre">{j.prompt}</pre>
+        </details>
+      )}
+      {j.reasoning_text ? (
+        <details className="inspect-collapsible inner" open>
+          <summary>reasoning</summary>
+          <pre className="inspect-pre prose">{j.reasoning_text}</pre>
+        </details>
+      ) : (
+        j.reasoning_preview && (
+          <details className="inspect-collapsible inner" open>
+            <summary>reasoning (preview only — full text not stored)</summary>
+            <pre className="inspect-pre prose">
+              {j.reasoning_preview}
+              {j.reasoning_preview.length >= 400 && "…"}
+            </pre>
+          </details>
+        )
+      )}
+    </>
+  );
+}
+
+function samplingTag(sampling: { [k: string]: unknown }): string {
+  const bits: string[] = [];
+  const t = sampling["temperature"];
+  const m = sampling["max_tokens"];
+  if (t !== undefined && t !== null) bits.push(`T=${t as number | string}`);
+  if (m !== undefined && m !== null) bits.push(`mt=${m as number | string}`);
+  return bits.join(" · ");
+}
+
+const INSPECT_STYLES = `
+.inspect-main { max-width: 1400px; }
+.inspect-titlebar h1 {
+  font-weight: 400; font-size: 22px; margin: 0 0 6px;
+  letter-spacing: -0.005em;
+}
+.inspect-meta {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline;
+  font-size: 13px; margin-bottom: 8px;
+}
+.inspect-meta a { color: var(--vaccent-fg); }
+.inspect-modelfilter { margin: 6px 0 14px; }
+
+.inspect-section-head {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-muted);
+  margin: 28px 0 10px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.inspect-prompts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+  margin: 4px 0 6px;
+}
+@media (max-width: 720px) {
+  .inspect-prompts { grid-template-columns: minmax(0, 1fr); }
+}
+.inspect-prompts-col {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.inspect-prompts-coltitle {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--color-muted);
+  margin: 0 0 2px;
+}
+
+.inspect-collapsible {
+  border: 1px solid var(--color-border);
+  border-radius: 4px; background: var(--color-surface);
+}
+.inspect-collapsible > summary {
+  cursor: pointer; padding: 8px 12px; font-size: 13px;
+  color: var(--foreground); user-select: none;
+  list-style: none;
+}
+.inspect-collapsible > summary::-webkit-details-marker { display: none; }
+.inspect-collapsible > summary::before {
+  content: "▸"; display: inline-block; margin-right: 8px;
+  color: var(--color-muted); font-size: 11px;
+  transition: transform 120ms ease;
+}
+.inspect-collapsible[open] > summary::before { transform: rotate(90deg); }
+.inspect-collapsible > summary:hover { background: var(--vaccent-dim); }
+.inspect-collapsible.inner {
+  margin-top: 6px;
+  background: transparent;
+}
+
+.inspect-pre {
+  white-space: pre-wrap; word-wrap: break-word;
+  font: 12px/1.5 ui-monospace, Menlo, monospace;
+  background: var(--background);
+  border-top: 1px solid var(--color-border);
+  padding: 12px 14px; margin: 0;
+  max-height: 60vh; overflow: auto;
+}
+.inspect-pre.prose {
+  font: 14px/1.55 Georgia, "Times New Roman", serif;
+}
+.inspect-pre.tall { max-height: 70vh; }
+
+.inspect-source-list,
+.inspect-judgments {
+  display: flex; flex-direction: column; gap: 18px;
+}
+
+.inspect-source-row,
+.inspect-judgment-row {
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.inspect-source-row-head,
+.inspect-judgment-rowhead {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.inspect-source-row-head { display: flex; gap: 8px; align-items: baseline; }
+.inspect-judgment-rowhead { display: flex; flex-direction: column; gap: 4px; }
+.inspect-judgment-id {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+}
+
+.inspect-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+  gap: 14px;
+}
+.inspect-cell {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+.inspect-cell-head {
+  display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+}
+
+.inspect-cell .inspect-pre {
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--background);
+  max-height: 60vh;
+}
+.inspect-cell .inspect-collapsible.inner > summary {
+  padding: 6px 10px; font-size: 12px; color: var(--color-muted);
+}
+
+.inspect-winner.winner-human { color: #2a7d3a; font-weight: 600; }
+.inspect-winner.winner-tie { color: var(--color-muted); font-weight: 600; }
+.inspect-winner.winner-other { color: #b04a16; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  .inspect-winner.winner-human { color: #4ec97a; }
+  .inspect-winner.winner-other { color: #e08855; }
+}
+`;

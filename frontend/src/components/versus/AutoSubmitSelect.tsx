@@ -1,16 +1,20 @@
 "use client";
 
+type Option = { value: string; label: string };
+
 export function AutoSubmitSelect({
   name,
   defaultValue,
   options,
+  groups,
   className,
   style,
   id,
 }: {
   name: string;
   defaultValue?: string;
-  options: { value: string; label: string }[];
+  options?: Option[];
+  groups?: { label: string; options: Option[] }[];
   className?: string;
   style?: React.CSSProperties;
   id?: string;
@@ -24,11 +28,21 @@ export function AutoSubmitSelect({
       style={style}
       onChange={(e) => e.currentTarget.form?.requestSubmit()}
     >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
+      {groups
+        ? groups.map((g) => (
+            <optgroup key={g.label} label={g.label}>
+              {g.options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          ))
+        : (options ?? []).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
     </select>
   );
 }

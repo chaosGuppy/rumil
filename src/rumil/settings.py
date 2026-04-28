@@ -48,6 +48,24 @@ def _capture_field(**kwargs: Any) -> Any:
     return Field(json_schema_extra=_CAPTURE, **kwargs)
 
 
+# Settings field names the CLI auto-forwards into the cloud Job's env when
+# their local value differs from the class default. Curated rather than
+# blanket: a developer's local `.env` setting (say) SUPABASE_PROD_URL or
+# ANTHROPIC_API_KEY would otherwise redirect the cloud Job at their laptop's
+# resources or burn local quota. The cloud Job already inherits those from
+# the rumil-api Deployment. The set covers experiment knobs the user actually
+# wants to vary per run: every `_capture_field`-marked field plus a small
+# handful of mode/override booleans/strings.
+_CLI_FORWARDABLE_EXTRAS: frozenset[str] = frozenset(
+    {
+        "rumil_model_override",
+        "rumil_smoke_test",
+        "rumil_test_mode",
+        "force_twophase_recurse",
+    }
+)
+
+
 class Settings(BaseSettings):
     # ".env" is the shared (often symlinked) project env; ".env.overrides"
     # layers on top — typically written by the workmux post_create hook for
@@ -259,6 +277,55 @@ class Settings(BaseSettings):
         result["model"] = self.model
         result["git_commit"] = _get_git_commit()
         return result
+
+    @classmethod
+    def all_env_keys(cls) -> frozenset[str]:
+        """Uppercased view of every Settings field name.
+
+        Used by the cloud-job launcher to validate caller-supplied
+        `extra_env` keys: anything not in this set is a typo or an
+        unrelated env var, and we 422 it at submission time rather than
+        let it silently fall on the floor (Settings is configured
+        extra="ignore", so unknown env vars don't surface anywhere).
+        """
+        return frozenset(name.upper() for name in cls.model_fields)
+
+    @classmethod
+    def _cli_forwardable_fields(cls) -> frozenset[str]:
+        """Snake_case Settings field names the CLI may auto-forward.
+
+        Every `_capture_field`-marked field (the existing per-run tuning
+        surface) plus a small set of mode/override knobs. Credentials,
+        DB URLs, GCP identifiers, etc. are intentionally excluded — the
+        cloud Job inherits those from the rumil-api Deployment and a
+        local override would point it at the wrong resources.
+        """
+        capture_marked = {
+            name
+            for name, field_info in cls.model_fields.items()
+            if isinstance(field_info.json_schema_extra, dict)
+            and field_info.json_schema_extra.get("capture")
+        }
+        return frozenset(capture_marked | _CLI_FORWARDABLE_EXTRAS)
+
+    def cli_forwardable_overrides(self) -> dict[str, str]:
+        """Forwardable Settings fields whose value differs from the default.
+
+        Returned as a dict of `{ENV_VAR_NAME: stringified_value}` ready
+        to drop into the cloud-job request's `extra_env`. Bools become
+        "true"/"false" so they round-trip through pydantic-settings'
+        env parsing; `None`-valued fields are omitted.
+        """
+        out: dict[str, str] = {}
+        for name in self._cli_forwardable_fields():
+            field_info = type(self).model_fields[name]
+            current = getattr(self, name)
+            if current is None or current == field_info.default:
+                continue
+            out[name.upper()] = (
+                "true" if current is True else "false" if current is False else str(current)
+            )
+        return out
 
 
 _settings_var: contextvars.ContextVar[Settings | None] = contextvars.ContextVar(

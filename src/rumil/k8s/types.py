@@ -6,10 +6,13 @@ submitter (`rumil.k8s.submit`). Kept FastAPI-free so the CLI can import them
 without dragging server-side modules.
 """
 
+import re
 from datetime import datetime
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from rumil.settings import Settings
 
 JobStatus = Literal["pending", "running", "failed", "completed"]
 
@@ -17,6 +20,8 @@ JobStatus = Literal["pending", "running", "failed", "completed"]
 # bounded for safety. Validates the user-supplied container_tag so we never
 # splice an attacker-controlled value into a Job's image string.
 _CONTAINER_TAG_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+
+_ENV_VAR_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 class OrchestratorRunRequest(BaseModel):
@@ -61,11 +66,42 @@ class OrchestratorRunRequest(BaseModel):
     # registry. Used by scripts/remote_run.sh.
     container_tag: str | None = Field(default=None, pattern=_CONTAINER_TAG_PATTERN)
 
+    # Per-request env-var overrides. Keys must be uppercase env-var names
+    # corresponding to a known Settings field; values land verbatim in the
+    # spawned Job's container env, shadowing the values inherited from the
+    # rumil-api Deployment. This is the trust boundary for cloud-job config
+    # — the API accepts any Settings field name and trusts authenticated
+    # callers not to abuse it. The CLI restricts itself to a curated subset
+    # via `Settings.cli_forwardable_overrides()`; other clients are free to
+    # send anything.
+    extra_env: dict[str, str] = Field(default_factory=dict)
+
     @model_validator(mode="after")
     def _exactly_one_of_question_or_continue_id(self) -> Self:
         if bool(self.question) == bool(self.continue_id):
             raise ValueError("exactly one of `question` or `continue_id` must be set")
         return self
+
+    @field_validator("extra_env")
+    @classmethod
+    def _validate_extra_env(cls, v: dict[str, str]) -> dict[str, str]:
+        if not v:
+            return v
+        known = Settings.all_env_keys()
+        for key, value in v.items():
+            if not _ENV_VAR_NAME.match(key):
+                raise ValueError(
+                    f"extra_env key {key!r} must match {_ENV_VAR_NAME.pattern} "
+                    "(uppercase env-var name)"
+                )
+            if key not in known:
+                raise ValueError(f"extra_env key {key!r} is not a known Settings field")
+            if not value:
+                raise ValueError(
+                    f"extra_env value for {key!r} must be non-empty; "
+                    "omit the key to fall back to the inherited default"
+                )
+        return v
 
 
 class OrchestratorRunResponse(BaseModel):

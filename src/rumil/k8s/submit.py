@@ -233,7 +233,9 @@ def _build_job(
     container = containers[0]
     container["image"] = image
     container["command"] = _build_container_command(spec, run_id=run_id)
-    container["env"] = [_env_var_to_dict(e) for e in env]
+    overrides = dict(spec.extra_env)
+    inherited = [_env_var_to_dict(e) for e in env if e.name not in overrides]
+    container["env"] = inherited + [{"name": k, "value": v} for k, v in overrides.items()]
     container["envFrom"] = [_env_from_to_dict(e) for e in env_from]
     return manifest
 

@@ -82,7 +82,7 @@ async def test_seed_includes_current_take_full_content_judgement_variant(tmp_db)
         seed = await build_eval_seed_context(scope.id, tmp_db)
 
     assert "## Current take" in seed
-    assert "The answer" in seed
+    assert "Full content for The answer" in seed
 
 
 @pytest.mark.asyncio

@@ -44,7 +44,7 @@ async def build_eval_seed_context(
 
     view = get_active_view()
     headline = await view.headline_page(resolved, db)
-    take_text = await view.render_for_prioritization(resolved, db)
+    take_text = await view.render_for_executive_summary(resolved, db)
     exclude_ids: set[str] | None = None
     if take_text:
         parts.append("## Current take")

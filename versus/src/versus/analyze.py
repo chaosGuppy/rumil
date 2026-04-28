@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import collections
 import pathlib
-from collections.abc import Sequence
 
 from versus import jsonl, judge
 
@@ -159,13 +158,6 @@ def _prefix_hash_is_stale(row: dict, current_prefix_hashes: dict[str, str] | Non
     return row.get("prefix_config_hash") != current_prefix_hashes[eid]
 
 
-# Back-compat alias — old call sites referenced ``_is_stale_row``;
-# new code should call ``_prefix_hash_is_stale`` so the staleness
-# axis is named explicitly. Kept indefinitely; the rename is just
-# for clarity, not for semantics.
-_is_stale_row = _prefix_hash_is_stale
-
-
 def content_test_matrix(
     judgments_log: pathlib.Path,
     include_contaminated: bool = False,
@@ -312,58 +304,3 @@ def matrix_by_source(
         }
         for source_id, src_counts in counts.items()
     }
-
-
-def format_matrix(
-    data: dict,
-    gen_models: Sequence[str] | None = None,
-    judge_models: Sequence[str] | None = None,
-    condition: str = "completion",
-    criterion: str | None = None,
-) -> str:
-    """Render as a text table. If criterion is None, averages across criteria."""
-    if not gen_models:
-        gen_models = sorted({k[0] for k in data if k[2] == condition})
-    if not judge_models:
-        judge_models = sorted({k[1] for k in data if k[2] == condition})
-
-    # aggregate over criteria if needed
-    cell: dict[tuple[str, str], tuple[float, int]] = {}
-    for g in gen_models:
-        for j in judge_models:
-            hs, ns = 0.0, 0
-            for (gg, jj, cc, crit), row in data.items():
-                if gg == g and jj == j and cc == condition:
-                    if criterion and crit != criterion:
-                        continue
-                    pct, n = row[0], row[1]
-                    hs += pct * n
-                    ns += n
-            cell[(g, j)] = ((hs / ns) if ns else 0.0, ns)
-
-    col_w = max([len(j) for j in judge_models] + [10])
-    gen_w = max([len(g) for g in gen_models] + [10])
-    lines = []
-    header_label = f"condition={condition}" + (
-        f"  criterion={criterion}" if criterion else "  (avg over criteria)"
-    )
-    lines.append(header_label)
-    lines.append("")
-    header = " " * gen_w + " | " + " | ".join(j.rjust(col_w) for j in judge_models)
-    lines.append(header)
-    lines.append("-" * len(header))
-    for g in gen_models:
-        row = (
-            g.ljust(gen_w)
-            + " | "
-            + " | ".join(
-                (
-                    f"{cell[(g, j)][0] * 100:5.1f}% ({cell[(g, j)][1]})".rjust(col_w)
-                    if cell[(g, j)][1]
-                    else "  -  ".rjust(col_w)
-                )
-                for j in judge_models
-            )
-        )
-        lines.append(row)
-    return "\n".join(lines)

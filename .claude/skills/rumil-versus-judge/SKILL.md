@@ -74,9 +74,8 @@ write fresh rows under the new keys. Surface the warning to the user;
 don't proceed on stale data without confirmation.
 
 The same three staleness buckets (`current` / `stale_prefix` or
-`stale_prompt` / `unknown_essay`) are what `/versus/results` and
-`/versus/judge` filter on in the UI, so `status.py`'s numbers should
-match what you see there.
+`stale_prompt` / `unknown_essay`) are what `/versus/results` filters
+on in the UI, so `status.py`'s numbers should match what you see there.
 
 ## Env & config
 

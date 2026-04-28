@@ -78,7 +78,7 @@ uv run scripts/run_rumil_judgments.py    # blind judges (default); --variant ws|
 
 Env resolution for `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` cascades: `versus/.env`, then `<rumil-root>/.env`, then process env. Files override process env.
 
-UI routes (`/versus`, `/versus/judge`, `/versus/inspect`, `/versus/results`) mount in the rumil Next.js frontend; API endpoints in `src/rumil/api/versus_router.py` read the JSONL stores directly. No DB tables.
+UI routes (`/versus` redirects to `/versus/results`; `/versus/inspect` and `/versus/results` are the real pages) mount in the rumil Next.js frontend; API endpoints in `src/rumil/api/versus_router.py` read the JSONL stores directly. No DB tables.
 
 ## Judge variants
 

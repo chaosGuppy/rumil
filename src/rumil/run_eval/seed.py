@@ -1,16 +1,18 @@
 """Seed context for run-eval agents.
 
-The seed is deliberately compact: the scope question and its current
-judgement(s) rendered at full content, plus a headline-only view of the
-1-hop subgraph with overflow indicators for everything further out. The
-agent is expected to drill into anything interesting via
-``explore_subgraph`` / ``load_page`` — handing it every neighbor up-front
-tends to produce wide-but-shallow reads rather than targeted digs.
+The seed is deliberately compact: the scope question and its current take
+(View page or Judgement, depending on the workspace's view variant)
+rendered at full content, plus a headline-only view of the 1-hop subgraph
+with overflow indicators for everything further out. The agent is
+expected to drill into anything interesting via ``explore_subgraph`` /
+``load_page`` — handing it every neighbor up-front tends to produce
+wide-but-shallow reads rather than targeted digs.
 """
 
 from rumil.context import format_page
 from rumil.database import DB
 from rumil.models import PageDetail
+from rumil.views import get_active_view
 from rumil.workspace_exploration.explore import render_subgraph
 
 
@@ -40,23 +42,17 @@ async def build_eval_seed_context(
     )
     parts.append("")
 
-    judgements = await db.get_judgements_for_question(resolved)
-    judgement_ids: set[str] = set()
-    if judgements:
-        parts.append("## Current judgement")
+    view = get_active_view()
+    headline = await view.headline_page(resolved, db)
+    take_text = await view.render_for_prioritization(resolved, db)
+    exclude_ids: set[str] | None = None
+    if take_text:
+        parts.append("## Current take")
         parts.append("")
-        for judgement in judgements:
-            judgement_ids.add(judgement.id)
-            parts.append(
-                await format_page(
-                    judgement,
-                    PageDetail.CONTENT,
-                    linked_detail=None,
-                    db=db,
-                    highlight_run_id=highlight_run_id,
-                )
-            )
-            parts.append("")
+        parts.append(take_text)
+        parts.append("")
+    if headline is not None:
+        exclude_ids = {headline.id}
 
     parts.append("## Local subgraph (1-hop, headlines only)")
     parts.append("")
@@ -64,7 +60,7 @@ async def build_eval_seed_context(
         resolved,
         db,
         max_depth=1,
-        exclude_ids=judgement_ids or None,
+        exclude_ids=exclude_ids,
         highlight_run_id=highlight_run_id,
     )
     parts.append(subgraph_text)

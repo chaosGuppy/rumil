@@ -41,7 +41,7 @@ The workspace contains Claims, Questions, Judgements, Sources, Wiki, View, and V
 
 **Claim** pages are positive assertions — something the workspace is asserting *is* the case about the world. A claim has to be **specific enough that a credence score (how likely is this to be true) can be meaningfully assigned to it**: it names its subject, makes a falsifiable statement, and doesn't dissolve under questions like "in what context?" or "compared to what?". If the best you can say is a vague gesture, it is not yet a claim — turn it into a question, a judgement, or a View item rather than forcing it into a claim shape.
 
-**Judgement** pages are the workspace's current best take on a question. They carry a *robustness* score (how solid is this view) but no credence — a judgement is already the considered answer, so "how likely is this to be true" is the wrong frame.
+**Judgement** pages are one way the workspace records its current best take on a question (the other is **View** pages — see below). They carry a *robustness* score (how solid is this view) but no credence — a judgement is already the considered answer, so "how likely is this to be true" is the wrong frame. Whether a question's overall take lives as a Judgement or a View depends on how the workspace is configured; both play the same role.
 
 **Source** pages are ingested documents — they are created by the system, not by other research instances.
 

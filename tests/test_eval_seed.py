@@ -11,6 +11,7 @@ from rumil.models import (
     Workspace,
 )
 from rumil.run_eval.seed import build_eval_seed_context
+from rumil.settings import override_settings
 
 
 def _question(headline: str) -> Page:
@@ -30,6 +31,19 @@ def _judgement(headline: str) -> Page:
         workspace=Workspace.RESEARCH,
         content=f"Full content for {headline}",
         headline=headline,
+        robustness=3,
+    )
+
+
+def _view(headline: str) -> Page:
+    return Page(
+        page_type=PageType.VIEW,
+        layer=PageLayer.WIKI,
+        workspace=Workspace.RESEARCH,
+        content=f"Full content for {headline}",
+        headline=headline,
+        sections=["broader_context", "confident_views"],
+        robustness=3,
     )
 
 
@@ -57,27 +71,44 @@ async def test_seed_renders_scope_full_content(tmp_db):
 
 
 @pytest.mark.asyncio
-async def test_seed_includes_current_judgement_full_content(tmp_db):
+async def test_seed_includes_current_take_full_content_judgement_variant(tmp_db):
     scope = _question("Root scope")
     judgement = _judgement("The answer")
     await tmp_db.save_page(scope)
     await tmp_db.save_page(judgement)
     await _link(tmp_db, judgement, scope, LinkType.ANSWERS)
 
-    seed = await build_eval_seed_context(scope.id, tmp_db)
+    with override_settings(view_variant="judgement"):
+        seed = await build_eval_seed_context(scope.id, tmp_db)
 
-    assert "## Current judgement" in seed
-    assert "Full content for The answer" in seed
+    assert "## Current take" in seed
+    assert "The answer" in seed
 
 
 @pytest.mark.asyncio
-async def test_seed_omits_judgement_section_when_none(tmp_db):
+async def test_seed_includes_current_take_full_content_sectioned_variant(tmp_db):
+    scope = _question("Root scope")
+    view = _view("View on root scope")
+    await tmp_db.save_page(scope)
+    await tmp_db.save_page(view)
+    await _link(tmp_db, view, scope, LinkType.VIEW_OF)
+
+    with override_settings(view_variant="sectioned"):
+        seed = await build_eval_seed_context(scope.id, tmp_db)
+
+    assert "## Current take" in seed
+    assert "View on root scope" in seed
+    assert "Full content for View on root scope" in seed
+
+
+@pytest.mark.asyncio
+async def test_seed_omits_take_section_when_no_take_recorded(tmp_db):
     scope = _question("Root scope")
     await tmp_db.save_page(scope)
 
     seed = await build_eval_seed_context(scope.id, tmp_db)
 
-    assert "## Current judgement" not in seed
+    assert "## Current take" not in seed
 
 
 @pytest.mark.asyncio
@@ -117,19 +148,35 @@ async def test_seed_shows_overflow_marker_beyond_one_hop(tmp_db):
 
 
 @pytest.mark.asyncio
-async def test_seed_excludes_judgement_from_subgraph(tmp_db):
+async def test_seed_excludes_judgement_headline_from_subgraph(tmp_db):
     scope = _question("Root scope")
     judgement = _judgement("The answer")
     await tmp_db.save_page(scope)
     await tmp_db.save_page(judgement)
     await _link(tmp_db, judgement, scope, LinkType.ANSWERS)
 
-    seed = await build_eval_seed_context(scope.id, tmp_db)
+    with override_settings(view_variant="judgement"):
+        seed = await build_eval_seed_context(scope.id, tmp_db)
 
-    # Full content in the judgement section, not duplicated as a headline
+    # Full content in the take section, not duplicated as a headline
     # entry in the 1-hop subgraph.
     subgraph_section = seed.split("## Local subgraph", 1)[1]
     assert judgement.id[:8] not in subgraph_section
+
+
+@pytest.mark.asyncio
+async def test_seed_excludes_view_headline_from_subgraph(tmp_db):
+    scope = _question("Root scope")
+    view = _view("View on root scope")
+    await tmp_db.save_page(scope)
+    await tmp_db.save_page(view)
+    await _link(tmp_db, view, scope, LinkType.VIEW_OF)
+
+    with override_settings(view_variant="sectioned"):
+        seed = await build_eval_seed_context(scope.id, tmp_db)
+
+    subgraph_section = seed.split("## Local subgraph", 1)[1]
+    assert view.id[:8] not in subgraph_section
 
 
 @pytest.mark.asyncio

@@ -58,4 +58,4 @@ You must continue to explore until your sense of the differences between the two
 
 ## Seed context
 
-Seed contexts for both arms are provided below, in the user message. Each seed shows the scope question, current judgement, and the 1-hop subgraph at headline level for that arm. The seeds are intentionally compact — use the tools above to drill into anything that looks interesting or suspicious.
+Seed contexts for both arms are provided below, in the user message. Each seed shows the scope question, the current take on it (a View or a Judgement, depending on the workspace's configuration), and the 1-hop subgraph at headline level for that arm. The seeds are intentionally compact — use the tools above to drill into anything that looks interesting or suspicious.

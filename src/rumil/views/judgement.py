@@ -11,7 +11,7 @@ from datetime import datetime
 
 from rumil.context import format_page
 from rumil.database import DB
-from rumil.models import PageDetail
+from rumil.models import Page, PageDetail
 from rumil.orchestrators.common import assess_question
 from rumil.tracing.broadcast import Broadcaster
 from rumil.views.base import View
@@ -25,6 +25,35 @@ class JudgementView(View):
     async def exists(self, question_id: str, db: DB) -> bool:
         judgements = await db.get_judgements_for_question(question_id)
         return bool(judgements)
+
+    async def headline_page(self, question_id: str, db: DB) -> Page | None:
+        return await self._latest_judgement(question_id, db)
+
+    async def headline_pages_many(
+        self,
+        question_ids: Sequence[str],
+        db: DB,
+    ) -> dict[str, Page | None]:
+        by_question = await db.get_judgements_for_questions(question_ids)
+        return {
+            qid: max(judgements, key=lambda j: j.created_at) if judgements else None
+            for qid, judgements in by_question.items()
+        }
+
+    async def render_for_executive_summary(
+        self,
+        question_id: str,
+        db: DB,
+    ) -> str | None:
+        latest = await self._latest_judgement(question_id, db)
+        if latest is None:
+            return None
+        return await format_page(
+            latest,
+            PageDetail.CONTENT,
+            linked_detail=None,
+            db=db,
+        )
 
     async def refresh(
         self,

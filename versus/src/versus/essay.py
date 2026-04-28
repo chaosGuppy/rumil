@@ -16,6 +16,11 @@ from dataclasses import asdict, dataclass
 SCHEMA_VERSION = 11
 
 
+def is_current_schema(d: dict) -> bool:
+    """True if a cached essay JSON's schema matches the live version."""
+    return d.get("schema_version", 0) == SCHEMA_VERSION
+
+
 ACK_PATTERNS = [
     re.compile(r"^\s*thanks to\b", re.IGNORECASE),
     re.compile(r"^\s*(many\s+)?thanks,?\s", re.IGNORECASE),
@@ -49,7 +54,9 @@ class Essay:
     pub_date: str
     blocks: list[Block]
     markdown: str  # full body rendered as clean markdown (title NOT included)
-    image_count: int = 0  # count of <img>/<figure>/image-component tags in the source HTML, pre-strip
+    image_count: int = (
+        0  # count of <img>/<figure>/image-component tags in the source HTML, pre-strip
+    )
     schema_version: int = SCHEMA_VERSION
 
     def to_json(self) -> dict:

@@ -55,7 +55,7 @@ def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_ess
     d = json.loads(p.read_text())
     if "source_id" not in d:
         return None
-    if not versus_mainline.is_current_schema(d):
+    if not versus_essay.is_current_schema(d):
         return None
     return versus_essay.Essay(
         id=d["id"],

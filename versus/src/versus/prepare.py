@@ -7,8 +7,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from versus.essay import Block, Essay, blocks_to_markdown
-from versus.mainline import is_current_schema
+from versus.essay import Block, Essay, blocks_to_markdown, is_current_schema
 from versus.versions import COMPLETION_PROMPT_VERSION
 
 

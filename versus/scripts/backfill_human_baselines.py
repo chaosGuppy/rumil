@@ -49,7 +49,7 @@ def _load_essays(cfg: config.Config) -> list[versus_essay.Essay]:
         d = json.loads(path.read_text())
         if "source_id" not in d:
             continue
-        if not versus_mainline.is_current_schema(d):
+        if not versus_essay.is_current_schema(d):
             continue
         if d["id"] in exclude:
             continue

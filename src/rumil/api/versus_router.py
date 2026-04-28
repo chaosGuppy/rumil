@@ -159,7 +159,7 @@ def _build_essays_status(
             d = json.load(f)
         if "source_id" not in d:
             continue
-        if not versus_mainline.is_current_schema(d):
+        if not versus_essay.is_current_schema(d):
             continue
         if d["id"] in exclude:
             continue
@@ -589,7 +589,7 @@ def list_essays(include_legacy: bool = False) -> list[EssayMeta]:
             d = json.load(f)
         if d.get("id") in exclude:
             continue
-        if not include_legacy and not versus_mainline.is_current_schema(d):
+        if not include_legacy and not versus_essay.is_current_schema(d):
             continue
         out.append(
             EssayMeta(
@@ -1121,7 +1121,7 @@ def get_results(
 
     provenance_axes = versus_mainline.summarize_provenance(matrix_input_rows)
     current = versus_mainline.current_values_summary(cfg)
-    descriptions = versus_mainline.axis_descriptions()
+    descriptions = versus_mainline.AXIS_DESCRIPTIONS
     # Build a hash -> "essay_id / variant_id" reverse map across all
     # active prefix variants. Each (essay, variant) combination
     # contributes one current hash; collisions across variants are
@@ -1138,7 +1138,7 @@ def get_results(
     current["prefix_config_hash"] = sorted(current_prefix_hash_set)
 
     axes_out: dict[str, ProvenanceAxis] = {}
-    for axis in versus_mainline.axis_order():
+    for axis in versus_mainline.AXES_ORDER:
         counts = provenance_axes.get(axis, {})
         if not counts and not current.get(axis):
             continue
@@ -1153,7 +1153,7 @@ def get_results(
             current_values=current.get(axis, []),
             value_labels=value_labels,
         )
-    provenance = ProvenanceSummary(axes=axes_out, axis_order=list(versus_mainline.axis_order()))
+    provenance = ProvenanceSummary(axes=axes_out, axis_order=list(versus_mainline.AXES_ORDER))
 
     return ResultsBundle(
         conditions=conditions,

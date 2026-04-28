@@ -149,7 +149,7 @@ def _prefix_hash_is_stale(row: dict, current_prefix_hashes: dict[str, str] | Non
     Returns False when ``current_prefix_hashes`` is None — caller
     doesn't want staleness filtering. Note: this checks *prefix-hash
     drift*, which is orthogonal to schema-version drift (see
-    ``versus.mainline.is_current_schema``).
+    ``versus.essay.is_current_schema``).
     """
     if current_prefix_hashes is None:
         return False

@@ -49,7 +49,7 @@ def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
         if "source_id" not in d:
             # Legacy pre-multi-source JSON — skip. Re-fetch to upgrade.
             continue
-        if not versus_mainline.is_current_schema(d):
+        if not versus_essay.is_current_schema(d):
             # Older schema — the API's staleness gate excludes these from
             # ``current_prefix_hashes`` so rows against them show as
             # "essay-not-current" in /versus. Match that here: drop the

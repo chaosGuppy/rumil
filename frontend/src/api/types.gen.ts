@@ -1387,17 +1387,17 @@ export type Judgment = {
     /**
      * Config Hash
      */
-    config_hash: string | null;
+    config_hash: string;
     /**
      * Prompt Hash
      */
-    prompt_hash: string | null;
+    prompt_hash: string;
     /**
      * Sampling
      */
     sampling: {
         [key: string]: unknown;
-    } | null;
+    };
     /**
      * Criterion
      */
@@ -1534,17 +1534,17 @@ export type JudgmentDetail = {
     /**
      * Config Hash
      */
-    config_hash: string | null;
+    config_hash: string;
     /**
      * Prompt Hash
      */
-    prompt_hash: string | null;
+    prompt_hash: string;
     /**
      * Sampling
      */
     sampling: {
         [key: string]: unknown;
-    } | null;
+    };
     /**
      * Verdict
      */

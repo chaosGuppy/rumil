@@ -199,16 +199,13 @@ def judge_prompt_is_current(row: dict, criterion: str) -> bool:
     """Return False if the row's prompt hash is out of date.
 
     Status.py uses this to surface stale rows in the STALE banner.
-    Reads ``row["config"]["prompts"]["shell_hash"]`` directly. Rows
-    without a config dict (which shouldn't exist after the legacy
-    backfill) read as stale by construction.
+    Reads ``row["config"]["prompts"]["shell_hash"]`` directly —
+    every row carries a config dict post-backfill.
 
     ws/orch judges hash the tools-shell composed output; blind judges
     hash the blind-shell composed output.
     """
-    cfg = row.get("config")
-    if not isinstance(cfg, dict):
-        return False
+    cfg = row["config"]
     phash = f"p{cfg['prompts']['shell_hash']}"
     is_tools = cfg["variant"] in ("ws", "orch")
     try:

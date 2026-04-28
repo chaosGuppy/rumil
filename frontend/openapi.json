@@ -5032,37 +5032,16 @@
             "title": "Judge Model"
           },
           "config_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Config Hash"
           },
           "prompt_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Prompt Hash"
           },
           "sampling": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "additionalProperties": true,
+            "type": "object",
             "title": "Sampling"
           },
           "criterion": {
@@ -5304,37 +5283,16 @@
             "title": "Judge Model"
           },
           "config_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Config Hash"
           },
           "prompt_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Prompt Hash"
           },
           "sampling": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "additionalProperties": true,
+            "type": "object",
             "title": "Sampling"
           },
           "verdict": {

@@ -135,10 +135,7 @@ def main() -> None:
         other = (sources - {"human"}).pop()
         if other not in dict(MODEL_ORDER):
             continue
-        # Prefer the structured config dict; fall back to the historical
-        # flat-string heuristic for legacy rows that predate it.
-        cfg = r.get("config") if isinstance(r.get("config"), dict) else None
-        base = cfg["model"] if cfg else (r.get("judge_model") or "").split(":p")[0]
+        base = r["config"]["model"]
         if base != other:
             continue  # only self-judgments
         judgments[(eid, vid, other)] = r

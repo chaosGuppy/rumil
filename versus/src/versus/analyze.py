@@ -11,19 +11,16 @@ from versus import jsonl, judge
 HUMAN = "human"
 
 
-def _content_test_baseline(row: dict) -> str | None:
+def _content_test_baseline(row: dict) -> str:
     """Compose the paraphrase source_id that matches this judge's model.
 
     Paraphrases are authored via OpenRouter and keyed as
-    ``paraphrase:<openrouter_model_id>``. Reads the model directly from
-    ``row["config"]["model"]`` — returns ``None`` for any row without a
-    config dict so the caller can skip it cleanly (no flat-string
-    parsing fallback).
+    ``paraphrase:<openrouter_model_id>``. Reads the model directly
+    from ``row["config"]["model"]``; raises if the row has no config
+    (post-backfill that's a corrupt-data scenario, not a graceful
+    case).
     """
-    cfg = row.get("config") if isinstance(row.get("config"), dict) else None
-    if cfg is None:
-        return None
-    return f"paraphrase:{cfg['model']}"
+    return f"paraphrase:{row['config']['model']}"
 
 
 def model_sort_key(judge: str) -> tuple:
@@ -208,8 +205,6 @@ def content_test_matrix(
             continue
         j = row["judge_model"]
         baseline = _content_test_baseline(row)
-        if baseline is None:
-            continue
         a, b = row["source_a"], row["source_b"]
         if baseline not in (a, b):
             continue

@@ -26,27 +26,14 @@ HUMAN = "human"
 def judge_base_key(row: dict) -> str:
     """Collapse a judgment row to a base grouping key.
 
-    Reads ``row["config"]`` (the structured judge config) when present
-    via :func:`versus.analyze.label_from_config`; falls back to flat-
-    string parsing of ``row["judge_model"]`` for legacy rows.
-
-    Strips the version tag so two prompt-versions of the same judge
-    share a row. Mirrors JudgeHeader with includeTask=false — base is
-    variant + model, no task / no phash.
+    Reads ``row["config"]`` directly via
+    :func:`versus.analyze.label_from_config`. Mirrors JudgeHeader
+    with includeTask=false — base is variant + model, no task / no
+    phash.
     """
-    cfg = row.get("config") if isinstance(row.get("config"), dict) else None
-    label = (
-        analyze.label_from_config(cfg) if cfg else analyze.judge_label(row.get("judge_model", ""))
-    )
+    label = analyze.label_from_config(row["config"])
     variant = label["variant"]
     model = label["model"]
-    # variant carries things like "rumil:orch b4 v2"; strip the trailing
-    # version tag so v1 and v2 collapse into the same base row. Budget
-    # tag (b4) is judge-behaviour-relevant so we keep it.
-    if variant:
-        parts = variant.split(" ")
-        parts = [p for p in parts if not (p.startswith("v") and p[1:].isdigit())]
-        variant = " ".join(parts)
     return f"{variant}:{model}" if variant else model
 
 

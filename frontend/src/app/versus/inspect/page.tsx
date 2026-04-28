@@ -218,8 +218,8 @@ export default async function VersusInspectPage({
   const firstKeyByJudge = new Map<string, string>();
   for (const k of judgmentOrder) {
     const j = judgmentRows.get(k)!.values().next().value as Judgment;
-    if (!firstKeyByJudge.has((j.config_hash ?? j.judge_model))) {
-      firstKeyByJudge.set((j.config_hash ?? j.judge_model), k);
+    if (!firstKeyByJudge.has(j.config_hash)) {
+      firstKeyByJudge.set(j.config_hash, k);
     }
   }
   const judgeOrder = Array.from(firstKeyByJudge.keys()).sort();
@@ -603,7 +603,7 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
           for (const j of v.judgments) {
             const r = genVsHumanAccum(j);
             if (!r) continue;
-            const judge = (j.config_hash ?? j.judge_model);
+            const judge = j.config_hash;
             judgesSet.add(judge);
             gensSet.add(r.gen);
             const row = acc.get(r.gen) ?? new Map<string, WinAccum>();
@@ -936,11 +936,11 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
   const byKey = new Map<string, Pair>();
   for (const v of variantBundles) {
     for (const j of v.judgments) {
-      const k = `${(j.config_hash ?? j.judge_model)}|${j.criterion}|${j.source_a}|${j.source_b}`;
+      const k = `${j.config_hash}|${j.criterion}|${j.source_a}|${j.source_b}`;
       const slot = byKey.get(k) ?? {
         gen: [j.source_a, j.source_b].filter((s) => s !== "human").map(modelOf).join("+") ||
           "human",
-        judge: (j.config_hash ?? j.judge_model),
+        judge: j.config_hash,
         criterion: j.criterion,
         source_a: j.source_a,
         source_b: j.source_b,

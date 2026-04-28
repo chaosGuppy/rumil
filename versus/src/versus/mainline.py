@@ -191,13 +191,11 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
 def summarize_provenance(rows: Iterable[dict]) -> dict[str, dict[str, int]]:
     """Per-axis ``value -> count`` over the rows.
 
-    Reads from ``row["config"]`` (the structured judge config written
-    by :func:`versus.judge_config.make_judge_config`). Pre-config rows
-    were backfilled by ``versus/scripts/backfill_judge_config.py``;
-    rows still without a config dict are skipped on the
-    judge-side axes. New axes can be added to
-    :func:`versus.judge_config.project_config_to_axes` without
-    extending any parser.
+    Every row carries ``config`` + ``config_hash`` (current writes
+    plus the one-shot backfill); the projection routes them to the
+    panel's axis counters. New axes are added via
+    :func:`versus.judge_config.project_config_to_axes` — no parser
+    layer to extend.
     """
     from versus.judge_config import project_config_to_axes
 
@@ -207,11 +205,9 @@ def summarize_provenance(rows: Iterable[dict]) -> dict[str, dict[str, int]]:
         ph = r.get("prefix_config_hash")
         if ph:
             counts["prefix_config_hash"][ph] += 1
-        cfg = r.get("config")
-        if isinstance(cfg, dict):
-            for axis, value in project_config_to_axes(
-                cfg, config_hash=r.get("config_hash")
-            ).items():
-                if axis in counts:
-                    counts[axis][value] += 1
+        for axis, value in project_config_to_axes(
+            r["config"], config_hash=r["config_hash"]
+        ).items():
+            if axis in counts:
+                counts[axis][value] += 1
     return {axis: dict(c) for axis, c in counts.items()}

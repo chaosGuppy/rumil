@@ -147,24 +147,14 @@ def test_compute_file_fingerprint_records_missing_paths_as_empty(tmp_path, monke
 
 
 def test_summarize_provenance_reads_from_config_when_present():
-    cfg, _, jm = make_judge_config("ws", **_WS_KW)
+    cfg, ch, jm = make_judge_config("ws", **_WS_KW)
     rows = [
-        {"prefix_config_hash": "ph1", "judge_model": jm, "config": cfg},
+        {"prefix_config_hash": "ph1", "judge_model": jm, "config": cfg, "config_hash": ch},
     ]
     out = versus_mainline.summarize_provenance(rows)
     assert out["judge_path"] == {"rumil:ws": 1}
     assert out["judge_workspace_id"] == {"abcd1234": 1}
     assert out["judge_pair_hash"] == {"q22222222": 1}
-
-
-def test_summarize_provenance_skips_rows_without_config():
-    # Post-cleanup: rows without a config dict don't contribute to
-    # judge-side axes (prefix_config_hash still counts). Backfill
-    # should be re-run to catch them up.
-    rows = [{"prefix_config_hash": "ph1", "judge_model": "anything"}]
-    out = versus_mainline.summarize_provenance(rows)
-    assert out["judge_path"] == {}
-    assert out["prefix_config_hash"] == {"ph1": 1}
 
 
 @pytest.mark.parametrize(

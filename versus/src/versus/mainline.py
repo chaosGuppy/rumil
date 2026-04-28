@@ -42,13 +42,26 @@ def current_prefix_hashes_for(essay: versus_essay.Essay, cfg: versus_config.Conf
     return out
 
 
-_PHASH_RE = re.compile(r"^p[0-9a-f]{8}$")
-_THASH_RE = re.compile(r"^t[0-9a-f]{8}$")
-_QHASH_RE = re.compile(r"^q[0-9a-f]{8}$")
-_SHASH_RE = re.compile(r"^s[0-9a-f]{8}$")
-_CHASH_RE = re.compile(r"^c[0-9a-f]{8}$")
-_VERSION_RE = re.compile(r"^v\d+$")
-_BUDGET_RE = re.compile(r"^b\d+$")
+# Suffix tag regexes — shared with versus.judge and versus.analyze
+# so adding a new tag (like :c<hash> for orch closer) only needs the
+# pattern added in one place.
+PHASH_RE = re.compile(r"^p[0-9a-f]{8}$")
+THASH_RE = re.compile(r"^t[0-9a-f]{8}$")
+QHASH_RE = re.compile(r"^q[0-9a-f]{8}$")
+SHASH_RE = re.compile(r"^s[0-9a-f]{8}$")
+CHASH_RE = re.compile(r"^c[0-9a-f]{8}$")
+VERSION_RE = re.compile(r"^v\d+$")
+BUDGET_RE = re.compile(r"^b\d+$")
+# Module-private aliases for backward-compat — original code used
+# the underscored names. Keeping both means renaming touches stay
+# tight without orphaning module-internal references.
+_PHASH_RE = PHASH_RE
+_THASH_RE = THASH_RE
+_QHASH_RE = QHASH_RE
+_SHASH_RE = SHASH_RE
+_CHASH_RE = CHASH_RE
+_VERSION_RE = VERSION_RE
+_BUDGET_RE = BUDGET_RE
 
 
 def parse_judge_components(jm: str) -> dict[str, str]:

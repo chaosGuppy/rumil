@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import collections
 import pathlib
-import re
 from collections.abc import Sequence
 
 from versus import jsonl, judge
@@ -100,12 +99,24 @@ def model_sort_key(judge: str) -> tuple:
     return (family, strength, base_low, variant, judge)
 
 
-_PROMPT_HASH_RE = re.compile(r"^p[0-9a-f]{8}$")
-_VERSION_TAG_RE = re.compile(r"^v\d+$")
-_SAMPLING_HASH_RE = re.compile(r"^s[0-9a-f]{8}$")
-_TOOL_HASH_RE = re.compile(r"^t[0-9a-f]{8}$")
-_SURFACE_HASH_RE = re.compile(r"^q[0-9a-f]{8}$")
-_CLOSER_HASH_RE = re.compile(r"^c[0-9a-f]{8}$")
+from versus.mainline import (
+    CHASH_RE as _CLOSER_HASH_RE,
+)
+from versus.mainline import (
+    PHASH_RE as _PROMPT_HASH_RE,
+)
+from versus.mainline import (
+    QHASH_RE as _SURFACE_HASH_RE,
+)
+from versus.mainline import (
+    SHASH_RE as _SAMPLING_HASH_RE,
+)
+from versus.mainline import (
+    THASH_RE as _TOOL_HASH_RE,
+)
+from versus.mainline import (
+    VERSION_RE as _VERSION_TAG_RE,
+)
 
 
 def _peel_ts_tag(parts: Sequence[str]) -> list[str]:

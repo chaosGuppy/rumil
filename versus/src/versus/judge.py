@@ -137,12 +137,24 @@ def infer_order(row: dict) -> Order:
     return order_from_display_first(row["source_a"], row["source_b"], row["display_first"])
 
 
-_PHASH_TAG_RE = re.compile(r"^p[0-9a-f]{8}$")
-_VERSION_TAG_RE = re.compile(r"^v\d+$")
-_SHASH_TAG_RE = re.compile(r"^s[0-9a-f]{8}$")
-_THASH_TAG_RE = re.compile(r"^t[0-9a-f]{8}$")
-_QHASH_TAG_RE = re.compile(r"^q[0-9a-f]{8}$")
-_CHASH_TAG_RE = re.compile(r"^c[0-9a-f]{8}$")
+from versus.mainline import (
+    CHASH_RE as _CHASH_TAG_RE,
+)
+from versus.mainline import (
+    PHASH_RE as _PHASH_TAG_RE,
+)
+from versus.mainline import (
+    QHASH_RE as _QHASH_TAG_RE,
+)
+from versus.mainline import (
+    SHASH_RE as _SHASH_TAG_RE,
+)
+from versus.mainline import (
+    THASH_RE as _THASH_TAG_RE,
+)
+from versus.mainline import (
+    VERSION_RE as _VERSION_TAG_RE,
+)
 
 
 def _peel_ts_tag(parts: list[str]) -> list[str]:

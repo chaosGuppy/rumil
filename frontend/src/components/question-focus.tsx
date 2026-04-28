@@ -153,12 +153,14 @@ function CallsStack({
     <div className="calls-stack">
       {segments.map((s) => {
         const pct = (s.n / total) * 100;
+        const label = `${s.callType} · ${s.n} call${s.n === 1 ? "" : "s"}`;
         return (
           <div
             key={s.callType}
             className="calls-seg"
             style={{ width: `${pct}%`, background: s.color }}
-            title={`${s.callType} · ${s.n}`}
+            data-tooltip={label}
+            aria-label={label}
           />
         );
       })}
@@ -267,9 +269,37 @@ function FocusBarStyles() {
       }
       .calls-seg {
         height: 100%;
+        position: relative;
+        transition: filter 0.12s ease;
       }
       .calls-seg + .calls-seg {
         border-left: 1px solid var(--color-background);
+      }
+      .calls-seg:hover {
+        filter: brightness(1.15);
+      }
+      .calls-seg::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--color-background);
+        border: 1px solid var(--color-border);
+        padding: 0.35rem 0.55rem;
+        font-family: var(--font-geist-mono), monospace;
+        font-size: 0.68rem;
+        letter-spacing: 0.02em;
+        color: var(--color-foreground);
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.12s ease;
+        z-index: 50;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+      }
+      .calls-seg:hover::after {
+        opacity: 1;
       }
       .focus-count {
         font-variant-numeric: tabular-nums;
@@ -443,7 +473,7 @@ export function SubquestionFocusGrid({
                     </span>
                   ) : null}
                 </div>
-                <div className="subq-headline">
+                <div className="subq-headline" title={headline}>
                   <Link href={withStagedRun(`/pages/${qid}/stats`, activeStagedRunId)}>{headline}</Link>
                 </div>
               </div>

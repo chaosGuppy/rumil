@@ -60,7 +60,7 @@ class FindConsiderationsCall(CallRunner):
         return 0
 
     def _make_context_builder(self) -> ContextBuilder:
-        return EmbeddingContext(self.call_type, require_judgement_for_questions=True)
+        return EmbeddingContext(self.call_type, require_take_for_questions=True)
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return MultiRoundLoop(

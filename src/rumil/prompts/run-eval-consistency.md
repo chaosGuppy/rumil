@@ -10,7 +10,7 @@ You are looking at a research workspace where a run has added new pages and link
 
 Assess the following dimensions:
 
-1. **Top-level judgement coherence**: Does the top-level judgement ultimately rely on information that is contradictory, without handling the contradictions correctly? Trace the reasoning chain from the final judgement back through its supporting claims and sub-judgements.
+1. **Top-level take coherence**: Does the workspace's top-level take on the scope question (a View page or a Judgement, depending on configuration) ultimately rely on information that is contradictory, without handling the contradictions correctly? Trace the reasoning chain from that final take back through its supporting claims, View items, and sub-question takes.
 
 2. **Unresolved contradictions**: Does the analysis contain contradictions that go unmentioned? Are there claims that point in opposite directions without any acknowledgment of the tension?
 
@@ -23,7 +23,7 @@ Assess the following dimensions:
 ## How to work
 
 1. Use `explore_subgraph` to navigate the workspace graph, starting from the root question. Use `load_page` to read the full content of individual pages
-2. Identify the top-level judgement and trace its reasoning chain
+2. Identify the workspace's top-level take on the scope question (the View page, if the variant is sectioned; otherwise the latest Judgement) and trace its reasoning chain
 3. Look for claims marked `[ADDED BY THIS RUN]` that point in different directions
 4. Check whether contradictions are acknowledged and handled
 5. Pay special attention to cases where contradictory evidence supports the same conclusion

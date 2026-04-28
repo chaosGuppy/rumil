@@ -70,7 +70,12 @@ kubectl get pods -n rumil                                   # if you set up clus
 ## Editing secrets
 
 ```bash
-# Add or update a single key without dumping the whole file to disk
+# Add or rotate a single key (wraps `sops set`, reads value from stdin if omitted)
+scripts/set-secret.sh VOYAGE_AI_API_KEY pa-xxxxxxxx
+pbpaste | scripts/set-secret.sh VOYAGE_AI_API_KEY        # keep secret out of shell history
+scripts/set-secret.sh --frontend INVITE_PASSWORD          # frontend section
+
+# Or call sops directly:
 sops set deploy/chart/secrets.enc.yaml '["secrets"]["api"]["MY_NEW_KEY"]' '"my-value"'
 
 # Inspect the decrypted file

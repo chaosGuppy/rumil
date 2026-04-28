@@ -17,7 +17,7 @@ SECRETS_FILE="$REPO_ROOT/deploy/chart/secrets.enc.yaml"
 ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"
 
 # Vars whose values must match prod (not per-developer credentials).
-PROD_SECRET_KEYS=(SUPABASE_JWT_SECRET SUPABASE_PROD_KEY)
+PROD_SECRET_KEYS=(SUPABASE_JWT_SECRET SUPABASE_PROD_KEY VOYAGE_AI_API_KEY)
 
 # Non-secret prod values written verbatim (KEY=VALUE pairs).
 PROD_PLAIN_VALUES=(

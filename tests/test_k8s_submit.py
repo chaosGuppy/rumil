@@ -390,6 +390,85 @@ def test_request_accepts_normal_container_tags(good_tag):
     assert spec.container_tag == good_tag
 
 
+def test_build_job_appends_extra_env_entries():
+    spec = _spec(extra_env={"AVAILABLE_MOVES": "extra"})
+    body = _build_job(
+        spec,
+        name="x",
+        owner_user_id="",
+        run_id=_RUN_ID,
+        image="img",
+        env=[client.V1EnvVar(name="USE_PROD_DB", value="1")],
+        env_from=[],
+    )
+    container = body["spec"]["template"]["spec"]["containers"][0]
+    names = [e["name"] for e in container["env"]]
+    assert "AVAILABLE_MOVES" in names
+    by_name = {e["name"]: e["value"] for e in container["env"]}
+    assert by_name["AVAILABLE_MOVES"] == "extra"
+
+
+def test_build_job_drops_inherited_entries_shadowed_by_extra_env():
+    """If extra_env names a key already in inherited env, the inherited
+    one is dropped — never two entries with the same name."""
+    spec = _spec(extra_env={"USE_PROD_DB": "0"})
+    body = _build_job(
+        spec,
+        name="x",
+        owner_user_id="",
+        run_id=_RUN_ID,
+        image="img",
+        env=[
+            client.V1EnvVar(name="USE_PROD_DB", value="1"),
+            client.V1EnvVar(name="OTHER", value="keep"),
+        ],
+        env_from=[],
+    )
+    container = body["spec"]["template"]["spec"]["containers"][0]
+    names = [e["name"] for e in container["env"]]
+    assert names.count("USE_PROD_DB") == 1
+    by_name = {e["name"]: e["value"] for e in container["env"]}
+    assert by_name["USE_PROD_DB"] == "0"  # the override won
+    assert by_name["OTHER"] == "keep"  # unrelated inherited entry preserved
+
+
+def test_build_job_extra_env_appends_after_inherited():
+    """Inherited env first, overrides last — order reflects intent for
+    anyone reading the manifest later."""
+    spec = _spec(extra_env={"AVAILABLE_MOVES": "extra"})
+    body = _build_job(
+        spec,
+        name="x",
+        owner_user_id="",
+        run_id=_RUN_ID,
+        image="img",
+        env=[
+            client.V1EnvVar(name="USE_PROD_DB", value="1"),
+            client.V1EnvVar(name="OTHER", value="keep"),
+        ],
+        env_from=[],
+    )
+    names = [e["name"] for e in body["spec"]["template"]["spec"]["containers"][0]["env"]]
+    assert names == ["USE_PROD_DB", "OTHER", "AVAILABLE_MOVES"]
+
+
+def test_build_job_no_extra_env_preserves_inherited_order():
+    body = _build_job(
+        _spec(),
+        name="x",
+        owner_user_id="",
+        run_id=_RUN_ID,
+        image="img",
+        env=[
+            client.V1EnvVar(name="A", value="1"),
+            client.V1EnvVar(name="B", value="2"),
+        ],
+        env_from=[],
+    )
+    names = [e["name"] for e in body["spec"]["template"]["spec"]["containers"][0]["env"]]
+    assert names == ["A", "B"]
+
+
 def test_build_logs_url_returns_empty_when_project_unset():
     with override_settings(gcp_project_id=""):
         assert build_logs_url("rumil-orch-ws-aaaa") == ""

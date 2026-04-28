@@ -30,7 +30,7 @@ Assess two distinct forms of redundancy:
 
 1. Use `search_workspace` with the headlines or abstracts of suspect subquestions to find semantically similar pages elsewhere in the workspace -- this is your main tool for finding both literal near-duplicates and overlapping investigations across different subtrees.
 2. Use `explore_subgraph` to navigate the graph and map out which subtrees the run created. Use `load_page` to read the full content of individual pages.
-3. When you find two questions that look similar, read their content (and their judgements / claims, if any) to decide whether they are genuinely asking the same thing or merely adjacent.
+3. When you find two questions that look similar, read their content (and their views / judgements / claims, if any) to decide whether they are genuinely asking the same thing or merely adjacent.
 4. Be specific -- cite page IDs for each pair or cluster you flag as redundant, and explain the overlap.
 
 You must continue to explore until your assessment of this dimension has converged.

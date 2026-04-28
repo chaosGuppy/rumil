@@ -82,6 +82,7 @@ def _request_from_args(args: argparse.Namespace) -> OrchestratorRunRequest:
         ingest_num_claims=getattr(args, "ingest_num_claims", None),
         run_name=getattr(args, "run_name", None),
         container_tag=getattr(args, "container_tag", None),
+        extra_env=get_settings().cli_forwardable_overrides(),
     )
 
 

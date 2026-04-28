@@ -13,7 +13,7 @@ from rumil.calls.create_view import CreateViewCall
 from rumil.calls.update_view import UpdateViewCall
 from rumil.context import format_page, render_view
 from rumil.database import DB
-from rumil.models import CallType, PageDetail
+from rumil.models import CallType, Page, PageDetail
 from rumil.tracing.broadcast import Broadcaster
 from rumil.views.base import View
 
@@ -25,6 +25,28 @@ class SectionedView(View):
 
     async def exists(self, question_id: str, db: DB) -> bool:
         return await db.get_view_for_question(question_id) is not None
+
+    async def headline_page(self, question_id: str, db: DB) -> Page | None:
+        return await db.get_view_for_question(question_id)
+
+    async def headline_pages_many(
+        self,
+        question_ids: Sequence[str],
+        db: DB,
+    ) -> dict[str, Page | None]:
+        return await db.get_views_for_questions(question_ids)
+
+    async def render_for_executive_summary(
+        self,
+        question_id: str,
+        db: DB,
+    ) -> str | None:
+        view = await db.get_view_for_question(question_id)
+        if view is None:
+            return None
+        items = await db.get_view_items(view.id, min_importance=2)
+        text = await render_view(view, items, min_importance=2)
+        return text if text.strip() else None
 
     async def refresh(
         self,

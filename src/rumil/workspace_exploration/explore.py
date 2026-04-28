@@ -26,6 +26,7 @@ from rumil.models import LinkType, Page, PageDetail, PageType
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import RenderQuestionSubgraphEvent
 from rumil.tracing.tracer import CallTrace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -220,12 +221,11 @@ async def _render_subgraph_impl(
         frontier = [cid for cid in next_ids if cid in pages_by_id]
 
     question_ids = [pid for pid, p in pages_by_id.items() if p.page_type == PageType.QUESTION]
-    judgements_by_question = await db.get_judgements_for_questions(question_ids)
+    headline_by_question = await get_active_view().headline_pages_many(question_ids, db)
     robustness_by_question: dict[str, int | None] = {}
     for qid in question_ids:
-        judgements = judgements_by_question.get(qid, [])
-        robs = [j.robustness for j in judgements if j.robustness is not None]
-        robustness_by_question[qid] = max(robs) if robs else None
+        headline = headline_by_question.get(qid)
+        robustness_by_question[qid] = headline.robustness if headline is not None else None
 
     lines: list[str] = []
     await _emit(

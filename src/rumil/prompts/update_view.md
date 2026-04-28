@@ -60,7 +60,7 @@ When superseding, write the replacement item as you would a fresh View item: a c
 
 Each item is rendered with its **Cited evidence** (pages the item already depends on) and, when applicable, a **Related considerations on the parent question (not cited by this item)** block. The latter lists considerations of the scope question that the item does not already cite — these are the most likely source of overlooked contradictions or complications. Before choosing an action, scan this list and ask whether any of these considerations should change, complicate, or replace the item under review.
 
-You may also **propose entirely new items** if you notice gaps — evidence or conclusions that the View should capture but currently doesn't. New items should include full scores (robustness, robustness_reasoning, importance, section) and follow the same format as existing items.
+This phase only acts on the items shown. **Do not propose net-new items here** — a dedicated *Propose New Items* phase follows that handles gap-filling separately.
 
 <!-- PHASE:propose_new — DO NOT RENAME THIS MARKER -->
 

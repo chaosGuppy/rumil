@@ -1130,7 +1130,8 @@ def test_view_closing_review_prefers_phase_summary_over_moves():
         phase_summary=(
             "score_unscored: scored 3 item(s), modified 3\n"
             "triage: reviewed 5 item(s), flagged 2 for deep review\n"
-            "deep_review: reviewed 2 item(s), superseded 1, adjusted 1, proposed 1 new item(s)"
+            "deep_review: reviewed 2 item(s), superseded 1, adjusted 1\n"
+            "propose_new: created 1 new item(s)"
         )
     )
     rendered = reviewer._review_context(creation)

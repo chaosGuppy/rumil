@@ -122,10 +122,6 @@ class ProposedItem(BaseModel):
 
 class DeepReviewBatchResponse(BaseModel):
     item_reviews: list[ItemReview] = Field(description="One review per item in the batch")
-    proposed_items: list[ProposedItem] = Field(
-        default_factory=list,
-        description="New items to add to the View (zero or more)",
-    )
 
 
 class DemotionChoice(BaseModel):
@@ -446,10 +442,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         messages, flagged_ids = await self._phase_triage(infra, system_prompt, sections, messages)
 
         if flagged_ids:
-            messages, phase2b_created = await self._phase_deep_review(
+            messages = await self._phase_deep_review(
                 infra, system_prompt, sections, messages, flagged_ids
             )
-            created_page_ids.extend(phase2b_created)
 
         messages, propose_created = await self._phase_propose_new(
             infra, system_prompt, sections, messages
@@ -664,7 +659,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         sections: dict[str, str],
         messages: list[dict],
         flagged_ids: Sequence[str],
-    ) -> tuple[list[dict], list[str]]:
+    ) -> list[dict]:
         items = await infra.db.get_view_items(self._view_id)
         flagged_set = set(flagged_ids)
         flagged = [(page, link) for page, link in items if page.id in flagged_set]
@@ -674,7 +669,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 PhaseSkippedEvent(phase="deep_review", reason="No flagged items found")
             )
             self._phase_lines.append("deep_review: skipped (no flagged items)")
-            return messages, []
+            return messages
 
         link_by_target = {page.id: link for page, link in items}
         page_by_id = {page.id: page for page, link in items}
@@ -693,7 +688,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         related_considerations = [claim for claim, _ in parent_considerations]
 
         batch_sizes = _split_into_batches(len(flagged), DEEP_REVIEW_BATCH_SIZE)
-        created_page_ids: list[str] = []
         adjust_count = 0
         supersede_count = 0
         offset = 0
@@ -720,7 +714,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 f"({batch_size} items for deep review)\n\n"
                 + "\n\n---\n\n".join(item_blocks)
                 + "\n\nReview all items in this batch. "
-                "You may also propose new items if you notice gaps."
+                "(A separate Propose New Items phase follows — do not propose net-new items here.)"
             )
 
             if batch_idx == 0:
@@ -770,25 +764,18 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                     if review.action == "supersede" and resolved in link_by_target:
                         del link_by_target[resolved]
 
-                for proposal in result.parsed.proposed_items:
-                    new_id = await self._create_proposed_item(infra, proposal)
-                    if new_id:
-                        created_page_ids.append(new_id)
-
         await infra.trace.record(
             UpdateViewPhaseCompletedEvent(
                 phase="deep_review",
                 items_processed=len(flagged),
                 items_modified=adjust_count + supersede_count,
-                items_created=len(created_page_ids),
             )
         )
         self._phase_lines.append(
             f"deep_review: reviewed {len(flagged)} item(s), "
-            f"superseded {supersede_count}, adjusted {adjust_count}, "
-            f"proposed {len(created_page_ids)} new item(s)"
+            f"superseded {supersede_count}, adjusted {adjust_count}"
         )
-        return messages, created_page_ids
+        return messages
 
     async def _phase_propose_new(
         self,

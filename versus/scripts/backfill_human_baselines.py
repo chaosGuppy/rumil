@@ -22,6 +22,16 @@ import sys
 VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
+try:
+    import rumil  # noqa: F401
+except ModuleNotFoundError:
+    sys.stderr.write(
+        "[err] rumil isn't importable from this venv. Run from the rumil "
+        "repo root, not versus/:\n"
+        f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/backfill_human_baselines.py ...\n"
+    )
+    raise SystemExit(1)
+
 from versus import complete, config, jsonl, prepare  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
 from versus import mainline as versus_mainline  # noqa: E402

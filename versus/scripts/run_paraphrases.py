@@ -18,6 +18,16 @@ VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
+try:
+    import rumil  # noqa: F401
+except ModuleNotFoundError:
+    sys.stderr.write(
+        "[err] rumil isn't importable from this venv. Run from the rumil "
+        "repo root, not versus/:\n"
+        f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/run_paraphrases.py ...\n"
+    )
+    raise SystemExit(1)
+
 from versus import config, paraphrase, prepare, sources  # noqa: E402
 
 

@@ -449,10 +449,17 @@ export default async function VersusInspectPage({
   );
 }
 
-type WinAccum = { wins: number; ties: number; losses: number; n: number };
+type WinAccum = {
+  wins: number;
+  ties: number;
+  losses: number;
+  n: number;
+  score7Sum: number;
+  score7N: number;
+};
 
 function emptyAccum(): WinAccum {
-  return { wins: 0, ties: 0, losses: 0, n: 0 };
+  return { wins: 0, ties: 0, losses: 0, n: 0, score7Sum: 0, score7N: 0 };
 }
 
 /** Aggregate one judgment into a (gen, judge) accum where gen is the
@@ -472,18 +479,50 @@ function genVsHumanAccum(j: Judgment): { gen: string; outcome: "win" | "tie" | "
   return { gen, outcome: "win" };
 }
 
-/** Server-side mirror of the matrix-cell color treatment. Pure HSL —
- *  no theme tokens — so it renders consistently on first paint. The
- *  hue ramps red → yellow → green as pct moves 0 → 0.5 → 1. */
+/** Mirrors versus.analyze.cell_color so inspect win-matrix cells use
+ *  the same orange→gray→green ramp as /results. */
 function pctColor(pct: number, n: number): { bg: string; fg: string } {
   if (n === 0) return { bg: "transparent", fg: "var(--color-muted)" };
-  const hue = Math.round(pct * 120);
-  const sat = n < 5 ? 25 : 55;
-  const lightBg = n < 5 ? 94 : 88;
-  return {
-    bg: `hsl(${hue} ${sat}% ${lightBg}%)`,
-    fg: `hsl(${hue} 60% 22%)`,
-  };
+  let r: number;
+  let g: number;
+  let b: number;
+  if (pct <= 0.5) {
+    const t = pct / 0.5;
+    r = 255;
+    g = Math.round(111 + (238 - 111) * t);
+    b = Math.round(67 + (238 - 67) * t);
+  } else {
+    const t = (pct - 0.5) / 0.5;
+    r = Math.round(238 - (238 - 110) * t);
+    g = Math.round(238 - (238 - 199) * t);
+    b = Math.round(238 - (238 - 120) * t);
+  }
+  return { bg: `rgb(${r},${g},${b})`, fg: "#111" };
+}
+
+/** 7-point preference label → score in [0, 1] for side A (display_first).
+ *  Equally-spaced: B-strong=0, indifferent=0.5, A-strong=1. */
+const PREF_LABEL_TO_A_SCORE: Record<string, number> = {
+  "A strongly preferred": 1,
+  "A somewhat preferred": 5 / 6,
+  "A slightly preferred": 4 / 6,
+  "Approximately indifferent between A and B": 0.5,
+  "B slightly preferred": 2 / 6,
+  "B somewhat preferred": 1 / 6,
+  "B strongly preferred": 0,
+};
+
+/** Per-judgment score in [0, 1] for the human side, derived from the
+ *  7-pt preference_label when present. Returns null when the judgment
+ *  has no human side or no usable label — caller should fall back to
+ *  the binary winner_source signal. */
+function humanScore7pt(j: Judgment): number | null {
+  if (!j.preference_label) return null;
+  const aScore = PREF_LABEL_TO_A_SCORE[j.preference_label];
+  if (aScore === undefined) return null;
+  if (j.display_first === "human") return aScore;
+  if (j.display_second === "human") return 1 - aScore;
+  return null;
 }
 
 function ResultsPanel({
@@ -497,23 +536,51 @@ function ResultsPanel({
   return (
     <>
       <h2 className="inspect-section-head" id="results">results</h2>
-      {!hasAnyJudgments ? (
-        <p className="versus-muted">No judgments yet for this essay — nothing to summarise.</p>
-      ) : (
-        <details className="inspect-collapsible inspect-results" open>
-          <summary>per-essay aggregates across the {variantBundles.length} active variant
-            {variantBundles.length === 1 ? "" : "s"}</summary>
-          <div className="inspect-results-body">
-            <ResultsWinMatrix variantBundles={variantBundles} />
-            <ResultsConsistency variantBundles={variantBundles} />
-            <ResultsOutlier
-              variantBundles={variantBundles}
-              corpusByVariant={corpusByVariant}
-            />
-            <ResultsVariantFlip variantBundles={variantBundles} />
-          </div>
-        </details>
-      )}
+      <details className="inspect-collapsible inspect-results" open>
+        <summary>
+          {hasAnyJudgments
+            ? `per-essay aggregates across the ${variantBundles.length} active variant${variantBundles.length === 1 ? "" : "s"}`
+            : "no judgments yet for this essay"}
+        </summary>
+        <div className="inspect-results-body">
+          {hasAnyJudgments ? (
+            <>
+              <ResultsWinMatrix variantBundles={variantBundles} />
+              <ResultsConsistency variantBundles={variantBundles} />
+              <ResultsOutlier
+                variantBundles={variantBundles}
+                corpusByVariant={corpusByVariant}
+              />
+              <ResultsVariantFlip variantBundles={variantBundles} />
+            </>
+          ) : (
+            <ResultsEmptyPlaceholders />
+          )}
+        </div>
+      </details>
+    </>
+  );
+}
+
+function ResultsEmptyPlaceholders() {
+  const sections: { id: string; title: string }[] = [
+    { id: "results-winmatrix", title: "win matrix" },
+    { id: "results-consistency", title: "verdict consistency" },
+    { id: "results-outlier", title: "essay vs corpus" },
+    { id: "results-flip", title: "variant flips" },
+  ];
+  return (
+    <>
+      {sections.map((s) => (
+        <section key={s.id} id={s.id} className="inspect-results-block">
+          <header className="inspect-results-blockhead">
+            <h3>{s.title}</h3>
+            <p className="versus-muted" style={{ fontSize: 12 }}>
+              Pending — no judgments yet for this essay.
+            </p>
+          </header>
+        </section>
+      ))}
     </>
   );
 }
@@ -545,6 +612,11 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
             if (r.outcome === "win") cell.wins += 1;
             else if (r.outcome === "tie") cell.ties += 1;
             else cell.losses += 1;
+            const s7 = humanScore7pt(j);
+            if (s7 !== null) {
+              cell.score7Sum += s7;
+              cell.score7N += 1;
+            }
             row.set(judge, cell);
             acc.set(r.gen, row);
           }
@@ -585,13 +657,16 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                           if (!cell || cell.n === 0) {
                             return <td key={jb} className="matrix-cell-empty"></td>;
                           }
-                          const decisive = cell.wins + cell.losses;
-                          const pct = decisive === 0 ? 0.5 : cell.wins / decisive;
+                          const pct = (cell.wins + 0.5 * cell.ties) / cell.n;
                           const colors = pctColor(pct, cell.n);
                           const lowN = cell.n < 5;
+                          const pct7 = cell.score7N > 0 ? cell.score7Sum / cell.score7N : null;
                           const tooltip =
-                            `pick-human ${Math.round(pct * 100)}% · n=${cell.n}` +
-                            ` (${cell.wins}H / ${cell.ties}T / ${cell.losses}M)`;
+                            `pick-human ${Math.round(pct * 100)}% (binary, ties=½) · n=${cell.n}` +
+                            ` (${cell.wins}H / ${cell.ties}T / ${cell.losses}M)` +
+                            (pct7 !== null
+                              ? ` · 7pt-avg ${(pct7 * 100).toFixed(1)}% (n=${cell.score7N})`
+                              : "");
                           return (
                             <td
                               key={jb}
@@ -767,9 +842,8 @@ function ResultsOutlier({
     }
     const corpus = corpusByVariant.get(v.id);
     for (const [gen, acc] of perGen) {
-      const decisive = acc.wins + acc.losses;
-      if (decisive === 0) continue;
-      const essayPct = acc.wins / decisive;
+      if (acc.n === 0) continue;
+      const essayPct = (acc.wins + 0.5 * acc.ties) / acc.n;
       const corpusPct = corpus?.get(gen) ?? null;
       const deltaPp = corpusPct === null ? null : (essayPct - corpusPct) * 100;
       rows.push({ variantId: v.id, gen, essayPct, corpusPct, deltaPp, n: acc.n });

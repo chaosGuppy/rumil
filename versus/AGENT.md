@@ -84,7 +84,7 @@ UI routes (`/versus`, `/versus/judge`, `/versus/inspect`, `/versus/results`) mou
 
 `scripts/run_rumil_judgments.py` has three modes. See `.claude/skills/rumil-versus-judge/SKILL.md` for the detailed invocation guide, cost estimates, and confirmation thresholds.
 
-- Blind (default, no `--variant`) — single-turn LLM call using the blind shell + dimension prompt. Repeat `--model` for multi-model runs; each model routes by id (claude-* direct to Anthropic, others via OpenRouter). `judge_model = <canonical_model>:<dim>:p<hash>:v<N>:s<hash>`. Defaults to `cfg.judging.models`.
+- Blind (default, no `--variant`) — single-turn LLM call using the blind shell + dimension prompt. Repeat `--model` for multi-model runs; each model routes by id (claude-* direct to Anthropic, others via OpenRouter). `judge_model = blind:<canonical_model>:<dim>:c<hash8>`. Defaults to `cfg.judging.models`.
 - `--variant ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<dim>:c<hash8>`. Requires local Supabase.
 - `--variant orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<dim>:c<hash8>`. Requires local Supabase. Expensive.
 

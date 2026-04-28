@@ -21,7 +21,30 @@ from rumil.moves.link_child_question import ChildQuestionLinkFields
 log = logging.getLogger(__name__)
 
 
-class CreateQuestionPayload(CreatePagePayload):
+QUESTION_CONTENT_DESCRIPTION = (
+    "Optional clarification of the question itself, for use only when the "
+    "headline alone leaves it ambiguous. Good uses: pin down scope (what's "
+    "in vs. out), name what would count as an answer (units, thresholds, "
+    "time horizon, resolution criteria), or supply context a reader needs "
+    "to interpret the question. "
+    "Do NOT use this field to discuss how to investigate the question, how "
+    "much effort it deserves, what tools or scouts to dispatch, how many "
+    "passes it might take, or whether the answer requires synthesis vs. "
+    "lookup — those are prioritization concerns and do not belong on the "
+    "question page itself. If the headline is already self-contained, keep "
+    "the content brief or leave it as a single short sentence."
+)
+
+
+class CreateScoutQuestionPayload(CreatePagePayload):
+    """Question payload for scout moves: overrides the generic content
+    field description with question-specific guidance.
+    """
+
+    content: str = Field(description=QUESTION_CONTENT_DESCRIPTION)
+
+
+class CreateQuestionPayload(CreateScoutQuestionPayload):
     links: list[ChildQuestionLinkFields] = Field(
         default_factory=list,
         description=(
@@ -196,7 +219,7 @@ SCOUT_MOVE = MoveDef(
         "Create a new research question — an open problem for investigation. "
         "The question is automatically linked as a child of the scope question."
     ),
-    schema=CreatePagePayload,
+    schema=CreateScoutQuestionPayload,
     execute=execute_scout_question,
 )
 

@@ -96,7 +96,7 @@ In this phase you create the cross-cutting question. Do not call any exploration
 Use `create_question` with the following fields:
 
 - **headline**: A clear, self-contained question (10-15 words). Must make sense without any prior context.
-- **content**: Full explanation of why this question matters and what answering it would reveal.
+- **content**: Optional clarification of the question itself — scope, what would count as an answer (units, thresholds, time horizon), or background needed to interpret it. Keep it brief if the headline is already self-contained. Do NOT use this field to argue why the question matters, what investigating it would reveal, or how to investigate it — that reasoning belongs in the per-parent `reasoning` field below, not on the question page.
 - **links**: A list of parent question links. Each entry needs:
   - `parent_id`: Short ID of the parent question
   - `impact_on_parent_question`: 0-10 estimate of how much answering this question would help the parent

@@ -15,6 +15,7 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
           <thead>
             <tr>
               <th>essay</th>
+              <th title="prefix_config_hash">prefix</th>
               <th>source_a</th>
               <th>source_b</th>
               <th>criterion</th>
@@ -42,10 +43,17 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
                     {r.essay_id}
                   </Link>
                 </td>
+                <td
+                  className="versus-mono versus-muted"
+                  style={{ fontSize: 11 }}
+                  title={r.prefix_config_hash}
+                >
+                  {r.prefix_config_hash.slice(0, 8)}
+                </td>
                 <td className="versus-mono">{r.source_a}</td>
                 <td className="versus-mono">{r.source_b}</td>
                 <td>{r.criterion}</td>
-                <td className="versus-mono">{r.judge_model}</td>
+                <td className="versus-mono" title={r.judge_model}>{r.judge_model_id}</td>
                 <td>{r.verdict}</td>
                 <td className="versus-mono">{r.winner}</td>
                 <td style={{ fontSize: 11 }}>{r.preference_label ?? ""}</td>

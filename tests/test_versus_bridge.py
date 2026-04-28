@@ -24,7 +24,6 @@ from pathlib import Path
 import pytest
 
 from rumil.versus_bridge import (
-    BLIND_JUDGE_VERSION,
     PREFERENCE_LABELS,
     JudgeResult,
     PairContext,
@@ -347,14 +346,6 @@ def test_ensure_versus_question_extra_does_not_leak_source_ids():
         # "human" is a common substring so we guard only the exact
         # token as a value, not substring.
         assert v != "human"
-
-
-# BLIND_JUDGE_VERSION smoke guard ------------------------------------------
-
-
-def test_blind_judge_version_is_positive_int():
-    assert isinstance(BLIND_JUDGE_VERSION, int)
-    assert BLIND_JUDGE_VERSION >= 1
 
 
 # Pair surface hash (ws/orch :q<hash> suffix) ------------------------------

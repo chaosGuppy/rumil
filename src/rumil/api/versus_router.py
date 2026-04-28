@@ -1,12 +1,13 @@
 """Versus router mounted on the rumil FastAPI app.
 
-Reads versus's JSONL stores + cached essay JSON. Aggregation / pair-shaping
-logic lives in ``versus.view`` and ``versus.analyze``; this layer just
-wraps those results in typed pydantic envelopes for the frontend.
+Reads versus's JSONL stores + cached essay JSON. Aggregation /
+pair-shaping logic lives in ``versus.view`` and ``versus.analyze``;
+this layer just wraps those results in typed pydantic envelopes for
+the frontend.
 
 Config resolution: VERSUS_CONFIG_PATH env var, defaulting to
-<repo-root>/versus/config.yaml. The essays-only endpoint works without
-config; everything else returns 503 if config is missing.
+<repo-root>/versus/config.yaml. The essays-only endpoint works
+without config; everything else returns 503 if config is missing.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from versus import diagnostics as versus_diagnostics
 from versus import essay as versus_essay
 from versus import jsonl as versus_jsonl
 from versus import judge as versus_judge
+from versus import mainline as versus_mainline
 from versus import paraphrase as versus_paraphrase
 from versus import prepare as versus_prepare
 from versus import view as versus_view
@@ -157,7 +159,7 @@ def _build_essays_status(
             d = json.load(f)
         if "source_id" not in d:
             continue
-        if d.get("schema_version", 0) != versus_essay.SCHEMA_VERSION:
+        if not versus_essay.is_current_schema(d):
             continue
         if d["id"] in exclude:
             continue
@@ -199,10 +201,12 @@ class EssayMeta(pydantic.BaseModel):
     """Headline metadata for one cached essay."""
 
     id: str
+    source_id: str
     title: str
     author: str
     pub_date: str
     url: str
+    schema_version: int
 
 
 class EssayDetail(pydantic.BaseModel):
@@ -214,10 +218,17 @@ class EssayDetail(pydantic.BaseModel):
     pub_date: str
     url: str
     markdown: str
+    schema_version: int
     prefix_config_hash: str
     target_words: int
     completion_prompt: str
-    judge_prompt_template: str
+    judge_system_prompt_template: str
+    judge_user_prompt_template: str
+    # Hash of the rendered judge system prompt for criteria[0], blind
+    # path. Matches the ``p<hash>`` suffix in ``judge_model`` strings
+    # on judgment rows — lets the UI correlate "this template" with
+    # "rows that used it".
+    judge_prompt_hash: str
     paraphrase_prompt_template: str
     criteria: list[str]
     # Available prefix variants and the one this response was rendered
@@ -228,23 +239,38 @@ class EssayDetail(pydantic.BaseModel):
 
 
 class Source(pydantic.BaseModel):
-    """One generated continuation (or the held-out human remainder)."""
+    """One generated continuation (or the held-out human remainder).
+
+    ``prompt`` is the verbatim completion prompt the model received,
+    stored on the row (legacy rows and the human baseline have no
+    prompt — the inspect UI falls back to the template in that case).
+    """
 
     source_id: str
     kind: str
     text: str
     words: int
     target: int
+    prompt: str | None
+    prefix_config_hash: str
+    sampling_hash: str | None
+    model_id: str | None
 
 
 class Judgment(pydantic.BaseModel):
-    """One pairwise judgment row, shaped for the inspect view."""
+    """One pairwise judgment row, shaped for the inspect view.
+
+    Includes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``
+    so the inspect UI can render them inline (matching the standalone
+    self-vs-human HTML viewer). Older rows may not have ``system_prompt``
+    or ``prompt`` populated; both are optional.
+    """
 
     judge_model: str
-    judge_model_base: str
-    prompt_hash: str | None
-    judge_version: str | None
-    sampling: dict | None
+    judge_model_id: str  # the underlying model id, e.g. "claude-opus-4-7"
+    config_hash: str
+    prompt_hash: str
+    sampling: dict
     criterion: str
     source_a: str
     source_b: str
@@ -254,6 +280,9 @@ class Judgment(pydantic.BaseModel):
     winner_source: str | None
     preference_label: str | None
     reasoning_preview: str
+    reasoning_text: str | None
+    prompt: str | None
+    system_prompt: str | None
     is_rumil: bool
     rumil_trace_url: str | None
     rumil_question_id: str | None
@@ -262,6 +291,7 @@ class Judgment(pydantic.BaseModel):
     rumil_cost_usd: float | None
     contamination_note: str | None
     orphaned: bool
+    prefix_config_hash: str
 
 
 class JudgmentDetail(pydantic.BaseModel):
@@ -282,10 +312,10 @@ class JudgmentDetail(pydantic.BaseModel):
     display_second: str
     criterion: str
     judge_model: str
-    judge_model_base: str
-    prompt_hash: str | None
-    judge_version: str | None
-    sampling: dict | None
+    judge_model_id: str
+    config_hash: str
+    prompt_hash: str
+    sampling: dict
     verdict: str | None
     winner_source: str | None
     preference_label: str | None
@@ -391,10 +421,13 @@ class JudgmentRow(pydantic.BaseModel):
 
     key: str
     essay_id: str
+    prefix_config_hash: str
     source_a: str
     source_b: str
     criterion: str
     judge_model: str
+    judge_model_id: str
+    config_hash: str
     verdict: str
     winner: str
     preference_label: str | None
@@ -450,6 +483,37 @@ class PrefixVariantInfo(pydantic.BaseModel):
     include_headers: bool
 
 
+class ProvenanceAxis(pydantic.BaseModel):
+    """One axis of the provenance summary.
+
+    ``description`` says what the value or hash is computed over, so
+    the operator knows what would change it. ``counts`` is value ->
+    row count over the surviving rows. ``current_values`` is the
+    mainline set (UI flags anything not in this list as non-current).
+    ``value_labels`` turns opaque hashes into readable strings where
+    derivable (e.g. a ``prefix_config_hash`` maps back to its
+    originating ``"essay_id / variant_id"``).
+    """
+
+    description: str
+    counts: dict[str, int]
+    current_values: list[str]
+    value_labels: dict[str, str]
+
+
+class ProvenanceSummary(pydantic.BaseModel):
+    """Per-axis breakdown of what slice the aggregate sits on top of.
+
+    ``axes`` is keyed by axis name; ``axis_order`` declares the panel
+    rendering order (set by the backend's ``versus.mainline.axis_order``)
+    so the FE doesn't maintain a parallel list. New axes appear
+    automatically in the right place.
+    """
+
+    axes: dict[str, ProvenanceAxis]
+    axis_order: list[str]
+
+
 class ResultsBundle(pydantic.BaseModel):
     conditions: list[str]
     criteria: list[str]
@@ -473,6 +537,7 @@ class ResultsBundle(pydantic.BaseModel):
     rows_total_before_filter: int
     prefix_variants: list[PrefixVariantInfo]
     active_prefix_label: str
+    provenance: ProvenanceSummary
 
 
 router = APIRouter(
@@ -504,7 +569,15 @@ def _load_essay(essay_id: str) -> versus_essay.Essay | None:
 
 
 @router.get("/essays", response_model=list[EssayMeta])
-def list_essays() -> list[EssayMeta]:
+def list_essays(include_legacy: bool = False) -> list[EssayMeta]:
+    """List essays at the current essay-cache schema version.
+
+    Old cached snapshots (pre-rename, ``schema_version < SCHEMA_VERSION``)
+    are skipped by default — they often have stale prefix_config_hashes
+    and would show up as a near-duplicate of the freshly-cached entry,
+    confusing the inspect dropdown. Pass ``include_legacy=true`` to
+    include them anyway (no UI surfaces this yet; it's a debug escape).
+    """
     paths = _iter_essay_paths()
     if not paths and not _essays_dir().exists():
         raise HTTPException(503, f"versus essays dir not found: {_essays_dir()}")
@@ -516,13 +589,17 @@ def list_essays() -> list[EssayMeta]:
             d = json.load(f)
         if d.get("id") in exclude:
             continue
+        if not include_legacy and not versus_essay.is_current_schema(d):
+            continue
         out.append(
             EssayMeta(
                 id=d["id"],
+                source_id=d.get("source_id", ""),
                 title=d["title"],
                 author=d.get("author", ""),
                 pub_date=d.get("pub_date", ""),
                 url=d.get("url", ""),
+                schema_version=d.get("schema_version", 0),
             )
         )
     return out
@@ -546,18 +623,19 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         include_headers=active_prefix_cfg.include_headers,
         tolerance=cfg.completion.length_tolerance,
     )
+    if not cfg.judging.criteria:
+        raise HTTPException(503, "versus config has no judging.criteria configured")
+    primary_criterion = cfg.judging.criteria[0]
     judge_system, judge_user = versus_judge.render_judge_prompt(
         prefix_text="{{ PREFIX SHOWN TO JUDGE }}",
-        dimension=cfg.judging.criteria[0],
+        dimension=primary_criterion,
         source_a_text="{{ CONTINUATION A }}",
         source_b_text="{{ CONTINUATION B }}",
-    )
-    judge_prompt_template = (
-        f"## SYSTEM PROMPT\n\n{judge_system}\n\n---\n\n## USER MESSAGE\n\n{judge_user}"
     )
     paraphrase_prompt_template = versus_paraphrase.PARAPHRASE_INSTRUCTIONS.replace(
         "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
     )
+    judge_prompt_hash = versus_judge.compute_judge_prompt_hash(primary_criterion, with_tools=False)
     return EssayDetail(
         id=essay.id,
         title=essay.title,
@@ -565,10 +643,13 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         pub_date=essay.pub_date,
         url=essay.url,
         markdown=essay.markdown,
+        schema_version=essay.schema_version,
         prefix_config_hash=task.prefix_config_hash,
         target_words=task.target_words,
         completion_prompt=completion_prompt,
-        judge_prompt_template=judge_prompt_template,
+        judge_system_prompt_template=judge_system,
+        judge_user_prompt_template=judge_user,
+        judge_prompt_hash=judge_prompt_hash,
         paraphrase_prompt_template=paraphrase_prompt_template,
         criteria=list(cfg.judging.criteria),
         prefix_variants=[
@@ -609,6 +690,10 @@ def get_essay_sources(essay_id: str, prefix_label: str | None = None) -> list[So
             text=row.get("response_text") or "",
             words=row.get("response_words") or 0,
             target=row.get("target_words") or 0,
+            prompt=row.get("prompt"),
+            prefix_config_hash=row.get("prefix_config_hash", ""),
+            sampling_hash=row.get("sampling_hash"),
+            model_id=row.get("model_id"),
         )
     return sorted(by_source.values(), key=lambda s: (s.source_id != "human", s.source_id))
 
@@ -676,14 +761,16 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                     stale_hidden += 1
             continue
         jm = str(row.get("judge_model", ""))
-        base, phash, version = versus_judge.parse_judge_model_suffix(jm)
+        # Every row carries ``config`` post-backfill; legacy fallbacks
+        # were dropped in path-B cleanup.
+        row_cfg = row["config"]
         judgments.append(
             Judgment(
                 judge_model=jm,
-                judge_model_base=base,
-                prompt_hash=phash,
-                judge_version=version,
-                sampling=row.get("sampling"),
+                judge_model_id=row_cfg["model"],
+                config_hash=row["config_hash"],
+                prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
+                sampling=row_cfg["sampling"] or row.get("sampling") or {},
                 criterion=row.get("criterion", ""),
                 source_a=row.get("source_a", ""),
                 source_b=row.get("source_b", ""),
@@ -693,6 +780,9 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 winner_source=row.get("winner_source"),
                 preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
                 reasoning_preview=(row.get("reasoning_text") or "")[:400],
+                reasoning_text=row.get("reasoning_text"),
+                prompt=row.get("prompt"),
+                system_prompt=row.get("system_prompt"),
                 is_rumil=jm.startswith("rumil:"),
                 rumil_trace_url=row.get("rumil_trace_url"),
                 rumil_question_id=row.get("rumil_question_id"),
@@ -701,6 +791,7 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 rumil_cost_usd=row.get("rumil_cost_usd"),
                 contamination_note=row.get("contamination_note"),
                 orphaned=_is_orphaned(row, source_index),
+                prefix_config_hash=row.get("prefix_config_hash", ""),
             )
         )
     judgments.sort(key=lambda j: (j.judge_model, j.criterion, j.source_a, j.source_b))
@@ -766,8 +857,7 @@ def _row_matches_filters(
     a = str(row.get("source_a", ""))
     b = str(row.get("source_b", ""))
     if filter_condition == "content-test":
-        j_base = versus_judge.base_judge_model(jm)
-        baseline = f"paraphrase:{j_base}"
+        baseline = f"paraphrase:{row['config']['model']}"
         if baseline not in (a, b):
             return False
         other = b if a == baseline else a
@@ -949,6 +1039,11 @@ def get_results(
     # null-verdict placeholder and drift from the rendered totals.
     source_index = _build_completion_source_index(cfg)
     rows: list[JudgmentRow] = []
+    matrix_input_rows: list[dict] = []
+    # ``judge_model -> structured config``. Every row carries one
+    # post-backfill, so ``judge_labels`` below reads from this map
+    # directly without a flat-string fallback.
+    config_by_judge_model: dict[str, dict] = {}
     total_judgments = 0
     rows_total_before_filter = 0
     stale_count = 0
@@ -960,7 +1055,7 @@ def get_results(
         total_judgments += 1
         if not include_contaminated and row.get("contamination_note"):
             continue
-        is_stale = versus_analyze._is_stale_row(row, current_prefix_hashes)
+        is_stale = versus_analyze._prefix_hash_is_stale(row, current_prefix_hashes)
         if is_stale:
             stale_count += 1
         else:
@@ -968,6 +1063,10 @@ def get_results(
         if not include_stale and is_stale:
             continue
         rows_total_before_filter += 1
+        matrix_input_rows.append(row)
+        jm_for_label = str(row.get("judge_model", ""))
+        if jm_for_label:
+            config_by_judge_model.setdefault(jm_for_label, row["config"])
         if any_filter and not _row_matches_filters(
             row,
             filter_gen=filter_gen,
@@ -980,10 +1079,13 @@ def get_results(
             JudgmentRow(
                 key=row.get("key", ""),
                 essay_id=row["essay_id"],
+                prefix_config_hash=row.get("prefix_config_hash", ""),
                 source_a=row["source_a"],
                 source_b=row["source_b"],
                 criterion=row["criterion"],
                 judge_model=row["judge_model"],
+                judge_model_id=row["config"]["model"],
+                config_hash=row["config_hash"],
                 verdict=row["verdict"],
                 winner=row.get("winner_source") or "-",
                 preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
@@ -999,7 +1101,7 @@ def get_results(
     source_stats: dict[str, dict] = {}
     for row in versus_jsonl.read(completions_log):
         total_completions += 1
-        if not include_stale and versus_analyze._is_stale_row(row, current_prefix_hashes):
+        if not include_stale and versus_analyze._prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         sid = row["source_id"]
         stats = source_stats.setdefault(sid, {"n": 0, "words": 0, "delta": 0.0})
@@ -1017,17 +1119,57 @@ def get_results(
         for sid, s in sorted(source_stats.items(), key=lambda x: (x[0] != "human", x[0]))
     ]
 
+    provenance_axes = versus_mainline.summarize_provenance(matrix_input_rows)
+    current = versus_mainline.current_values_summary(cfg)
+    descriptions = versus_mainline.AXIS_DESCRIPTIONS
+    # Build a hash -> "essay_id / variant_id" reverse map across all
+    # active prefix variants. Each (essay, variant) combination
+    # contributes one current hash; collisions across variants are
+    # vanishingly unlikely but we'd merge labels if they happened.
+    prefix_labels: dict[str, str] = {}
+    current_prefix_hash_set: set[str] = set()
+    for v in versus_prepare.active_prefix_configs(cfg):
+        _, hashes = _build_essays_status(cfg, prefix_cfg=v)
+        for essay_id, h in hashes.items():
+            current_prefix_hash_set.add(h)
+            existing = prefix_labels.get(h)
+            label = f"{essay_id} / {v.id}"
+            prefix_labels[h] = f"{existing}, {label}" if existing else label
+    current["prefix_config_hash"] = sorted(current_prefix_hash_set)
+
+    axes_out: dict[str, ProvenanceAxis] = {}
+    for axis in versus_mainline.AXES_ORDER:
+        counts = provenance_axes.get(axis, {})
+        if not counts and not current.get(axis):
+            continue
+        value_labels: dict[str, str] = {}
+        if axis == "prefix_config_hash":
+            for h in counts:
+                if h in prefix_labels:
+                    value_labels[h] = prefix_labels[h]
+        axes_out[axis] = ProvenanceAxis(
+            description=descriptions.get(axis, ""),
+            counts=counts,
+            current_values=current.get(axis, []),
+            value_labels=value_labels,
+        )
+    provenance = ProvenanceSummary(axes=axes_out, axis_order=list(versus_mainline.AXES_ORDER))
+
     return ResultsBundle(
         conditions=conditions,
         criteria=criteria,
         active_criterion=criterion,
         gen_models=gen_models,
         judge_models=judge_models,
-        judge_labels={j: JudgeLabel(**versus_analyze.judge_label(j)) for j in judge_models},
+        judge_labels={
+            j: JudgeLabel(**versus_analyze.label_from_config(config_by_judge_model[j]))
+            for j in judge_models
+        },
         main_matrices=main_matrices,
         completion_per_source=completion_per_source,
         small_grid=small_grid,
         rows=rows,
+        provenance=provenance,
         total_judgments=total_judgments,
         total_completions=total_completions,
         sources_summary=sources_summary,
@@ -1071,7 +1213,7 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
         if row.get("key") != key:
             continue
         jm = str(row.get("judge_model", ""))
-        base, phash, version = versus_judge.parse_judge_model_suffix(jm)
+        row_cfg = row["config"]
         return JudgmentDetail(
             key=row["key"],
             essay_id=row.get("essay_id", ""),
@@ -1082,10 +1224,10 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             display_second=row.get("display_second", ""),
             criterion=row.get("criterion", ""),
             judge_model=jm,
-            judge_model_base=base,
-            prompt_hash=phash,
-            judge_version=version,
-            sampling=row.get("sampling"),
+            judge_model_id=row_cfg["model"],
+            config_hash=row["config_hash"],
+            prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
+            sampling=row_cfg["sampling"] or row.get("sampling") or {},
             verdict=row.get("verdict"),
             winner_source=row.get("winner_source"),
             preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
@@ -1187,7 +1329,7 @@ def get_diagnostics(
             continue
         if not include_contaminated and row.get("contamination_note"):
             continue
-        if not include_stale and versus_analyze._is_stale_row(row, current_prefix_hashes):
+        if not include_stale and versus_analyze._prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         if criterion is not None and row.get("criterion") != criterion:
             continue

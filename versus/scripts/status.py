@@ -23,8 +23,19 @@ VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
+try:
+    import rumil  # noqa: F401
+except ModuleNotFoundError:
+    sys.stderr.write(
+        "[err] rumil isn't importable from this venv. Run from the rumil "
+        "repo root, not versus/:\n"
+        f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/status.py ...\n"
+    )
+    raise SystemExit(1)
+
 from versus import config, jsonl, judge, prepare  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
+from versus import mainline as versus_mainline  # noqa: E402
 from versus import paraphrase as _paraphrase  # noqa: E402
 
 
@@ -38,7 +49,7 @@ def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
         if "source_id" not in d:
             # Legacy pre-multi-source JSON — skip. Re-fetch to upgrade.
             continue
-        if d.get("schema_version") != versus_essay.SCHEMA_VERSION:
+        if not versus_essay.is_current_schema(d):
             # Older schema — the API's staleness gate excludes these from
             # ``current_prefix_hashes`` so rows against them show as
             # "essay-not-current" in /versus. Match that here: drop the
@@ -165,9 +176,8 @@ def _judgments_per_variant(
         if matched_vid is None:
             orphaned += 1
             continue
-        judge_model = r.get("judge_model")
         criterion = r.get("criterion")
-        if judge_model and criterion and not judge.judge_prompt_is_current(judge_model, criterion):
+        if r.get("judge_model") and criterion and not judge.judge_config_is_current(r, criterion):
             prompt_stale[matched_vid] += 1
         else:
             current[matched_vid] += 1

@@ -18,28 +18,26 @@ page can link back to the rumil trace.
 
 | Mode | What it does | judge_model format | Needs supabase? |
 |---|---|---|---|
-| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `<canonical_model>:<dim>:p<hash>:v<N>:s<hash>` | no |
-| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Uses the essay-adapted rumil dimension prompt selected via `--dimension`. | `rumil:ws:<model>:<ws_short>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
-| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<ws_short>:b<N>:<task>:p<hash>:v<N>:t<hash>` | **yes** |
+| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `blind:<model>:<dim>:c<hash8>` | no |
+| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Uses the essay-adapted rumil dimension prompt selected via `--dimension`. | `rumil:ws:<model>:<dim>:c<hash8>` | **yes** |
+| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<dim>:c<hash8>` | **yes** |
 
-`<dim>` / `<task>` is the rumil dimension name selected via `--dimension`
-(e.g. `general_quality`, `grounding`). Blind keys carry the dimension
-inline; ws/orch keys carry it as the trailing `<task>` segment. The
-blind shell is **without** tool advertisements (no scope-question
-references, no `load_page`/`search_workspace` mentions); ws/orch shell
-keeps them. Both modes share the same template — see
-`rumil/versus_prompts.py` for the substitution dicts.
+`<dim>` is the rumil dimension name selected via `--dimension`
+(e.g. `general_quality`, `grounding`). The trailing `c<hash8>` is the
+first eight hex chars of the row's `config_hash` — the dedup
+primitive. The blind shell is **without** tool advertisements (no
+scope-question references, no `load_page`/`search_workspace`
+mentions); ws/orch shell keeps them. Both modes share the same
+template — see `rumil/versus_prompts.py` for the substitution dicts.
 
-Four tags appear in the key:
-
-- `:p<hash>` — hash of the *composed* system prompt for this mode. Blind and tools modes hash to different spaces because the composed shell differs.
-- `:v<N>` — `BLIND_JUDGE_VERSION` (now gates everything, including blind judges). Bump for semantic changes the prompt hash misses.
-- `:t<hash>` (ws / orch only) — hash of the workspace-exploration tool description map.
-- `:s<hash>` (blind only) — hash of the sampling dict.
-
-Legacy keys (`anthropic:<model>:p..:v..`, `rumil:text:<model>:<dim>:...`, bare-OR `<provider>/<model>:p..:v..`) still parse for old jsonl rows; they read as stale because they hash the pre-collapse shell.
-
-See `versus/AGENT.md` for the full interaction between these four knobs.
+Each row carries a structured `config: dict` plus `config_hash: str`.
+`config_hash` is computed by `versus.judge_config.make_judge_config`
+over every input the judge saw — model, sampling, prompt content,
+tool descriptions, pair surface, code fingerprint, workspace state,
+budget, closer config. Any change in any of those auto-forks the
+key; no manual version bump to remember. See `versus/AGENT.md` for
+the full structured-config schema and how it projects to the
+provenance panel's per-axis counters.
 
 ## When to use
 
@@ -296,41 +294,30 @@ over-read any single number:
   + `cd frontend && pnpm dev`). Trace URLs emitted by the script point
   at `settings.frontend_url` (default http://127.0.0.1:3000).
 
-## When to bump `BLIND_JUDGE_VERSION`
+## What forks `config_hash`
 
-`BLIND_JUDGE_VERSION` (in `versus/src/versus/versions.py`;
-re-exported from `src/rumil/versus_bridge.py` for back-compat)
-is the manual version knob that forks all three judge_model shapes
-(blind, `rumil:ws:*`, `rumil:orch:*`) when you make a semantic change
-the automatic prompt hash doesn't catch. **Bump it when editing any
-of:**
+`config_hash` is what `judgment_key` keys on. Anything in the
+structured config dict produced by
+`versus.judge_config.make_judge_config` flows into it. So forking is
+automatic for:
 
-- `versus_bridge._format_pair_content` — the Question page body the
-  ws/orch agent reads via `load_page`.
-- `versus_bridge._versus_extra` — rendered verbatim in page views.
-- The inline user prompts constructed in code:
-  - `judge_pair_ws_aware` (agent user prompt + allowed/disallowed tools)
-  - `_run_orch_closer` (closer user prompt)
-  - the blind-path user message in `versus.judge.run_blind`
-- The tool *list* / `disallowed_tools` config on `SdkAgentConfig` in
-  `judge_pair_ws_aware` (adding/removing tools) — changing what the
-  agent can reach changes its behavior. Tool *docstring* edits are
-  already auto-covered by `:t<hash>`; only list changes need a bump.
-- Anything else in the bridge that a future reader would consider
-  "part of the judge's identity" but isn't an `.md` file on disk.
+- Edits to `prompts/versus-judge-shell.md` or
+  `prompts/versus-<dim>.md` (covered via the rendered prompt's sha).
+- Sampling-dict changes (temperature / max_tokens).
+- Tool-description / docstring edits on `search_workspace` /
+  `load_page` / `explore_subgraph` (ws/orch only).
+- Edits to the agent-visible Question page surface
+  (`_format_pair_content`, `_build_headline`, `_versus_extra` key
+  schema) — `pair_surface_hash` covers them.
+- Edits to bridge / orchestrator / call code under the
+  `JUDGE_CODE_FINGERPRINT_DIRS` and `JUDGE_CODE_FINGERPRINT_FILES`
+  paths — `code_fingerprint` covers them per file/directory.
+- Mutations to baseline workspace pages or links between runs —
+  `workspace_state_hash` is a cheap watermark that bumps on any
+  change visible to the agent's tools.
+- Orch closer config (max_turns, disallowed_tools, render knobs) —
+  `closer_hash` covers it.
 
-**Do NOT bump** when editing:
-
-- `prompts/versus-judge-shell.md` or `prompts/versus-<dim>.md` —
-  covered by `:p<hash>` automatically. `tests/test_versus_prompt_snapshots.py`
-  pins the file shas, so a prompt edit without the corresponding version
-  bump fails the snapshot test with a message pointing at the constant
-  to roll.
-- The sampling dict on the blind path — covered by `:s<hash>`.
-- Tool descriptions/docstrings for `search_workspace` / `load_page` /
-  `explore_subgraph` — covered by `:t<hash>` for ws/orch.
-
-When you bump, also update the comment next to the constant with a
-short reason, so future readers know what the bump paid for
-(e.g. `# v2 (2026-04-23): fixes #3 headline leak and #4 page.extra
-leak`).
+If a surface isn't on this list and you suspect it should fork the
+key, the right fix is to extend `make_judge_config` (and the matching
+axis in `project_config_to_axes`), not to add a willpower knob.

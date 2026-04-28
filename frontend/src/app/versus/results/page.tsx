@@ -7,6 +7,7 @@ import { AutoSubmitSelect } from "@/components/versus/AutoSubmitSelect";
 import { DiagnosticsPane, fetchDiagnostics } from "@/components/versus/DiagnosticsPane";
 import { JudgmentRowsTable } from "@/components/versus/JudgmentRowsTable";
 import { MatrixTable } from "@/components/versus/MatrixTable";
+import { ProvenancePanel } from "@/components/versus/ProvenancePanel";
 import { VersusHeader } from "@/components/versus/VersusHeader";
 import "../versus.css";
 
@@ -218,6 +219,8 @@ export default async function VersusResultsPage({
             </noscript>
           </form>
         </div>
+
+        <ProvenancePanel summaries={variantBundles.map((b) => b.provenance)} />
 
         {variantBundles.map((vb) => (
           <VariantMatrices

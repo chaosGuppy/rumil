@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import collections
 import pathlib
-import re
 from collections.abc import Sequence
 
 from versus import jsonl, judge
@@ -12,19 +11,16 @@ from versus import jsonl, judge
 HUMAN = "human"
 
 
-def _content_test_baseline(judge_model: str) -> str:
+def _content_test_baseline(row: dict) -> str:
     """Compose the paraphrase source_id that matches this judge's model.
 
     Paraphrases are authored via OpenRouter and keyed as
-    ``paraphrase:<openrouter_model_id>`` (e.g. ``paraphrase:openai/gpt-5.4``,
-    slash). Anthropic-direct judges use the ``anthropic:<model>`` form (colon).
-    Normalize the latter so the baseline lookup hits a paraphrase row when the
-    same underlying model authored one.
+    ``paraphrase:<openrouter_model_id>``. Reads the model directly
+    from ``row["config"]["model"]``; raises if the row has no config
+    (post-backfill that's a corrupt-data scenario, not a graceful
+    case).
     """
-    base = judge.base_judge_model(judge_model)
-    if base.startswith("anthropic:"):
-        base = "anthropic/" + base.removeprefix("anthropic:")
-    return f"paraphrase:{base}"
+    return f"paraphrase:{row['config']['model']}"
 
 
 def model_sort_key(judge: str) -> tuple:
@@ -33,23 +29,25 @@ def model_sort_key(judge: str) -> tuple:
     Families (left to right): gemini, openai, anthropic, other. Weak->strong
     within family: flash < pro for gemini, nano < mini < full for openai,
     haiku < sonnet < opus for anthropic. Variant (relevant for judges):
-    bare openrouter < anthropic: (legacy text) < rumil:text < rumil:ws <
-    rumil:orch.
+    blind < rumil:ws < rumil:orch.
+
+    Accepts both source-id strings ("human", "google/gemini-3-flash",
+    "paraphrase:openai/gpt-5") and the post-cleanup judge_model shape
+    (``<path>:<model>:<dim>:c<hash8>`` with path ∈ {blind, rumil:ws,
+    rumil:orch}).
     """
     low = judge.lower()
+    parts = judge.split(":")
 
     if low.startswith("rumil:orch:"):
-        variant = 4
-        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
-    elif low.startswith("rumil:ws:"):
         variant = 3
-        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
-    elif low.startswith("rumil:text:"):
+        base = parts[2] if len(parts) >= 3 else judge
+    elif low.startswith("rumil:ws:"):
         variant = 2
-        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
-    elif low.startswith("anthropic:"):
+        base = parts[2] if len(parts) >= 3 else judge
+    elif low.startswith("blind:"):
         variant = 1
-        base = judge.split(":", 1)[1]
+        base = parts[1] if len(parts) >= 2 else judge
     elif "/" in judge:
         variant = 0
         base = judge.split("/", 1)[1]
@@ -76,14 +74,7 @@ def model_sort_key(judge: str) -> tuple:
             strength = 1
         else:
             strength = 2
-    elif (
-        "claude" in base_low
-        or "haiku" in base_low
-        or "sonnet" in base_low
-        or "opus" in base_low
-        or low.startswith("anthropic")
-        or low.startswith("rumil:")
-    ):
+    elif "claude" in base_low or "haiku" in base_low or "sonnet" in base_low or "opus" in base_low:
         family = 2
         if "haiku" in base_low:
             strength = 0
@@ -100,98 +91,23 @@ def model_sort_key(judge: str) -> tuple:
     return (family, strength, base_low, variant, judge)
 
 
-_PROMPT_HASH_RE = re.compile(r"^p[0-9a-f]{8}$")
-_VERSION_TAG_RE = re.compile(r"^v\d+$")
-_SAMPLING_HASH_RE = re.compile(r"^s[0-9a-f]{8}$")
-_TOOL_HASH_RE = re.compile(r"^t[0-9a-f]{8}$")
-_SURFACE_HASH_RE = re.compile(r"^q[0-9a-f]{8}$")
+def label_from_config(cfg: dict) -> dict:
+    """Derive the stacked column-header dict from a structured judge config.
 
-
-def _peel_ts_tag(parts: Sequence[str]) -> list[str]:
-    out = list(parts)
-    while out and (
-        _SAMPLING_HASH_RE.match(out[-1])
-        or _TOOL_HASH_RE.match(out[-1])
-        or _SURFACE_HASH_RE.match(out[-1])
-    ):
-        out = out[:-1]
-    return out
-
-
-def _strip_phash_version(parts: Sequence[str]) -> tuple[list[str], str | None, str | None]:
-    """Peel trailing ``:s<hash>``, ``:t<hash>``, ``:q<hash>``, ``:v<N>``, then ``:p<hash>`` off a split judge_model.
-
-    The sampling / tool-prompt / pair-surface hashes are absorbed
-    silently (not returned) because the frontend doesn't render them
-    -- they exist only for dedup-key discipline. The human-readable
-    sampling dict lives on the judgment row; the tool-prompt text
-    lives in-repo under ``src/rumil/workspace_exploration/``; the pair
-    surface fork is automatic via ``compute_pair_surface_hash()``.
-    ``:t``, ``:s``, and ``:q`` peel symmetrically so any trailing
-    ordering is tolerated.
+    Returns ``{variant, model, task, phash}``. Drives the FE
+    column-header layout. Orch carries its budget tag.
     """
-    parts = _peel_ts_tag(parts)
-    version = None
-    if parts and _VERSION_TAG_RE.match(parts[-1]):
-        version = parts[-1]
-        parts = parts[:-1]
-    phash = None
-    if parts and _PROMPT_HASH_RE.match(parts[-1]):
-        phash = parts[-1]
-        parts = parts[:-1]
-    return parts, phash, version
-
-
-def judge_label(judge: str) -> dict:
-    """Break a judge_model id into stacked header parts.
-
-    Returns {variant, model, task, phash}. `phash` is the `:p<sha8>` prompt
-    version suffix; `:v<N>` is folded into `variant`. Handles the post-
-    collapse blind shape (``<canonical_model>:<dim>:p..:v..:s..``), the
-    rumil:ws / rumil:orch keys (unchanged), and the legacy shapes
-    (``rumil:text:*``, ``anthropic:*``, bare ``<provider>/<model>:p..``)
-    so old jsonl rows continue to render.
-    """
-    if judge.startswith("rumil:orch:") or judge.startswith("rumil:ws:"):
-        parts, phash, version = _strip_phash_version(judge.split(":"))
-        variant = f"{parts[0]}:{parts[1]}"
-        model = parts[2] if len(parts) >= 3 else judge
-        tail = parts[4:]  # skip ws_short hash
-        if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
-            variant = f"{variant} {tail[0]}"
-            tail = tail[1:]
-        if version:
-            variant = f"{variant} {version}"
-        task = ":".join(tail) if tail else None
-        return {"variant": variant, "model": model, "task": task, "phash": phash}
-    if judge.startswith("rumil:text:"):
-        # Legacy: rumil:text:<model>:<dim>:p..:v..:s..
-        parts, phash, version = _strip_phash_version(judge.split(":"))
-        variant = f"rumil:text {version}" if version else "rumil:text"
-        model = parts[2] if len(parts) > 2 else judge
-        task = ":".join(parts[3:]) if len(parts) > 3 else None
-        return {"variant": variant, "model": model, "task": task, "phash": phash}
-    if judge.startswith("anthropic:"):
-        # Legacy: anthropic:<model>:p..:v..:s..
-        parts, phash, version = _strip_phash_version(judge.split(":"))
-        model = ":".join(parts[1:]) if len(parts) > 1 else judge
-        variant = f"anthropic {version}" if version else "anthropic"
-        return {"variant": variant, "model": model, "task": None, "phash": phash}
-    parts, phash, version = _strip_phash_version(judge.split(":"))
-    if len(parts) >= 2 and phash is not None:
-        # New blind shape: <canonical_model>:<dim>:p..:v..:s..
-        model = parts[0]
-        task = ":".join(parts[1:])
-        provider = model.split("/", 1)[0] if "/" in model else "anthropic"
-        variant = f"{provider} {version}" if version else provider
-        return {"variant": variant, "model": model, "task": task, "phash": phash}
-    if "/" in judge:
-        # Legacy bare-OR: <provider>/<model>:p..:v..:s..
-        base = ":".join(parts)
-        provider, model = base.split("/", 1)
-        variant = f"{provider} {version}" if version else provider
-        return {"variant": variant, "model": model, "task": None, "phash": phash}
-    return {"variant": None, "model": judge, "task": None, "phash": None}
+    variant = cfg["variant"]
+    model = cfg["model"]
+    dim = cfg["dimension"]
+    phash = f"p{cfg['prompts']['shell_hash']}"
+    if variant == "orch":
+        head = f"rumil:orch b{cfg['budget']}"
+    elif variant == "ws":
+        head = "rumil:ws"
+    else:
+        head = model.split("/", 1)[0] if "/" in model else "anthropic"
+    return {"variant": head, "model": model, "task": dim, "phash": phash}
 
 
 def cell_color(pct: float) -> str:
@@ -220,19 +136,20 @@ def _strip_prefix(source_id: str) -> tuple[str, str]:
     return "completion", source_id
 
 
-def _is_stale_row(row: dict, current_prefix_hashes: dict[str, str] | None) -> bool:
-    """True iff the row cannot be verified as matching the current essay cache.
+def _prefix_hash_is_stale(row: dict, current_prefix_hashes: dict[str, str] | None) -> bool:
+    """True iff the row's ``prefix_config_hash`` doesn't match the
+    currently-active hash for its essay.
 
-    A row is stale when either:
-      * its ``essay_id`` isn't in the current cache (essay was removed or
-        renamed — e.g. forethought essays migrated to the ``forethought__``
-        namespace no longer match their old jsonl rows), or
-      * its ``prefix_config_hash`` doesn't match the current hash for that
-        essay (essay content or prefix params changed).
+    Two ways to be stale: (a) the essay isn't in the current cache at
+    all (was removed or renamed — e.g. forethought essays moved to
+    the ``forethought__`` namespace); (b) the essay is current but
+    its prefix_config_hash drifted (essay text or prefix params
+    changed).
 
-    Returns False (not stale) only when we pass both checks. When
-    ``current_prefix_hashes`` is None (caller doesn't want staleness
-    filtering) we defer and return False.
+    Returns False when ``current_prefix_hashes`` is None — caller
+    doesn't want staleness filtering. Note: this checks *prefix-hash
+    drift*, which is orthogonal to schema-version drift (see
+    ``versus.essay.is_current_schema``).
     """
     if current_prefix_hashes is None:
         return False
@@ -240,6 +157,13 @@ def _is_stale_row(row: dict, current_prefix_hashes: dict[str, str] | None) -> bo
     if eid not in current_prefix_hashes:
         return True
     return row.get("prefix_config_hash") != current_prefix_hashes[eid]
+
+
+# Back-compat alias — old call sites referenced ``_is_stale_row``;
+# new code should call ``_prefix_hash_is_stale`` so the staleness
+# axis is named explicitly. Kept indefinitely; the rename is just
+# for clarity, not for semantics.
+_is_stale_row = _prefix_hash_is_stale
 
 
 def content_test_matrix(
@@ -272,10 +196,10 @@ def content_test_matrix(
             continue
         if not include_contaminated and row.get("contamination_note"):
             continue
-        if not include_stale and _is_stale_row(row, current_prefix_hashes):
+        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         j = row["judge_model"]
-        baseline = _content_test_baseline(j)
+        baseline = _content_test_baseline(row)
         a, b = row["source_a"], row["source_b"]
         if baseline not in (a, b):
             continue
@@ -321,7 +245,7 @@ def matrix(
             continue
         if not include_contaminated and row.get("contamination_note"):
             continue
-        if not include_stale and _is_stale_row(row, current_prefix_hashes):
+        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         if criterion is not None and row.get("criterion") != criterion:
             continue
@@ -361,7 +285,7 @@ def matrix_by_source(
             continue
         if not include_contaminated and row.get("contamination_note"):
             continue
-        if not include_stale and _is_stale_row(row, current_prefix_hashes):
+        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         a, b = row["source_a"], row["source_b"]
         if a != HUMAN and b != HUMAN:

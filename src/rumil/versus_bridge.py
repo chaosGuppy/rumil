@@ -61,18 +61,6 @@ log = logging.getLogger(__name__)
 
 _TOOL_SERVER_NAME = "versus-judge-tools"
 
-# BLIND_JUDGE_VERSION lives in ``versus.versions`` alongside the other
-# three prompt-version knobs so bumps can't drift between modules.
-# Notes on historical bumps:
-#   v2 (2026-04-23): fixes #3 (headline leak) and #4 (page.extra leak).
-#   v3 (2026-04-23): essay markdown re-imported with fetch SCHEMA_VERSION=4
-#   (nested-list dedup, footnote-marker strip, emphasis preservation,
-#   caption skip). Old judgments judge old text, new judgments judge new
-#   text.
-# Re-exported below for back-compat with any caller that still reads
-# ``rumil.versus_bridge.BLIND_JUDGE_VERSION``.
-from versus.versions import BLIND_JUDGE_VERSION  # noqa: E402, F401
-
 # Re-export the pure prompt-rendering helpers from the lightweight
 # ``rumil.versus_prompts`` module so external callers (and existing
 # imports) keep working unchanged.
@@ -102,9 +90,9 @@ def compute_tool_prompt_hash() -> str:
     orchestrator's dispatched calls inside ``judge_pair_orch`` use a
     broader tool set (find_considerations, assess, scout-*, etc.)
     that isn't passed from this bridge; those are covered by
-    ``BLIND_JUDGE_VERSION`` bumps at the semantic level. Hashing
-    workspace-exploration for both ws and orch keeps the key schemes
-    parallel and tracks docstring edits on the shared tools.
+    ``code_fingerprint`` over the orchestrators / calls / prompts
+    directories. Hashing workspace-exploration tool docstrings for
+    both ws and orch keeps the key schemes parallel.
 
     Parameters match the bridge's actual call sites: load_page's
     default_detail is "content", explore_subgraph's questions_only is
@@ -165,6 +153,11 @@ class JudgeResult:
     run_id: str
     question_id: str
     cost_usd: float
+    # The exact system + user prompt the judge was given. Stored on
+    # the judgment row so audits can reconstruct what the judge saw
+    # without chasing :p<hash> back through git history.
+    system_prompt: str = ""
+    user_prompt: str = ""
 
 
 def _frontend_trace_url(run_id: str, call_id: str | None = None) -> str:
@@ -243,18 +236,13 @@ def _build_ws_user_prompt(pair: PairContext, question_id: str) -> str:
     )
 
 
-_SURFACE_HASH_SENTINEL: dict[str, str] = {
-    "essay_id": "_SENTINEL_ESSAY_",
-    "prefix_hash": "_SENTINEL_PREFIX_HASH_",
-    "prefix_text": "_SENTINEL_PREFIX_TEXT_",
-    "continuation_a_id": "_SENTINEL_A_ID_",
-    "continuation_a_text": "_SENTINEL_A_TEXT_",
-    "continuation_b_id": "_SENTINEL_B_ID_",
-    "continuation_b_text": "_SENTINEL_B_TEXT_",
-    "source_a_id": "_SENTINEL_SOURCE_A_",
-    "source_b_id": "_SENTINEL_SOURCE_B_",
-    "task_name": "_SENTINEL_TASK_",
-}
+def _surface_hash_sentinel() -> dict[str, str]:
+    """Build the sentinel dict from PairContext's actual fields, so
+    adding/removing a field auto-updates the surface hash and hash
+    coverage doesn't drift from the dataclass schema."""
+    from dataclasses import fields
+
+    return {f.name: f"_SENTINEL_{f.name.upper()}_" for f in fields(PairContext)}
 
 
 def compute_pair_surface_hash() -> str:
@@ -274,15 +262,14 @@ def compute_pair_surface_hash() -> str:
       only the key schema is hashed).
 
     Scope: ws/orch only. The blind path (single-turn LLM call, no DB)
-    doesn't read the Question page, so a page-surface edit there wouldn't
-    affect blind judgments — forking blind keys for a surface edit
-    would force unnecessary re-judging. Manual :v<N>
-    (:data:`BLIND_JUDGE_VERSION`) remains the fork mechanism for
-    semantic changes the auto-hash can't catch (inline user prompts,
-    disallowed_tools, orchestrator-internal tool set, etc.) and gates
-    all three judge paths (blind, ws, orch).
+    doesn't read the Question page, so a page-surface edit there
+    wouldn't affect blind judgments — forking blind keys for a
+    surface edit would force unnecessary re-judging. Inline user
+    prompts, ``disallowed_tools``, and the orchestrator-internal
+    tool set are covered by ``code_fingerprint`` over the bridge +
+    orchestrator + calls files.
     """
-    sentinel = PairContext(**_SURFACE_HASH_SENTINEL)
+    sentinel = PairContext(**_surface_hash_sentinel())
     blob = json.dumps(
         {
             "headline": _build_headline(sentinel),
@@ -423,6 +410,8 @@ async def _judge_pair_ws_aware_inner(
         verdict=label_to_verdict(label),
         preference_label=label,
         reasoning_text=report_text,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
         trace_url=_frontend_trace_url(db.run_id, call.id),
         call_id=call.id,
         run_id=db.run_id,
@@ -465,6 +454,53 @@ async def _render_question_for_closer(db: DB, question_id: str) -> str:
     return f"{body}\n\n{view_rendered}"
 
 
+_CLOSER_USER_PROMPT_TEMPLATE = (
+    "A research run has just finished investigating the pair comparison "
+    "captured in the scope question. The rendered question (including "
+    "the essay prefix, both continuations, the considerations and "
+    "judgements the orchestrator produced, and the distilled view "
+    "items) follows; your job is to read it, weigh what the research "
+    "surfaced, and emit the 7-point preference label. You have the "
+    "workspace tools if further material bears on the essay's subject, "
+    "but keep usage light — this is the closing step, not a fresh "
+    "investigation.\n\n"
+    "{rendered}\n\n"
+    "End your response with one of the 7-point preference labels on its "
+    "own line."
+)
+_CLOSER_SDK_MAX_TURNS = 5
+_CLOSER_DISALLOWED_TOOLS = ("Write", "Edit", "Glob")
+_CLOSER_RENDER_DETAIL = "CONTENT"
+_CLOSER_RENDER_LINKED_DETAIL = "CONTENT"
+_CLOSER_RENDER_MIN_IMPORTANCE = 2
+
+
+def compute_orch_closer_hash() -> str:
+    """Short deterministic hash of the orch closer's invariant config.
+
+    Covers the parts of ``_run_orch_closer`` that the prompt-hash and
+    tool-prompt-hash don't: the inline user-prompt template, the
+    SDK agent's max_turns budget, the disallowed-tools set, and the
+    rendering knobs the closer reads (page detail level, linked
+    detail, view min_importance). Folded into the orch config dict
+    as ``closer_hash`` so an edit here auto-forks ``config_hash``.
+
+    orch-only — the blind and ws paths don't have a closer step.
+    """
+    blob = json.dumps(
+        {
+            "user_prompt_template": _CLOSER_USER_PROMPT_TEMPLATE,
+            "sdk_agent_max_turns": _CLOSER_SDK_MAX_TURNS,
+            "disallowed_tools": list(_CLOSER_DISALLOWED_TOOLS),
+            "render_detail": _CLOSER_RENDER_DETAIL,
+            "render_linked_detail": _CLOSER_RENDER_LINKED_DETAIL,
+            "render_min_importance": _CLOSER_RENDER_MIN_IMPORTANCE,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(blob.encode()).hexdigest()[:8]
+
+
 async def _run_orch_closer(
     db: DB,
     question_id: str,
@@ -472,7 +508,7 @@ async def _run_orch_closer(
     broadcaster: Broadcaster | None,
     *,
     render_fn: Callable[[DB, str], Awaitable[str]] | None = None,
-) -> tuple[str, Call]:
+) -> tuple[str, Call, str, str]:
     """Small closing call: read the orchestrator's research on ``question_id``
     and emit a 7-point preference label.
 
@@ -517,20 +553,7 @@ async def _run_orch_closer(
     ]
 
     system_prompt = build_system_prompt(task_body, with_tools=True)
-    user_prompt = (
-        "A research run has just finished investigating the pair comparison "
-        "captured in the scope question. The rendered question (including "
-        "the essay prefix, both continuations, the considerations and "
-        "judgements the orchestrator produced, and the distilled view "
-        "items) follows; your job is to read it, weigh what the research "
-        "surfaced, and emit the 7-point preference label. You have the "
-        "workspace tools if further material bears on the essay's subject, "
-        "but keep usage light — this is the closing step, not a fresh "
-        "investigation.\n\n"
-        f"{rendered}\n\n"
-        "End your response with one of the 7-point preference labels on its "
-        "own line."
-    )
+    user_prompt = _CLOSER_USER_PROMPT_TEMPLATE.format(rendered=rendered)
 
     config = SdkAgentConfig(
         system_prompt=system_prompt,
@@ -544,11 +567,11 @@ async def _run_orch_closer(
         trace=trace,
         broadcaster=broadcaster,
         allowed_tools=allowed,
-        disallowed_tools=["Write", "Edit", "Glob"],
+        disallowed_tools=list(_CLOSER_DISALLOWED_TOOLS),
     )
 
     try:
-        with override_settings(sdk_agent_max_turns=5):
+        with override_settings(sdk_agent_max_turns=_CLOSER_SDK_MAX_TURNS):
             result = await run_sdk_agent(config)
         # Both the versus-judge-shell system prompt and the inline user
         # prompt instruct "End your response with ... on its own line", so
@@ -567,7 +590,7 @@ async def _run_orch_closer(
         await db.update_call_status(call.id, CallStatus.FAILED)
         raise
 
-    return report_text, call
+    return report_text, call, system_prompt, user_prompt
 
 
 async def judge_pair_orch(
@@ -606,7 +629,7 @@ async def judge_pair_orch(
             )
             raise
 
-        report_text, closer_call = await _run_orch_closer(
+        report_text, closer_call, closer_system_prompt, closer_user_prompt = await _run_orch_closer(
             db,
             question_id,
             task_body=task_body,
@@ -620,6 +643,8 @@ async def judge_pair_orch(
         verdict=label_to_verdict(label),
         preference_label=label,
         reasoning_text=report_text,
+        system_prompt=closer_system_prompt,
+        user_prompt=closer_user_prompt,
         trace_url=_frontend_trace_url(db.run_id, closer_call.id),
         call_id=closer_call.id,
         run_id=db.run_id,

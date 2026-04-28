@@ -33,6 +33,16 @@ RUMIL_ROOT = VERSUS_ROOT.parent
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 sys.path.insert(0, str(RUMIL_ROOT / "src"))
 
+try:
+    import rumil  # noqa: F401
+except ModuleNotFoundError:
+    sys.stderr.write(
+        "[err] rumil isn't importable from this venv. Run from the rumil "
+        "repo root, not versus/:\n"
+        f"      cd {RUMIL_ROOT} && uv run python versus/scripts/rerun_orch_closer.py ...\n"
+    )
+    raise SystemExit(1)
+
 from rumil.context import format_page, render_view  # noqa: E402
 from rumil.database import DB  # noqa: E402
 from rumil.models import PageDetail  # noqa: E402
@@ -187,7 +197,7 @@ async def main() -> None:
     db = await DB.create(run_id=args.run_id, prod=False, project_id=project_id, staged=True)
 
     with override_settings(rumil_model_override=args.model):
-        report_text, call = await _run_orch_closer(
+        report_text, call, _system_prompt, _user_prompt = await _run_orch_closer(
             db,
             args.question_id,
             task_body=task_body,

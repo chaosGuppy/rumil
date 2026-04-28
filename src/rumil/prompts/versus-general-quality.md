@@ -28,7 +28,7 @@ These are not exhaustive — use judgment to surface quality differences.
 2. Contrast: where one is strong, check whether the other also got there.
 3. Be specific — quote passages, don't just paraphrase.
 
-## Output format
+## Comparison structure
 
 Produce a structured comparison with:
 

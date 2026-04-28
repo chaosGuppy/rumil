@@ -35,6 +35,16 @@ RUMIL_ROOT = VERSUS_ROOT.parent
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 sys.path.insert(0, str(RUMIL_ROOT / "src"))
 
+try:
+    import rumil  # noqa: F401
+except ModuleNotFoundError:
+    sys.stderr.write(
+        "[err] rumil isn't importable from this venv. Run from the rumil "
+        "repo root, not versus/:\n"
+        f"      cd {RUMIL_ROOT} && uv run python versus/scripts/run_rumil_judgments.py ...\n"
+    )
+    raise SystemExit(1)
+
 from versus import envcascade  # noqa: E402
 
 envcascade.apply(
@@ -122,7 +132,7 @@ def main() -> None:
         "--essay",
         action="append",
         default=None,
-        help="Restrict planning to specified essay_id(s). Repeatable. ws/orch only.",
+        help="Restrict planning to specified essay_id(s). Repeatable. Honored on blind, ws, and orch.",
     )
     ap.add_argument(
         "--active",
@@ -138,7 +148,7 @@ def main() -> None:
         default=None,
         help=(
             "Comma-separated source_ids; only emit pairs where both sides "
-            "are in this list. ws/orch only."
+            "are in this list. Honored on blind, ws, and orch."
         ),
     )
     ap.add_argument(

@@ -125,18 +125,57 @@
           "versus"
         ],
         "summary": "List Essays",
+        "description": "List essays at the current essay-cache schema version.\n\nOld cached snapshots (pre-rename, ``schema_version < SCHEMA_VERSION``)\nare skipped by default \u2014 they often have stale prefix_config_hashes\nand would show up as a near-duplicate of the freshly-cached entry,\nconfusing the inspect dropdown. Pass ``include_legacy=true`` to\ninclude them anyway (no UI surfaces this yet; it's a debug escape).",
         "operationId": "list_essays_api_versus_essays_get",
+        "parameters": [
+          {
+            "name": "include_legacy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Legacy"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/EssayMeta"
                   },
-                  "type": "array",
                   "title": "Response List Essays Api Versus Essays Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -175,6 +214,22 @@
                 }
               ],
               "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -233,6 +288,22 @@
                 }
               ],
               "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -295,6 +366,22 @@
                 }
               ],
               "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -445,6 +532,22 @@
               ],
               "title": "Prefix Label"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -487,6 +590,22 @@
             "schema": {
               "type": "string",
               "title": "Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -573,6 +692,22 @@
                 }
               ],
               "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -4157,6 +4292,10 @@
             "type": "string",
             "title": "Markdown"
           },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
           "prefix_config_hash": {
             "type": "string",
             "title": "Prefix Config Hash"
@@ -4169,9 +4308,17 @@
             "type": "string",
             "title": "Completion Prompt"
           },
-          "judge_prompt_template": {
+          "judge_system_prompt_template": {
             "type": "string",
-            "title": "Judge Prompt Template"
+            "title": "Judge System Prompt Template"
+          },
+          "judge_user_prompt_template": {
+            "type": "string",
+            "title": "Judge User Prompt Template"
+          },
+          "judge_prompt_hash": {
+            "type": "string",
+            "title": "Judge Prompt Hash"
           },
           "paraphrase_prompt_template": {
             "type": "string",
@@ -4204,10 +4351,13 @@
           "pub_date",
           "url",
           "markdown",
+          "schema_version",
           "prefix_config_hash",
           "target_words",
           "completion_prompt",
-          "judge_prompt_template",
+          "judge_system_prompt_template",
+          "judge_user_prompt_template",
+          "judge_prompt_hash",
           "paraphrase_prompt_template",
           "criteria",
           "prefix_variants",
@@ -4299,6 +4449,10 @@
             "type": "string",
             "title": "Id"
           },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
           "title": {
             "type": "string",
             "title": "Title"
@@ -4314,15 +4468,21 @@
           "url": {
             "type": "string",
             "title": "Url"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
           }
         },
         "type": "object",
         "required": [
           "id",
+          "source_id",
           "title",
           "author",
           "pub_date",
-          "url"
+          "url",
+          "schema_version"
         ],
         "title": "EssayMeta",
         "description": "Headline metadata for one cached essay."
@@ -4871,42 +5031,21 @@
             "type": "string",
             "title": "Judge Model"
           },
-          "judge_model_base": {
+          "judge_model_id": {
             "type": "string",
-            "title": "Judge Model Base"
+            "title": "Judge Model Id"
+          },
+          "config_hash": {
+            "type": "string",
+            "title": "Config Hash"
           },
           "prompt_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Prompt Hash"
           },
-          "judge_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Judge Version"
-          },
           "sampling": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "additionalProperties": true,
+            "type": "object",
             "title": "Sampling"
           },
           "criterion": {
@@ -4965,6 +5104,39 @@
           "reasoning_preview": {
             "type": "string",
             "title": "Reasoning Preview"
+          },
+          "reasoning_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Text"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt"
           },
           "is_rumil": {
             "type": "boolean",
@@ -5039,14 +5211,18 @@
           "orphaned": {
             "type": "boolean",
             "title": "Orphaned"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
           }
         },
         "type": "object",
         "required": [
           "judge_model",
-          "judge_model_base",
+          "judge_model_id",
+          "config_hash",
           "prompt_hash",
-          "judge_version",
           "sampling",
           "criterion",
           "source_a",
@@ -5057,6 +5233,9 @@
           "winner_source",
           "preference_label",
           "reasoning_preview",
+          "reasoning_text",
+          "prompt",
+          "system_prompt",
           "is_rumil",
           "rumil_trace_url",
           "rumil_question_id",
@@ -5064,10 +5243,11 @@
           "rumil_run_id",
           "rumil_cost_usd",
           "contamination_note",
-          "orphaned"
+          "orphaned",
+          "prefix_config_hash"
         ],
         "title": "Judgment",
-        "description": "One pairwise judgment row, shaped for the inspect view."
+        "description": "One pairwise judgment row, shaped for the inspect view.\n\nIncludes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``\nso the inspect UI can render them inline (matching the standalone\nself-vs-human HTML viewer). Older rows may not have ``system_prompt``\nor ``prompt`` populated; both are optional."
       },
       "JudgmentDetail": {
         "properties": {
@@ -5107,42 +5287,21 @@
             "type": "string",
             "title": "Judge Model"
           },
-          "judge_model_base": {
+          "judge_model_id": {
             "type": "string",
-            "title": "Judge Model Base"
+            "title": "Judge Model Id"
+          },
+          "config_hash": {
+            "type": "string",
+            "title": "Config Hash"
           },
           "prompt_hash": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Prompt Hash"
           },
-          "judge_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Judge Version"
-          },
           "sampling": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "additionalProperties": true,
+            "type": "object",
             "title": "Sampling"
           },
           "verdict": {
@@ -5320,9 +5479,9 @@
           "display_second",
           "criterion",
           "judge_model",
-          "judge_model_base",
+          "judge_model_id",
+          "config_hash",
           "prompt_hash",
-          "judge_version",
           "sampling",
           "verdict",
           "winner_source",
@@ -5353,6 +5512,10 @@
             "type": "string",
             "title": "Essay Id"
           },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
           "source_a": {
             "type": "string",
             "title": "Source A"
@@ -5368,6 +5531,14 @@
           "judge_model": {
             "type": "string",
             "title": "Judge Model"
+          },
+          "judge_model_id": {
+            "type": "string",
+            "title": "Judge Model Id"
+          },
+          "config_hash": {
+            "type": "string",
+            "title": "Config Hash"
           },
           "verdict": {
             "type": "string",
@@ -5420,10 +5591,13 @@
         "required": [
           "key",
           "essay_id",
+          "prefix_config_hash",
           "source_a",
           "source_b",
           "criterion",
           "judge_model",
+          "judge_model_id",
+          "config_hash",
           "verdict",
           "winner",
           "preference_label",
@@ -6913,6 +7087,69 @@
         ],
         "title": "ProposedSubquestion"
       },
+      "ProvenanceAxis": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "current_values": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Current Values"
+          },
+          "value_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Value Labels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "description",
+          "counts",
+          "current_values",
+          "value_labels"
+        ],
+        "title": "ProvenanceAxis",
+        "description": "One axis of the provenance summary.\n\n``description`` says what the value or hash is computed over, so\nthe operator knows what would change it. ``counts`` is value ->\nrow count over the surviving rows. ``current_values`` is the\nmainline set (UI flags anything not in this list as non-current).\n``value_labels`` turns opaque hashes into readable strings where\nderivable (e.g. a ``prefix_config_hash`` maps back to its\noriginating ``\"essay_id / variant_id\"``)."
+      },
+      "ProvenanceSummary": {
+        "properties": {
+          "axes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProvenanceAxis"
+            },
+            "type": "object",
+            "title": "Axes"
+          },
+          "axis_order": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Axis Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "axes",
+          "axis_order"
+        ],
+        "title": "ProvenanceSummary",
+        "description": "Per-axis breakdown of what slice the aggregate sits on top of.\n\n``axes`` is keyed by axis name; ``axis_order`` declares the panel\nrendering order (set by the backend's ``versus.mainline.axis_order``)\nso the FE doesn't maintain a parallel list. New axes appear\nautomatically in the right place."
+      },
       "QuestionDedupeEventOut": {
         "properties": {
           "ts": {
@@ -7316,6 +7553,9 @@
           "active_prefix_label": {
             "type": "string",
             "title": "Active Prefix Label"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
           }
         },
         "type": "object",
@@ -7341,7 +7581,8 @@
           "row_filter",
           "rows_total_before_filter",
           "prefix_variants",
-          "active_prefix_label"
+          "active_prefix_label",
+          "provenance"
         ],
         "title": "ResultsBundle"
       },
@@ -7736,6 +7977,43 @@
           "target": {
             "type": "integer",
             "title": "Target"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
+          "sampling_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling Hash"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
           }
         },
         "type": "object",
@@ -7744,10 +8022,14 @@
           "kind",
           "text",
           "words",
-          "target"
+          "target",
+          "prompt",
+          "prefix_config_hash",
+          "sampling_hash",
+          "model_id"
         ],
         "title": "Source",
-        "description": "One generated continuation (or the held-out human remainder)."
+        "description": "One generated continuation (or the held-out human remainder).\n\n``prompt`` is the verbatim completion prompt the model received,\nstored on the row (legacy rows and the human baseline have no\nprompt \u2014 the inspect UI falls back to the template in that case)."
       },
       "SourceMatrix": {
         "properties": {

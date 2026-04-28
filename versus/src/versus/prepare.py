@@ -7,7 +7,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from versus.essay import SCHEMA_VERSION, Block, Essay, blocks_to_markdown
+from versus.essay import Block, Essay, blocks_to_markdown, is_current_schema
 from versus.versions import COMPLETION_PROMPT_VERSION
 
 
@@ -187,7 +187,7 @@ def active_essay_ids(essays_dir, exclude_ids: Iterable[str]) -> set[str]:
         data = json.loads(path.read_text())
         if "source_id" not in data:
             continue
-        if data.get("schema_version") != SCHEMA_VERSION:
+        if not is_current_schema(data):
             continue
         if data["id"] in exclude:
             continue

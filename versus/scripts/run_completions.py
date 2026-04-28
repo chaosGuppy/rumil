@@ -23,8 +23,22 @@ VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
+# versus's pyproject can't depend on rumil (would be circular), so a
+# script run from versus/ cwd hits a deep ModuleNotFoundError when
+# transitively importing rumil. Catch that early and point at the fix.
+try:
+    import rumil  # noqa: F401
+except ModuleNotFoundError:
+    sys.stderr.write(
+        "[err] rumil isn't importable from this venv. Run from the rumil "
+        "repo root, not versus/:\n"
+        f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/run_completions.py ...\n"
+    )
+    raise SystemExit(1)
+
 from versus import complete, config, prepare, sources  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
+from versus import mainline as versus_mainline  # noqa: E402
 
 
 def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_essay.Essay | None:
@@ -41,7 +55,7 @@ def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_ess
     d = json.loads(p.read_text())
     if "source_id" not in d:
         return None
-    if d.get("schema_version") != versus_essay.SCHEMA_VERSION:
+    if not versus_essay.is_current_schema(d):
         return None
     return versus_essay.Essay(
         id=d["id"],

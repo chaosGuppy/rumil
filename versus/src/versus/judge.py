@@ -1,11 +1,10 @@
 """Pairwise blind judging of completions with deterministic ordering.
 
-OpenRouter and ``anthropic:<model>`` (text-mode) judges share the same
-prompt source-of-truth as ``rumil:text`` / ``rumil:ws`` / ``rumil:orch``
--- the versus-judge-shell + the essay-adapted dimension body live in
+The blind, ws, and orch judges share a single prompt source-of-truth:
+the versus-judge-shell + essay-adapted dimension body live under
 ``prompts/versus-*.md`` and are loaded via :mod:`rumil.versus_bridge`.
-This means cross-judge rows are directly comparable on the prompt axis;
-the only real difference is the model + transport.
+Cross-judge rows are directly comparable on the prompt axis; the
+only real difference is model + transport.
 """
 
 from __future__ import annotations
@@ -13,9 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import itertools
-import json
 import pathlib
-import re
 import threading
 import time
 from collections.abc import Sequence
@@ -33,31 +30,16 @@ from rumil.versus_prompts import (
     label_to_verdict,
 )
 from versus import anthropic_client, config, jsonl, openrouter
-from versus.versions import BLIND_JUDGE_VERSION
 
 Provider = Literal["anthropic", "openrouter"]
 
 Order = Literal["ab", "ba"]
 
 
-def compute_sampling_hash(sampling: dict | None) -> str | None:
-    """Short deterministic hash of sampling params for judge_model dedup.
-
-    Sorted-key JSON so key order doesn't fork the hash. Returns None when
-    ``sampling`` is None (agent-sdk paths like rumil:ws / rumil:orch have
-    no explicit sampling dict -- task 5 handles those with a tool-prompt
-    hash instead). 8 hex chars is enough to distinguish temperature /
-    max_tokens combos without cluttering the key.
-
-    Why this matters: per CLAUDE.local.md, "if some judgements were made
-    at 0 or at 0.2 temp, we want that to be in the data." Without folding
-    sampling into the dedup key, a ``--topup`` at a different temperature
-    silently no-ops against existing rows judged at the old temperature.
-    """
-    if sampling is None:
-        return None
-    blob = json.dumps(sampling, sort_keys=True, default=str)
-    return hashlib.sha256(blob.encode()).hexdigest()[:8]
+# Re-export from versus.judge_config — moved there to break the
+# lazy-import workaround that judge_config.py used to dodge a cycle.
+# Kept here so back-compat callers (analyze, mainline, etc.) don't break.
+from versus.judge_config import compute_sampling_hash  # noqa: E402, F401
 
 
 @dataclass
@@ -89,24 +71,26 @@ def judgment_key(
     source_a: str,
     source_b: str,
     criterion: str,
-    judge_model: str,
+    config_hash: str,
     order: Order,
 ) -> str:
     """Deterministic dedup key for one judgment row.
 
-    ``order`` records which orientation the judge saw the pair in:
-    ``"ab"`` when the alphabetically-lower source was shown as Continuation
-    A, ``"ba"`` when it was shown as Continuation B. Required (no default)
-    so callers are forced to thread it through — silently defaulting would
-    hide sites that don't compute the order.
+    Keyed on the structured ``config_hash`` (introduced by
+    :mod:`versus.judge_config`). Any input the judge saw — model,
+    sampling, prompt content, tool descriptions, pair surface, closer
+    config, code fingerprint, workspace contents — is folded into
+    ``config_hash``, so a change in any of them auto-forks the dedup
+    key without anyone having to edit a parser.
 
-    This is the capability slot for future mirror-mode aggregation (emit
-    both orders per pair and collapse them on the read side to cancel
-    position bias). Today the enumeration loops still emit one task per
-    pair, so every new row is either ``"ab"`` or ``"ba"`` but never both.
+    ``order`` records which orientation the judge saw the pair in:
+    ``"ab"`` when the alphabetically-lower source was shown as
+    Continuation A, ``"ba"`` when it was shown as Continuation B.
+    Required (no default) so callers are forced to thread it through.
+    Capability slot for future mirror-mode aggregation.
     """
     lo, hi = sorted([source_a, source_b])
-    return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{judge_model}|{order}"
+    return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{config_hash}|{order}"
 
 
 def order_from_display_first(source_a: str, source_b: str, display_first: str) -> Order:
@@ -135,62 +119,6 @@ def infer_order(row: dict) -> Order:
     if existing in ("ab", "ba"):
         return existing  # pyright: ignore[reportReturnType]
     return order_from_display_first(row["source_a"], row["source_b"], row["display_first"])
-
-
-_PHASH_TAG_RE = re.compile(r"^p[0-9a-f]{8}$")
-_VERSION_TAG_RE = re.compile(r"^v\d+$")
-_SHASH_TAG_RE = re.compile(r"^s[0-9a-f]{8}$")
-_THASH_TAG_RE = re.compile(r"^t[0-9a-f]{8}$")
-_QHASH_TAG_RE = re.compile(r"^q[0-9a-f]{8}$")
-
-
-def _peel_ts_tag(parts: list[str]) -> list[str]:
-    while parts and (
-        _SHASH_TAG_RE.match(parts[-1])
-        or _THASH_TAG_RE.match(parts[-1])
-        or _QHASH_TAG_RE.match(parts[-1])
-    ):
-        parts = parts[:-1]
-    return parts
-
-
-def parse_judge_model_suffix(judge_model: str) -> tuple[str, str | None, str | None]:
-    """Split a judge_model into ``(base, phash, version)``.
-
-    ``phash`` and ``version`` are the ``p<sha8>`` and ``v<N>`` tags if
-    present, else None. Trailing ``:t<sha8>`` (tool-prompt hash,
-    ws/orch), ``:s<sha8>`` (sampling-params hash, text variants), and
-    ``:q<sha8>`` (pair-surface hash, ws/orch) are absorbed silently
-    into ``base`` stripping so the rest of the shape stays the same --
-    the frontend doesn't render those hashes separately (they exist in
-    the dedup key so topups at different sampling params / tool-prompt
-    / page-surface edits don't silently no-op; the human-readable
-    sampling dict lives on the judgment row, and the tool-prompt text
-    lives in-repo). ``:t``, ``:s``, and ``:q`` are peeled symmetrically
-    so any trailing ordering is tolerated.
-    """
-    parts = judge_model.split(":")
-    parts = _peel_ts_tag(parts)
-    version = None
-    if parts and _VERSION_TAG_RE.match(parts[-1]):
-        version = parts[-1]
-        parts = parts[:-1]
-    phash = None
-    if parts and _PHASH_TAG_RE.match(parts[-1]):
-        phash = parts[-1]
-        parts = parts[:-1]
-    return ":".join(parts), phash, version
-
-
-def base_judge_model(judge_model: str) -> str:
-    """Strip ``:p<hash>[:v<N>][:t<hash>][:s<hash>][:q<hash>]`` version suffix to recover the raw model id.
-
-    Use wherever downstream code needs to match the judge_model against a
-    source_id (e.g. ``paraphrase:<model>``) or render a column header that
-    groups across prompt versions. Delegates to
-    :func:`parse_judge_model_suffix` so the peel logic is shared.
-    """
-    return parse_judge_model_suffix(judge_model)[0]
 
 
 def compute_judge_prompt_hash(dimension: str, *, with_tools: bool = False) -> str:
@@ -234,48 +162,65 @@ def _sampling_for(provider: Provider, canonical_model: str, max_tokens: int) -> 
 
 
 def compose_blind_judge_model(canonical_model: str, dimension: str, sampling: dict) -> str:
-    """Build a blind judge_model dedup key.
-
-    Shape: ``<canonical_model>:<dimension>:p<phash>:v<BLIND_JUDGE_VERSION>:s<shash>``.
-    Single shape across providers — model id alone disambiguates route at
-    parse time. ``rumil:ws:`` / ``rumil:orch:`` keep their own prefixes.
+    """Display ``judge_model`` for a blind judgment. Thin wrapper around
+    :func:`build_blind_judge_config` for callers that only need the
+    string; new code paths should call ``build_blind_judge_config``
+    directly to get the structured config + config_hash.
     """
-    ph = compute_judge_prompt_hash(dimension, with_tools=False)
-    sh = compute_sampling_hash(sampling)
-    suffix = f"p{ph}:v{BLIND_JUDGE_VERSION}"
-    if sh is not None:
-        suffix = f"{suffix}:s{sh}"
-    return f"{canonical_model}:{dimension}:{suffix}"
+    _, _, judge_model = build_blind_judge_config(canonical_model, dimension, sampling)
+    return judge_model
 
 
-def judge_prompt_is_current(judge_model: str, criterion: str) -> bool:
-    """Return False if the row's ``p<hash>:v<N>`` suffix is out of date.
+def build_blind_judge_config(
+    canonical_model: str, dimension: str, sampling: dict
+) -> tuple[dict, str, str]:
+    """Build ``(config, config_hash, judge_model)`` for one blind judgment.
 
-    Catches the staleness class that ``prefix_config_hash`` doesn't: when
-    ``versus-judge-shell.md`` / ``versus-<dim>.md`` get edited, or
-    ``BLIND_JUDGE_VERSION`` gets bumped, previously cached judgment rows
-    point at an old prompt. Status.py uses this to surface them in the
-    STALE banner.
-
-    All non-legacy keys gate on ``BLIND_JUDGE_VERSION``. Tools-mode keys
-    (``rumil:ws:*``, ``rumil:orch:*``) hash the tools-shell composed output;
-    blind keys (everything else) hash the blind-shell composed output.
-    Legacy ``anthropic:<model>`` and bare-OR ``<id>:p..:v..`` keys (pinned
-    to the retired ``JUDGE_PROMPT_VERSION``) read as stale by construction
-    — their version tag won't match.
+    Single compose site for the blind path; delegates to
+    :func:`versus.judge_config.make_judge_config` so the structured
+    config dict and the legacy-shape ``judge_model`` come from one source
+    of truth. Callers persist all three on the row.
     """
-    _, phash, version = parse_judge_model_suffix(judge_model)
-    if phash is None or version is None:
-        # Legacy pre-hash judge_model — predates the dedup-version regime.
-        return False
-    is_tools = judge_model.startswith(("rumil:ws:", "rumil:orch:"))
+    from versus.judge_config import make_judge_config
+
+    return make_judge_config(
+        "blind",
+        model=canonical_model,
+        dimension=dimension,
+        sampling=sampling,
+        prompt_hash=compute_judge_prompt_hash(dimension, with_tools=False),
+    )
+
+
+def judge_config_is_current(row: dict, criterion: str) -> bool:
+    """Return False if any code-side input to the judge has drifted.
+
+    Status.py uses this to surface stale rows in the STALE banner.
+    Reads from ``row["config"]`` directly — every row carries a config
+    dict post-backfill.
+
+    Checks the prompt shell hash for all variants, plus the
+    ``code_fingerprint`` for ws/orch — that fingerprint is what
+    replaced the manual ``BLIND_JUDGE_VERSION`` gate for catching
+    semantic non-prompt edits (parser changes, SDK migrations, etc.).
+    Doesn't check ``workspace_state_hash``: that's a per-row baseline
+    watermark, not a staleness signal — every row would flap.
+    """
+    cfg = row["config"]
+    is_tools = cfg["variant"] in ("ws", "orch")
     try:
-        expected_ph = f"p{compute_judge_prompt_hash(criterion, with_tools=is_tools)}"
+        expected_ph = compute_judge_prompt_hash(criterion, with_tools=is_tools)
     except ValueError:
-        # Dimension prompt was removed; row can't match current set.
         return False
-    expected_v = f"v{BLIND_JUDGE_VERSION}"
-    return phash == expected_ph and version == expected_v
+    if cfg["prompts"]["shell_hash"] != expected_ph:
+        return False
+    if is_tools:
+        # circular: rumil.versus_bridge -> versus.judge_config -> versus.judge
+        from versus.judge_config import compute_judge_code_fingerprint
+
+        if cfg.get("code_fingerprint") != compute_judge_code_fingerprint():
+            return False
+    return True
 
 
 def parse_verdict_from_label(text: str) -> tuple[str | None, str | None]:
@@ -296,12 +241,12 @@ def render_judge_prompt(
     source_a_text: str,
     source_b_text: str,
 ) -> tuple[str, str]:
-    """Render the (system, user) prompt pair for a text-mode judge.
+    """Render the (system, user) prompt pair for a blind judge.
 
-    Uses ``versus-judge-shell.md`` + the essay-adapted dimension body as
-    the system prompt -- identical to what ``rumil:text`` (and the agent
-    variants) see, so cross-judge comparisons are apples-to-apples on the
-    prompt axis. The user message inlines the essay prefix and both
+    Uses ``versus-judge-shell.md`` + the essay-adapted dimension body
+    as the system prompt — identical to what the ws/orch agents see,
+    so cross-judge comparisons are apples-to-apples on the prompt
+    axis. The user message inlines the essay prefix and both
     continuations; no source ids are disclosed.
     """
     body = get_rumil_dimension_body(dimension)
@@ -432,6 +377,11 @@ class _BlindTask:
     key: str
     order: Order
     sampling: dict
+    # Structured config + its sha256 — written onto the row alongside
+    # ``judge_model`` so downstream provenance reads from one place
+    # instead of regex-parsing the flat string.
+    config: dict
+    config_hash: str
 
 
 def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
@@ -489,6 +439,8 @@ def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
         "raw_response": resp,
         "sampling": task.sampling,
         "provider": task.provider,
+        "config": task.config,
+        "config_hash": task.config_hash,
     }
 
 
@@ -507,11 +459,12 @@ def run_blind(
 ) -> None:
     """Run pairwise blind judgments across a mixed list of models.
 
-    Each model is routed via :func:`route_judge_model`: claude-* go direct
-    to Anthropic, others via OpenRouter. Same prompt construction across
-    all (the blind shell — no tool advertisements, pair inlined in user
-    message). Single key shape per row:
-    ``<canonical_model>:<dimension>:p<phash>:v<BLIND_JUDGE_VERSION>:s<shash>``.
+    Each model is routed via :func:`route_judge_model`: claude-* go
+    direct to Anthropic, others via OpenRouter. Same prompt
+    construction across all (the blind shell — no tool advertisements,
+    pair inlined in user message). Each row's display ``judge_model``
+    has shape ``blind:<model>:<dimension>:c<config_hash[:8]>``;
+    dedup is keyed on the row's ``config_hash``.
     """
     from versus import prepare
 
@@ -558,9 +511,11 @@ def run_blind(
                 for base_model in models:
                     provider, canonical_model = route_judge_model(base_model)
                     sampling = _sampling_for(provider, canonical_model, cfg.judging.max_tokens)
-                    judge_model = compose_blind_judge_model(canonical_model, dimension, sampling)
+                    config_dict, config_hash, judge_model = build_blind_judge_config(
+                        canonical_model, dimension, sampling
+                    )
                     k = judgment_key(
-                        essay_id, prefix_hash, a_id, b_id, dimension, judge_model, order
+                        essay_id, prefix_hash, a_id, b_id, dimension, config_hash, order
                     )
                     if k in existing:
                         continue
@@ -588,6 +543,8 @@ def run_blind(
                             key=k,
                             order=order,
                             sampling=sampling,
+                            config=config_dict,
+                            config_hash=config_hash,
                         )
                     )
                     existing.add(k)

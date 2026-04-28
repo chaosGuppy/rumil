@@ -37,7 +37,14 @@ def extract_continuation(text: str) -> str:
 
 
 def sampling_hash(model_cfg: config.ModelCfg) -> str:
-    blob = json.dumps(model_cfg.model_dump(exclude={"id"}), sort_keys=True)
+    """Hash the sampling-relevant fields of a model config.
+
+    Excludes ``id`` (an identifier, not a sampling param) and
+    ``paraphrase`` (a routing flag — flipping it shouldn't fork
+    completion dedup keys, since the completion task itself is
+    independent of whether paraphrases get produced for the model).
+    """
+    blob = json.dumps(model_cfg.model_dump(exclude={"id", "paraphrase"}), sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()[:10]
 
 

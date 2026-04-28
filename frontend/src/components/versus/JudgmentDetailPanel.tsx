@@ -120,7 +120,9 @@ function DetailContent({
         <div className="detail-section-label">Meta</div>
         <dl className="detail-meta-grid">
           <dt>judge</dt>
-          <dd>{data.judge_model}</dd>
+          <dd title={data.judge_model}>{data.judge_model_id}</dd>
+          <dt>config_hash</dt>
+          <dd className="versus-mono" style={{ fontSize: 11 }}>{data.config_hash}</dd>
           <dt>criterion</dt>
           <dd>{data.criterion}</dd>
           <dt>essay</dt>

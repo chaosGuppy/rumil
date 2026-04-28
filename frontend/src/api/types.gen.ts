@@ -871,6 +871,10 @@ export type EssayDetail = {
      */
     markdown: string;
     /**
+     * Schema Version
+     */
+    schema_version: number;
+    /**
      * Prefix Config Hash
      */
     prefix_config_hash: string;
@@ -883,9 +887,17 @@ export type EssayDetail = {
      */
     completion_prompt: string;
     /**
-     * Judge Prompt Template
+     * Judge System Prompt Template
      */
-    judge_prompt_template: string;
+    judge_system_prompt_template: string;
+    /**
+     * Judge User Prompt Template
+     */
+    judge_user_prompt_template: string;
+    /**
+     * Judge Prompt Hash
+     */
+    judge_prompt_hash: string;
     /**
      * Paraphrase Prompt Template
      */
@@ -982,6 +994,10 @@ export type EssayMeta = {
      */
     id: string;
     /**
+     * Source Id
+     */
+    source_id: string;
+    /**
      * Title
      */
     title: string;
@@ -997,6 +1013,10 @@ export type EssayMeta = {
      * Url
      */
     url: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
 };
 
 /**
@@ -1353,6 +1373,11 @@ export type JudgeLabel = {
  * Judgment
  *
  * One pairwise judgment row, shaped for the inspect view.
+ *
+ * Includes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``
+ * so the inspect UI can render them inline (matching the standalone
+ * self-vs-human HTML viewer). Older rows may not have ``system_prompt``
+ * or ``prompt`` populated; both are optional.
  */
 export type Judgment = {
     /**
@@ -1360,23 +1385,23 @@ export type Judgment = {
      */
     judge_model: string;
     /**
-     * Judge Model Base
+     * Judge Model Id
      */
-    judge_model_base: string;
+    judge_model_id: string;
+    /**
+     * Config Hash
+     */
+    config_hash: string;
     /**
      * Prompt Hash
      */
-    prompt_hash: string | null;
-    /**
-     * Judge Version
-     */
-    judge_version: string | null;
+    prompt_hash: string;
     /**
      * Sampling
      */
     sampling: {
         [key: string]: unknown;
-    } | null;
+    };
     /**
      * Criterion
      */
@@ -1414,6 +1439,18 @@ export type Judgment = {
      */
     reasoning_preview: string;
     /**
+     * Reasoning Text
+     */
+    reasoning_text: string | null;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * System Prompt
+     */
+    system_prompt: string | null;
+    /**
      * Is Rumil
      */
     is_rumil: boolean;
@@ -1445,6 +1482,10 @@ export type Judgment = {
      * Orphaned
      */
     orphaned: boolean;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
 };
 
 /**
@@ -1495,23 +1536,23 @@ export type JudgmentDetail = {
      */
     judge_model: string;
     /**
-     * Judge Model Base
+     * Judge Model Id
      */
-    judge_model_base: string;
+    judge_model_id: string;
+    /**
+     * Config Hash
+     */
+    config_hash: string;
     /**
      * Prompt Hash
      */
-    prompt_hash: string | null;
-    /**
-     * Judge Version
-     */
-    judge_version: string | null;
+    prompt_hash: string;
     /**
      * Sampling
      */
     sampling: {
         [key: string]: unknown;
-    } | null;
+    };
     /**
      * Verdict
      */
@@ -1591,6 +1632,10 @@ export type JudgmentRow = {
      */
     essay_id: string;
     /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
      * Source A
      */
     source_a: string;
@@ -1606,6 +1651,14 @@ export type JudgmentRow = {
      * Judge Model
      */
     judge_model: string;
+    /**
+     * Judge Model Id
+     */
+    judge_model_id: string;
+    /**
+     * Config Hash
+     */
+    config_hash: string;
     /**
      * Verdict
      */
@@ -2470,6 +2523,65 @@ export type ProposedSubquestion = {
 };
 
 /**
+ * ProvenanceAxis
+ *
+ * One axis of the provenance summary.
+ *
+ * ``description`` says what the value or hash is computed over, so
+ * the operator knows what would change it. ``counts`` is value ->
+ * row count over the surviving rows. ``current_values`` is the
+ * mainline set (UI flags anything not in this list as non-current).
+ * ``value_labels`` turns opaque hashes into readable strings where
+ * derivable (e.g. a ``prefix_config_hash`` maps back to its
+ * originating ``"essay_id / variant_id"``).
+ */
+export type ProvenanceAxis = {
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Counts
+     */
+    counts: {
+        [key: string]: number;
+    };
+    /**
+     * Current Values
+     */
+    current_values: Array<string>;
+    /**
+     * Value Labels
+     */
+    value_labels: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * ProvenanceSummary
+ *
+ * Per-axis breakdown of what slice the aggregate sits on top of.
+ *
+ * ``axes`` is keyed by axis name; ``axis_order`` declares the panel
+ * rendering order (set by the backend's ``versus.mainline.axis_order``)
+ * so the FE doesn't maintain a parallel list. New axes appear
+ * automatically in the right place.
+ */
+export type ProvenanceSummary = {
+    /**
+     * Axes
+     */
+    axes: {
+        [key: string]: ProvenanceAxis;
+    };
+    /**
+     * Axis Order
+     */
+    axis_order: Array<string>;
+};
+
+/**
  * QuestionDedupeEventOut
  */
 export type QuestionDedupeEventOut = {
@@ -2743,6 +2855,7 @@ export type ResultsBundle = {
      * Active Prefix Label
      */
     active_prefix_label: string;
+    provenance: ProvenanceSummary;
 };
 
 /**
@@ -2964,6 +3077,10 @@ export type SmallNCellOut = {
  * Source
  *
  * One generated continuation (or the held-out human remainder).
+ *
+ * ``prompt`` is the verbatim completion prompt the model received,
+ * stored on the row (legacy rows and the human baseline have no
+ * prompt — the inspect UI falls back to the template in that case).
  */
 export type Source = {
     /**
@@ -2986,6 +3103,22 @@ export type Source = {
      * Target
      */
     target: number;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Sampling Hash
+     */
+    sampling_hash: string | null;
+    /**
+     * Model Id
+     */
+    model_id: string | null;
 };
 
 /**
@@ -3511,10 +3644,30 @@ export type ListJobsApiJobsGetResponse = ListJobsApiJobsGetResponses[keyof ListJ
 
 export type ListEssaysApiVersusEssaysGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Include Legacy
+         */
+        include_legacy?: boolean;
+    };
     url: '/api/versus/essays';
 };
+
+export type ListEssaysApiVersusEssaysGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEssaysApiVersusEssaysGetError = ListEssaysApiVersusEssaysGetErrors[keyof ListEssaysApiVersusEssaysGetErrors];
 
 export type ListEssaysApiVersusEssaysGetResponses = {
     /**
@@ -3529,6 +3682,12 @@ export type ListEssaysApiVersusEssaysGetResponse = ListEssaysApiVersusEssaysGetR
 
 export type GetEssayApiVersusEssaysEssayIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Essay Id
@@ -3564,6 +3723,12 @@ export type GetEssayApiVersusEssaysEssayIdGetResponse = GetEssayApiVersusEssaysE
 
 export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Essay Id
@@ -3601,6 +3766,12 @@ export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponse = GetEssaySo
 
 export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Essay Id
@@ -3636,6 +3807,12 @@ export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponse = GetEss
 
 export type GetResultsApiVersusResultsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -3694,6 +3871,12 @@ export type GetResultsApiVersusResultsGetResponse = GetResultsApiVersusResultsGe
 
 export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query: {
         /**
@@ -3724,6 +3907,12 @@ export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponse = GetJudgmentByKe
 
 export type GetDiagnosticsApiVersusDiagnosticsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**

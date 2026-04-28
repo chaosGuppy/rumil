@@ -435,13 +435,13 @@ export default async function VersusInspectPage({
               <div className="inspect-judgments">
                 {judgmentOrder.map((k) => {
                   const sample = judgmentRows.get(k)!.values().next().value as Judgment;
-                  const isFirst = firstKeyByJudge.get((sample.config_hash ?? sample.judge_model)) === k;
+                  const isFirst = firstKeyByJudge.get(sample.config_hash) === k;
                   return (
                     <JudgmentRow
                       key={k}
                       perVariant={judgmentRows.get(k)!}
                       variantIds={variantIds}
-                      anchorId={isFirst ? anchorId("judge", (sample.config_hash ?? sample.judge_model)) : undefined}
+                      anchorId={isFirst ? anchorId("judge", sample.config_hash) : undefined}
                     />
                   );
                 })}
@@ -1143,7 +1143,12 @@ function JudgmentRow({
       <header className="inspect-judgment-rowhead">
         <div className="inspect-judgment-id">
           {sample.is_rumil && <span className="versus-pill rumil">rumil</span>}
-          <strong className="versus-mono">{sample.judge_model}</strong>
+          <strong className="versus-mono" title={sample.judge_model}>
+            {sample.judge_model_id}
+          </strong>
+          <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
+            c{sample.config_hash.slice(0, 8)}
+          </span>
           {sample.prompt_hash && (
             <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
               {sample.prompt_hash}

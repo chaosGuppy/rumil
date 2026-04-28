@@ -53,7 +53,7 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
                 <td className="versus-mono">{r.source_a}</td>
                 <td className="versus-mono">{r.source_b}</td>
                 <td>{r.criterion}</td>
-                <td className="versus-mono">{r.judge_model}</td>
+                <td className="versus-mono" title={r.judge_model}>{r.judge_model_id}</td>
                 <td>{r.verdict}</td>
                 <td className="versus-mono">{r.winner}</td>
                 <td style={{ fontSize: 11 }}>{r.preference_label ?? ""}</td>

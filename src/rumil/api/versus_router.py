@@ -426,6 +426,8 @@ class JudgmentRow(pydantic.BaseModel):
     source_b: str
     criterion: str
     judge_model: str
+    judge_model_id: str
+    config_hash: str
     verdict: str
     winner: str
     preference_label: str | None
@@ -1082,6 +1084,8 @@ def get_results(
                 source_b=row["source_b"],
                 criterion=row["criterion"],
                 judge_model=row["judge_model"],
+                judge_model_id=row["config"]["model"],
+                config_hash=row["config_hash"],
                 verdict=row["verdict"],
                 winner=row.get("winner_source") or "-",
                 preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),

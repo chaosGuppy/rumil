@@ -1652,6 +1652,14 @@ export type JudgmentRow = {
      */
     judge_model: string;
     /**
+     * Judge Model Id
+     */
+    judge_model_id: string;
+    /**
+     * Config Hash
+     */
+    config_hash: string;
+    /**
      * Verdict
      */
     verdict: string;

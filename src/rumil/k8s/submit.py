@@ -169,6 +169,8 @@ def _build_container_command(spec: OrchestratorRunRequest, *, run_id: str) -> Se
         args.append("--summary")
     if spec.auto_self_improve:
         args.append("--self-improve")
+    if spec.improvement_instructions and spec.auto_self_improve:
+        args += ["--improvement-instructions", spec.improvement_instructions]
     if spec.available_moves:
         args += ["--available-moves", spec.available_moves]
     if spec.available_calls:

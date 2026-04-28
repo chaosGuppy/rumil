@@ -562,8 +562,18 @@ async def _run_agent(
     return final_text
 
 
-async def run_self_improvement(question_id: str, db: DB) -> str:
-    """Run a self-improvement analysis for a question. Returns markdown text."""
+async def run_self_improvement(
+    question_id: str,
+    db: DB,
+    *,
+    instructions: str | None = None,
+) -> str:
+    """Run a self-improvement analysis for a question. Returns markdown text.
+
+    `instructions` is an optional free-text steer from the user — when set,
+    it's interpolated into the user message so the agent focuses its
+    analysis on what the user cares about.
+    """
     resolved = await db.resolve_page_id(question_id)
     if not resolved:
         raise ValueError(f"Question '{question_id}' not found")
@@ -584,9 +594,21 @@ async def run_self_improvement(question_id: str, db: DB) -> str:
 
     tools = _build_tools(resolved, subtree, calls, db)
     system_prompt = _load_prompt("self_improve.md")
+    instructions_block = ""
+    trimmed = (instructions or "").strip()
+    if trimmed:
+        instructions_block = (
+            "## Steering from the user\n\n"
+            "The user has asked you to focus this analysis on the following. "
+            "Treat it as a strong steer on what to dig into and what kinds of "
+            "improvements to surface — but stay honest: if a focus area turns "
+            "up nothing real, say so rather than padding.\n\n"
+            f"{trimmed}\n\n"
+        )
     user_message = (
         f"The investigation to analyse is rooted at question "
         f"[{resolved[:8]}]: {question.headline}\n\n"
+        f"{instructions_block}"
         "Start by calling get_investigation_overview. Then drill in "
         "wherever the shape suggests something worth a closer look. "
         "When you're ready, write the full self-improvement analysis "

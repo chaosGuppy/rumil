@@ -548,6 +548,52 @@ async def test_run_self_improvement_rejects_non_question_page(tmp_db):
         await run_self_improvement(claim.id, tmp_db)
 
 
+async def test_run_self_improvement_omits_steering_block_when_no_instructions(
+    monkeypatch, tmp_db, question_page
+):
+    captured: dict[str, str] = {}
+
+    async def fake_run_agent(system_prompt, user_message, tools):
+        captured["user_message"] = user_message
+        return ""
+
+    monkeypatch.setattr(si, "_run_agent", fake_run_agent)
+    await run_self_improvement(question_page.id, tmp_db)
+    assert "Steering from the user" not in captured["user_message"]
+
+
+async def test_run_self_improvement_interpolates_instructions(monkeypatch, tmp_db, question_page):
+    captured: dict[str, str] = {}
+
+    async def fake_run_agent(system_prompt, user_message, tools):
+        captured["user_message"] = user_message
+        return ""
+
+    monkeypatch.setattr(si, "_run_agent", fake_run_agent)
+    await run_self_improvement(
+        question_page.id,
+        tmp_db,
+        instructions="focus on prioritization quality",
+    )
+    msg = captured["user_message"]
+    assert "Steering from the user" in msg
+    assert "focus on prioritization quality" in msg
+
+
+async def test_run_self_improvement_treats_blank_instructions_as_none(
+    monkeypatch, tmp_db, question_page
+):
+    captured: dict[str, str] = {}
+
+    async def fake_run_agent(system_prompt, user_message, tools):
+        captured["user_message"] = user_message
+        return ""
+
+    monkeypatch.setattr(si, "_run_agent", fake_run_agent)
+    await run_self_improvement(question_page.id, tmp_db, instructions="   \n  ")
+    assert "Steering from the user" not in captured["user_message"]
+
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 

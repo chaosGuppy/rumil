@@ -571,7 +571,12 @@ async def cmd_summary(
     return summary_text
 
 
-async def cmd_self_improve(question_id: str, db: DB) -> None:
+async def cmd_self_improve(
+    question_id: str,
+    db: DB,
+    *,
+    instructions: str | None = None,
+) -> None:
     question = await db.get_page(question_id)
     if not question:
         resolved = await db.resolve_page_id(question_id)
@@ -588,8 +593,10 @@ async def cmd_self_improve(question_id: str, db: DB) -> None:
     log.info(
         "(Uses one or more LLM calls with read-only tools, does not count against research budget)"
     )
+    if instructions and instructions.strip():
+        print(f"Steering instructions: {instructions.strip()[:200]}\n")
 
-    text = await run_self_improvement(question.id, db)
+    text = await run_self_improvement(question.id, db, instructions=instructions)
     if not text.strip():
         log.info("No analysis produced.")
         return
@@ -1136,6 +1143,19 @@ async def async_main():
         ),
     )
     parser.add_argument(
+        "--improvement-instructions",
+        dest="improvement_instructions",
+        metavar="TEXT",
+        default=None,
+        help=(
+            "Optional free-text steer for --self-improve. The string is "
+            "interpolated into the self-improvement prompt so the agent "
+            "focuses its analysis on what you care about (e.g. "
+            "'concentrate on prioritization quality and ignore prompt "
+            "wording'). Has no effect without --self-improve."
+        ),
+    )
+    parser.add_argument(
         "--max-depth",
         type=int,
         default=4,
@@ -1629,7 +1649,11 @@ async def async_main():
             budget_per_memo=args.budget_per_memo,
         )
     elif args.self_improve_id and args.self_improve_id != "__auto__":
-        await cmd_self_improve(args.self_improve_id, db)
+        await cmd_self_improve(
+            args.self_improve_id,
+            db,
+            instructions=args.improvement_instructions,
+        )
     elif args.continue_id:
         await cmd_continue(
             args.continue_id,
@@ -1676,7 +1700,11 @@ async def async_main():
             )
             log.info("Obsidian vault exported to: %s", out)
         if do_self_improve:
-            await cmd_self_improve(question_id, db)
+            await cmd_self_improve(
+                question_id,
+                db,
+                instructions=args.improvement_instructions,
+            )
     else:
         parser.print_help()
 

@@ -451,6 +451,11 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             )
             created_page_ids.extend(phase2b_created)
 
+        messages, propose_created = await self._phase_propose_new(
+            infra, system_prompt, sections, messages
+        )
+        created_page_ids.extend(propose_created)
+
         messages = await self._phase_enforce_caps(infra, system_prompt, sections, messages)
 
         messages = await self._phase_prune(infra, system_prompt, sections, messages)
@@ -783,6 +788,85 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             f"superseded {supersede_count}, adjusted {adjust_count}, "
             f"proposed {len(created_page_ids)} new item(s)"
         )
+        return messages, created_page_ids
+
+    async def _phase_propose_new(
+        self,
+        infra: CallInfra,
+        system_prompt: str,
+        sections: dict[str, str],
+        messages: list[dict],
+    ) -> tuple[list[dict], list[str]]:
+        items = await infra.db.get_view_items(self._view_id)
+
+        items_by_section: dict[str, list[tuple[Page, PageLink]]] = {}
+        for page, link in items:
+            items_by_section.setdefault(link.section or "other", []).append((page, link))
+
+        section_blocks: list[str] = []
+        for sec in DEFAULT_VIEW_SECTIONS:
+            bucket = items_by_section.get(sec, [])
+            header = f"### {sec} ({len(bucket)} item(s))"
+            if not bucket:
+                section_blocks.append(f"{header}\n(none)")
+                continue
+            bucket.sort(key=lambda pl: -(pl[1].importance or 0))
+            lines = [_render_item_compact(p, l) for p, l in bucket]
+            section_blocks.append(header + "\n" + "\n".join(lines))
+
+        state_text = "## Current View Items\n\n" + "\n\n".join(section_blocks)
+
+        user_content = (
+            sections.get("propose_new", "")
+            + "\n\n"
+            + state_text
+            + "\n\nPropose new items now. Return an empty list if the View "
+            "already captures the important picture."
+        )
+
+        propose_response_model = pydantic.create_model(
+            "ProposeNewBatch",
+            proposed_items=(
+                list[ProposedItem],
+                Field(
+                    default_factory=list,
+                    description="New items to add to the View (zero or more)",
+                ),
+            ),
+        )
+
+        messages.append({"role": "user", "content": user_content})
+
+        result = await structured_call(
+            system_prompt,
+            messages=list(messages),
+            response_model=propose_response_model,
+            cache=True,
+            metadata=LLMExchangeMetadata(
+                call_id=infra.call.id,
+                phase="propose_new",
+            ),
+            db=infra.db,
+        )
+
+        messages.append({"role": "assistant", "content": result.response_text or ""})
+
+        created_page_ids: list[str] = []
+        if result.parsed:
+            parsed_dict = result.parsed.model_dump()
+            proposals = [ProposedItem(**raw) for raw in parsed_dict.get("proposed_items", [])]
+            for proposal in proposals:
+                new_id = await self._create_proposed_item(infra, proposal)
+                if new_id:
+                    created_page_ids.append(new_id)
+
+        await infra.trace.record(
+            UpdateViewPhaseCompletedEvent(
+                phase="propose_new",
+                items_created=len(created_page_ids),
+            )
+        )
+        self._phase_lines.append(f"propose_new: created {len(created_page_ids)} new item(s)")
         return messages, created_page_ids
 
     async def _phase_enforce_caps(

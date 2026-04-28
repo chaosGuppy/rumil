@@ -36,12 +36,6 @@ Provider = Literal["anthropic", "openrouter"]
 Order = Literal["ab", "ba"]
 
 
-# Re-export from versus.judge_config — moved there to break the
-# lazy-import workaround that judge_config.py used to dodge a cycle.
-# Kept here so back-compat callers (analyze, mainline, etc.) don't break.
-from versus.judge_config import compute_sampling_hash  # noqa: E402, F401
-
-
 @dataclass
 class Source:
     source_id: str  # "human" or the model id
@@ -159,16 +153,6 @@ def _sampling_for(provider: Provider, canonical_model: str, max_tokens: int) -> 
         use_temp = None if canonical_model.startswith("claude-opus-4-7") else 0.0
         return {"temperature": use_temp, "max_tokens": max_tokens}
     return {"temperature": JUDGE_TEMPERATURE, "max_tokens": max_tokens}
-
-
-def compose_blind_judge_model(canonical_model: str, dimension: str, sampling: dict) -> str:
-    """Display ``judge_model`` for a blind judgment. Thin wrapper around
-    :func:`build_blind_judge_config` for callers that only need the
-    string; new code paths should call ``build_blind_judge_config``
-    directly to get the structured config + config_hash.
-    """
-    _, _, judge_model = build_blind_judge_config(canonical_model, dimension, sampling)
-    return judge_model
 
 
 def build_blind_judge_config(

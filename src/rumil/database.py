@@ -82,6 +82,17 @@ _DB_RETRYABLE_EXCEPTIONS = (
 )
 
 
+_PG_QUERY_CANCELED_SQLSTATE = "57014"
+
+
+def _is_statement_timeout(exc: BaseException) -> bool:
+    """Postgres SQLSTATE 57014 (query_canceled) — fires when a query exceeds
+    the role's statement_timeout. Load-induced under heavy concurrency; worth
+    retrying a few times, but with a tighter cap than other DB errors so we
+    don't mask a genuinely-slow query."""
+    return isinstance(exc, APIError) and exc.code == _PG_QUERY_CANCELED_SQLSTATE
+
+
 def _is_retryable_api_error(exc: BaseException) -> bool:
     # Gateway/upstream failures (e.g. Cloudflare 502, Supabase 503/504) come back
     # as APIError because postgrest can't parse the HTML error page as JSON.
@@ -99,17 +110,33 @@ def _is_retryable_api_error(exc: BaseException) -> bool:
 
 
 def _should_retry_db_exception(exc: BaseException) -> bool:
-    return isinstance(exc, _DB_RETRYABLE_EXCEPTIONS) or _is_retryable_api_error(exc)
+    return (
+        isinstance(exc, _DB_RETRYABLE_EXCEPTIONS)
+        or _is_retryable_api_error(exc)
+        or _is_statement_timeout(exc)
+    )
 
 
 def _stop_after_db_retries(retry_state: RetryCallState) -> bool:
-    return retry_state.attempt_number >= get_settings().max_db_retries
+    settings = get_settings()
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    cap = (
+        settings.max_db_statement_timeout_retries
+        if exc is not None and _is_statement_timeout(exc)
+        else settings.max_db_retries
+    )
+    return retry_state.attempt_number >= cap
 
 
 def _log_db_retry(retry_state: RetryCallState) -> None:
+    settings = get_settings()
     exc = retry_state.outcome.exception() if retry_state.outcome else None
     wait = retry_state.next_action.sleep if retry_state.next_action else 0
-    max_retries = get_settings().max_db_retries
+    max_retries = (
+        settings.max_db_statement_timeout_retries
+        if exc is not None and _is_statement_timeout(exc)
+        else settings.max_db_retries
+    )
     log.warning(
         "DB request failed (%s), retrying in %gs (attempt %d/%d)",
         type(exc).__name__ if exc else "unknown",

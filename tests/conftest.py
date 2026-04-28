@@ -139,8 +139,11 @@ async def tmp_db():
     project = await db.get_or_create_project(f"test-{run_id[:8]}")
     db.project_id = project.id
     await db.init_budget(100)
-    yield db
-    await db.delete_run_data(delete_project=True)
+    try:
+        yield db
+    finally:
+        await db.delete_run_data(delete_project=True)
+        await db.close()
 
 
 @pytest_asyncio.fixture

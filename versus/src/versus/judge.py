@@ -192,24 +192,35 @@ def build_blind_judge_config(
     )
 
 
-def judge_prompt_is_current(row: dict, criterion: str) -> bool:
-    """Return False if the row's prompt hash is out of date.
+def judge_config_is_current(row: dict, criterion: str) -> bool:
+    """Return False if any code-side input to the judge has drifted.
 
     Status.py uses this to surface stale rows in the STALE banner.
-    Reads ``row["config"]["prompts"]["shell_hash"]`` directly —
-    every row carries a config dict post-backfill.
+    Reads from ``row["config"]`` directly — every row carries a config
+    dict post-backfill.
 
-    ws/orch judges hash the tools-shell composed output; blind judges
-    hash the blind-shell composed output.
+    Checks the prompt shell hash for all variants, plus the
+    ``code_fingerprint`` for ws/orch — that fingerprint is what
+    replaced the manual ``BLIND_JUDGE_VERSION`` gate for catching
+    semantic non-prompt edits (parser changes, SDK migrations, etc.).
+    Doesn't check ``workspace_state_hash``: that's a per-row baseline
+    watermark, not a staleness signal — every row would flap.
     """
     cfg = row["config"]
-    phash = f"p{cfg['prompts']['shell_hash']}"
     is_tools = cfg["variant"] in ("ws", "orch")
     try:
-        expected_ph = f"p{compute_judge_prompt_hash(criterion, with_tools=is_tools)}"
+        expected_ph = compute_judge_prompt_hash(criterion, with_tools=is_tools)
     except ValueError:
         return False
-    return phash == expected_ph
+    if cfg["prompts"]["shell_hash"] != expected_ph:
+        return False
+    if is_tools:
+        # circular: rumil.versus_bridge -> versus.judge_config -> versus.judge
+        from versus.judge_config import compute_judge_code_fingerprint
+
+        if cfg.get("code_fingerprint") != compute_judge_code_fingerprint():
+            return False
+    return True
 
 
 def parse_verdict_from_label(text: str) -> tuple[str | None, str | None]:

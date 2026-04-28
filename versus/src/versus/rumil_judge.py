@@ -241,7 +241,7 @@ def _resolve_task_body(task_name: str, is_versus_criterion: bool) -> str:
     """
     if is_versus_criterion:
         raise ValueError(
-            f"versus-criterion task bodies were removed in JUDGE_PROMPT_VERSION=2; "
+            f"versus-criterion task bodies have been removed; "
             f"got task_name={task_name!r}. Pass the rumil dimension name instead "
             f"(e.g. 'general_quality')."
         )
@@ -401,7 +401,7 @@ async def run_ws(
                         "workspace": workspace,
                         "model": model,
                         "task_name": effective_task,
-                        "prompt_hash": ph,
+                        "judge_prompt_hash": ph,
                         "blind_judge_version": BLIND_JUDGE_VERSION,
                         "essay_id": pair.essay_id,
                         # Canonical alphabetical order for dedup-key
@@ -586,7 +586,7 @@ async def run_orch(
                         "model": model,
                         "budget": budget,
                         "task_name": effective_task,
-                        "prompt_hash": ph,
+                        "judge_prompt_hash": ph,
                         "blind_judge_version": BLIND_JUDGE_VERSION,
                         "essay_id": pair.essay_id,
                         # Canonical alphabetical order for dedup-key

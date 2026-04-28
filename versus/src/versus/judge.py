@@ -260,9 +260,9 @@ def judge_prompt_is_current(judge_model: str, criterion: str) -> bool:
     All non-legacy keys gate on ``BLIND_JUDGE_VERSION``. Tools-mode keys
     (``rumil:ws:*``, ``rumil:orch:*``) hash the tools-shell composed output;
     blind keys (everything else) hash the blind-shell composed output.
-    Legacy ``anthropic:<model>`` and bare-OR ``<id>:p..:v..`` keys (pinned
-    to the retired ``JUDGE_PROMPT_VERSION``) read as stale by construction
-    — their version tag won't match.
+    Legacy ``anthropic:<model>`` and bare-OR ``<id>:p..:v..`` keys (from
+    before the BLIND_JUDGE_VERSION regime) read as stale by construction
+    — their version tag won't match the live constant.
     """
     _, phash, version = parse_judge_model_suffix(judge_model)
     if phash is None or version is None:

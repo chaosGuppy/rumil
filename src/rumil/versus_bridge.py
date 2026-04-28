@@ -243,18 +243,13 @@ def _build_ws_user_prompt(pair: PairContext, question_id: str) -> str:
     )
 
 
-_SURFACE_HASH_SENTINEL: dict[str, str] = {
-    "essay_id": "_SENTINEL_ESSAY_",
-    "prefix_hash": "_SENTINEL_PREFIX_HASH_",
-    "prefix_text": "_SENTINEL_PREFIX_TEXT_",
-    "continuation_a_id": "_SENTINEL_A_ID_",
-    "continuation_a_text": "_SENTINEL_A_TEXT_",
-    "continuation_b_id": "_SENTINEL_B_ID_",
-    "continuation_b_text": "_SENTINEL_B_TEXT_",
-    "source_a_id": "_SENTINEL_SOURCE_A_",
-    "source_b_id": "_SENTINEL_SOURCE_B_",
-    "task_name": "_SENTINEL_TASK_",
-}
+def _surface_hash_sentinel() -> dict[str, str]:
+    """Build the sentinel dict from PairContext's actual fields, so
+    adding/removing a field auto-updates the surface hash and hash
+    coverage doesn't drift from the dataclass schema."""
+    from dataclasses import fields
+
+    return {f.name: f"_SENTINEL_{f.name.upper()}_" for f in fields(PairContext)}
 
 
 def compute_pair_surface_hash() -> str:
@@ -282,7 +277,7 @@ def compute_pair_surface_hash() -> str:
     disallowed_tools, orchestrator-internal tool set, etc.) and gates
     all three judge paths (blind, ws, orch).
     """
-    sentinel = PairContext(**_SURFACE_HASH_SENTINEL)
+    sentinel = PairContext(**_surface_hash_sentinel())
     blob = json.dumps(
         {
             "headline": _build_headline(sentinel),

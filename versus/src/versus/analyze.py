@@ -220,19 +220,20 @@ def _strip_prefix(source_id: str) -> tuple[str, str]:
     return "completion", source_id
 
 
-def _is_stale_row(row: dict, current_prefix_hashes: dict[str, str] | None) -> bool:
-    """True iff the row cannot be verified as matching the current essay cache.
+def _prefix_hash_is_stale(row: dict, current_prefix_hashes: dict[str, str] | None) -> bool:
+    """True iff the row's ``prefix_config_hash`` doesn't match the
+    currently-active hash for its essay.
 
-    A row is stale when either:
-      * its ``essay_id`` isn't in the current cache (essay was removed or
-        renamed — e.g. forethought essays migrated to the ``forethought__``
-        namespace no longer match their old jsonl rows), or
-      * its ``prefix_config_hash`` doesn't match the current hash for that
-        essay (essay content or prefix params changed).
+    Two ways to be stale: (a) the essay isn't in the current cache at
+    all (was removed or renamed — e.g. forethought essays moved to
+    the ``forethought__`` namespace); (b) the essay is current but
+    its prefix_config_hash drifted (essay text or prefix params
+    changed).
 
-    Returns False (not stale) only when we pass both checks. When
-    ``current_prefix_hashes`` is None (caller doesn't want staleness
-    filtering) we defer and return False.
+    Returns False when ``current_prefix_hashes`` is None — caller
+    doesn't want staleness filtering. Note: this checks *prefix-hash
+    drift*, which is orthogonal to schema-version drift (see
+    ``versus.mainline.is_current_schema``).
     """
     if current_prefix_hashes is None:
         return False
@@ -240,6 +241,13 @@ def _is_stale_row(row: dict, current_prefix_hashes: dict[str, str] | None) -> bo
     if eid not in current_prefix_hashes:
         return True
     return row.get("prefix_config_hash") != current_prefix_hashes[eid]
+
+
+# Back-compat alias — old call sites referenced ``_is_stale_row``;
+# new code should call ``_prefix_hash_is_stale`` so the staleness
+# axis is named explicitly. Kept indefinitely; the rename is just
+# for clarity, not for semantics.
+_is_stale_row = _prefix_hash_is_stale
 
 
 def content_test_matrix(
@@ -272,7 +280,7 @@ def content_test_matrix(
             continue
         if not include_contaminated and row.get("contamination_note"):
             continue
-        if not include_stale and _is_stale_row(row, current_prefix_hashes):
+        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         j = row["judge_model"]
         baseline = _content_test_baseline(j)
@@ -321,7 +329,7 @@ def matrix(
             continue
         if not include_contaminated and row.get("contamination_note"):
             continue
-        if not include_stale and _is_stale_row(row, current_prefix_hashes):
+        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         if criterion is not None and row.get("criterion") != criterion:
             continue
@@ -361,7 +369,7 @@ def matrix_by_source(
             continue
         if not include_contaminated and row.get("contamination_note"):
             continue
-        if not include_stale and _is_stale_row(row, current_prefix_hashes):
+        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         a, b = row["source_a"], row["source_b"]
         if a != HUMAN and b != HUMAN:

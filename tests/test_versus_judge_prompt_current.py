@@ -15,9 +15,14 @@ _VERSUS_SRC = Path(__file__).resolve().parents[1] / "versus" / "src"
 if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
-from versus.versions import BLIND_JUDGE_VERSION, JUDGE_PROMPT_VERSION  # noqa: E402
+from versus.versions import BLIND_JUDGE_VERSION  # noqa: E402
 
 from versus import judge  # noqa: E402
+
+# A frozen historical version literal for the legacy `:v<N>:s<hash>`
+# anthropic-text shape — those rows must read as stale regardless of
+# value, so any plausible-looking version literal works here.
+_LEGACY_VERSION = 2
 
 _SAMPLING = {"temperature": 0.0, "max_tokens": 1024}
 
@@ -49,7 +54,7 @@ def test_legacy_unversioned_judge_model_is_flagged():
 
 def test_legacy_anthropic_text_keys_read_stale():
     current_ph = judge.compute_judge_prompt_hash("general_quality")
-    jm = f"anthropic:claude-opus-4-7:p{current_ph}:v{JUDGE_PROMPT_VERSION}:sdeadbeef"
+    jm = f"anthropic:claude-opus-4-7:p{current_ph}:v{_LEGACY_VERSION}:sdeadbeef"
     assert judge.judge_prompt_is_current(jm, "general_quality") is False
 
 

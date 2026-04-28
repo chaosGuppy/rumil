@@ -9,14 +9,10 @@ dedup keys.
 - ``PARAPHRASE_PROMPT_VERSION``: folded into ``sampling_hash`` in
   :func:`versus.paraphrase.sampling_hash`. Bump when
   ``PARAPHRASE_INSTRUCTIONS`` changes.
-- ``JUDGE_PROMPT_VERSION``: appended to OpenRouter / ``anthropic:<model>``
-  judge_model strings via :func:`versus.judge.compose_judge_model`.
-  Bump when ``render_judge_prompt`` or the shared judge prompt changes
-  in a way not captured by the prompt hash.
-- ``BLIND_JUDGE_VERSION``: appended to ``rumil:ws:*`` / ``rumil:orch:*``
-  judge_model strings by the bridge. Bump for semantic changes in the
-  bridge not captured by the prompt hash (blind-judge leak fixes,
-  tool-list changes, inline user-message edits).
+- ``BLIND_JUDGE_VERSION``: stamped onto every judge_model
+  (blind / ws / orch) by the bridge. Bump for semantic changes in
+  the bridge not captured by the auto-computed hashes (prompt-hash,
+  tool-hash, sampling-hash, closer-hash).
 
 Numeric values match their former per-module locations.
 ``COMPLETION_PROMPT_VERSION = 5`` adds a
@@ -30,7 +26,6 @@ from __future__ import annotations
 
 COMPLETION_PROMPT_VERSION = 5
 PARAPHRASE_PROMPT_VERSION = 3
-JUDGE_PROMPT_VERSION = 2
 # v4 (2026-04-23): extract_preference parses the LAST 7-point label in the
 # output instead of the first, so models that think-out-loud and revise
 # their rating don't get locked to an early mention. Unhashed surface

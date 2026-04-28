@@ -1047,7 +1047,7 @@ def get_results(
         total_judgments += 1
         if not include_contaminated and row.get("contamination_note"):
             continue
-        is_stale = versus_analyze._is_stale_row(row, current_prefix_hashes)
+        is_stale = versus_analyze._prefix_hash_is_stale(row, current_prefix_hashes)
         if is_stale:
             stale_count += 1
         else:
@@ -1088,7 +1088,7 @@ def get_results(
     source_stats: dict[str, dict] = {}
     for row in versus_jsonl.read(completions_log):
         total_completions += 1
-        if not include_stale and versus_analyze._is_stale_row(row, current_prefix_hashes):
+        if not include_stale and versus_analyze._prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         sid = row["source_id"]
         stats = source_stats.setdefault(sid, {"n": 0, "words": 0, "delta": 0.0})
@@ -1313,7 +1313,7 @@ def get_diagnostics(
             continue
         if not include_contaminated and row.get("contamination_note"):
             continue
-        if not include_stale and versus_analyze._is_stale_row(row, current_prefix_hashes):
+        if not include_stale and versus_analyze._prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         if criterion is not None and row.get("criterion") != criterion:
             continue

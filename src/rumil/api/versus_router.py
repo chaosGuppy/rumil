@@ -266,9 +266,8 @@ class Judgment(pydantic.BaseModel):
     """
 
     judge_model: str
-    judge_model_base: str
+    config_hash: str | None
     prompt_hash: str | None
-    judge_version: str | None
     sampling: dict | None
     criterion: str
     source_a: str
@@ -311,9 +310,8 @@ class JudgmentDetail(pydantic.BaseModel):
     display_second: str
     criterion: str
     judge_model: str
-    judge_model_base: str
+    config_hash: str | None
     prompt_hash: str | None
-    judge_version: str | None
     sampling: dict | None
     verdict: str | None
     winner_source: str | None
@@ -763,20 +761,15 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
         row_cfg = row.get("config") if isinstance(row.get("config"), dict) else None
         if row_cfg is None:
             phash = None
-            version = None
-            base = jm
             sampling = row.get("sampling")
         else:
             phash = f"p{row_cfg['prompts']['shell_hash']}"
-            version = f"v{row_cfg['prompts']['blind_judge_version']}"
-            base = f"{('blind' if row_cfg['variant'] == 'blind' else 'rumil:' + row_cfg['variant'])}:{row_cfg['model']}"
             sampling = row_cfg.get("sampling") or row.get("sampling")
         judgments.append(
             Judgment(
                 judge_model=jm,
-                judge_model_base=base,
+                config_hash=row.get("config_hash"),
                 prompt_hash=phash,
-                judge_version=version,
                 sampling=sampling,
                 criterion=row.get("criterion", ""),
                 source_a=row.get("source_a", ""),
@@ -1231,13 +1224,9 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
         row_cfg = row.get("config") if isinstance(row.get("config"), dict) else None
         if row_cfg is None:
             phash = None
-            version = None
-            base = jm
             sampling = row.get("sampling")
         else:
             phash = f"p{row_cfg['prompts']['shell_hash']}"
-            version = f"v{row_cfg['prompts']['blind_judge_version']}"
-            base = f"{('blind' if row_cfg['variant'] == 'blind' else 'rumil:' + row_cfg['variant'])}:{row_cfg['model']}"
             sampling = row_cfg.get("sampling") or row.get("sampling")
         return JudgmentDetail(
             key=row["key"],
@@ -1249,9 +1238,8 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             display_second=row.get("display_second", ""),
             criterion=row.get("criterion", ""),
             judge_model=jm,
-            judge_model_base=base,
+            config_hash=row.get("config_hash"),
             prompt_hash=phash,
-            judge_version=version,
             sampling=sampling,
             verdict=row.get("verdict"),
             winner_source=row.get("winner_source"),

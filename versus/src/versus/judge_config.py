@@ -71,43 +71,23 @@ def _dir_content_sha(rel_dir: str, pattern: str) -> str:
     return h.hexdigest()[:8]
 
 
-async def compute_workspace_contents_hash(db: Any) -> str:
-    """sha256[:16] over baseline pages + page_links visible to ``db``.
+async def compute_workspace_state_hash(db: Any) -> str:
+    """Cheap watermark identifying the baseline workspace state.
 
-    Captures what the ws/orch agent could read at plan time:
-    page (id, page_type, headline, content) tuples plus link
-    (source, target, link_type, role) tuples, each sorted so the
-    result is reproducible. Fetched on a non-staged probe DB so two
-    concurrent judgments hash the same baseline (their own staged
-    additions don't pollute each other's snapshot).
-
-    Two ws judgments with identical config but different workspace
-    contents will diverge on this axis — surfacing the otherwise
-    invisible "what did the agent's tools return" dimension.
+    For ws/orch judgments what matters is whether two runs read the
+    same baseline — not the full contents. We use a four-tuple of
+    (page count, max page created_at, link count, max link created_at)
+    and hash it. New inserts bump the max timestamp; supersedings /
+    hidings drop the count via the active_only filter. Coarser than
+    a content sha but proportional in cost to two existing queries
+    we already issue at plan time.
     """
     pages = await db.get_pages(active_only=True, include_hidden=False)
     links = await db.get_all_links()
-    h = hashlib.sha256()
-    for p in sorted(pages, key=lambda x: x.id):
-        h.update(p.id.encode())
-        h.update(b"|")
-        h.update(p.page_type.value.encode())
-        h.update(b"|")
-        h.update((p.headline or "").encode())
-        h.update(b"|")
-        h.update((p.content or "").encode())
-        h.update(b"\n")
-    h.update(b"---LINKS---\n")
-    for ln in sorted(links, key=lambda x: (x.from_page_id, x.to_page_id, x.link_type.value)):
-        h.update(ln.from_page_id.encode())
-        h.update(b"->")
-        h.update(ln.to_page_id.encode())
-        h.update(b"|")
-        h.update(ln.link_type.value.encode())
-        h.update(b"|")
-        h.update(ln.role.value.encode())
-        h.update(b"\n")
-    return h.hexdigest()[:16]
+    page_max = max((p.created_at.isoformat() for p in pages), default="")
+    link_max = max((ln.created_at.isoformat() for ln in links), default="")
+    blob = f"{len(pages)}|{page_max}|{len(links)}|{link_max}"
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
 def compute_judge_code_fingerprint() -> dict[str, str]:
@@ -164,8 +144,6 @@ def make_judge_config(
     model: str,
     dimension: str,
     sampling: dict[str, Any] | None,
-    blind_judge_version: int,
-    completion_prompt_version: int,
     prompt_hash: str,
     tool_prompt_hash: str | None = None,
     pair_surface_hash: str | None = None,
@@ -173,19 +151,19 @@ def make_judge_config(
     budget: int | None = None,
     closer_hash: str | None = None,
     code_fingerprint: dict[str, str] | None = None,
-    workspace_contents_hash: str | None = None,
+    workspace_state_hash: str | None = None,
 ) -> tuple[dict[str, Any], str, str]:
-    """Build the structured config + its hash + the legacy-shape judge_model.
+    """Build the structured config + its hash + the display judge_model.
 
     Returns ``(config, config_hash, judge_model)``. Callers write all
-    three onto each new judgment row; ``judge_model`` remains the dedup
-    key (unchanged shape from pre-config era), ``config`` and
-    ``config_hash`` are additive metadata.
+    three onto each new judgment row; ``config_hash`` is the dedup
+    primitive, ``judge_model`` is a short human-readable display
+    string.
 
     Per-variant required args (asserted):
     - blind: ``sampling``, ``prompt_hash``
     - ws: blind + ``workspace_id``, ``tool_prompt_hash``, ``pair_surface_hash``,
-      ``code_fingerprint``, ``workspace_contents_hash``
+      ``code_fingerprint``, ``workspace_state_hash``
     - orch: ws + ``budget``, ``closer_hash``
     """
     config: dict[str, Any] = {
@@ -193,11 +171,7 @@ def make_judge_config(
         "model": model,
         "dimension": dimension,
         "sampling": dict(sampling) if sampling is not None else None,
-        "prompts": {
-            "shell_hash": prompt_hash,
-            "blind_judge_version": blind_judge_version,
-            "completion_prompt_version": completion_prompt_version,
-        },
+        "prompts": {"shell_hash": prompt_hash},
     }
     if variant in ("ws", "orch"):
         if (
@@ -205,17 +179,17 @@ def make_judge_config(
             or tool_prompt_hash is None
             or pair_surface_hash is None
             or code_fingerprint is None
-            or workspace_contents_hash is None
+            or workspace_state_hash is None
         ):
             raise ValueError(
                 f"variant={variant!r} requires workspace_id, tool_prompt_hash, "
-                "pair_surface_hash, code_fingerprint, workspace_contents_hash"
+                "pair_surface_hash, code_fingerprint, workspace_state_hash"
             )
         config["workspace_id"] = workspace_id
         config["tool_descriptions_hash"] = tool_prompt_hash
         config["pair_surface_hash"] = pair_surface_hash
         config["code_fingerprint"] = code_fingerprint
-        config["workspace_contents_hash"] = workspace_contents_hash
+        config["workspace_state_hash"] = workspace_state_hash
     if variant == "orch":
         if budget is None or closer_hash is None:
             raise ValueError("variant='orch' requires budget, closer_hash")
@@ -258,7 +232,6 @@ def project_config_to_axes(
         "judge_base_model": config["model"],
         "judge_dimension": config["dimension"],
         "judge_prompt_hash": f"p{config['prompts']['shell_hash']}",
-        "judge_version": f"v{config['prompts']['blind_judge_version']}",
     }
     if (sh := compute_sampling_hash(config.get("sampling"))) is not None:
         out["judge_sampling_hash"] = f"s{sh}"
@@ -266,11 +239,9 @@ def project_config_to_axes(
         out["judge_workspace_id"] = config["workspace_id"]
         out["judge_tool_hash"] = f"t{config['tool_descriptions_hash']}"
         out["judge_pair_hash"] = f"q{config['pair_surface_hash']}"
-        # ws/orch only — collapsed handles for two compound dimensions
-        # so they fit into the per-axis counter UI.
-        wc = config.get("workspace_contents_hash")
-        if wc:
-            out["judge_workspace_contents_hash"] = f"w{wc[:8]}"
+        ws_state = config.get("workspace_state_hash")
+        if ws_state:
+            out["judge_workspace_state_hash"] = f"w{ws_state[:8]}"
         fp = config.get("code_fingerprint")
         if isinstance(fp, dict) and fp:
             fp_blob = json.dumps(fp, sort_keys=True, default=str)
@@ -280,8 +251,7 @@ def project_config_to_axes(
         out["judge_budget"] = f"b{config['budget']}"
         out["judge_closer_hash"] = f"c{config['closer_hash']}"
     if config_hash:
-        # The composite — set ID for the row's full effective config.
-        # Lets the panel surface drift even when every component axis
-        # individually appears in the mainline set.
+        # Composite axis — see mainline._AXIS_DESCRIPTIONS["config_hash"]
+        # for what makes it useful.
         out["config_hash"] = config_hash
     return out

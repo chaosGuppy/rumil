@@ -25,6 +25,7 @@ from versus.judge_config import (  # noqa: E402
     compute_config_hash,
     compute_file_fingerprint,
     make_judge_config,
+    project_config_to_axes,
 )
 
 from versus import mainline as versus_mainline  # noqa: E402
@@ -33,8 +34,6 @@ _BLIND_KW: dict[str, Any] = {
     "model": "claude-opus-4-7",
     "dimension": "general_quality",
     "sampling": {"temperature": None, "max_tokens": 1024},
-    "blind_judge_version": 6,
-    "completion_prompt_version": 5,
     "prompt_hash": "deadbeef",
 }
 
@@ -44,7 +43,7 @@ _WS_KW: dict[str, Any] = {
     "pair_surface_hash": "22222222",
     "workspace_id": "abcd1234",
     "code_fingerprint": {"src/rumil/versus_bridge.py": "aaaaaaaa"},
-    "workspace_contents_hash": "0011223344556677",
+    "workspace_state_hash": "0011223344556677",
 }
 
 _ORCH_KW: dict[str, Any] = {
@@ -68,7 +67,6 @@ def test_config_hash_is_deterministic_for_identical_inputs():
         ("dimension", "grounding"),
         ("sampling", {"temperature": 0.2, "max_tokens": 1024}),
         ("prompt_hash", "abcd1234"),
-        ("blind_judge_version", 99),
     ),
 )
 def test_config_hash_changes_when_any_input_changes(override_key, override_value):
@@ -95,11 +93,11 @@ def test_orch_config_hash_changes_when_code_fingerprint_changes():
         ("ws", "pair_surface_hash"),
         ("ws", "workspace_id"),
         ("ws", "code_fingerprint"),
-        ("ws", "workspace_contents_hash"),
+        ("ws", "workspace_state_hash"),
         ("orch", "budget"),
         ("orch", "closer_hash"),
         ("orch", "code_fingerprint"),
-        ("orch", "workspace_contents_hash"),
+        ("orch", "workspace_state_hash"),
     ),
 )
 def test_missing_required_arg_raises_value_error(variant, missing):
@@ -187,6 +185,58 @@ def test_label_from_config_shape(variant, kw, expected_keys):
     cfg, _, _ = make_judge_config(variant, **kw)
     out = versus_analyze.label_from_config(cfg)
     assert set(out.keys()) == expected_keys
+
+
+# Config field → axis name. Pins the projection contract: a new
+# config field must add an entry here AND a corresponding axis in
+# ``project_config_to_axes``. Missing either raises the test below.
+_CONFIG_FIELD_TO_AXIS = {
+    "model": "judge_base_model",
+    "dimension": "judge_dimension",
+    "workspace_id": "judge_workspace_id",
+    "tool_descriptions_hash": "judge_tool_hash",
+    "pair_surface_hash": "judge_pair_hash",
+    "code_fingerprint": "judge_code_fingerprint",
+    "workspace_state_hash": "judge_workspace_state_hash",
+    "budget": "judge_budget",
+    "closer_hash": "judge_closer_hash",
+}
+# Top-level keys deliberately not exposed as their own axis (covered
+# by other axes implicitly).
+_CONFIG_FIELDS_OPAQUE = {"variant", "sampling", "prompts"}
+
+
+@pytest.mark.parametrize(
+    ("variant", "kw"),
+    (
+        ("blind", _BLIND_KW),
+        ("ws", _WS_KW),
+        ("orch", _ORCH_KW),
+    ),
+)
+def test_project_config_to_axes_covers_every_config_field(variant, kw):
+    """Pins config_hash's role as a completeness check: every config
+    field must either be opaque-by-design or have an entry in
+    ``_CONFIG_FIELD_TO_AXIS`` that points at a real axis. Adding a
+    new field to ``make_judge_config`` without updating the mapping
+    fails this test — preventing silent drift where ``config_hash``
+    would diverge from the per-axis panel.
+    """
+    cfg, ch, _ = make_judge_config(variant, **kw)
+    axes = project_config_to_axes(cfg, config_hash=ch)
+    for key in cfg:
+        if key in _CONFIG_FIELDS_OPAQUE:
+            continue
+        axis = _CONFIG_FIELD_TO_AXIS.get(key)
+        assert axis is not None, (
+            f"config field {key!r} has no entry in _CONFIG_FIELD_TO_AXIS — "
+            "either add a corresponding axis to project_config_to_axes "
+            "or mark it opaque."
+        )
+        assert axis in axes, (
+            f"config field {key!r} maps to axis {axis!r} but that axis "
+            f"isn't produced by project_config_to_axes (got {sorted(axes)})"
+        )
 
 
 def test_compute_config_hash_is_canonical_across_key_order():

@@ -49,14 +49,13 @@ _AXES_ORDER = (
     "judge_dimension",
     "judge_workspace_id",
     "judge_prompt_hash",
-    "judge_version",
     "judge_sampling_hash",
     "judge_tool_hash",
     "judge_pair_hash",
     "judge_closer_hash",
     "judge_budget",
     "judge_code_fingerprint",
-    "judge_workspace_contents_hash",
+    "judge_workspace_state_hash",
     "config_hash",
 )
 
@@ -90,11 +89,6 @@ _AXIS_DESCRIPTIONS = {
         "body, with or without the workspace-tools section). Bumps "
         "when any of the source files change."
     ),
-    "judge_version": (
-        "Manual BLIND_JUDGE_VERSION bump — for semantic changes the "
-        "prompt-hash and tool-hash don't catch (bridge edits, "
-        "tool-list changes, inline user-message edits)."
-    ),
     "judge_sampling_hash": (
         "Hash of model sampling params (temperature, max_tokens, "
         "top_p). Lives on the row for blind/text variants."
@@ -120,16 +114,20 @@ _AXIS_DESCRIPTIONS = {
         "forks when any covered file's bytes change. Per-file detail "
         "lives in row['config']['code_fingerprint']."
     ),
-    "judge_workspace_contents_hash": (
-        "sha16[:8] over baseline pages (id/type/headline/content) and "
-        "links visible to the agent at plan time. ws/orch only — forks "
-        "when the workspace mutates between runs."
+    "judge_workspace_state_hash": (
+        "Cheap watermark over baseline pages + page_links + mutation "
+        "events at plan time. ws/orch only — two judgments with the "
+        "same value saw the same baseline; forks when anything visible "
+        "to the agent changes between runs."
     ),
     "config_hash": (
-        "Composite sha16 over the full structured judge config. The "
-        "set ID for a row's effective configuration: any change to "
-        "any input the judge saw forks this even when individual "
-        "component axes look unchanged."
+        "Composite sha16 over the full structured judge config. "
+        "Acts as a completeness check on the per-axis projection: if "
+        "a new config field gets added but its corresponding axis "
+        "doesn't, this hash forks while every component axis still "
+        "looks current. Rows with the same component axes but "
+        "different ``config_hash`` values are the signal that the "
+        "panel is missing a dimension."
     ),
 }
 
@@ -160,7 +158,6 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
         compute_tool_prompt_hash,
     )
     from versus import judge as versus_judge
-    from versus.versions import BLIND_JUDGE_VERSION
 
     out: dict[str, list[str]] = {axis: [] for axis in _AXES_ORDER}
     # Blind path also has both blind and tools-mode prompt hashes in
@@ -171,7 +168,6 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
         for c in cfg.judging.criteria
         for tools in (False, True)
     ]
-    out["judge_version"] = [f"v{BLIND_JUDGE_VERSION}"]
     out["judge_path"] = ["blind", "rumil:ws", "rumil:orch"]
     out["judge_base_model"] = list(cfg.judging.models)
     out["judge_dimension"] = list(cfg.judging.criteria)

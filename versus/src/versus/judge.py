@@ -33,7 +33,6 @@ from rumil.versus_prompts import (
     label_to_verdict,
 )
 from versus import anthropic_client, config, jsonl, openrouter
-from versus.versions import BLIND_JUDGE_VERSION
 
 Provider = Literal["anthropic", "openrouter"]
 
@@ -166,16 +165,10 @@ def _sampling_for(provider: Provider, canonical_model: str, max_tokens: int) -> 
 
 
 def compose_blind_judge_model(canonical_model: str, dimension: str, sampling: dict) -> str:
-    """Build a blind judge_model dedup key.
-
-    Shape: ``<canonical_model>:<dimension>:p<phash>:v<BLIND_JUDGE_VERSION>:s<shash>``.
-    Single shape across providers — model id alone disambiguates route at
-    parse time. ``rumil:ws:`` / ``rumil:orch:`` keep their own prefixes.
-
-    Thin wrapper around :func:`build_blind_judge_config` for back-compat
-    with callers that only need the flat string. New code paths should
-    call ``build_blind_judge_config`` directly so they get the
-    structured ``config`` + ``config_hash`` to write onto each row.
+    """Display ``judge_model`` for a blind judgment. Thin wrapper around
+    :func:`build_blind_judge_config` for callers that only need the
+    string; new code paths should call ``build_blind_judge_config``
+    directly to get the structured config + config_hash.
     """
     _, _, judge_model = build_blind_judge_config(canonical_model, dimension, sampling)
     return judge_model
@@ -192,54 +185,37 @@ def build_blind_judge_config(
     of truth. Callers persist all three on the row.
     """
     from versus.judge_config import make_judge_config
-    from versus.versions import COMPLETION_PROMPT_VERSION
 
     return make_judge_config(
         "blind",
         model=canonical_model,
         dimension=dimension,
         sampling=sampling,
-        blind_judge_version=BLIND_JUDGE_VERSION,
-        completion_prompt_version=COMPLETION_PROMPT_VERSION,
         prompt_hash=compute_judge_prompt_hash(dimension, with_tools=False),
     )
 
 
-def judge_prompt_is_current(row_or_jm: dict | str, criterion: str) -> bool:
-    """Return False if the row's prompt hash / version is out of date.
+def judge_prompt_is_current(row: dict, criterion: str) -> bool:
+    """Return False if the row's prompt hash is out of date.
 
     Status.py uses this to surface stale rows in the STALE banner.
-    Accepts either a full row dict (preferred — reads
-    ``row["config"]["prompts"]`` directly) or the bare flat
-    ``judge_model`` string (legacy callers).
+    Reads ``row["config"]["prompts"]["shell_hash"]`` directly. Rows
+    without a config dict (which shouldn't exist after the legacy
+    backfill) read as stale by construction.
 
-    Tools-mode keys (``rumil:ws:*``, ``rumil:orch:*``) hash the tools-
-    shell composed output; blind keys hash the blind-shell composed
-    output. Legacy unversioned keys read as stale by construction.
+    ws/orch judges hash the tools-shell composed output; blind judges
+    hash the blind-shell composed output.
     """
-    cfg: dict | None = None
-    judge_model: str
-    if isinstance(row_or_jm, dict):
-        c = row_or_jm.get("config")
-        if isinstance(c, dict):
-            cfg = c
-        judge_model = str(row_or_jm.get("judge_model", ""))
-    else:
-        judge_model = row_or_jm
-    if cfg is not None:
-        phash = f"p{cfg['prompts']['shell_hash']}"
-        version = f"v{cfg['prompts']['blind_judge_version']}"
-        is_tools = cfg["variant"] in ("ws", "orch")
-    else:
-        _, phash, version = parse_judge_model_suffix(judge_model)
-        if phash is None or version is None:
-            return False
-        is_tools = judge_model.startswith(("rumil:ws:", "rumil:orch:"))
+    cfg = row.get("config")
+    if not isinstance(cfg, dict):
+        return False
+    phash = f"p{cfg['prompts']['shell_hash']}"
+    is_tools = cfg["variant"] in ("ws", "orch")
     try:
         expected_ph = f"p{compute_judge_prompt_hash(criterion, with_tools=is_tools)}"
     except ValueError:
         return False
-    return phash == expected_ph and version == f"v{BLIND_JUDGE_VERSION}"
+    return phash == expected_ph
 
 
 def parse_verdict_from_label(text: str) -> tuple[str | None, str | None]:

@@ -11,19 +11,19 @@ from versus import jsonl, judge
 HUMAN = "human"
 
 
-def _content_test_baseline(judge_model: str) -> str:
+def _content_test_baseline(row: dict) -> str | None:
     """Compose the paraphrase source_id that matches this judge's model.
 
     Paraphrases are authored via OpenRouter and keyed as
-    ``paraphrase:<openrouter_model_id>`` (e.g. ``paraphrase:openai/gpt-5.4``,
-    slash). Anthropic-direct judges use the ``anthropic:<model>`` form (colon).
-    Normalize the latter so the baseline lookup hits a paraphrase row when the
-    same underlying model authored one.
+    ``paraphrase:<openrouter_model_id>``. Reads the model directly from
+    ``row["config"]["model"]`` — returns ``None`` for any row without a
+    config dict so the caller can skip it cleanly (no flat-string
+    parsing fallback).
     """
-    base = judge.base_judge_model(judge_model)
-    if base.startswith("anthropic:"):
-        base = "anthropic/" + base.removeprefix("anthropic:")
-    return f"paraphrase:{base}"
+    cfg = row.get("config") if isinstance(row.get("config"), dict) else None
+    if cfg is None:
+        return None
+    return f"paraphrase:{cfg['model']}"
 
 
 def model_sort_key(judge: str) -> tuple:
@@ -103,22 +103,18 @@ def label_from_config(cfg: dict) -> dict:
     """Derive the stacked column-header dict from a structured judge config.
 
     Returns ``{variant, model, task, phash}``. Drives the FE
-    column-header layout. Orch carries its budget; all variants
-    append the version tag.
+    column-header layout. Orch carries its budget tag.
     """
     variant = cfg["variant"]
     model = cfg["model"]
     dim = cfg["dimension"]
-    bjv = cfg["prompts"]["blind_judge_version"]
     phash = f"p{cfg['prompts']['shell_hash']}"
-    version_tag = f"v{bjv}"
     if variant == "orch":
-        head = f"rumil:orch b{cfg['budget']} {version_tag}"
+        head = f"rumil:orch b{cfg['budget']}"
     elif variant == "ws":
-        head = f"rumil:ws {version_tag}"
+        head = "rumil:ws"
     else:
-        provider = model.split("/", 1)[0] if "/" in model else "anthropic"
-        head = f"{provider} {version_tag}"
+        head = model.split("/", 1)[0] if "/" in model else "anthropic"
     return {"variant": head, "model": model, "task": dim, "phash": phash}
 
 
@@ -211,7 +207,9 @@ def content_test_matrix(
         if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
             continue
         j = row["judge_model"]
-        baseline = _content_test_baseline(j)
+        baseline = _content_test_baseline(row)
+        if baseline is None:
+            continue
         a, b = row["source_a"], row["source_b"]
         if baseline not in (a, b):
             continue

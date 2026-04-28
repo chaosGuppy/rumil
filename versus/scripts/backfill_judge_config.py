@@ -39,15 +39,100 @@ if str(_VERSUS_SRC) not in sys.path:
 
 from versus.judge import infer_order, judgment_key  # noqa: E402
 from versus.judge_config import compute_config_hash  # noqa: E402
-from versus.mainline import parse_judge_components  # noqa: E402
 
 _DEFAULT_PATH = _HERE.parent / "data" / "judgments.jsonl"
+
+# Inline regex set for parsing legacy ``judge_model`` strings. The
+# production parser (``mainline.parse_judge_components``) was deleted
+# along with the rest of the flat-string layer; this script is the only
+# place that still needs to read the legacy shape, so the patterns live
+# here as private state rather than back in the live module.
+import re  # noqa: E402
+
+_PHASH_RE = re.compile(r"^p[0-9a-f]{8}$")
+_THASH_RE = re.compile(r"^t[0-9a-f]{8}$")
+_QHASH_RE = re.compile(r"^q[0-9a-f]{8}$")
+_SHASH_RE = re.compile(r"^s[0-9a-f]{8}$")
+_CHASH_RE = re.compile(r"^c[0-9a-f]{8}$")
+_VERSION_RE = re.compile(r"^v\d+$")
+_BUDGET_RE = re.compile(r"^b\d+$")
+
+
+def _parse_legacy_judge_model(jm: str) -> dict[str, str]:
+    """Decompose a legacy flat ``judge_model`` into its component KVs.
+
+    Same shape as the deleted ``mainline.parse_judge_components``.
+    Inlined here so the production tree carries no flat-string parser
+    while the one-shot migration still works.
+    """
+    out: dict[str, str] = {}
+    parts = jm.split(":")
+    while parts:
+        tail = parts[-1]
+        if _PHASH_RE.match(tail):
+            out["judge_prompt_hash"] = tail
+        elif _VERSION_RE.match(tail):
+            out["judge_version"] = tail
+        elif _SHASH_RE.match(tail):
+            out["judge_sampling_hash"] = tail
+        elif _THASH_RE.match(tail):
+            out["judge_tool_hash"] = tail
+        elif _QHASH_RE.match(tail):
+            out["judge_pair_hash"] = tail
+        elif _CHASH_RE.match(tail):
+            out["judge_closer_hash"] = tail
+        else:
+            break
+        parts = parts[:-1]
+    if not parts:
+        return out
+    if parts[0] == "rumil" and len(parts) >= 2 and parts[1] in ("orch", "ws", "text"):
+        out["judge_path"] = f"rumil:{parts[1]}"
+        if parts[1] == "orch" and len(parts) >= 6:
+            out["judge_base_model"] = parts[2]
+            out["judge_workspace_id"] = parts[3]
+            if _BUDGET_RE.match(parts[4]):
+                out["judge_budget"] = parts[4]
+            out["judge_dimension"] = parts[5]
+        elif parts[1] == "ws" and len(parts) >= 5:
+            out["judge_base_model"] = parts[2]
+            out["judge_workspace_id"] = parts[3]
+            out["judge_dimension"] = parts[4]
+        elif parts[1] == "text" and len(parts) >= 4:
+            out["judge_base_model"] = parts[2]
+            out["judge_dimension"] = parts[3]
+    else:
+        out["judge_path"] = "blind"
+        if len(parts) == 1:
+            out["judge_base_model"] = parts[0]
+        elif len(parts) >= 2:
+            out["judge_base_model"] = parts[0]
+            out["judge_dimension"] = parts[1]
+    return out
 
 
 def _strip_prefix(value: str | None, prefix: str) -> str | None:
     if value is None or not value.startswith(prefix):
         return None
     return value[len(prefix) :]
+
+
+def _normalize_config(cfg: dict) -> dict:
+    """Bring an existing config dict in line with the current schema.
+
+    Strips fields that have been retired (``blind_judge_version``,
+    ``completion_prompt_version``) and renames
+    ``workspace_contents_hash`` to ``workspace_state_hash``. Idempotent:
+    a config that's already current is returned unchanged.
+    """
+    cfg = dict(cfg)
+    prompts = dict(cfg.get("prompts") or {})
+    prompts.pop("blind_judge_version", None)
+    prompts.pop("completion_prompt_version", None)
+    cfg["prompts"] = prompts
+    if "workspace_contents_hash" in cfg:
+        cfg["workspace_state_hash"] = cfg.pop("workspace_contents_hash")
+    return cfg
 
 
 def _try_synthesize_config(row: dict) -> dict | None:
@@ -58,7 +143,7 @@ def _try_synthesize_config(row: dict) -> dict | None:
     jm = row.get("judge_model")
     if not jm:
         return None
-    parts = parse_judge_components(jm)
+    parts = _parse_legacy_judge_model(jm)
     phash_raw = _strip_prefix(parts.get("judge_prompt_hash"), "p")
     bjv_raw = _strip_prefix(parts.get("judge_version"), "v")
     bjv: int
@@ -93,14 +178,13 @@ def _try_synthesize_config(row: dict) -> dict | None:
         "model": parts.get("judge_base_model", ""),
         "dimension": parts.get("judge_dimension", ""),
         "sampling": row.get("sampling"),
-        "prompts": {
-            "shell_hash": shell_hash,
-            "blind_judge_version": bjv,
-            # Legacy rows didn't record this; None keeps the
-            # config-key shape stable across rows.
-            "completion_prompt_version": None,
-        },
+        "prompts": {"shell_hash": shell_hash},
     }
+    # bjv was the old BLIND_JUDGE_VERSION knob — retired post-cleanup.
+    # The variable is still parsed above so existing-rows reads with
+    # different ``v<N>`` values can be detected; we just don't fold it
+    # into the config dict any more.
+    _ = bjv
     if variant in ("ws", "orch"):
         config["workspace_id"] = parts.get("judge_workspace_id", "")
         config["tool_descriptions_hash"] = _strip_prefix(parts.get("judge_tool_hash"), "t") or ""
@@ -109,7 +193,7 @@ def _try_synthesize_config(row: dict) -> dict | None:
         # current-code values so re-running on today's code rightly
         # produces a different config_hash.
         config["code_fingerprint"] = {}
-        config["workspace_contents_hash"] = ""
+        config["workspace_state_hash"] = ""
     if variant == "orch":
         budget_raw = _strip_prefix(parts.get("judge_budget"), "b")
         try:
@@ -147,7 +231,8 @@ def _backfill(path: pathlib.Path, *, dry_run: bool) -> None:
                 row["config"] = cfg
                 counts["backfilled"] += 1
             else:
-                cfg = existing_cfg
+                cfg = _normalize_config(existing_cfg)
+                row["config"] = cfg
                 counts["already_has_config"] += 1
             ch = compute_config_hash(cfg)
             row["config_hash"] = ch

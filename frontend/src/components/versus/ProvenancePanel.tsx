@@ -7,14 +7,13 @@ const AXIS_ORDER = [
   "judge_dimension",
   "judge_workspace_id",
   "judge_prompt_hash",
-  "judge_version",
   "judge_sampling_hash",
   "judge_tool_hash",
   "judge_pair_hash",
   "judge_closer_hash",
   "judge_budget",
   "judge_code_fingerprint",
-  "judge_workspace_contents_hash",
+  "judge_workspace_state_hash",
   "config_hash",
 ];
 

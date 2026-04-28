@@ -308,17 +308,15 @@ async def run_ws(
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
     from rumil.versus_bridge import (
-        BLIND_JUDGE_VERSION,
         compute_pair_surface_hash,
         compute_prompt_hash,
         compute_tool_prompt_hash,
     )
     from versus.judge_config import (
         compute_judge_code_fingerprint,
-        compute_workspace_contents_hash,
+        compute_workspace_state_hash,
         make_judge_config,
     )
-    from versus.versions import COMPLETION_PROMPT_VERSION
 
     prompt_hash_cache = {
         k: compute_prompt_hash(b, with_tools=True) for k, b in task_body_cache.items()
@@ -326,11 +324,11 @@ async def run_ws(
     thash = compute_tool_prompt_hash()
     qhash = compute_pair_surface_hash()
     code_fingerprint = compute_judge_code_fingerprint()
-    # Snapshot baseline workspace state so ws judgments fork their
-    # config_hash when underlying pages / links change between runs.
-    # Computed on the non-staged probe DB so two concurrent pairs see
-    # the same baseline (their own staged additions don't leak in).
-    workspace_contents_hash = await compute_workspace_contents_hash(probe_db)
+    # Cheap watermark over baseline pages + links + mutation events so
+    # ws judgments fork config_hash when the underlying workspace
+    # mutates between runs. Read on the non-staged probe DB so two
+    # concurrent pairs see the same baseline.
+    workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
     sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
 
@@ -342,14 +340,12 @@ async def run_ws(
             model=model,
             dimension=dim,
             sampling=sampling,
-            blind_judge_version=BLIND_JUDGE_VERSION,
-            completion_prompt_version=COMPLETION_PROMPT_VERSION,
             prompt_hash=ph,
             tool_prompt_hash=thash,
             pair_surface_hash=qhash,
             workspace_id=ws_short,
             code_fingerprint=code_fingerprint,
-            workspace_contents_hash=workspace_contents_hash,
+            workspace_state_hash=workspace_state_hash,
         )
 
     tasks = _plan_rumil_pairs(
@@ -526,7 +522,6 @@ async def run_orch(
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
     from rumil.versus_bridge import (
-        BLIND_JUDGE_VERSION,
         compute_orch_closer_hash,
         compute_pair_surface_hash,
         compute_prompt_hash,
@@ -534,10 +529,9 @@ async def run_orch(
     )
     from versus.judge_config import (
         compute_judge_code_fingerprint,
-        compute_workspace_contents_hash,
+        compute_workspace_state_hash,
         make_judge_config,
     )
-    from versus.versions import COMPLETION_PROMPT_VERSION
 
     prompt_hash_cache = {
         k: compute_prompt_hash(b, with_tools=True) for k, b in task_body_cache.items()
@@ -545,12 +539,8 @@ async def run_orch(
     thash = compute_tool_prompt_hash()
     qhash = compute_pair_surface_hash()
     chash = compute_orch_closer_hash()
-    # Computed once per run_orch invocation — files / pages don't
-    # change mid-run. Folding both into the config dict means a
-    # bridge/orchestrator/prompt edit OR a workspace mutation forks
-    # config_hash on subsequent runs.
     code_fingerprint = compute_judge_code_fingerprint()
-    workspace_contents_hash = await compute_workspace_contents_hash(probe_db)
+    workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
     sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
 
@@ -562,8 +552,6 @@ async def run_orch(
             model=model,
             dimension=dim,
             sampling=sampling,
-            blind_judge_version=BLIND_JUDGE_VERSION,
-            completion_prompt_version=COMPLETION_PROMPT_VERSION,
             prompt_hash=ph,
             tool_prompt_hash=thash,
             pair_surface_hash=qhash,
@@ -571,7 +559,7 @@ async def run_orch(
             budget=budget,
             closer_hash=chash,
             code_fingerprint=code_fingerprint,
-            workspace_contents_hash=workspace_contents_hash,
+            workspace_state_hash=workspace_state_hash,
         )
 
     tasks = _plan_rumil_pairs(

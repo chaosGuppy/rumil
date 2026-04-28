@@ -1385,17 +1385,13 @@ export type Judgment = {
      */
     judge_model: string;
     /**
-     * Judge Model Base
+     * Config Hash
      */
-    judge_model_base: string;
+    config_hash: string | null;
     /**
      * Prompt Hash
      */
     prompt_hash: string | null;
-    /**
-     * Judge Version
-     */
-    judge_version: string | null;
     /**
      * Sampling
      */
@@ -1536,17 +1532,13 @@ export type JudgmentDetail = {
      */
     judge_model: string;
     /**
-     * Judge Model Base
+     * Config Hash
      */
-    judge_model_base: string;
+    config_hash: string | null;
     /**
      * Prompt Hash
      */
     prompt_hash: string | null;
-    /**
-     * Judge Version
-     */
-    judge_version: string | null;
     /**
      * Sampling
      */

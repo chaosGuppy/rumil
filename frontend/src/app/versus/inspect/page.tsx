@@ -45,7 +45,7 @@ function modelOf(sourceId: string): string {
   return sourceId.startsWith("paraphrase:") ? sourceId.slice("paraphrase:".length) : sourceId;
 }
 
-/** HTML-id-safe rendering of a source_id or judge_model_base. */
+/** HTML-id-safe rendering of a source_id or config_hash. */
 function anchorId(prefix: string, raw: string): string {
   return `${prefix}-${raw.replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
 }
@@ -213,13 +213,13 @@ export default async function VersusInspectPage({
   }
   const judgmentOrder = Array.from(judgmentRows.keys()).sort();
 
-  // First key per judge_model_base — the judgment-row that gets the
+  // First key per config_hash — the judgment-row that gets the
   // anchor id, so a ToC click jumps to that judge's first row.
   const firstKeyByJudge = new Map<string, string>();
   for (const k of judgmentOrder) {
     const j = judgmentRows.get(k)!.values().next().value as Judgment;
-    if (!firstKeyByJudge.has(j.judge_model_base)) {
-      firstKeyByJudge.set(j.judge_model_base, k);
+    if (!firstKeyByJudge.has((j.config_hash ?? j.judge_model))) {
+      firstKeyByJudge.set((j.config_hash ?? j.judge_model), k);
     }
   }
   const judgeOrder = Array.from(firstKeyByJudge.keys()).sort();
@@ -428,13 +428,13 @@ export default async function VersusInspectPage({
               <div className="inspect-judgments">
                 {judgmentOrder.map((k) => {
                   const sample = judgmentRows.get(k)!.values().next().value as Judgment;
-                  const isFirst = firstKeyByJudge.get(sample.judge_model_base) === k;
+                  const isFirst = firstKeyByJudge.get((sample.config_hash ?? sample.judge_model)) === k;
                   return (
                     <JudgmentRow
                       key={k}
                       perVariant={judgmentRows.get(k)!}
                       variantIds={variantIds}
-                      anchorId={isFirst ? anchorId("judge", sample.judge_model_base) : undefined}
+                      anchorId={isFirst ? anchorId("judge", (sample.config_hash ?? sample.judge_model)) : undefined}
                     />
                   );
                 })}
@@ -603,7 +603,7 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
           for (const j of v.judgments) {
             const r = genVsHumanAccum(j);
             if (!r) continue;
-            const judge = j.judge_model_base;
+            const judge = (j.config_hash ?? j.judge_model);
             judgesSet.add(judge);
             gensSet.add(r.gen);
             const row = acc.get(r.gen) ?? new Map<string, WinAccum>();
@@ -936,11 +936,11 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
   const byKey = new Map<string, Pair>();
   for (const v of variantBundles) {
     for (const j of v.judgments) {
-      const k = `${j.judge_model_base}|${j.criterion}|${j.source_a}|${j.source_b}`;
+      const k = `${(j.config_hash ?? j.judge_model)}|${j.criterion}|${j.source_a}|${j.source_b}`;
       const slot = byKey.get(k) ?? {
         gen: [j.source_a, j.source_b].filter((s) => s !== "human").map(modelOf).join("+") ||
           "human",
-        judge: j.judge_model_base,
+        judge: (j.config_hash ?? j.judge_model),
         criterion: j.criterion,
         source_a: j.source_a,
         source_b: j.source_b,
@@ -1130,10 +1130,10 @@ function JudgmentRow({
       <header className="inspect-judgment-rowhead">
         <div className="inspect-judgment-id">
           {sample.is_rumil && <span className="versus-pill rumil">rumil</span>}
-          <strong className="versus-mono">{sample.judge_model_base}</strong>
-          {(sample.prompt_hash || sample.judge_version) && (
+          <strong className="versus-mono">{sample.judge_model}</strong>
+          {sample.prompt_hash && (
             <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
-              {[sample.prompt_hash, sample.judge_version].filter(Boolean).join(" · ")}
+              {sample.prompt_hash}
             </span>
           )}
           {sample.sampling && (

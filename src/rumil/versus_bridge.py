@@ -61,18 +61,6 @@ log = logging.getLogger(__name__)
 
 _TOOL_SERVER_NAME = "versus-judge-tools"
 
-# BLIND_JUDGE_VERSION lives in ``versus.versions`` alongside the other
-# three prompt-version knobs so bumps can't drift between modules.
-# Notes on historical bumps:
-#   v2 (2026-04-23): fixes #3 (headline leak) and #4 (page.extra leak).
-#   v3 (2026-04-23): essay markdown re-imported with fetch SCHEMA_VERSION=4
-#   (nested-list dedup, footnote-marker strip, emphasis preservation,
-#   caption skip). Old judgments judge old text, new judgments judge new
-#   text.
-# Re-exported below for back-compat with any caller that still reads
-# ``rumil.versus_bridge.BLIND_JUDGE_VERSION``.
-from versus.versions import BLIND_JUDGE_VERSION  # noqa: E402, F401
-
 # Re-export the pure prompt-rendering helpers from the lightweight
 # ``rumil.versus_prompts`` module so external callers (and existing
 # imports) keep working unchanged.

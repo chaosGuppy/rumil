@@ -5031,9 +5031,16 @@
             "type": "string",
             "title": "Judge Model"
           },
-          "judge_model_base": {
-            "type": "string",
-            "title": "Judge Model Base"
+          "config_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Hash"
           },
           "prompt_hash": {
             "anyOf": [
@@ -5045,17 +5052,6 @@
               }
             ],
             "title": "Prompt Hash"
-          },
-          "judge_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Judge Version"
           },
           "sampling": {
             "anyOf": [
@@ -5241,9 +5237,8 @@
         "type": "object",
         "required": [
           "judge_model",
-          "judge_model_base",
+          "config_hash",
           "prompt_hash",
-          "judge_version",
           "sampling",
           "criterion",
           "source_a",
@@ -5308,9 +5303,16 @@
             "type": "string",
             "title": "Judge Model"
           },
-          "judge_model_base": {
-            "type": "string",
-            "title": "Judge Model Base"
+          "config_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Hash"
           },
           "prompt_hash": {
             "anyOf": [
@@ -5322,17 +5324,6 @@
               }
             ],
             "title": "Prompt Hash"
-          },
-          "judge_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Judge Version"
           },
           "sampling": {
             "anyOf": [
@@ -5521,9 +5512,8 @@
           "display_second",
           "criterion",
           "judge_model",
-          "judge_model_base",
+          "config_hash",
           "prompt_hash",
-          "judge_version",
           "sampling",
           "verdict",
           "winner_source",

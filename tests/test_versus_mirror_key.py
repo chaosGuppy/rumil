@@ -247,11 +247,7 @@ def test_call_one_blind_row_includes_order(mocker):
             "model": "google/gemini-3-flash-preview",
             "dimension": "general_quality",
             "sampling": {"temperature": 0.0, "max_tokens": 2048},
-            "prompts": {
-                "shell_hash": "deadbeef",
-                "blind_judge_version": 6,
-                "completion_prompt_version": 5,
-            },
+            "prompts": {"shell_hash": "deadbeef"},
         },
         config_hash="0123456789abcdef",
     )

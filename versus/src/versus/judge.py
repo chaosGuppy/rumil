@@ -5,20 +5,23 @@ the versus-judge-shell + essay-adapted dimension body live under
 ``prompts/versus-*.md`` and are loaded via :mod:`rumil.versus_bridge`.
 Cross-judge rows are directly comparable on the prompt axis; the
 only real difference is model + transport.
+
+Storage: pairwise verdicts land in versus_judgments (Postgres) via
+:mod:`versus.versus_db`. Dedup is content-addressed on the
+``judge_inputs`` blob, which folds in text_a_id/text_b_id so re-judging
+different completion samples naturally forks the hash.
 """
 
 from __future__ import annotations
 
-import datetime as dt
 import hashlib
 import itertools
-import pathlib
 import threading
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 
@@ -29,7 +32,7 @@ from rumil.versus_prompts import (
     get_rumil_dimension_body,
     label_to_verdict,
 )
-from versus import anthropic_client, config, jsonl, openrouter
+from versus import anthropic_client, config, openrouter, versus_db
 
 Provider = Literal["anthropic", "openrouter"]
 
@@ -40,6 +43,7 @@ Order = Literal["ab", "ba"]
 class Source:
     source_id: str  # "human" or the model id
     text: str  # the completion text
+    text_id: str  # versus_texts.id — threaded through so judgments can FK to it
 
 
 def pair_order_seed(essay_id: str, a: str, b: str) -> int:
@@ -59,34 +63,6 @@ def order_pair(essay_id: str, a: Source, b: Source) -> tuple[Source, Source]:
         return hi_src, lo_src
 
 
-def judgment_key(
-    essay_id: str,
-    prefix_hash: str,
-    source_a: str,
-    source_b: str,
-    criterion: str,
-    config_hash: str,
-    order: Order,
-) -> str:
-    """Deterministic dedup key for one judgment row.
-
-    Keyed on the structured ``config_hash`` (introduced by
-    :mod:`versus.judge_config`). Any input the judge saw — model,
-    sampling, prompt content, tool descriptions, pair surface, closer
-    config, code fingerprint, workspace contents — is folded into
-    ``config_hash``, so a change in any of them auto-forks the dedup
-    key without anyone having to edit a parser.
-
-    ``order`` records which orientation the judge saw the pair in:
-    ``"ab"`` when the alphabetically-lower source was shown as
-    Continuation A, ``"ba"`` when it was shown as Continuation B.
-    Required (no default) so callers are forced to thread it through.
-    Capability slot for future mirror-mode aggregation.
-    """
-    lo, hi = sorted([source_a, source_b])
-    return f"{essay_id}|{prefix_hash}|{lo}__vs__{hi}|{criterion}|{config_hash}|{order}"
-
-
 def order_from_display_first(source_a: str, source_b: str, display_first: str) -> Order:
     """Derive the ``order`` slot from the display-first source id.
 
@@ -97,22 +73,6 @@ def order_from_display_first(source_a: str, source_b: str, display_first: str) -
     """
     lo, _ = sorted([source_a, source_b])
     return "ab" if display_first == lo else "ba"
-
-
-def infer_order(row: dict) -> Order:
-    """Return ``row['order']`` if present; otherwise derive it from ``display_first``.
-
-    Legacy rows (written before the order field was added) don't carry
-    ``order``; their orientation is still deterministic and recoverable
-    from ``display_first`` vs ``sorted([source_a, source_b])``. Use this
-    wherever downstream code needs the per-row order -- it tolerates the
-    mix of pre- and post-change rows that will coexist in the judgments
-    log.
-    """
-    existing = row.get("order")
-    if existing in ("ab", "ba"):
-        return existing  # pyright: ignore[reportReturnType]
-    return order_from_display_first(row["source_a"], row["source_b"], row["display_first"])
 
 
 def compute_judge_prompt_hash(dimension: str, *, with_tools: bool = False) -> str:
@@ -146,8 +106,8 @@ def _sampling_for(provider: Provider, canonical_model: str, max_tokens: int) -> 
 
     Anthropic-direct: temperature is omitted for opus 4.7 (the Messages API
     deprecated the param and 400s on it); 0.0 elsewhere. OpenRouter: always
-    0.0 (existing behaviour). Folded into the sampling-hash so topups at a
-    different temp re-judge instead of silently no-opping.
+    0.0. Folded into the judge_inputs blob so a topup at a different temp
+    forks the hash and re-judges.
     """
     if provider == "anthropic":
         use_temp = None if canonical_model.startswith("claude-opus-4-7") else 0.0
@@ -163,7 +123,8 @@ def build_blind_judge_config(
     Single compose site for the blind path; delegates to
     :func:`versus.judge_config.make_judge_config` so the structured
     config dict and the legacy-shape ``judge_model`` come from one source
-    of truth. Callers persist all three on the row.
+    of truth. The returned ``config_hash`` is computed independently of
+    DB-side text_a_id/text_b_id; callers fold those in before persisting.
     """
     from versus.judge_config import make_judge_config
 
@@ -180,17 +141,16 @@ def judge_config_is_current(row: dict, criterion: str) -> bool:
     """Return False if any code-side input to the judge has drifted.
 
     Status.py uses this to surface stale rows in the STALE banner.
-    Reads from ``row["config"]`` directly — every row carries a config
-    dict post-backfill.
+    Reads from ``row["judge_inputs"]`` (the canonical condition blob on
+    each versus_judgments row).
 
     Checks the prompt shell hash for all variants, plus the
-    ``code_fingerprint`` for ws/orch — that fingerprint is what
-    replaced the manual ``BLIND_JUDGE_VERSION`` gate for catching
-    semantic non-prompt edits (parser changes, SDK migrations, etc.).
-    Doesn't check ``workspace_state_hash``: that's a per-row baseline
-    watermark, not a staleness signal — every row would flap.
+    ``code_fingerprint`` for ws/orch — that fingerprint catches semantic
+    non-prompt edits (parser changes, SDK migrations, etc.). Doesn't
+    check ``workspace_state_hash``: that's a per-row baseline watermark,
+    not a staleness signal — every row would flap.
     """
-    cfg = row["config"]
+    cfg = row["judge_inputs"]
     is_tools = cfg["variant"] in ("ws", "orch")
     try:
         expected_ph = compute_judge_prompt_hash(criterion, with_tools=is_tools)
@@ -254,26 +214,23 @@ _MIN_RESPONSE_WORDS = 10
 
 
 def is_refusal(row: dict) -> bool:
-    """True if this completion row ended in a refusal or is too empty to judge.
+    """True if this versus_texts row ended in a refusal or is too empty to judge.
 
-    Human baseline and paraphrase-remainder rows set raw_response=None and
-    write response_text directly (the held-out remainder or the derived
-    paraphrase remainder). They're never refusals on their own account;
-    delegated-refusal state for paraphrase rows is carried explicitly on
-    a top-level ``paraphrase_refusal`` flag set by ``ensure_paraphrase_rows``
-    when the upstream paraphrase was itself refused.
+    Operates on DB-shaped rows: ``kind`` (``human`` / ``completion``),
+    ``response`` (raw provider response, may be None), ``text``.
 
-    For model-completion rows, we check:
+    Human rows are never refusals on their own account — the held-out
+    remainder is canonically truth, even if short.
+
+    For completion rows we check:
       - provider-signaled refusal (finish_reason / native_finish_reason), and
-      - empty / sub-threshold response text. A model that returned 200 OK with
-        two tokens didn't produce a judgable continuation; treating it as a
-        contestant would feed noise into the judge. Threshold is low enough
-        that legitimately short continuations pass; anything under it is
-        effectively non-response.
+      - empty / sub-threshold response text. A model that returned 200 OK
+        with two tokens didn't produce a judgable continuation; treating it
+        as a contestant feeds noise to the judge.
     """
-    if row.get("paraphrase_refusal"):
-        return True
-    rr = row.get("raw_response") or {}
+    if row.get("kind") == "human":
+        return False
+    rr = row.get("response") or {}
     choices = rr.get("choices") or []
     if choices:
         ch = choices[0] or {}
@@ -281,24 +238,26 @@ def is_refusal(row: dict) -> bool:
         nfr = ch.get("native_finish_reason")
         if fr in REFUSAL_FINISH_REASONS or nfr in REFUSAL_NATIVE_REASONS:
             return True
-    # Only flag empty responses for rows that actually came from a model
-    # (source_kind=completion). Human / paraphrase-remainder rows are
-    # derived text and don't carry provider state.
-    if row.get("source_kind") == "completion":
-        text = (row.get("response_text") or "").strip()
-        if not text or len(text.split()) < _MIN_RESPONSE_WORDS:
-            return True
+    text = (row.get("text") or "").strip()
+    if not text or len(text.split()) < _MIN_RESPONSE_WORDS:
+        return True
     return False
 
 
-def _prefix_text_from_completion_row(row: dict) -> str:
-    """Recover the prefix text that was shown in the completion prompt.
+def _prefix_text_from_request(request: dict | None) -> str:
+    """Recover the prefix text that was shown in a completion's request body.
 
-    The prompt has 'BEGIN ESSAY\\n===\\n...\\n===\\n\\nContinue from here:' — grab that slice.
-    Falls back to an empty string if we can't find the markers (human rows have prompt=None).
+    The user message has 'BEGIN ESSAY\\n===\\n...\\n===\\n\\nContinue from here:' —
+    grab that slice. Returns empty string if the request is missing or the
+    markers don't match (e.g. for human/derived rows with request=None).
     """
-    prompt = row.get("prompt") or ""
-    if not prompt:
+    if not request:
+        return ""
+    messages = request.get("messages") or []
+    if not messages:
+        return ""
+    prompt = (messages[0] or {}).get("content") or ""
+    if not isinstance(prompt, str):
         return ""
     start = prompt.find("BEGIN ESSAY\n===\n")
     end = prompt.rfind("\n===\n")
@@ -308,32 +267,50 @@ def _prefix_text_from_completion_row(row: dict) -> str:
 
 
 def load_sources_by_essay(
-    log_path: pathlib.Path,
-    prefix_hash_filter: str | None = None,
+    client=None,
     *,
+    prefix_hash_filter: str | None = None,
     exclude_refusals: bool = True,
-):
-    """Group completion rows by (essay_id, prefix_config_hash).
+) -> tuple[dict[tuple[str, str], dict[str, Source]], dict[tuple[str, str], str]]:
+    """Group versus_texts rows by ``(essay_id, prefix_hash)``.
 
-    Refused / content-filtered completions are excluded from the returned groups by
-    default so they don't show up in pair enumeration for judging. Prefix-text
-    recovery still uses the row (prefix text is unaffected by refusal).
+    Returns ``(groups, prefix_text_by_group)`` where ``groups`` maps
+    ``(essay_id, prefix_hash)`` to ``{source_id: Source(text, text_id)}``.
+    Refused / sub-threshold completions are excluded from the returned
+    groups by default so they don't show up in pair enumeration. The
+    prefix text is recovered from the request body of any completion row
+    in the group (deterministic across samples for the same prefix config).
+
+    Multiple text rows for the same ``(essay_id, prefix_hash, source_id)``
+    (intentional replicates, e.g. temperature>0 sampling) are collapsed
+    last-row-wins by created_at — pair enumeration uses one canonical
+    text per source. Re-running the judge against a *specific* replicate
+    is a separate flow that doesn't go through this helper.
     """
-    groups: dict[tuple[str, str], dict] = {}
+    if client is None:
+        client = versus_db.get_client()
+    groups: dict[tuple[str, str], dict[str, Source]] = {}
     prefix_text_by_group: dict[tuple[str, str], str] = {}
     skipped: list[tuple[str, str]] = []
-    for row in jsonl.read(log_path):
-        k = (row["essay_id"], row["prefix_config_hash"])
-        if prefix_hash_filter and row["prefix_config_hash"] != prefix_hash_filter:
+    for row in versus_db.iter_texts(client):
+        prefix_hash = row.get("prefix_hash")
+        if prefix_hash is None:
             continue
+        if prefix_hash_filter and prefix_hash != prefix_hash_filter:
+            continue
+        k = (row["essay_id"], prefix_hash)
         if row["source_id"] != "human" and k not in prefix_text_by_group:
-            pt = _prefix_text_from_completion_row(row)
+            pt = _prefix_text_from_request(row.get("request"))
             if pt:
                 prefix_text_by_group[k] = pt
         if exclude_refusals and is_refusal(row):
             skipped.append((row["essay_id"], row["source_id"]))
             continue
-        groups.setdefault(k, {})[row["source_id"]] = row["response_text"]
+        groups.setdefault(k, {})[row["source_id"]] = Source(
+            source_id=row["source_id"],
+            text=row["text"],
+            text_id=row["id"],
+        )
     if skipped:
         for essay_id, source_id in skipped:
             print(f"[skip-refusal] {essay_id} / {source_id}")
@@ -351,25 +328,71 @@ class _BlindTask:
     b_id: str
     first: Source
     second: Source
+    text_a_id: str
+    text_b_id: str
     dimension: str
-    base_model: str  # as the user typed it (alias resolved, anthropic/ prefix retained if given)
-    canonical_model: str  # post-routing id
+    base_model: str
+    canonical_model: str
     provider: Provider
     judge_model: str
     system_prompt: str
     user_prompt: str
-    key: str
     order: Order
     sampling: dict
-    # Structured config + its sha256 — written onto the row alongside
-    # ``judge_model`` so downstream provenance reads from one place
-    # instead of regex-parsing the flat string.
-    config: dict
-    config_hash: str
+    judge_inputs: dict  # canonical condition blob — hash is judge_inputs_hash
+    judge_inputs_hash: str
+
+
+def _build_judge_inputs(
+    base_config: dict,
+    text_a_id: str,
+    text_b_id: str,
+) -> tuple[dict, str]:
+    """Augment a judge_config dict with text id refs and compute its hash.
+
+    text_a_id / text_b_id naturally fork the hash when re-judging a
+    different completion sample at the same prompt config — so two
+    judgments at temp>0 against different completion replicates produce
+    distinct rows.
+    """
+    judge_inputs = dict(base_config)
+    judge_inputs["text_a_id"] = text_a_id
+    judge_inputs["text_b_id"] = text_b_id
+    return judge_inputs, versus_db.compute_canonical_hash(judge_inputs)
+
+
+def _build_judge_request(
+    *,
+    provider: Provider,
+    canonical_model: str,
+    system_prompt: str,
+    user_prompt: str,
+    sampling: dict,
+) -> dict[str, Any]:
+    """Canonical provider-shaped request body for storage on the row.
+
+    Anthropic carries the system prompt out-of-band; OpenRouter inlines
+    it as a leading system message. Either way we record the body the
+    eval condition implies (independent of SDK header / version churn).
+    """
+    body: dict[str, Any] = {"model": canonical_model}
+    if provider == "anthropic":
+        body["system"] = system_prompt
+        body["messages"] = [{"role": "user", "content": user_prompt}]
+    else:
+        body["messages"] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+    if sampling.get("temperature") is not None:
+        body["temperature"] = sampling["temperature"]
+    if sampling.get("max_tokens") is not None:
+        body["max_tokens"] = sampling["max_tokens"]
+    return body
 
 
 def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
-    """Run one blind judgment, dispatching by provider."""
+    """Run one blind judgment, dispatching by provider, return DB-shaped row."""
     t0 = time.time()
     if task.provider == "anthropic":
         resp = anthropic_client.chat(
@@ -394,38 +417,49 @@ def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
         )
         text = openrouter.extract_text(resp)
     verdict, preference_label = parse_verdict_from_label(text)
-    winner_source = None
-    if verdict == "A":
-        winner_source = task.first.source_id
-    elif verdict == "B":
-        winner_source = task.second.source_id
-    elif verdict == "tie":
-        winner_source = "tie"
+    request_body = _build_judge_request(
+        provider=task.provider,
+        canonical_model=task.canonical_model,
+        system_prompt=task.system_prompt,
+        user_prompt=task.user_prompt,
+        sampling=task.sampling,
+    )
     return {
-        "key": task.key,
         "essay_id": task.essay_id,
-        "prefix_config_hash": task.prefix_hash,
+        "prefix_hash": task.prefix_hash,
         "source_a": task.a_id,
         "source_b": task.b_id,
         "display_first": task.first.source_id,
-        "display_second": task.second.source_id,
-        "order": task.order,
+        "text_a_id": task.text_a_id,
+        "text_b_id": task.text_b_id,
         "criterion": task.dimension,
+        "variant": "blind",
         "judge_model": task.judge_model,
+        "request": request_body,
+        "response": resp,
+        "judge_inputs": task.judge_inputs,
         "verdict": verdict,
-        "winner_source": winner_source,
         "preference_label": preference_label,
         "reasoning_text": text,
-        "prompt": task.user_prompt,
-        "system_prompt": task.system_prompt,
-        "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
-        "raw_response": resp,
-        "sampling": task.sampling,
-        "provider": task.provider,
-        "config": task.config,
-        "config_hash": task.config_hash,
     }
+
+
+def _existing_judgment_keys(client) -> set[tuple[str, ...]]:
+    """Build a dedup set keyed on (essay_id, prefix_hash, sa, sb, criterion, judge_inputs_hash)."""
+    out: set[tuple[str, ...]] = set()
+    for r in versus_db.iter_judgments(client):
+        out.add(
+            (
+                r["essay_id"],
+                r["prefix_hash"],
+                r["source_a"],
+                r["source_b"],
+                r["criterion"],
+                r["judge_inputs_hash"],
+            )
+        )
+    return out
 
 
 def run_blind(
@@ -446,9 +480,9 @@ def run_blind(
     Each model is routed via :func:`route_judge_model`: claude-* go
     direct to Anthropic, others via OpenRouter. Same prompt
     construction across all (the blind shell — no tool advertisements,
-    pair inlined in user message). Each row's display ``judge_model``
-    has shape ``blind:<model>:<dimension>:c<config_hash[:8]>``;
-    dedup is keyed on the row's ``config_hash``.
+    pair inlined in user message). Dedup is content-addressed on
+    ``judge_inputs_hash``: any change to model / sampling / prompt
+    content / pair surface auto-forks.
     """
     from versus import prepare
 
@@ -456,8 +490,9 @@ def run_blind(
         print("[info] no models passed to run_blind; nothing to do")
         return
 
-    groups, prefix_texts = load_sources_by_essay(cfg.storage.completions_log)
-    existing = jsonl.keys(cfg.storage.judgments_log)
+    db = versus_db.get_client()
+    groups, prefix_texts = load_sources_by_essay(db)
+    existing = _existing_judgment_keys(db)
 
     effective_dimensions = (
         list(dimensions) if dimensions is not None else list(cfg.judging.criteria)
@@ -487,21 +522,29 @@ def run_blind(
         for a_id, b_id in itertools.combinations(sorted(source_ids), 2):
             if vs_human and "human" not in (a_id, b_id):
                 continue
-            src_a = Source(a_id, sources[a_id])
-            src_b = Source(b_id, sources[b_id])
+            src_a = sources[a_id]
+            src_b = sources[b_id]
             first, second = order_pair(essay_id, src_a, src_b)
             order = order_from_display_first(a_id, b_id, first.source_id)
             for dimension in effective_dimensions:
                 for base_model in models:
                     provider, canonical_model = route_judge_model(base_model)
                     sampling = _sampling_for(provider, canonical_model, cfg.judging.max_tokens)
-                    config_dict, config_hash, judge_model = build_blind_judge_config(
+                    base_config, _, judge_model = build_blind_judge_config(
                         canonical_model, dimension, sampling
                     )
-                    k = judgment_key(
-                        essay_id, prefix_hash, a_id, b_id, dimension, config_hash, order
+                    judge_inputs, judge_inputs_hash = _build_judge_inputs(
+                        base_config, src_a.text_id, src_b.text_id
                     )
-                    if k in existing:
+                    dedup_key = (
+                        essay_id,
+                        prefix_hash,
+                        a_id,
+                        b_id,
+                        dimension,
+                        judge_inputs_hash,
+                    )
+                    if dedup_key in existing:
                         continue
                     system_prompt, user_prompt = render_judge_prompt(
                         prefix_text=prefix_text,
@@ -517,6 +560,8 @@ def run_blind(
                             b_id=b_id,
                             first=first,
                             second=second,
+                            text_a_id=src_a.text_id,
+                            text_b_id=src_b.text_id,
                             dimension=dimension,
                             base_model=base_model,
                             canonical_model=canonical_model,
@@ -524,14 +569,13 @@ def run_blind(
                             judge_model=judge_model,
                             system_prompt=system_prompt,
                             user_prompt=user_prompt,
-                            key=k,
                             order=order,
                             sampling=sampling,
-                            config=config_dict,
-                            config_hash=config_hash,
+                            judge_inputs=judge_inputs,
+                            judge_inputs_hash=judge_inputs_hash,
                         )
                     )
-                    existing.add(k)
+                    existing.add(dedup_key)
 
     if limit is not None:
         tasks = tasks[:limit]
@@ -539,7 +583,6 @@ def run_blind(
         print("[info] no pending blind judgments")
         return
 
-    # Per-canonical-model semaphores so a slow reasoning judge can't starve fast ones.
     semaphores: dict[str, threading.BoundedSemaphore] = {
         cm: threading.BoundedSemaphore(cfg.per_model_concurrency)
         for cm in {t.canonical_model for t in tasks}
@@ -557,29 +600,51 @@ def run_blind(
             print(f"  ... and {len(tasks) - 20} more")
         return
 
-    client = httpx.Client(timeout=600.0)
+    http = httpx.Client(timeout=600.0)
     try:
         with ThreadPoolExecutor(max_workers=total_workers) as pool:
             futures = {
                 pool.submit(
-                    _call_with_semaphore, semaphores[t.canonical_model], _call_one_blind, t, client
-                ): t.key
+                    _call_with_semaphore, semaphores[t.canonical_model], _call_one_blind, t, http
+                ): t
                 for t in tasks
             }
             done = 0
             total = len(tasks)
             for fut in as_completed(futures):
-                k = futures[fut]
+                t = futures[fut]
                 try:
                     row = fut.result()
                 except Exception as e:
-                    print(f"[err ] {k}: {e}")
+                    print(f"[err ] {t.essay_id} {t.a_id} vs {t.b_id} [{t.dimension}]: {e}")
                     continue
-                jsonl.append(cfg.storage.judgments_log, row)
+                versus_db.insert_judgment(
+                    db,
+                    essay_id=row["essay_id"],
+                    prefix_hash=row["prefix_hash"],
+                    source_a=row["source_a"],
+                    source_b=row["source_b"],
+                    display_first=row["display_first"],
+                    text_a_id=row["text_a_id"],
+                    text_b_id=row["text_b_id"],
+                    criterion=row["criterion"],
+                    variant=row["variant"],
+                    judge_model=row["judge_model"],
+                    judge_inputs=row["judge_inputs"],
+                    verdict=row["verdict"],
+                    reasoning_text=row["reasoning_text"],
+                    request=row["request"],
+                    response=row["response"],
+                    preference_label=row["preference_label"],
+                    duration_s=row["duration_s"],
+                )
                 done += 1
-                print(f"[done {done}/{total}] {k}")
+                print(
+                    f"[done {done}/{total}] {t.essay_id} {t.a_id} vs {t.b_id} "
+                    f"[{t.dimension}] verdict={row['verdict']}"
+                )
     finally:
-        client.close()
+        http.close()
 
 
 def _call_with_semaphore(sem: threading.BoundedSemaphore, fn, *args, **kwargs):

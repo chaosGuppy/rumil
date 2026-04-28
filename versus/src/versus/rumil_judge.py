@@ -1,6 +1,6 @@
 """Workspace-aware pairwise judging via rumil's agent/orchestrator paths.
 
-Two variants, both writing into ``data/judgments.jsonl`` with
+Two variants, both writing rows into ``versus_judgments`` with
 ``judge_model`` strings that distinguish them:
 
 - ``ws`` (``rumil:ws:<model>:<ws>:<task>``): one VERSUS_JUDGE agent call
@@ -13,9 +13,8 @@ Two variants, both writing into ``data/judgments.jsonl`` with
   VERSUS_JUDGE call that emits the 7-point preference label. Budget is
   the orchestrator's research call cap (minimum: 4).
 
-Both emit trace URLs and mirror them into the judgments row alongside
-rumil_call_id / rumil_run_id / rumil_question_id / rumil_project so the
-versus UI can surface them.
+Both populate ``project_id`` / ``run_id`` / ``rumil_call_id`` on the
+judgment row so the versus UI can surface trace URLs back to rumil.
 
 The blind (no-tools) judge paths — formerly ``text`` and ``rumil-text``
 — moved into :func:`versus.judge.run_blind`.
@@ -24,17 +23,13 @@ The blind (no-tools) judge paths — formerly ``text`` and ``rumil-text``
 from __future__ import annotations
 
 import asyncio
-import datetime as dt
 import itertools
 import time
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
-from versus import config, jsonl, judge
+from versus import config, judge, versus_db
 
 
 def _anthropic_sampling(model: str, max_tokens: int) -> dict:
@@ -54,8 +49,10 @@ class _PendingPair:
     prefix_text: str
     source_a_id: str
     source_a_text: str
+    source_a_text_id: str
     source_b_id: str
     source_b_text: str
+    source_b_text_id: str
     # Display order (matches versus judge.order_pair): first / second in
     # display order for this (essay_id, pair). Used for downstream display
     # parity with OpenRouter judges.
@@ -63,6 +60,19 @@ class _PendingPair:
     display_first_text: str
     display_second_id: str
     display_second_text: str
+
+
+# Returned per pending judgment by _plan_rumil_pairs. The variant arg
+# (ws/orch) lives on the make_judge_config call upstream — we just thread
+# the resulting base_config through so callers can fold in text_a_id /
+# text_b_id at insert time.
+@dataclass
+class _PendingJudgment:
+    pair: _PendingPair
+    task_name: str
+    is_versus_crit: bool
+    judge_model: str
+    base_config: dict
 
 
 def _plan_rumil_pairs(
@@ -75,15 +85,15 @@ def _plan_rumil_pairs(
     vs_human: bool = False,
     current_only: bool = False,
     prefix_cfg: config.PrefixCfg | None = None,
-) -> list[tuple[_PendingPair, str, bool, str, dict, str]]:
-    """Enumerate pending judgment tuples.
+) -> list[_PendingJudgment]:
+    """Enumerate pending judgments (skipping ones already in versus_judgments).
 
-    Returns ``(pair, task_name, is_versus_criterion, judge_model,
-    config, config_hash)`` per pending judgment. The
-    ``compose_judge_config(task_name, is_versus_criterion)`` callback
+    The ``compose_judge_config(task_name, is_versus_criterion)`` callback
     delegates to :func:`versus.judge_config.make_judge_config` so the
-    structured config and the legacy-shape ``judge_model`` come from
-    one source of truth.
+    structured config and the legacy-shape ``judge_model`` come from one
+    source of truth. Dedup is done content-addressed: we compute the
+    judge_inputs_hash that would land on the new row (with text_a_id/
+    text_b_id baked in) and skip if a row already exists at that key.
 
     Filters (all optional, composable):
     - ``essay_ids``: restrict to pairs from these essays
@@ -101,9 +111,10 @@ def _plan_rumil_pairs(
         if current_only
         else None
     )
-    groups, prefix_texts = judge.load_sources_by_essay(cfg.storage.completions_log)
-    existing = jsonl.keys(cfg.storage.judgments_log)
-    out: list[tuple[_PendingPair, str, bool, str, dict, str]] = []
+    db = versus_db.get_client()
+    groups, prefix_texts = judge.load_sources_by_essay(db)
+    existing = judge._existing_judgment_keys(db)
+    out: list[_PendingJudgment] = []
     for (essay_id, prefix_hash), sources in groups.items():
         if essay_id_set is not None and essay_id not in essay_id_set:
             continue
@@ -120,35 +131,46 @@ def _plan_rumil_pairs(
         for a_id, b_id in itertools.combinations(sorted(source_ids), 2):
             if vs_human and "human" not in (a_id, b_id):
                 continue
-            src_a = judge.Source(a_id, sources[a_id])
-            src_b = judge.Source(b_id, sources[b_id])
+            src_a = sources[a_id]
+            src_b = sources[b_id]
             first, second = judge.order_pair(essay_id, src_a, src_b)
             pair = _PendingPair(
                 essay_id=essay_id,
                 prefix_hash=prefix_hash,
                 prefix_text=prefix_text,
                 source_a_id=a_id,
-                source_a_text=sources[a_id],
+                source_a_text=src_a.text,
+                source_a_text_id=src_a.text_id,
                 source_b_id=b_id,
-                source_b_text=sources[b_id],
+                source_b_text=src_b.text,
+                source_b_text_id=src_b.text_id,
                 display_first_id=first.source_id,
                 display_first_text=first.text,
                 display_second_id=second.source_id,
                 display_second_text=second.text,
             )
-            order = judge.order_from_display_first(a_id, b_id, first.source_id)
             for task_name, is_versus_crit in tasks_spec:
-                config_dict, config_hash, judge_model = compose_judge_config(
-                    task_name, is_versus_crit
-                )
+                base_config, _, judge_model = compose_judge_config(task_name, is_versus_crit)
                 criterion_value = task_name if is_versus_crit else f"rumil_{task_name}"
-                k = judge.judgment_key(
-                    essay_id, prefix_hash, a_id, b_id, criterion_value, config_hash, order
+                # Predict the judge_inputs_hash that would land on the row, so
+                # we skip pairs that already have a row at this exact config.
+                predicted_inputs, predicted_hash = judge._build_judge_inputs(
+                    base_config, src_a.text_id, src_b.text_id
                 )
-                if k in existing:
+                del predicted_inputs  # only the hash is used for dedup
+                key = (essay_id, prefix_hash, a_id, b_id, criterion_value, predicted_hash)
+                if key in existing:
                     continue
-                out.append((pair, task_name, is_versus_crit, judge_model, config_dict, config_hash))
-                existing.add(k)
+                out.append(
+                    _PendingJudgment(
+                        pair=pair,
+                        task_name=task_name,
+                        is_versus_crit=is_versus_crit,
+                        judge_model=judge_model,
+                        base_config=base_config,
+                    )
+                )
+                existing.add(key)
     return out
 
 
@@ -159,63 +181,46 @@ def _mirror_row(
     result: Any,
     *,
     t0: float,
-    config: dict,
-    config_hash: str,
+    judge_inputs: dict,
+    variant: str,
 ) -> dict:
-    """Build a judgments.jsonl row for a rumil-judged pair.
+    """Build a versus_judgments row for a rumil-judged pair.
 
-    Extra fields (``rumil_call_id``, ``rumil_run_id``, ``rumil_trace_url``,
-    ``rumil_question_id``, ``rumil_preference_label``) are non-breaking;
-    the versus UI picks them up when present and falls back to the
-    OpenRouter-compatible shape when they're absent.
+    Returns a dict shaped for :func:`versus_db.insert_judgment`. The
+    ``judge_inputs`` blob already carries the rumil judge config (model,
+    sampling, prompt hash, tools, workspace state, etc.); we add the
+    text id refs and the order axis so the row's content-addressed hash
+    distinguishes both replicates and orientations.
     """
     verdict = result.verdict
-    winner_source: str | None = None
-    if verdict == "A":
-        winner_source = pair.display_first_id
-    elif verdict == "B":
-        winner_source = pair.display_second_id
-    elif verdict == "tie":
-        winner_source = "tie"
     order = judge.order_from_display_first(
         pair.source_a_id, pair.source_b_id, pair.display_first_id
     )
-    k = judge.judgment_key(
-        pair.essay_id,
-        pair.prefix_hash,
-        pair.source_a_id,
-        pair.source_b_id,
-        criterion_value,
-        config_hash,
-        order,
-    )
+    judge_inputs = dict(judge_inputs)
+    judge_inputs["text_a_id"] = pair.source_a_text_id
+    judge_inputs["text_b_id"] = pair.source_b_text_id
+    judge_inputs["order"] = order
     return {
-        "key": k,
         "essay_id": pair.essay_id,
-        "prefix_config_hash": pair.prefix_hash,
+        "prefix_hash": pair.prefix_hash,
         "source_a": pair.source_a_id,
         "source_b": pair.source_b_id,
         "display_first": pair.display_first_id,
-        "display_second": pair.display_second_id,
-        "order": order,
+        "text_a_id": pair.source_a_text_id,
+        "text_b_id": pair.source_b_text_id,
         "criterion": criterion_value,
+        "variant": variant,
         "judge_model": judge_model,
+        "judge_inputs": judge_inputs,
         "verdict": verdict,
-        "winner_source": winner_source,
+        "preference_label": result.preference_label,
         "reasoning_text": result.reasoning_text,
-        "prompt": getattr(result, "user_prompt", "") or "",
-        "system_prompt": getattr(result, "system_prompt", "") or "",
-        "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
-        "raw_response": None,
         "rumil_call_id": result.call_id,
         "rumil_run_id": result.run_id,
-        "rumil_question_id": result.question_id,
         "rumil_trace_url": result.trace_url,
-        "preference_label": result.preference_label,
+        "rumil_question_id": result.question_id,
         "rumil_cost_usd": result.cost_usd,
-        "config": config,
-        "config_hash": config_hash,
     }
 
 
@@ -370,10 +375,12 @@ async def run_ws(
         f"(model={model}, workspace={workspace}, concurrency={effective_concurrency})"
     )
     if dry_run:
-        for pair, task_name, is_versus_crit, judge_model, _cfg, _ch in tasks[:20]:
-            kind = "versus" if is_versus_crit else "rumil_dim"
+        for pj in tasks[:20]:
+            kind = "versus" if pj.is_versus_crit else "rumil_dim"
+            pair = pj.pair
             print(
-                f"  * [{kind}:{task_name}] {pair.essay_id} {pair.source_a_id} vs {pair.source_b_id} -> {judge_model}"
+                f"  * [{kind}:{pj.task_name}] {pair.essay_id} {pair.source_a_id} vs "
+                f"{pair.source_b_id} -> {pj.judge_model}"
             )
         if len(tasks) > 20:
             print(f"  ... and {len(tasks) - 20} more")
@@ -384,23 +391,20 @@ async def run_ws(
     total = len(tasks)
     lock = asyncio.Lock()
 
-    async def _exec_one(
-        pair: _PendingPair,
-        task_name: str,
-        is_versus_crit: bool,
-        judge_model: str,
-        config_dict: dict,
-        config_hash: str,
-    ) -> None:
+    versus_client = versus_db.get_client()
+
+    async def _exec_one(pj: _PendingJudgment) -> None:
         nonlocal done
+        pair = pj.pair
+        task_name = pj.task_name
+        is_versus_crit = pj.is_versus_crit
         async with sem:
             t0 = time.time()
-            # Each pair gets its own run_id + its own DB. Matches the
-            # run_orch shape: staging is per-run, concurrent pairs can't
-            # contaminate each other's staged views, the per-pair trace
-            # URL points at just that pair's VERSUS_JUDGE call, and the
-            # MutationState cache on the shared DB no longer thrashes
-            # across pairs.
+            # Each pair gets its own run_id + its own DB. Staging is
+            # per-run, concurrent pairs can't contaminate each other's
+            # staged views, the per-pair trace URL points at just that
+            # pair's VERSUS_JUDGE call, and the MutationState cache on
+            # the shared DB no longer thrashes across pairs.
             run_id = str(uuid.uuid4())
             db = await DB.create(
                 run_id=run_id, prod=False, project_id=project.id, staged=not persist
@@ -424,9 +428,6 @@ async def run_ws(
                 # fed to the agent (agent reads pages via load_page /
                 # search / explore_subgraph, never the runs row). Safe
                 # to embed per-pair metadata for forensic traceability.
-                # ``judge_config`` is the structured source of truth;
-                # ``judge_model`` / ``config_hash`` aren't duplicated
-                # here since both are deterministically derivable from it.
                 await db.create_run(
                     name=f"versus-rumil-ws:{workspace}:{pair.essay_id}",
                     question_id=None,
@@ -435,12 +436,12 @@ async def run_ws(
                         "workspace": workspace,
                         "task_name": effective_task,
                         "essay_id": pair.essay_id,
-                        "judge_config": config_dict,
+                        "judge_config": pj.base_config,
                         "judging_max_tokens": cfg.judging.max_tokens,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /
                         # order live on the judgment row in
-                        # judgments.jsonl — intentionally not duplicated
+                        # versus_judgments — intentionally not duplicated
                         # here to keep runs.config blind-equivalent with
                         # page.extra if a future change routes config
                         # into agent context.
@@ -457,22 +458,43 @@ async def run_ws(
             criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
             row = _mirror_row(
                 pair,
-                judge_model,
+                pj.judge_model,
                 criterion_value,
                 result,
                 t0=t0,
-                config=config_dict,
-                config_hash=config_hash,
+                judge_inputs=pj.base_config,
+                variant="ws",
             )
             async with lock:
-                jsonl.append(cfg.storage.judgments_log, row)
+                versus_db.insert_judgment(
+                    versus_client,
+                    essay_id=row["essay_id"],
+                    prefix_hash=row["prefix_hash"],
+                    source_a=row["source_a"],
+                    source_b=row["source_b"],
+                    display_first=row["display_first"],
+                    text_a_id=row["text_a_id"],
+                    text_b_id=row["text_b_id"],
+                    criterion=row["criterion"],
+                    variant=row["variant"],
+                    judge_model=row["judge_model"],
+                    judge_inputs=row["judge_inputs"],
+                    verdict=row["verdict"],
+                    reasoning_text=row["reasoning_text"],
+                    preference_label=row["preference_label"],
+                    duration_s=row["duration_s"],
+                    project_id=project.id,
+                    run_id=run_id,
+                    rumil_call_id=row["rumil_call_id"],
+                )
                 done += 1
                 print(
-                    f"[done {done}/{total}] {row['key']}  "
-                    f"label={result.preference_label!r}  trace={result.trace_url}"
+                    f"[done {done}/{total}] {pair.essay_id} {pair.source_a_id} vs "
+                    f"{pair.source_b_id} [{criterion_value}] "
+                    f"label={result.preference_label!r} trace={result.trace_url}"
                 )
 
-    await asyncio.gather(*[_exec_one(*t) for t in tasks])
+    await asyncio.gather(*[_exec_one(pj) for pj in tasks])
 
 
 async def run_orch(
@@ -585,10 +607,12 @@ async def run_orch(
         f"concurrency={effective_concurrency})"
     )
     if dry_run:
-        for pair, task_name, is_versus_crit, judge_model, _cfg, _ch in tasks[:20]:
-            kind = "versus" if is_versus_crit else "rumil_dim"
+        for pj in tasks[:20]:
+            kind = "versus" if pj.is_versus_crit else "rumil_dim"
+            pair = pj.pair
             print(
-                f"  * [{kind}:{task_name}] {pair.essay_id} {pair.source_a_id} vs {pair.source_b_id} -> {judge_model}"
+                f"  * [{kind}:{pj.task_name}] {pair.essay_id} {pair.source_a_id} vs "
+                f"{pair.source_b_id} -> {pj.judge_model}"
             )
         if len(tasks) > 20:
             print(f"  ... and {len(tasks) - 20} more")
@@ -599,15 +623,13 @@ async def run_orch(
     sem = asyncio.Semaphore(effective_concurrency)
     lock = asyncio.Lock()
 
-    async def _exec_one(
-        pair: _PendingPair,
-        task_name: str,
-        is_versus_crit: bool,
-        judge_model: str,
-        config_dict: dict,
-        config_hash: str,
-    ) -> None:
+    versus_client = versus_db.get_client()
+
+    async def _exec_one(pj: _PendingJudgment) -> None:
         nonlocal done
+        pair = pj.pair
+        task_name = pj.task_name
+        is_versus_crit = pj.is_versus_crit
         async with sem:
             t0 = time.time()
             run_id = str(uuid.uuid4())
@@ -633,13 +655,8 @@ async def run_orch(
                     task_name=effective_task,
                 )
                 # runs.config is surfaced via the traces UI but is NOT
-                # fed to the agent during the run (agent reads pages via
-                # load_page / search / explore_subgraph; it never reads
-                # the runs row). Safe to embed per-pair metadata for
-                # forensic traceability. ``judge_config`` is the
-                # structured source of truth; ``judge_model`` /
-                # ``config_hash`` aren't duplicated since both are
-                # deterministically derivable from it.
+                # fed to the agent during the run. Safe to embed
+                # per-pair metadata for forensic traceability.
                 await db.create_run(
                     name=f"versus-rumil-orch:{workspace}:{pair.essay_id}",
                     question_id=None,
@@ -648,12 +665,12 @@ async def run_orch(
                         "workspace": workspace,
                         "task_name": effective_task,
                         "essay_id": pair.essay_id,
-                        "judge_config": config_dict,
+                        "judge_config": pj.base_config,
                         "judging_max_tokens": cfg.judging.max_tokens,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /
                         # order live on the judgment row in
-                        # judgments.jsonl — intentionally not duplicated
+                        # versus_judgments — intentionally not duplicated
                         # here to keep runs.config blind-equivalent with
                         # page.extra if a future change routes config
                         # into agent context.
@@ -672,19 +689,40 @@ async def run_orch(
             criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
             row = _mirror_row(
                 pair,
-                judge_model,
+                pj.judge_model,
                 criterion_value,
                 result,
                 t0=t0,
-                config=config_dict,
-                config_hash=config_hash,
+                judge_inputs=pj.base_config,
+                variant="orch",
             )
             async with lock:
-                jsonl.append(cfg.storage.judgments_log, row)
+                versus_db.insert_judgment(
+                    versus_client,
+                    essay_id=row["essay_id"],
+                    prefix_hash=row["prefix_hash"],
+                    source_a=row["source_a"],
+                    source_b=row["source_b"],
+                    display_first=row["display_first"],
+                    text_a_id=row["text_a_id"],
+                    text_b_id=row["text_b_id"],
+                    criterion=row["criterion"],
+                    variant=row["variant"],
+                    judge_model=row["judge_model"],
+                    judge_inputs=row["judge_inputs"],
+                    verdict=row["verdict"],
+                    reasoning_text=row["reasoning_text"],
+                    preference_label=row["preference_label"],
+                    duration_s=row["duration_s"],
+                    project_id=project.id,
+                    run_id=run_id,
+                    rumil_call_id=row["rumil_call_id"],
+                )
                 done += 1
                 print(
-                    f"[done {done}/{total}] {row['key']}  "
-                    f"label={result.preference_label!r}  trace={result.trace_url}"
+                    f"[done {done}/{total}] {pair.essay_id} {pair.source_a_id} vs "
+                    f"{pair.source_b_id} [{criterion_value}] "
+                    f"label={result.preference_label!r} trace={result.trace_url}"
                 )
 
-    await asyncio.gather(*[_exec_one(*t) for t in tasks])
+    await asyncio.gather(*[_exec_one(pj) for pj in tasks])

@@ -221,15 +221,17 @@ def iter_judgments(
         offset += page_size
 
 
-def compute_request_hash(request: Mapping[str, Any]) -> str:
-    """Compute the same hash as the DB's generated column.
+def compute_canonical_hash(payload: Mapping[str, Any]) -> str:
+    """Compute the same hash a generated jsonb column would produce.
 
-    Useful in the runner for "have we seen this exact request?" lookups
-    without round-tripping through the DB. Mirrors the SQL expression
-    ``encode(digest(request::text, 'sha256'), 'hex')``: jsonb canonicalizes
-    keys alphabetically, so we serialize with ``sort_keys=True``.
+    Used in the runner for "have we seen this exact config?" lookups
+    without round-tripping through the DB — works for either the
+    ``request`` column (request_hash) or ``judge_inputs`` (judge_inputs_hash).
+    Mirrors the SQL expression ``encode(digest(<col>::text, 'sha256'), 'hex')``:
+    jsonb canonicalizes keys alphabetically, so we serialize with
+    ``sort_keys=True`` and Postgres's text-form spacing.
     """
     import hashlib
 
-    canonical = json.dumps(request, sort_keys=True, separators=(", ", ": "), ensure_ascii=False)
+    canonical = json.dumps(payload, sort_keys=True, separators=(", ", ": "), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

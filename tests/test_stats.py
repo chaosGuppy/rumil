@@ -256,17 +256,16 @@ async def test_question_stats_isolated(tmp_db):
     assert blob["subgraph_page_count"] == 1
     assert blob["pages_by_type"] == {"question": 1}
     assert blob["links_total"] == 0
-    assert blob["calls_per_question"] == [
-        {
-            "question_id": q.id,
-            "headline": "lonely",
-            "by_type": {},
-            "total": 0,
-            "child_questions": 0,
-            "considerations": 0,
-            "judgements": 0,
-        }
-    ]
+    entries = blob["calls_per_question"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["question_id"] == q.id
+    assert entry["headline"] == "lonely"
+    assert entry["by_type"] == {}
+    assert entry["total"] == 0
+    assert entry["child_questions"] == 0
+    assert entry["considerations"] == 0
+    assert entry["judgements"] == 0
 
 
 @pytest.mark.asyncio

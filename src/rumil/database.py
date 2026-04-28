@@ -52,6 +52,21 @@ def _rows(response: Any) -> _Rows:
 
 
 @dataclass(frozen=True)
+class PrioritizationCandidate:
+    """A prioritization call that had a given question in its dispatchable
+    candidate set — i.e. its scope was the question itself, or the question
+    was a direct CHILD_QUESTION child of the prio call's scope at query time.
+    """
+
+    call_id: str
+    run_id: str
+    scope_page_id: str
+    scope_headline: str
+    created_at: datetime
+    is_scope: bool
+
+
+@dataclass(frozen=True)
 class QuestionBudgetPool:
     """Per-question shared budget pool state.
 
@@ -2323,6 +2338,56 @@ class DB:
             )
         )
         return [_row_to_call(r) for r in rows]
+
+    async def get_prioritization_calls_with_question_as_candidate(
+        self, question_id: str
+    ) -> list[PrioritizationCandidate]:
+        """Find prioritization calls that had ``question_id`` in their dispatchable
+        candidate set.
+
+        A prioritization call's candidates are its scope question plus the scope
+        question's direct CHILD_QUESTION children (this is what ``short_id_map``
+        gets seeded with in ``build_prioritization_context``). So for question Q,
+        we match prio calls whose ``scope_page_id`` is Q or any current parent
+        of Q via CHILD_QUESTION links. If Q has been re-parented since a prio
+        call ran, that historical association is not surfaced — accepted in v1.
+        """
+        parent_links = [
+            link
+            for link in await self.get_links_to(question_id)
+            if link.link_type == LinkType.CHILD_QUESTION
+        ]
+        candidate_scopes = list({question_id, *(l.from_page_id for l in parent_links)})
+
+        rows = _rows(
+            await self._execute(
+                self.client.table("calls")
+                .select("id, run_id, scope_page_id, created_at")
+                .eq("call_type", CallType.PRIORITIZATION.value)
+                .in_("scope_page_id", candidate_scopes)
+                .order("created_at", desc=True)
+            )
+        )
+        if not rows:
+            return []
+
+        scope_ids = {r["scope_page_id"] for r in rows if r.get("scope_page_id")}
+        pages = await self.get_pages_by_ids(list(scope_ids))
+
+        return [
+            PrioritizationCandidate(
+                call_id=r["id"],
+                run_id=r.get("run_id") or "",
+                scope_page_id=r["scope_page_id"],
+                scope_headline=(
+                    pages[r["scope_page_id"]].headline if r["scope_page_id"] in pages else ""
+                ),
+                created_at=datetime.fromisoformat(r["created_at"]),
+                is_scope=r["scope_page_id"] == question_id,
+            )
+            for r in rows
+            if r.get("scope_page_id")
+        ]
 
     async def get_root_calls_for_question(self, question_id: str) -> list[Call]:
         """Find top-level calls for a question (prioritization calls with no

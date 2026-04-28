@@ -1,22 +1,5 @@
 import type { ProvenanceAxis, ProvenanceSummary } from "@/api/types.gen";
 
-const AXIS_ORDER = [
-  "prefix_config_hash",
-  "judge_path",
-  "judge_base_model",
-  "judge_dimension",
-  "judge_workspace_id",
-  "judge_prompt_hash",
-  "judge_sampling_hash",
-  "judge_tool_hash",
-  "judge_pair_hash",
-  "judge_closer_hash",
-  "judge_budget",
-  "judge_code_fingerprint",
-  "judge_workspace_state_hash",
-  "config_hash",
-];
-
 /** Combine per-variant ProvenanceSummary objects into one merged
  *  axes map. Counts add; ``current_values`` and ``value_labels``
  *  union; ``description`` is taken from whichever bundle exposed it
@@ -43,6 +26,25 @@ function mergeAxes(bundles: ProvenanceSummary[]): Record<string, ProvenanceAxis>
   return merged;
 }
 
+/** Union of axis_order arrays from each bundle, preserving the
+ *  first-seen position. The backend declares one canonical order
+ *  (``versus.mainline.axis_order``); merging across bundles is just
+ *  defensive in case different endpoints ever surface different
+ *  subsets. */
+function mergeAxisOrder(bundles: ProvenanceSummary[]): string[] {
+  const seen = new Set<string>();
+  const order: string[] = [];
+  for (const b of bundles) {
+    for (const a of b.axis_order ?? []) {
+      if (!seen.has(a)) {
+        seen.add(a);
+        order.push(a);
+      }
+    }
+  }
+  return order;
+}
+
 /** Rich provenance panel: each axis carries its own description so the
  *  operator knows what the hash is computed over, and value_labels
  *  surface the underlying KV (e.g. "essay_id / variant_id") next to
@@ -53,7 +55,10 @@ function mergeAxes(bundles: ProvenanceSummary[]): Record<string, ProvenanceAxis>
 export function ProvenancePanel({ summaries }: { summaries: ProvenanceSummary[] }) {
   if (summaries.length === 0) return null;
   const merged = mergeAxes(summaries);
-  const axes = AXIS_ORDER.filter((a) => merged[a] && Object.keys(merged[a].counts).length > 0);
+  const axisOrder = mergeAxisOrder(summaries);
+  const axes = axisOrder.filter(
+    (a: string) => merged[a] && Object.keys(merged[a].counts).length > 0,
+  );
   return (
     <details className="prov-panel" open>
       <summary>provenance</summary>

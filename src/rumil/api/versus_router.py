@@ -1,12 +1,13 @@
 """Versus router mounted on the rumil FastAPI app.
 
-Reads versus's JSONL stores + cached essay JSON. Aggregation / pair-shaping
-logic lives in ``versus.view`` and ``versus.analyze``; this layer just
-wraps those results in typed pydantic envelopes for the frontend.
+Reads versus's JSONL stores + cached essay JSON. Aggregation /
+pair-shaping logic lives in ``versus.view`` and ``versus.analyze``;
+this layer just wraps those results in typed pydantic envelopes for
+the frontend.
 
 Config resolution: VERSUS_CONFIG_PATH env var, defaulting to
-<repo-root>/versus/config.yaml. The essays-only endpoint works without
-config; everything else returns 503 if config is missing.
+<repo-root>/versus/config.yaml. The essays-only endpoint works
+without config; everything else returns 503 if config is missing.
 """
 
 from __future__ import annotations
@@ -501,14 +502,14 @@ class ProvenanceAxis(pydantic.BaseModel):
 class ProvenanceSummary(pydantic.BaseModel):
     """Per-axis breakdown of what slice the aggregate sits on top of.
 
-    ``axes`` is keyed by axis name (see ``versus.mainline.axis_order``)
-    so new axes can be added without an envelope schema bump. The
-    composite ``judge_model`` string is decomposed into component
-    axes — every dimension a row carries gets its own current/stale
-    story.
+    ``axes`` is keyed by axis name; ``axis_order`` declares the panel
+    rendering order (set by the backend's ``versus.mainline.axis_order``)
+    so the FE doesn't maintain a parallel list. New axes appear
+    automatically in the right place.
     """
 
     axes: dict[str, ProvenanceAxis]
+    axis_order: list[str]
 
 
 class ResultsBundle(pydantic.BaseModel):
@@ -1148,7 +1149,7 @@ def get_results(
             current_values=current.get(axis, []),
             value_labels=value_labels,
         )
-    provenance = ProvenanceSummary(axes=axes_out)
+    provenance = ProvenanceSummary(axes=axes_out, axis_order=list(versus_mainline.axis_order()))
 
     return ResultsBundle(
         conditions=conditions,

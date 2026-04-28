@@ -7123,14 +7123,22 @@
             },
             "type": "object",
             "title": "Axes"
+          },
+          "axis_order": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Axis Order"
           }
         },
         "type": "object",
         "required": [
-          "axes"
+          "axes",
+          "axis_order"
         ],
         "title": "ProvenanceSummary",
-        "description": "Per-axis breakdown of what slice the aggregate sits on top of.\n\n``axes`` is keyed by axis name (see ``versus.mainline.axis_order``)\nso new axes can be added without an envelope schema bump. The\ncomposite ``judge_model`` string is decomposed into component\naxes \u2014 every dimension a row carries gets its own current/stale\nstory."
+        "description": "Per-axis breakdown of what slice the aggregate sits on top of.\n\n``axes`` is keyed by axis name; ``axis_order`` declares the panel\nrendering order (set by the backend's ``versus.mainline.axis_order``)\nso the FE doesn't maintain a parallel list. New axes appear\nautomatically in the right place."
       },
       "QuestionDedupeEventOut": {
         "properties": {

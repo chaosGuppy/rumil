@@ -2555,11 +2555,10 @@ export type ProvenanceAxis = {
  *
  * Per-axis breakdown of what slice the aggregate sits on top of.
  *
- * ``axes`` is keyed by axis name (see ``versus.mainline.axis_order``)
- * so new axes can be added without an envelope schema bump. The
- * composite ``judge_model`` string is decomposed into component
- * axes — every dimension a row carries gets its own current/stale
- * story.
+ * ``axes`` is keyed by axis name; ``axis_order`` declares the panel
+ * rendering order (set by the backend's ``versus.mainline.axis_order``)
+ * so the FE doesn't maintain a parallel list. New axes appear
+ * automatically in the right place.
  */
 export type ProvenanceSummary = {
     /**
@@ -2568,6 +2567,10 @@ export type ProvenanceSummary = {
     axes: {
         [key: string]: ProvenanceAxis;
     };
+    /**
+     * Axis Order
+     */
+    axis_order: Array<string>;
 };
 
 /**

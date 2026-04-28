@@ -131,6 +131,15 @@ _AXIS_DESCRIPTIONS = {
     ),
 }
 
+# Parity guard: every axis in the order tuple must have a description
+# and vice versa. Catches the "added an axis, forgot the description"
+# class of edit at import time.
+assert set(_AXES_ORDER) == set(_AXIS_DESCRIPTIONS), (
+    f"_AXES_ORDER and _AXIS_DESCRIPTIONS disagree: "
+    f"only-in-order={set(_AXES_ORDER) - set(_AXIS_DESCRIPTIONS)}, "
+    f"only-in-descriptions={set(_AXIS_DESCRIPTIONS) - set(_AXES_ORDER)}"
+)
+
 
 def axis_descriptions() -> dict[str, str]:
     """Per-axis human description — what the hash is computed over,

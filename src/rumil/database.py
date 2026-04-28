@@ -1181,6 +1181,28 @@ class DB:
             link.to_page_id[:8],
             link.link_type.value,
         )
+        # First-write-wins dedup: if an active link with the same identity
+        # quadruple (from, to, link_type, direction) is already visible to
+        # this DB's run/staged scope, skip the insert. Re-saving by the same
+        # link.id falls through to the upsert path so explicit updates still
+        # work. The DB has no uniqueness index yet, so this is the only
+        # guard against accidental duplicates from concurrent or repeated
+        # save_link calls.
+        existing = await self._find_active_link(
+            from_page_id=link.from_page_id,
+            to_page_id=link.to_page_id,
+            link_type=link.link_type,
+            direction=link.direction,
+        )
+        if existing is not None and existing.id != link.id:
+            log.debug(
+                "save_link: dedup — %s -> %s (%s) already exists as %s",
+                link.from_page_id[:8],
+                link.to_page_id[:8],
+                link.link_type.value,
+                existing.id[:8],
+            )
+            return
         await self._execute(
             self.client.table("page_links").upsert(
                 {
@@ -1202,6 +1224,31 @@ class DB:
                 }
             )
         )
+
+    async def _find_active_link(
+        self,
+        *,
+        from_page_id: str,
+        to_page_id: str,
+        link_type: LinkType,
+        direction: ConsiderationDirection | None,
+    ) -> PageLink | None:
+        """Return any link visible in this DB's scope matching the identity
+        quadruple, or None. Honors staged-runs visibility (baseline + own
+        staged rows for staged DBs; baseline only for non-staged) via
+        ``get_links_from``'s built-in filter and event overlay.
+        """
+        direction_value = direction.value if direction else None
+        for link in await self.get_links_from(from_page_id):
+            if link.to_page_id != to_page_id:
+                continue
+            if link.link_type != link_type:
+                continue
+            existing_dir = link.direction.value if link.direction else None
+            if existing_dir != direction_value:
+                continue
+            return link
+        return None
 
     async def get_link(self, link_id: str) -> PageLink | None:
         query = self.client.table("page_links").select("*").eq("id", link_id)

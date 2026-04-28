@@ -25,7 +25,10 @@
 CREATE TABLE versus_texts (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     essay_id      TEXT NOT NULL,
-    kind          TEXT NOT NULL CHECK (kind IN ('human', 'completion', 'paraphrase')),
+    -- 'paraphrase' is intentionally absent for now. Paraphrase generation +
+    -- the slicing pipeline are deferred; if/when they come back, ALTER the
+    -- CHECK to add the new value(s).
+    kind          TEXT NOT NULL CHECK (kind IN ('human', 'completion')),
     source_id     TEXT NOT NULL,
     prefix_hash   TEXT,
     model_id      TEXT,

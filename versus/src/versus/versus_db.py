@@ -24,7 +24,7 @@ from typing import Any, Literal
 from rumil.settings import get_settings
 from supabase import Client, create_client
 
-TextKind = Literal["human", "completion", "paraphrase"]
+TextKind = Literal["human", "completion"]
 JudgmentVariant = Literal["blind", "ws", "orch"]
 Verdict = Literal["A", "B", "tie"]
 

@@ -32,7 +32,6 @@ from versus.versus_db import get_client, insert_judgment, insert_text
 
 DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
 COMPLETIONS = DATA_DIR / "completions.jsonl"
-PARAPHRASES = DATA_DIR / "paraphrases.jsonl"
 JUDGMENTS = DATA_DIR / "judgments.jsonl"
 
 
@@ -57,27 +56,24 @@ def _synthesize_completion_request(row: dict) -> dict[str, Any] | None:
     return request
 
 
-def _synthesize_paraphrase_request(row: dict) -> dict[str, Any]:
-    params: dict[str, Any] = dict(row.get("params") or {})
-    request: dict[str, Any] = {
-        "model": row["model_id"],
-        "messages": [{"role": "user", "content": row["prompt"]}],
-    }
-    request.update({k: v for k, v in params.items() if v is not None})
-    return request
-
-
 def import_texts(client) -> dict[tuple[str, str], str]:
-    """Insert texts and return ``{(essay_id, source_id): text_id}`` lookup."""
+    """Insert texts and return ``{(essay_id, source_id): text_id}`` lookup.
+
+    Paraphrase generation is deferred — paraphrase-file rows and
+    paraphrase-derived completion rows are skipped. The JSONL archive still
+    holds them if we want to re-import once the paraphrase model is settled.
+    """
     lookup: dict[tuple[str, str], str] = {}
     completion_rows = _load_jsonl(COMPLETIONS)
-    paraphrase_rows = _load_jsonl(PARAPHRASES)
 
-    print(f"Importing {len(completion_rows)} completion-file rows...")
+    print(f"Importing {len(completion_rows)} completion-file rows (skipping paraphrase-derived)...")
     n_skipped = 0
+    n_skipped_paraphrase = 0
     for i, row in enumerate(completion_rows, 1):
-        kind_map = {"human": "human", "completion": "completion", "paraphrase": "completion"}
-        kind = kind_map[row["source_kind"]]
+        if row["source_kind"] == "paraphrase":
+            n_skipped_paraphrase += 1
+            continue
+        kind = row["source_kind"]
         request = _synthesize_completion_request(row)
         try:
             text_id = insert_text(
@@ -99,41 +95,21 @@ def import_texts(client) -> dict[tuple[str, str], str]:
         lookup[(row["essay_id"], row["source_id"])] = text_id
         if i % 100 == 0:
             print(f"  ... {i}/{len(completion_rows)}")
-    print(f"  done. Skipped {n_skipped}.")
-
-    print(f"Importing {len(paraphrase_rows)} paraphrase-file rows...")
-    n_skipped = 0
-    for i, row in enumerate(paraphrase_rows, 1):
-        try:
-            text_id = insert_text(
-                client,
-                essay_id=row["essay_id"],
-                kind="paraphrase",
-                source_id=row["model_id"],
-                text=row["response_text"],
-                prefix_hash=None,
-                model_id=row["model_id"],
-                request=_synthesize_paraphrase_request(row),
-                response=row.get("raw_response"),
-                params=row.get("params") or {},
-            )
-        except Exception as e:
-            print(f"  skipped paraphrase row {i} ({row.get('key')}): {e}")
-            n_skipped += 1
-            continue
-        if i % 25 == 0:
-            print(f"  ... {i}/{len(paraphrase_rows)}")
-    print(f"  done. Skipped {n_skipped}.")
+    print(f"  done. Skipped {n_skipped} (errors), {n_skipped_paraphrase} (paraphrase-derived).")
     return lookup
 
 
 def import_judgments(client, text_lookup: dict[tuple[str, str], str]) -> None:
     rows = _load_jsonl(JUDGMENTS)
-    print(f"Importing {len(rows)} judgment rows...")
+    print(f"Importing {len(rows)} judgment rows (skipping paraphrase-touching)...")
     missing_text: dict[tuple[str, str], int] = defaultdict(int)
     n_skipped = 0
+    n_skipped_paraphrase = 0
     n_inserted = 0
     for i, row in enumerate(rows, 1):
+        if "paraphrase:" in row["source_a"] or "paraphrase:" in row["source_b"]:
+            n_skipped_paraphrase += 1
+            continue
         config = row.get("config") or {}
         variant = config.get("variant", "blind")
         sa, sb = sorted([row["source_a"], row["source_b"]])
@@ -186,7 +162,10 @@ def import_judgments(client, text_lookup: dict[tuple[str, str], str]) -> None:
             continue
         if i % 200 == 0:
             print(f"  ... {i}/{len(rows)} (inserted={n_inserted})")
-    print(f"  done. Inserted {n_inserted}, skipped {n_skipped}.")
+    print(
+        f"  done. Inserted {n_inserted}, skipped {n_skipped} (errors), "
+        f"{n_skipped_paraphrase} (paraphrase-touching)."
+    )
     if missing_text:
         print("  missing texts (first 10):")
         for k, count in list(missing_text.items())[:10]:

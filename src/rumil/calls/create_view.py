@@ -59,14 +59,22 @@ class _CreateViewUpdater(WorkspaceUpdater):
             available_moves=available_moves,
         )
 
-    async def materialize(self, infra: CallInfra) -> str | None:
-        """Persist the View page + VIEW_OF link, superseding any prior view
-        for this question. Returns the superseded view id (or None).
-        Exposed for tests.
+    async def materialize(self, infra: CallInfra) -> None:
+        """Persist the View page + VIEW_OF link for this question.
+
+        Raises ``ValueError`` if a view already exists — callers should go
+        through ``View.refresh()`` (which routes to ``UpdateViewCall``) to
+        update an existing view. Exposed for tests.
         """
         db = infra.db
         question_id = infra.question_id
         existing_view = await db.get_view_for_question(question_id)
+        if existing_view:
+            raise ValueError(
+                f"CreateViewCall on question {question_id[:8]} but a view "
+                f"already exists ({existing_view.id[:8]}). Use UpdateViewCall "
+                f"or View.refresh()."
+            )
 
         question = await db.get_page(question_id)
         q_headline = question.headline if question else question_id[:8]
@@ -93,14 +101,6 @@ class _CreateViewUpdater(WorkspaceUpdater):
             )
         )
 
-        if existing_view:
-            await db.supersede_page(existing_view.id, view.id)
-            log.info(
-                "Superseded old view %s with new view %s",
-                existing_view.id[:8],
-                view.id[:8],
-            )
-
         log.info(
             "Created view page %s for question %s",
             view.id[:8],
@@ -111,10 +111,9 @@ class _CreateViewUpdater(WorkspaceUpdater):
                 view_id=view.id,
                 view_headline=view.headline,
                 question_id=question_id,
-                superseded_view_id=existing_view.id if existing_view else None,
+                superseded_view_id=None,
             )
         )
-        return existing_view.id if existing_view else None
 
     async def update_workspace(
         self,

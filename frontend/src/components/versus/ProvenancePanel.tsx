@@ -1,6 +1,8 @@
 import type { ProvenanceSummary } from "@/api/types.gen";
 
-const AXES: { key: keyof ProvenanceSummary; label: string }[] = [
+type AxisKey = "prefix_config_hash" | "judge_model" | "judge_prompt_hash" | "judge_version" | "sampling_hash";
+
+const AXES: { key: AxisKey; label: string }[] = [
   { key: "prefix_config_hash", label: "prefix_config_hash" },
   { key: "judge_model", label: "judge_model" },
   { key: "judge_prompt_hash", label: "judge_prompt_hash" },
@@ -8,49 +10,80 @@ const AXES: { key: keyof ProvenanceSummary; label: string }[] = [
   { key: "sampling_hash", label: "sampling_hash" },
 ];
 
-/** Combine N per-variant ProvenanceSummary objects into one map. */
-function mergeAxes(
-  bundles: ProvenanceSummary[],
-): Record<keyof ProvenanceSummary, Record<string, number>> {
-  const out = Object.fromEntries(
-    AXES.map((a) => [a.key, {}]),
-  ) as Record<keyof ProvenanceSummary, Record<string, number>>;
+/** Combine N per-variant ProvenanceSummary objects into one map per
+ *  axis (counts add) plus a unified ``current`` set (union). */
+function mergeAxes(bundles: ProvenanceSummary[]): {
+  counts: Record<AxisKey, Record<string, number>>;
+  current: Record<AxisKey, Set<string>>;
+} {
+  const counts = Object.fromEntries(AXES.map((a) => [a.key, {}])) as Record<
+    AxisKey,
+    Record<string, number>
+  >;
+  const current = Object.fromEntries(AXES.map((a) => [a.key, new Set<string>()])) as Record<
+    AxisKey,
+    Set<string>
+  >;
   for (const b of bundles) {
     for (const { key } of AXES) {
       const src = b[key] ?? {};
       for (const [v, n] of Object.entries(src)) {
-        out[key][v] = (out[key][v] ?? 0) + n;
+        counts[key][v] = (counts[key][v] ?? 0) + n;
       }
+      const cur = b.current?.[key] ?? [];
+      for (const v of cur) current[key].add(v);
     }
   }
-  return out;
+  return { counts, current };
 }
 
-/** Per-axis row of values+counts. Empty axes are skipped. Values
- *  sorted by descending count. Color-codes "rare" values (<5% of the
- *  axis total) so an operator instantly sees outliers. */
+/** Highlight values not in the mainline ``current`` set per axis. The
+ *  rule used to be "<5% of the axis is rare" but that hid the real
+ *  case (97% of rows on a stale prompt_hash with 3% on the current
+ *  one). Anchoring to current flips the highlight to where the
+ *  problem actually is. Empty ``current[axis]`` means "we don't know
+ *  current here yet" — render values neutrally. */
 export function ProvenancePanel({ summaries }: { summaries: ProvenanceSummary[] }) {
   if (summaries.length === 0) return null;
-  const merged = mergeAxes(summaries);
+  const { counts, current } = mergeAxes(summaries);
   return (
     <details className="prov-panel" open>
       <summary>provenance</summary>
       <dl className="prov-grid">
         {AXES.map(({ key, label }) => {
-          const entries = Object.entries(merged[key]).sort((a, b) => b[1] - a[1]);
+          const entries = Object.entries(counts[key]).sort((a, b) => b[1] - a[1]);
           if (entries.length === 0) return null;
           const total = entries.reduce((s, [, n]) => s + n, 0);
+          const knownCurrent = current[key].size > 0;
+          let currentRows = 0;
+          for (const [v, n] of entries) if (current[key].has(v)) currentRows += n;
           return (
             <div key={key} className="prov-row">
-              <dt>{label}</dt>
+              <dt>
+                {label}
+                {knownCurrent && (
+                  <div className="prov-axis-share">
+                    {Math.round((currentRows / total) * 100)}% current
+                  </div>
+                )}
+              </dt>
               <dd>
                 {entries.map(([v, n]) => {
-                  const share = n / total;
-                  const cls = share < 0.05 ? "prov-val rare" : "prov-val";
+                  const isCurrent = current[key].has(v);
+                  const isStale = knownCurrent && !isCurrent;
+                  const share = (n / total) * 100;
+                  const cls = isStale ? "prov-val stale" : isCurrent ? "prov-val current" : "prov-val";
+                  const title = isStale
+                    ? `${n} of ${total} rows · NOT in mainline current set`
+                    : isCurrent
+                      ? `${n} of ${total} rows · current/mainline value`
+                      : `${n} of ${total} rows`;
                   return (
-                    <span key={v} className={cls} title={`${n} of ${total} rows`}>
-                      <code>{v}</code>{" "}
-                      <span className="prov-n">{n}</span>
+                    <span key={v} className={cls} title={title}>
+                      <code>{v}</code>
+                      <span className="prov-n">
+                        {n} <span className="prov-share">({share.toFixed(1)}%)</span>
+                      </span>
                     </span>
                   );
                 })}
@@ -88,37 +121,56 @@ export function ProvenancePanel({ summaries }: { summaries: ProvenanceSummary[] 
           margin: 0 0 10px;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 6px;
         }
         .prov-row {
           display: grid;
-          grid-template-columns: 170px 1fr;
+          grid-template-columns: 200px 1fr;
           gap: 12px;
-          align-items: baseline;
+          align-items: start;
         }
         .prov-row dt {
           color: var(--color-muted);
           font-family: ui-monospace, Menlo, monospace;
           font-size: 11px;
         }
+        .prov-axis-share {
+          font-family: var(--font-geist-sans), -apple-system, system-ui, sans-serif;
+          font-size: 10px;
+          margin-top: 2px;
+          color: var(--color-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
         .prov-row dd {
           margin: 0;
-          display: flex; flex-wrap: wrap; gap: 8px;
+          display: flex; flex-wrap: wrap; gap: 6px;
         }
         .prov-val {
           font-size: 11px;
           color: var(--foreground);
-        }
-        .prov-val.rare {
-          background: hsl(40 80% 90%);
-          color: hsl(40 70% 28%);
-          padding: 1px 5px;
+          padding: 1px 6px;
           border-radius: 3px;
+          border: 1px solid transparent;
+        }
+        .prov-val.current {
+          border-color: hsl(140 30% 78%);
+        }
+        .prov-val.stale {
+          background: hsl(28 85% 90%);
+          color: hsl(28 80% 28%);
+          border-color: hsl(28 70% 65%);
         }
         @media (prefers-color-scheme: dark) {
-          .prov-val.rare { background: hsl(40 50% 16%); color: hsl(40 70% 75%); }
+          .prov-val.current { border-color: hsl(140 25% 30%); }
+          .prov-val.stale {
+            background: hsl(28 50% 18%);
+            color: hsl(28 70% 78%);
+            border-color: hsl(28 40% 35%);
+          }
         }
-        .prov-n { color: var(--color-muted); font-size: 10px; }
+        .prov-n { color: var(--color-muted); font-size: 10px; margin-left: 4px; }
+        .prov-share { font-variant-numeric: tabular-nums; }
       `}</style>
     </details>
   );

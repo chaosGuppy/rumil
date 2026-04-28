@@ -7155,6 +7155,16 @@
             },
             "type": "object",
             "title": "Sampling Hash"
+          },
+          "current": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Current"
           }
         },
         "type": "object",
@@ -7163,10 +7173,11 @@
           "judge_model",
           "judge_prompt_hash",
           "judge_version",
-          "sampling_hash"
+          "sampling_hash",
+          "current"
         ],
         "title": "ProvenanceSummary",
-        "description": "Per-axis ``value -> row_count`` describing what the aggregate\naveraged over.\n\nLets the UI declare the slice each /results matrix sits on top of:\na 60% cell averaged across one prompt_hash means something\ndifferent than 60% across five. Keys are the axis name; values are\na ``{value: count}`` map of how many surviving rows had that value."
+        "description": "Per-axis ``value -> row_count`` describing what the aggregate\naveraged over.\n\nLets the UI declare the slice each /results matrix sits on top of:\na 60% cell averaged across one prompt_hash means something\ndifferent than 60% across five. Keys are the axis name; values are\na ``{value: count}`` map of how many surviving rows had that value.\n\n``current`` carries the mainline value set for each axis (derived\nfrom cfg + version constants). The UI flags any axis value not in\nits ``current[axis]`` list as a non-current entry."
       },
       "QuestionDedupeEventOut": {
         "properties": {

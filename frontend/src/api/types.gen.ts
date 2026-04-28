@@ -2524,6 +2524,10 @@ export type ProposedSubquestion = {
  * a 60% cell averaged across one prompt_hash means something
  * different than 60% across five. Keys are the axis name; values are
  * a ``{value: count}`` map of how many surviving rows had that value.
+ *
+ * ``current`` carries the mainline value set for each axis (derived
+ * from cfg + version constants). The UI flags any axis value not in
+ * its ``current[axis]`` list as a non-current entry.
  */
 export type ProvenanceSummary = {
     /**
@@ -2555,6 +2559,12 @@ export type ProvenanceSummary = {
      */
     sampling_hash: {
         [key: string]: number;
+    };
+    /**
+     * Current
+     */
+    current: {
+        [key: string]: Array<string>;
     };
 };
 

@@ -41,6 +41,31 @@ def current_prefix_hashes_for(essay: versus_essay.Essay, cfg: versus_config.Conf
     return out
 
 
+def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
+    """Mainline value set per provenance axis, for the UI to flag
+    non-current rows.
+
+    Axes derivable from cfg + version constants are filled here.
+    ``prefix_config_hash`` is left empty because it depends on the
+    set of essays the caller is aggregating over — the caller should
+    union ``mainline.current_prefix_hashes_for`` across its essay
+    set and merge the result in.
+    """
+    from versus import judge as versus_judge
+    from versus.versions import BLIND_JUDGE_VERSION
+
+    return {
+        "prefix_config_hash": [],
+        "judge_model": [],
+        "judge_prompt_hash": [
+            f"p{versus_judge.compute_judge_prompt_hash(c, with_tools=False)}"
+            for c in cfg.judging.criteria
+        ],
+        "judge_version": [f"v{BLIND_JUDGE_VERSION}"],
+        "sampling_hash": [],
+    }
+
+
 def summarize_provenance(rows: Iterable[dict]) -> dict[str, dict[str, int]]:
     """Per-axis ``value -> count`` over the rows.
 

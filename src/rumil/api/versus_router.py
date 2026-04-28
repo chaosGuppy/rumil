@@ -488,6 +488,10 @@ class ProvenanceSummary(pydantic.BaseModel):
     a 60% cell averaged across one prompt_hash means something
     different than 60% across five. Keys are the axis name; values are
     a ``{value: count}`` map of how many surviving rows had that value.
+
+    ``current`` carries the mainline value set for each axis (derived
+    from cfg + version constants). The UI flags any axis value not in
+    its ``current[axis]`` list as a non-current entry.
     """
 
     prefix_config_hash: dict[str, int]
@@ -495,6 +499,7 @@ class ProvenanceSummary(pydantic.BaseModel):
     judge_prompt_hash: dict[str, int]
     judge_version: dict[str, int]
     sampling_hash: dict[str, int]
+    current: dict[str, list[str]]
 
 
 class ResultsBundle(pydantic.BaseModel):
@@ -618,7 +623,7 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
     paraphrase_prompt_template = versus_paraphrase.PARAPHRASE_INSTRUCTIONS.replace(
         "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
     )
-    judge_prompt_hash = versus_judge.compute_prompt_hash(primary_criterion, with_tools=False)
+    judge_prompt_hash = versus_judge.compute_judge_prompt_hash(primary_criterion, with_tools=False)
     return EssayDetail(
         id=essay.id,
         title=essay.title,
@@ -1093,12 +1098,15 @@ def get_results(
     ]
 
     provenance_axes = versus_mainline.summarize_provenance(matrix_input_rows)
+    current = versus_mainline.current_values_summary(cfg)
+    current["prefix_config_hash"] = sorted(set(current_prefix_hashes.values()))
     provenance = ProvenanceSummary(
         prefix_config_hash=provenance_axes["prefix_config_hash"],
         judge_model=provenance_axes["judge_model"],
         judge_prompt_hash=provenance_axes["judge_prompt_hash"],
         judge_version=provenance_axes["judge_version"],
         sampling_hash=provenance_axes["sampling_hash"],
+        current=current,
     )
 
     return ResultsBundle(

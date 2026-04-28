@@ -265,6 +265,7 @@ async def test_question_stats_isolated(tmp_db):
             "child_questions": 0,
             "considerations": 0,
             "judgements": 0,
+            "views": 0,
         }
     ]
 

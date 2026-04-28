@@ -60,7 +60,7 @@ export function ProvenancePanel({ summaries }: { summaries: ProvenanceSummary[] 
     (a: string) => merged[a] && Object.keys(merged[a].counts).length > 0,
   );
   return (
-    <details className="prov-panel" open>
+    <details className="prov-panel">
       <summary>provenance</summary>
       <dl className="prov-grid">
         {axes.map((axis) => {

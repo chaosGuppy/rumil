@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from rumil.database import DB
+from rumil.models import Page
 from rumil.tracing.broadcast import Broadcaster
 
 
@@ -20,6 +21,41 @@ class View(ABC):
     @abstractmethod
     async def exists(self, question_id: str, db: DB) -> bool:
         """True if this variant already has a refreshable summary for *question_id*."""
+
+    @abstractmethod
+    async def headline_page(self, question_id: str, db: DB) -> Page | None:
+        """The single canonical page representing the overall take on *question_id*.
+
+        For ``JudgementView`` this is the latest active judgement; for
+        ``SectionedView`` this is the active VIEW page. Callers needing the
+        page id (e.g. to exclude from a subgraph render) or its robustness
+        should use this rather than reaching for variant-specific accessors.
+        Returns None when no take has been recorded yet.
+        """
+
+    @abstractmethod
+    async def headline_pages_many(
+        self,
+        question_ids: Sequence[str],
+        db: DB,
+    ) -> dict[str, Page | None]:
+        """Batch counterpart to :meth:`headline_page` for traversal hot loops.
+
+        Returns ``{question_id: headline_page_or_None}`` for every input id,
+        issuing a bounded number of queries regardless of input size.
+        """
+
+    @abstractmethod
+    async def render_for_executive_summary(
+        self,
+        question_id: str,
+        db: DB,
+    ) -> str | None:
+        """Full-detail render of the overall take, for executive-summary contexts.
+
+        Used by ``calls/summarize.py`` for the headline question. Returns
+        None when no take has been recorded yet.
+        """
 
     @abstractmethod
     async def refresh(

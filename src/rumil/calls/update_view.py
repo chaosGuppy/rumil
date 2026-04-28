@@ -300,7 +300,7 @@ class UpdateViewContext(ContextBuilder):
             query,
             infra.db,
             scope_question_id=infra.question_id,
-            require_judgement_for_questions=True,
+            require_take_for_questions=True,
             full_page_similarity_floor=0.6,
             abstract_page_similarity_floor=0.5,
             summary_page_similarity_floor=0.4,

@@ -55,7 +55,7 @@ class CreateViewContext(ContextBuilder):
             query,
             infra.db,
             scope_question_id=infra.question_id,
-            require_judgement_for_questions=True,
+            require_take_for_questions=True,
         )
         working_page_ids = result.page_ids
         preloaded_ids = list(infra.call.context_page_ids or [])
@@ -125,10 +125,10 @@ class EmbeddingContext(ContextBuilder):
         self,
         call_type: CallType,
         *,
-        require_judgement_for_questions: bool = False,
+        require_take_for_questions: bool = False,
     ) -> None:
         self._call_type = call_type
-        self._require_judgement_for_questions = require_judgement_for_questions
+        self._require_take_for_questions = require_take_for_questions
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         question = await infra.db.get_page(infra.question_id)
@@ -138,7 +138,7 @@ class EmbeddingContext(ContextBuilder):
             infra.db,
             scope_question_id=infra.question_id,
             scope_linked_detail=PageDetail.ABSTRACT,
-            require_judgement_for_questions=self._require_judgement_for_questions,
+            require_take_for_questions=self._require_take_for_questions,
         )
         working_page_ids = result.page_ids
         preloaded_ids = infra.call.context_page_ids or []
@@ -949,7 +949,7 @@ class BigAssessContext(ContextBuilder):
             scope_question_id=infra.question_id,
             scope_detail=PageDetail.CONTENT,
             scope_linked_detail=PageDetail.ABSTRACT,
-            require_judgement_for_questions=True,
+            require_take_for_questions=True,
             full_page_char_budget=settings.big_assess_full_page_char_budget,
             abstract_page_char_budget=settings.big_assess_abstract_page_char_budget,
             summary_page_char_budget=settings.big_assess_summary_page_char_budget,

@@ -8,6 +8,7 @@ from rumil.context import (
     format_page,
 )
 from rumil.models import Page, PageDetail, PageLayer, PageType, Workspace
+from rumil.settings import override_settings
 
 
 def _make_page(headline: str, content: str, page_type: PageType = PageType.CLAIM) -> Page:
@@ -186,11 +187,11 @@ def mock_embeddings_mixed(mocker):
     )
 
 
-async def test_require_judgement_filters_unjudged_questions(
+async def test_require_take_filters_questions_without_take(
     mock_embeddings_mixed,
     mocker,
 ):
-    """Questions without judgements are excluded when require_judgement_for_questions is set."""
+    """Questions without a take are excluded when require_take_for_questions is set."""
     db = mocker.AsyncMock()
 
     async def fake_get_judgements_many(qids):
@@ -198,32 +199,34 @@ async def test_require_judgement_filters_unjudged_questions(
 
     db.get_judgements_for_questions = mocker.AsyncMock(side_effect=fake_get_judgements_many)
 
-    result = await build_embedding_based_context(
-        "test query",
-        db,
-        require_judgement_for_questions=True,
-        full_page_char_budget=10_000,
-    )
+    with override_settings(view_variant="judgement"):
+        result = await build_embedding_based_context(
+            "test query",
+            db,
+            require_take_for_questions=True,
+            full_page_char_budget=10_000,
+        )
 
     assert QUESTION_WITH_JUDGEMENT.id in result.page_ids
     assert QUESTION_WITHOUT_JUDGEMENT.id not in result.page_ids
     assert CLAIM_PAGE.id in result.page_ids
 
 
-async def test_require_judgement_false_keeps_all_questions(
+async def test_require_take_false_keeps_all_questions(
     mock_embeddings_mixed,
     mocker,
 ):
-    """Without the flag, all questions appear regardless of judgement status."""
+    """Without the flag, all questions appear regardless of take status."""
     db = mocker.AsyncMock()
-    db.get_judgements_for_question = mocker.AsyncMock(return_value=[])
+    db.get_judgements_for_questions = mocker.AsyncMock(return_value={})
 
-    result = await build_embedding_based_context(
-        "test query",
-        db,
-        require_judgement_for_questions=False,
-        full_page_char_budget=10_000,
-    )
+    with override_settings(view_variant="judgement"):
+        result = await build_embedding_based_context(
+            "test query",
+            db,
+            require_take_for_questions=False,
+            full_page_char_budget=10_000,
+        )
 
     assert QUESTION_WITH_JUDGEMENT.id in result.page_ids
     assert QUESTION_WITHOUT_JUDGEMENT.id in result.page_ids

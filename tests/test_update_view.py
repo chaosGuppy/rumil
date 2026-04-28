@@ -908,6 +908,128 @@ async def test_phase_enforce_caps_skips_within_limits(
     assert len(result_messages) == len(messages)
 
 
+async def test_phase_propose_new_creates_items_from_proposals(
+    tmp_db,
+    view_setup,
+    call_infra,
+    monkeypatch,
+):
+    """propose_new should turn each LLM proposal into a linked VIEW_ITEM."""
+    from rumil.calls import update_view as uv
+    from rumil.llm import StructuredCallResult
+
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    proposals = [
+        ProposedItem(
+            headline="Bottom-line magnitude",
+            content="Central estimate -1.5% to -2% [abc12345].",
+            robustness=3,
+            robustness_reasoning="Synthesizes multiple R3+ claims",
+            importance=5,
+            section="confident_views",
+            reasoning="No existing item names the magnitude",
+        ),
+        ProposedItem(
+            headline="Sign-uncertainty compression",
+            content="Sign uncertainty compresses directed EV by 2-5x [def45678].",
+            robustness=4,
+            robustness_reasoning="Mechanism is structural, not empirical",
+            importance=5,
+            section="confident_views",
+            reasoning="Methodologically load-bearing",
+        ),
+    ]
+
+    from pydantic import BaseModel
+
+    class _Parsed(BaseModel):
+        proposed_items: list[dict]
+
+    parsed = _Parsed(proposed_items=[p.model_dump() for p in proposals])
+
+    async def fake_structured_call(*args, **kwargs):
+        return StructuredCallResult(parsed=parsed, response_text="{}")
+
+    monkeypatch.setattr(uv, "structured_call", fake_structured_call)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    n_before = len(messages)
+
+    result_messages, created_ids = await updater._phase_propose_new(
+        call_infra,
+        "system",
+        {"propose_new": "Propose new items."},
+        messages,
+    )
+
+    assert len(created_ids) == 2
+    assert len(result_messages) == n_before + 2
+
+    items_after = await tmp_db.get_view_items(v.id)
+    new_pages_by_id = {p.id: (p, l) for p, l in items_after if p.id in created_ids}
+    assert len(new_pages_by_id) == 2
+
+    for new_id in created_ids:
+        page, link = new_pages_by_id[new_id]
+        assert page.page_type == PageType.VIEW_ITEM
+        assert link.link_type == LinkType.VIEW_ITEM
+        assert link.section == "confident_views"
+        assert link.importance == 5
+
+    assert any("propose_new" in line and "created 2" in line for line in updater._phase_lines)
+
+
+async def test_phase_propose_new_no_proposals_records_phase_completed(
+    tmp_db,
+    view_setup,
+    call_infra,
+    monkeypatch,
+):
+    """propose_new should still record the phase event when the LLM proposes nothing."""
+    from rumil.calls import update_view as uv
+    from rumil.llm import StructuredCallResult
+
+    _, v, _items = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    from pydantic import BaseModel
+
+    class _Parsed(BaseModel):
+        proposed_items: list[dict]
+
+    parsed = _Parsed(proposed_items=[])
+
+    async def fake_structured_call(*args, **kwargs):
+        return StructuredCallResult(parsed=parsed, response_text="{}")
+
+    monkeypatch.setattr(uv, "structured_call", fake_structured_call)
+
+    items_before = await tmp_db.get_view_items(v.id)
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    n_before = len(messages)
+
+    result_messages, created_ids = await updater._phase_propose_new(
+        call_infra,
+        "system",
+        {"propose_new": "Propose new items."},
+        messages,
+    )
+
+    assert created_ids == []
+    items_after = await tmp_db.get_view_items(v.id)
+    assert {p.id for p, _ in items_after} == {p.id for p, _ in items_before}
+    assert any("propose_new" in line and "created 0" in line for line in updater._phase_lines)
+    assert len(result_messages) == n_before + 2
+
+
 def test_is_explicit_duplicate_detects_marker():
     page_dup = _view_item("Dup", content="[Duplicate of abc123, created in error.]")
     page_normal = _view_item("Normal", content="Some normal observation.")
@@ -1008,7 +1130,8 @@ def test_view_closing_review_prefers_phase_summary_over_moves():
         phase_summary=(
             "score_unscored: scored 3 item(s), modified 3\n"
             "triage: reviewed 5 item(s), flagged 2 for deep review\n"
-            "deep_review: reviewed 2 item(s), superseded 1, adjusted 1, proposed 1 new item(s)"
+            "deep_review: reviewed 2 item(s), superseded 1, adjusted 1\n"
+            "propose_new: created 1 new item(s)"
         )
     )
     rendered = reviewer._review_context(creation)

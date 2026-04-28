@@ -72,22 +72,45 @@ def _dir_content_sha(rel_dir: str, pattern: str) -> str:
 
 
 async def compute_workspace_state_hash(db: Any) -> str:
-    """Cheap watermark identifying the baseline workspace state.
+    """Watermark identifying the baseline workspace state.
 
     For ws/orch judgments what matters is whether two runs read the
-    same baseline — not the full contents. We use a four-tuple of
-    (page count, max page created_at, link count, max link created_at)
-    and hash it. New inserts bump the max timestamp; supersedings /
-    hidings drop the count via the active_only filter. Coarser than
-    a content sha but proportional in cost to two existing queries
-    we already issue at plan time.
+    same baseline. Pages cover most of the surface via the ``pages``
+    query's ``active_only=True, include_hidden=False`` filter — a
+    page that gets superseded or hidden disappears from the list and
+    the count drops, forking the hash.
+
+    Links need more care: in-place mutations like ``change_link_role``
+    don't change count or created_at, so the watermark would miss
+    them with just `(count, max_created_at)`. We fold a digest of
+    each link's mutable fields (role, direction, strength, importance,
+    reasoning, section, position) into the hash so a link role
+    flipping shows up.
+
+    Cost: same two DB queries as before (pages + links); the link
+    digest is a few-pass walk over the already-loaded list.
     """
     pages = await db.get_pages(active_only=True, include_hidden=False)
     links = await db.get_all_links()
     page_max = max((p.created_at.isoformat() for p in pages), default="")
     link_max = max((ln.created_at.isoformat() for ln in links), default="")
-    blob = f"{len(pages)}|{page_max}|{len(links)}|{link_max}"
-    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+    h = hashlib.sha256()
+    h.update(f"{len(pages)}|{page_max}|{len(links)}|{link_max}".encode())
+    h.update(b"\n---LINK-DETAILS---\n")
+    for ln in sorted(links, key=lambda x: x.id):
+        h.update(ln.id.encode())
+        h.update(b"|")
+        h.update(ln.role.value.encode())
+        h.update(b"|")
+        h.update((ln.direction.value if ln.direction else "").encode())
+        h.update(b"|")
+        h.update(f"{ln.strength}|{ln.importance}|{ln.position}".encode())
+        h.update(b"|")
+        h.update((ln.section or "").encode())
+        h.update(b"|")
+        h.update((ln.reasoning or "").encode())
+        h.update(b"\n")
+    return h.hexdigest()[:16]
 
 
 def compute_judge_code_fingerprint() -> dict[str, str]:

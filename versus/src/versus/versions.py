@@ -31,6 +31,9 @@ JUDGE_CODE_FINGERPRINT_DIRS: tuple[tuple[str, str], ...] = (
     ("src/rumil/calls/", "*.py"),
     ("src/rumil/prompts/", "*.md"),
     ("src/rumil/workspace_exploration/", "*.py"),
+    # Tracing affects what events the agent loop records and (via the
+    # SDK agent) what cost / step accounting flows back into the row.
+    ("src/rumil/tracing/", "*.py"),
 )
 JUDGE_CODE_FINGERPRINT_FILES: tuple[str, ...] = (
     "src/rumil/versus_bridge.py",
@@ -38,4 +41,12 @@ JUDGE_CODE_FINGERPRINT_FILES: tuple[str, ...] = (
     "src/rumil/sdk_agent.py",
     "src/rumil/llm.py",
     "src/rumil/context.py",
+    # `wrap_as_mcp_tool` from run_eval.runner sits in the call path of
+    # every ws/orch judgment via the bridge's tool-wrapping step.
+    "src/rumil/run_eval/runner.py",
+    # Database / settings / page+link models govern what the agent's
+    # workspace tools surface and how runtime behaviour is configured.
+    "src/rumil/database.py",
+    "src/rumil/settings.py",
+    "src/rumil/models.py",
 )

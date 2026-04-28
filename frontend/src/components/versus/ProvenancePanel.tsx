@@ -5,6 +5,7 @@ const AXIS_ORDER = [
   "judge_path",
   "judge_base_model",
   "judge_dimension",
+  "judge_workspace_id",
   "judge_prompt_hash",
   "judge_version",
   "judge_sampling_hash",

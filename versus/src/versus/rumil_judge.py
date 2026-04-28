@@ -486,6 +486,7 @@ async def run_orch(
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
     from rumil.versus_bridge import (
         BLIND_JUDGE_VERSION,
+        compute_orch_closer_hash,
         compute_pair_surface_hash,
         compute_prompt_hash,
         compute_tool_prompt_hash,
@@ -496,6 +497,7 @@ async def run_orch(
     }
     thash = compute_tool_prompt_hash()
     qhash = compute_pair_surface_hash()
+    chash = compute_orch_closer_hash()
 
     sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
     shash = judge.compute_sampling_hash(sampling)
@@ -505,7 +507,7 @@ async def run_orch(
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
         return (
             f"rumil:orch:{model}:{ws_short}:b{budget}:{suffix}"
-            f":p{ph}:v{BLIND_JUDGE_VERSION}:t{thash}:q{qhash}:s{shash}"
+            f":p{ph}:v{BLIND_JUDGE_VERSION}:t{thash}:q{qhash}:s{shash}:c{chash}"
         )
 
     tasks = _plan_rumil_pairs(

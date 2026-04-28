@@ -46,6 +46,7 @@ _PHASH_RE = re.compile(r"^p[0-9a-f]{8}$")
 _THASH_RE = re.compile(r"^t[0-9a-f]{8}$")
 _QHASH_RE = re.compile(r"^q[0-9a-f]{8}$")
 _SHASH_RE = re.compile(r"^s[0-9a-f]{8}$")
+_CHASH_RE = re.compile(r"^c[0-9a-f]{8}$")
 _VERSION_RE = re.compile(r"^v\d+$")
 _BUDGET_RE = re.compile(r"^b\d+$")
 
@@ -78,6 +79,8 @@ def parse_judge_components(jm: str) -> dict[str, str]:
             out["judge_tool_hash"] = tail
         elif _QHASH_RE.match(tail):
             out["judge_pair_hash"] = tail
+        elif _CHASH_RE.match(tail):
+            out["judge_closer_hash"] = tail
         else:
             break
         parts = parts[:-1]
@@ -88,13 +91,13 @@ def parse_judge_components(jm: str) -> dict[str, str]:
         out["judge_path"] = f"rumil:{parts[1]}"
         if parts[1] == "orch" and len(parts) >= 6:
             out["judge_base_model"] = parts[2]
-            out["judge_closer_hash"] = parts[3]
+            out["judge_workspace_id"] = parts[3]
             if _BUDGET_RE.match(parts[4]):
                 out["judge_budget"] = parts[4]
             out["judge_dimension"] = parts[5]
         elif parts[1] == "ws" and len(parts) >= 5:
             out["judge_base_model"] = parts[2]
-            out["judge_closer_hash"] = parts[3]
+            out["judge_workspace_id"] = parts[3]
             out["judge_dimension"] = parts[4]
         elif parts[1] == "text" and len(parts) >= 4:
             out["judge_base_model"] = parts[2]
@@ -115,6 +118,7 @@ _AXES_ORDER = (
     "judge_path",
     "judge_base_model",
     "judge_dimension",
+    "judge_workspace_id",
     "judge_prompt_hash",
     "judge_version",
     "judge_sampling_hash",
@@ -145,6 +149,10 @@ _AXIS_DESCRIPTIONS = {
         "Criterion the judge was rendered for. Empty for blind judges "
         "that don't bake the dimension into their model id."
     ),
+    "judge_workspace_id": (
+        "First 8 chars of the rumil project (workspace) ID the ws/orch "
+        "judge ran against. ws/orch only — empty on blind."
+    ),
     "judge_prompt_hash": (
         "Hash of the rendered judge system prompt (shell + dimension "
         "body, with or without the workspace-tools section). Bumps "
@@ -168,7 +176,11 @@ _AXIS_DESCRIPTIONS = {
         "ws/orch judge reads). Forks when the surface formatting "
         "changes."
     ),
-    "judge_closer_hash": ("Hash of the orch closer prompt config (orch only)."),
+    "judge_closer_hash": (
+        "Hash of the orch closer config (user prompt template, "
+        "max_turns, disallowed_tools, render detail/min_importance). "
+        "orch only — bumps when any of those knobs change."
+    ),
     "judge_budget": ("Orch run budget — bN means N total dispatches. orch only."),
 }
 
@@ -194,6 +206,7 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
     set and merge the result in.
     """
     from rumil.versus_bridge import (
+        compute_orch_closer_hash,
         compute_pair_surface_hash,
         compute_tool_prompt_hash,
     )
@@ -215,6 +228,18 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
     out["judge_dimension"] = list(cfg.judging.criteria)
     out["judge_tool_hash"] = [f"t{compute_tool_prompt_hash()}"]
     out["judge_pair_hash"] = [f"q{compute_pair_surface_hash()}"]
+    out["judge_closer_hash"] = [f"c{compute_orch_closer_hash()}"]
+    # Sampling hash is per-judge-path: blind uses _sampling_for which
+    # depends on provider; ws/orch use _anthropic_sampling. Compute
+    # the union over both so the panel doesn't false-flag either.
+    sampling_hashes: set[str] = set()
+    for m in cfg.judging.models:
+        provider, canonical = versus_judge.route_judge_model(m)
+        blind = versus_judge._sampling_for(provider, canonical, cfg.judging.max_tokens)
+        sh = versus_judge.compute_sampling_hash(blind)
+        if sh:
+            sampling_hashes.add(f"s{sh}")
+    out["judge_sampling_hash"] = sorted(sampling_hashes)
     return out
 
 

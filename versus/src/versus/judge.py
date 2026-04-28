@@ -142,6 +142,7 @@ _VERSION_TAG_RE = re.compile(r"^v\d+$")
 _SHASH_TAG_RE = re.compile(r"^s[0-9a-f]{8}$")
 _THASH_TAG_RE = re.compile(r"^t[0-9a-f]{8}$")
 _QHASH_TAG_RE = re.compile(r"^q[0-9a-f]{8}$")
+_CHASH_TAG_RE = re.compile(r"^c[0-9a-f]{8}$")
 
 
 def _peel_ts_tag(parts: list[str]) -> list[str]:
@@ -149,6 +150,7 @@ def _peel_ts_tag(parts: list[str]) -> list[str]:
         _SHASH_TAG_RE.match(parts[-1])
         or _THASH_TAG_RE.match(parts[-1])
         or _QHASH_TAG_RE.match(parts[-1])
+        or _CHASH_TAG_RE.match(parts[-1])
     ):
         parts = parts[:-1]
     return parts

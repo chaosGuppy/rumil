@@ -460,6 +460,55 @@ async def _render_question_for_closer(db: DB, question_id: str) -> str:
     return f"{body}\n\n{view_rendered}"
 
 
+_CLOSER_USER_PROMPT_TEMPLATE = (
+    "A research run has just finished investigating the pair comparison "
+    "captured in the scope question. The rendered question (including "
+    "the essay prefix, both continuations, the considerations and "
+    "judgements the orchestrator produced, and the distilled view "
+    "items) follows; your job is to read it, weigh what the research "
+    "surfaced, and emit the 7-point preference label. You have the "
+    "workspace tools if further material bears on the essay's subject, "
+    "but keep usage light — this is the closing step, not a fresh "
+    "investigation.\n\n"
+    "{rendered}\n\n"
+    "End your response with one of the 7-point preference labels on its "
+    "own line."
+)
+_CLOSER_SDK_MAX_TURNS = 5
+_CLOSER_DISALLOWED_TOOLS = ("Write", "Edit", "Glob")
+_CLOSER_RENDER_DETAIL = "CONTENT"
+_CLOSER_RENDER_LINKED_DETAIL = "CONTENT"
+_CLOSER_RENDER_MIN_IMPORTANCE = 2
+
+
+def compute_orch_closer_hash() -> str:
+    """Short deterministic hash of the orch closer's invariant config.
+
+    Covers the parts of ``_run_orch_closer`` that the prompt-hash and
+    tool-prompt-hash don't: the inline user-prompt template, the
+    SDK agent's max_turns budget, the disallowed-tools set, and the
+    rendering knobs the closer reads (page detail level, linked
+    detail, view min_importance). Stamped as ``:c<hash>`` on
+    ``rumil:orch:*`` judge_model strings so a closer-config edit
+    auto-forks the dedup key without a manual BLIND_JUDGE_VERSION
+    bump.
+
+    orch-only — the blind and ws paths don't have a closer step.
+    """
+    blob = json.dumps(
+        {
+            "user_prompt_template": _CLOSER_USER_PROMPT_TEMPLATE,
+            "sdk_agent_max_turns": _CLOSER_SDK_MAX_TURNS,
+            "disallowed_tools": list(_CLOSER_DISALLOWED_TOOLS),
+            "render_detail": _CLOSER_RENDER_DETAIL,
+            "render_linked_detail": _CLOSER_RENDER_LINKED_DETAIL,
+            "render_min_importance": _CLOSER_RENDER_MIN_IMPORTANCE,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(blob.encode()).hexdigest()[:8]
+
+
 async def _run_orch_closer(
     db: DB,
     question_id: str,
@@ -512,20 +561,7 @@ async def _run_orch_closer(
     ]
 
     system_prompt = build_system_prompt(task_body, with_tools=True)
-    user_prompt = (
-        "A research run has just finished investigating the pair comparison "
-        "captured in the scope question. The rendered question (including "
-        "the essay prefix, both continuations, the considerations and "
-        "judgements the orchestrator produced, and the distilled view "
-        "items) follows; your job is to read it, weigh what the research "
-        "surfaced, and emit the 7-point preference label. You have the "
-        "workspace tools if further material bears on the essay's subject, "
-        "but keep usage light — this is the closing step, not a fresh "
-        "investigation.\n\n"
-        f"{rendered}\n\n"
-        "End your response with one of the 7-point preference labels on its "
-        "own line."
-    )
+    user_prompt = _CLOSER_USER_PROMPT_TEMPLATE.format(rendered=rendered)
 
     config = SdkAgentConfig(
         system_prompt=system_prompt,
@@ -539,11 +575,11 @@ async def _run_orch_closer(
         trace=trace,
         broadcaster=broadcaster,
         allowed_tools=allowed,
-        disallowed_tools=["Write", "Edit", "Glob"],
+        disallowed_tools=list(_CLOSER_DISALLOWED_TOOLS),
     )
 
     try:
-        with override_settings(sdk_agent_max_turns=5):
+        with override_settings(sdk_agent_max_turns=_CLOSER_SDK_MAX_TURNS):
             result = await run_sdk_agent(config)
         # Both the versus-judge-shell system prompt and the inline user
         # prompt instruct "End your response with ... on its own line", so

@@ -105,6 +105,7 @@ _VERSION_TAG_RE = re.compile(r"^v\d+$")
 _SAMPLING_HASH_RE = re.compile(r"^s[0-9a-f]{8}$")
 _TOOL_HASH_RE = re.compile(r"^t[0-9a-f]{8}$")
 _SURFACE_HASH_RE = re.compile(r"^q[0-9a-f]{8}$")
+_CLOSER_HASH_RE = re.compile(r"^c[0-9a-f]{8}$")
 
 
 def _peel_ts_tag(parts: Sequence[str]) -> list[str]:
@@ -113,6 +114,7 @@ def _peel_ts_tag(parts: Sequence[str]) -> list[str]:
         _SAMPLING_HASH_RE.match(out[-1])
         or _TOOL_HASH_RE.match(out[-1])
         or _SURFACE_HASH_RE.match(out[-1])
+        or _CLOSER_HASH_RE.match(out[-1])
     ):
         out = out[:-1]
     return out

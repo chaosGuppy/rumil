@@ -77,6 +77,23 @@ CREATE TABLE versus_judgments (
     project_id          UUID,
     run_id              TEXT,
     rumil_call_id       TEXT,
+    -- Free-text audit note attached to rows produced under known-faulty
+    -- conditions (e.g. blind-judge id leaks fixed in a later PR). Filtered
+    -- out of aggregates by default; surfaced under an explicit toggle.
+    contamination_note  TEXT,
+    -- Derived: which source_id won. NULL for unparsed verdicts; "tie" for
+    -- explicit ties; otherwise resolves verdict A/B back through the
+    -- display orientation to a concrete source_id.
+    winner_source       TEXT GENERATED ALWAYS AS (
+        CASE
+            WHEN verdict IS NULL THEN NULL
+            WHEN verdict = 'tie' THEN 'tie'
+            WHEN verdict = 'A' THEN display_first
+            WHEN verdict = 'B' AND display_first = source_a THEN source_b
+            WHEN verdict = 'B' AND display_first = source_b THEN source_a
+            ELSE NULL
+        END
+    ) STORED,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (source_a <= source_b)
 );

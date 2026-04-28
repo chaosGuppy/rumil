@@ -85,6 +85,7 @@ def insert_judgment(
     project_id: str | None = None,
     run_id: str | None = None,
     rumil_call_id: str | None = None,
+    contamination_note: str | None = None,
 ) -> str:
     if source_a > source_b:
         raise ValueError(
@@ -111,6 +112,7 @@ def insert_judgment(
         "project_id": project_id,
         "run_id": run_id,
         "rumil_call_id": rumil_call_id,
+        "contamination_note": contamination_note,
     }
     resp = client.table("versus_judgments").insert(row).execute()
     return resp.data[0]["id"]

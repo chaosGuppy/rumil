@@ -154,6 +154,7 @@ def import_judgments(client, text_lookup: dict[tuple[str, str], str]) -> None:
                 project_id=None,  # project lookup not attempted; runs may be pruned
                 run_id=row.get("rumil_run_id"),
                 rumil_call_id=row.get("rumil_call_id"),
+                contamination_note=row.get("contamination_note"),
             )
             n_inserted += 1
         except Exception as e:

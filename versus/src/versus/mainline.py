@@ -12,6 +12,7 @@ onto the axes callers care about.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Iterable
 
@@ -41,6 +42,147 @@ def current_prefix_hashes_for(essay: versus_essay.Essay, cfg: versus_config.Conf
     return out
 
 
+_PHASH_RE = re.compile(r"^p[0-9a-f]{8}$")
+_THASH_RE = re.compile(r"^t[0-9a-f]{8}$")
+_QHASH_RE = re.compile(r"^q[0-9a-f]{8}$")
+_SHASH_RE = re.compile(r"^s[0-9a-f]{8}$")
+_VERSION_RE = re.compile(r"^v\d+$")
+_BUDGET_RE = re.compile(r"^b\d+$")
+
+
+def parse_judge_components(jm: str) -> dict[str, str]:
+    """Decompose a flat ``judge_model`` string into its component
+    KVs (path, base_model, dimension, prompt_hash, version, sampling
+    hash, tool hash, pair hash, closer hash, budget). Anything not
+    present in this row's shape is omitted.
+
+    Recognizes the four current judge_model shapes:
+
+    - ``<provider>/<model>:p<hash>:v<n>:s<hash>`` (blind)
+    - ``<provider>/<model>:<dim>:p<hash>:v<n>:s<hash>`` (text legacy)
+    - ``rumil:ws:<model>:<ws_short>:<dim>:p<hash>:v<n>:t<hash>:q<hash>`` (ws)
+    - ``rumil:orch:<model>:<closer>:b<budget>:<dim>:p<hash>:v<n>:t<hash>[:q<hash>]`` (orch)
+    """
+    out: dict[str, str] = {}
+    parts = jm.split(":")
+    # Walk from right peeling typed suffix tags until we hit non-tag bits.
+    while parts:
+        tail = parts[-1]
+        if _PHASH_RE.match(tail):
+            out["judge_prompt_hash"] = tail
+        elif _VERSION_RE.match(tail):
+            out["judge_version"] = tail
+        elif _SHASH_RE.match(tail):
+            out["judge_sampling_hash"] = tail
+        elif _THASH_RE.match(tail):
+            out["judge_tool_hash"] = tail
+        elif _QHASH_RE.match(tail):
+            out["judge_pair_hash"] = tail
+        else:
+            break
+        parts = parts[:-1]
+    # What remains is the path/identity prefix.
+    if not parts:
+        return out
+    if parts[0] == "rumil" and len(parts) >= 2 and parts[1] in ("orch", "ws", "text"):
+        out["judge_path"] = f"rumil:{parts[1]}"
+        if parts[1] == "orch" and len(parts) >= 6:
+            out["judge_base_model"] = parts[2]
+            out["judge_closer_hash"] = parts[3]
+            if _BUDGET_RE.match(parts[4]):
+                out["judge_budget"] = parts[4]
+            out["judge_dimension"] = parts[5]
+        elif parts[1] == "ws" and len(parts) >= 5:
+            out["judge_base_model"] = parts[2]
+            out["judge_closer_hash"] = parts[3]
+            out["judge_dimension"] = parts[4]
+        elif parts[1] == "text" and len(parts) >= 4:
+            out["judge_base_model"] = parts[2]
+            out["judge_dimension"] = parts[3]
+    else:
+        out["judge_path"] = "blind"
+        # blind shape can be just ``<model>`` or ``<model>:<dim>``.
+        if len(parts) == 1:
+            out["judge_base_model"] = parts[0]
+        elif len(parts) >= 2:
+            out["judge_base_model"] = parts[0]
+            out["judge_dimension"] = parts[1]
+    return out
+
+
+_AXES_ORDER = (
+    "prefix_config_hash",
+    "judge_path",
+    "judge_base_model",
+    "judge_dimension",
+    "judge_prompt_hash",
+    "judge_version",
+    "judge_sampling_hash",
+    "judge_tool_hash",
+    "judge_pair_hash",
+    "judge_closer_hash",
+    "judge_budget",
+)
+
+_AXIS_DESCRIPTIONS = {
+    "prefix_config_hash": (
+        "Hash of essay text + prefix variant params (n_paragraphs, "
+        "include_headers, length_tolerance) + COMPLETION_PROMPT_VERSION. "
+        "Rows with the same prefix_config_hash were judged on the same "
+        "essay slice."
+    ),
+    "judge_path": (
+        "Which judge code path produced the row. blind = single LLM "
+        "call; rumil:ws = SDK agent with workspace tools; rumil:orch = "
+        "full orchestrator run; rumil:text = legacy."
+    ),
+    "judge_base_model": (
+        "Underlying LLM model id (provider/<model> or just <model>) — "
+        "post-decomposition, before any path/prompt/version/sampling "
+        "suffixes."
+    ),
+    "judge_dimension": (
+        "Criterion the judge was rendered for. Empty for blind judges "
+        "that don't bake the dimension into their model id."
+    ),
+    "judge_prompt_hash": (
+        "Hash of the rendered judge system prompt (shell + dimension "
+        "body, with or without the workspace-tools section). Bumps "
+        "when any of the source files change."
+    ),
+    "judge_version": (
+        "Manual BLIND_JUDGE_VERSION bump — for semantic changes the "
+        "prompt-hash and tool-hash don't catch (bridge edits, "
+        "tool-list changes, inline user-message edits)."
+    ),
+    "judge_sampling_hash": (
+        "Hash of model sampling params (temperature, max_tokens, "
+        "top_p). Lives on the row for blind/text variants."
+    ),
+    "judge_tool_hash": (
+        "Hash of the {tool_name -> description} map for the workspace "
+        "exploration tools. ws/orch only — empty on blind rows."
+    ),
+    "judge_pair_hash": (
+        "Hash of the pair-surface page content (the Question page the "
+        "ws/orch judge reads). Forks when the surface formatting "
+        "changes."
+    ),
+    "judge_closer_hash": ("Hash of the orch closer prompt config (orch only)."),
+    "judge_budget": ("Orch run budget — bN means N total dispatches. orch only."),
+}
+
+
+def axis_descriptions() -> dict[str, str]:
+    """Per-axis human description — what the hash is computed over,
+    or what kind of value the axis carries."""
+    return dict(_AXIS_DESCRIPTIONS)
+
+
+def axis_order() -> tuple[str, ...]:
+    return _AXES_ORDER
+
+
 def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
     """Mainline value set per provenance axis, for the UI to flag
     non-current rows.
@@ -54,34 +196,27 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
     from versus import judge as versus_judge
     from versus.versions import BLIND_JUDGE_VERSION
 
-    return {
-        "prefix_config_hash": [],
-        "judge_model": [],
-        "judge_prompt_hash": [
-            f"p{versus_judge.compute_judge_prompt_hash(c, with_tools=False)}"
-            for c in cfg.judging.criteria
-        ],
-        "judge_version": [f"v{BLIND_JUDGE_VERSION}"],
-        "sampling_hash": [],
-    }
+    out: dict[str, list[str]] = {axis: [] for axis in _AXES_ORDER}
+    out["judge_prompt_hash"] = [
+        f"p{versus_judge.compute_judge_prompt_hash(c, with_tools=False)}"
+        for c in cfg.judging.criteria
+    ]
+    out["judge_version"] = [f"v{BLIND_JUDGE_VERSION}"]
+    out["judge_path"] = ["blind"]
+    out["judge_base_model"] = list(cfg.judging.models)
+    out["judge_dimension"] = list(cfg.judging.criteria)
+    return out
 
 
 def summarize_provenance(rows: Iterable[dict]) -> dict[str, dict[str, int]]:
     """Per-axis ``value -> count`` over the rows.
 
-    Axes covered: ``prefix_config_hash``, ``judge_model``,
-    ``judge_prompt_hash`` (parsed from judge_model), ``judge_version``,
-    ``sampling_hash``. Empty/missing values are skipped per-axis. The
-    UI renders this as the "what slice did we aggregate over?" panel.
+    The ``judge_model`` flat string is decomposed into its component
+    KVs (path, base_model, dimension, prompt/version/sampling hashes,
+    plus orch-only knobs) and counted per axis. The full string lives
+    on the row for dedup/drill-in but isn't its own axis here.
     """
-    counts: dict[str, Counter] = {
-        "prefix_config_hash": Counter(),
-        "judge_model": Counter(),
-        "judge_prompt_hash": Counter(),
-        "judge_version": Counter(),
-        "sampling_hash": Counter(),
-    }
-    from versus import judge as versus_judge
+    counts: dict[str, Counter] = {axis: Counter() for axis in _AXES_ORDER}
 
     for r in rows:
         ph = r.get("prefix_config_hash")
@@ -89,13 +224,11 @@ def summarize_provenance(rows: Iterable[dict]) -> dict[str, dict[str, int]]:
             counts["prefix_config_hash"][ph] += 1
         jm = r.get("judge_model")
         if jm:
-            counts["judge_model"][jm] += 1
-            base, prompt_hash, version = versus_judge.parse_judge_model_suffix(jm)
-            if prompt_hash:
-                counts["judge_prompt_hash"][prompt_hash] += 1
-            if version:
-                counts["judge_version"][version] += 1
+            kvs = parse_judge_components(jm)
+            for axis, value in kvs.items():
+                if axis in counts:
+                    counts[axis][value] += 1
         sh = r.get("sampling_hash")
         if sh:
-            counts["sampling_hash"][sh] += 1
+            counts["judge_sampling_hash"][sh] += 1
     return {axis: dict(c) for axis, c in counts.items()}

@@ -2515,56 +2515,58 @@ export type ProposedSubquestion = {
 };
 
 /**
+ * ProvenanceAxis
+ *
+ * One axis of the provenance summary.
+ *
+ * ``description`` says what the value or hash is computed over, so
+ * the operator knows what would change it. ``counts`` is value ->
+ * row count over the surviving rows. ``current_values`` is the
+ * mainline set (UI flags anything not in this list as non-current).
+ * ``value_labels`` turns opaque hashes into readable strings where
+ * derivable (e.g. a ``prefix_config_hash`` maps back to its
+ * originating ``"essay_id / variant_id"``).
+ */
+export type ProvenanceAxis = {
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Counts
+     */
+    counts: {
+        [key: string]: number;
+    };
+    /**
+     * Current Values
+     */
+    current_values: Array<string>;
+    /**
+     * Value Labels
+     */
+    value_labels: {
+        [key: string]: string;
+    };
+};
+
+/**
  * ProvenanceSummary
  *
- * Per-axis ``value -> row_count`` describing what the aggregate
- * averaged over.
+ * Per-axis breakdown of what slice the aggregate sits on top of.
  *
- * Lets the UI declare the slice each /results matrix sits on top of:
- * a 60% cell averaged across one prompt_hash means something
- * different than 60% across five. Keys are the axis name; values are
- * a ``{value: count}`` map of how many surviving rows had that value.
- *
- * ``current`` carries the mainline value set for each axis (derived
- * from cfg + version constants). The UI flags any axis value not in
- * its ``current[axis]`` list as a non-current entry.
+ * ``axes`` is keyed by axis name (see ``versus.mainline.axis_order``)
+ * so new axes can be added without an envelope schema bump. The
+ * composite ``judge_model`` string is decomposed into component
+ * axes — every dimension a row carries gets its own current/stale
+ * story.
  */
 export type ProvenanceSummary = {
     /**
-     * Prefix Config Hash
+     * Axes
      */
-    prefix_config_hash: {
-        [key: string]: number;
-    };
-    /**
-     * Judge Model
-     */
-    judge_model: {
-        [key: string]: number;
-    };
-    /**
-     * Judge Prompt Hash
-     */
-    judge_prompt_hash: {
-        [key: string]: number;
-    };
-    /**
-     * Judge Version
-     */
-    judge_version: {
-        [key: string]: number;
-    };
-    /**
-     * Sampling Hash
-     */
-    sampling_hash: {
-        [key: string]: number;
-    };
-    /**
-     * Current
-     */
-    current: {
-        [key: string]: Array<string>;
+    axes: {
+        [key: string]: ProvenanceAxis;
     };
 };
 

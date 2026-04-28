@@ -480,26 +480,35 @@ class PrefixVariantInfo(pydantic.BaseModel):
     include_headers: bool
 
 
-class ProvenanceSummary(pydantic.BaseModel):
-    """Per-axis ``value -> row_count`` describing what the aggregate
-    averaged over.
+class ProvenanceAxis(pydantic.BaseModel):
+    """One axis of the provenance summary.
 
-    Lets the UI declare the slice each /results matrix sits on top of:
-    a 60% cell averaged across one prompt_hash means something
-    different than 60% across five. Keys are the axis name; values are
-    a ``{value: count}`` map of how many surviving rows had that value.
-
-    ``current`` carries the mainline value set for each axis (derived
-    from cfg + version constants). The UI flags any axis value not in
-    its ``current[axis]`` list as a non-current entry.
+    ``description`` says what the value or hash is computed over, so
+    the operator knows what would change it. ``counts`` is value ->
+    row count over the surviving rows. ``current_values`` is the
+    mainline set (UI flags anything not in this list as non-current).
+    ``value_labels`` turns opaque hashes into readable strings where
+    derivable (e.g. a ``prefix_config_hash`` maps back to its
+    originating ``"essay_id / variant_id"``).
     """
 
-    prefix_config_hash: dict[str, int]
-    judge_model: dict[str, int]
-    judge_prompt_hash: dict[str, int]
-    judge_version: dict[str, int]
-    sampling_hash: dict[str, int]
-    current: dict[str, list[str]]
+    description: str
+    counts: dict[str, int]
+    current_values: list[str]
+    value_labels: dict[str, str]
+
+
+class ProvenanceSummary(pydantic.BaseModel):
+    """Per-axis breakdown of what slice the aggregate sits on top of.
+
+    ``axes`` is keyed by axis name (see ``versus.mainline.axis_order``)
+    so new axes can be added without an envelope schema bump. The
+    composite ``judge_model`` string is decomposed into component
+    axes — every dimension a row carries gets its own current/stale
+    story.
+    """
+
+    axes: dict[str, ProvenanceAxis]
 
 
 class ResultsBundle(pydantic.BaseModel):
@@ -1099,15 +1108,39 @@ def get_results(
 
     provenance_axes = versus_mainline.summarize_provenance(matrix_input_rows)
     current = versus_mainline.current_values_summary(cfg)
-    current["prefix_config_hash"] = sorted(set(current_prefix_hashes.values()))
-    provenance = ProvenanceSummary(
-        prefix_config_hash=provenance_axes["prefix_config_hash"],
-        judge_model=provenance_axes["judge_model"],
-        judge_prompt_hash=provenance_axes["judge_prompt_hash"],
-        judge_version=provenance_axes["judge_version"],
-        sampling_hash=provenance_axes["sampling_hash"],
-        current=current,
-    )
+    descriptions = versus_mainline.axis_descriptions()
+    # Build a hash -> "essay_id / variant_id" reverse map across all
+    # active prefix variants. Each (essay, variant) combination
+    # contributes one current hash; collisions across variants are
+    # vanishingly unlikely but we'd merge labels if they happened.
+    prefix_labels: dict[str, str] = {}
+    current_prefix_hash_set: set[str] = set()
+    for v in versus_prepare.active_prefix_configs(cfg):
+        _, hashes = _build_essays_status(cfg, prefix_cfg=v)
+        for essay_id, h in hashes.items():
+            current_prefix_hash_set.add(h)
+            existing = prefix_labels.get(h)
+            label = f"{essay_id} / {v.id}"
+            prefix_labels[h] = f"{existing}, {label}" if existing else label
+    current["prefix_config_hash"] = sorted(current_prefix_hash_set)
+
+    axes_out: dict[str, ProvenanceAxis] = {}
+    for axis in versus_mainline.axis_order():
+        counts = provenance_axes.get(axis, {})
+        if not counts and not current.get(axis):
+            continue
+        value_labels: dict[str, str] = {}
+        if axis == "prefix_config_hash":
+            for h in counts:
+                if h in prefix_labels:
+                    value_labels[h] = prefix_labels[h]
+        axes_out[axis] = ProvenanceAxis(
+            description=descriptions.get(axis, ""),
+            counts=counts,
+            current_values=current.get(axis, []),
+            value_labels=value_labels,
+        )
+    provenance = ProvenanceSummary(axes=axes_out)
 
     return ResultsBundle(
         conditions=conditions,

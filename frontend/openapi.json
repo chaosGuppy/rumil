@@ -7119,65 +7119,60 @@
         ],
         "title": "ProposedSubquestion"
       },
-      "ProvenanceSummary": {
+      "ProvenanceAxis": {
         "properties": {
-          "prefix_config_hash": {
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "counts": {
             "additionalProperties": {
               "type": "integer"
             },
             "type": "object",
-            "title": "Prefix Config Hash"
+            "title": "Counts"
           },
-          "judge_model": {
+          "current_values": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Current Values"
+          },
+          "value_labels": {
             "additionalProperties": {
-              "type": "integer"
+              "type": "string"
             },
             "type": "object",
-            "title": "Judge Model"
-          },
-          "judge_prompt_hash": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "type": "object",
-            "title": "Judge Prompt Hash"
-          },
-          "judge_version": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "type": "object",
-            "title": "Judge Version"
-          },
-          "sampling_hash": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "type": "object",
-            "title": "Sampling Hash"
-          },
-          "current": {
-            "additionalProperties": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "type": "object",
-            "title": "Current"
+            "title": "Value Labels"
           }
         },
         "type": "object",
         "required": [
-          "prefix_config_hash",
-          "judge_model",
-          "judge_prompt_hash",
-          "judge_version",
-          "sampling_hash",
-          "current"
+          "description",
+          "counts",
+          "current_values",
+          "value_labels"
+        ],
+        "title": "ProvenanceAxis",
+        "description": "One axis of the provenance summary.\n\n``description`` says what the value or hash is computed over, so\nthe operator knows what would change it. ``counts`` is value ->\nrow count over the surviving rows. ``current_values`` is the\nmainline set (UI flags anything not in this list as non-current).\n``value_labels`` turns opaque hashes into readable strings where\nderivable (e.g. a ``prefix_config_hash`` maps back to its\noriginating ``\"essay_id / variant_id\"``)."
+      },
+      "ProvenanceSummary": {
+        "properties": {
+          "axes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProvenanceAxis"
+            },
+            "type": "object",
+            "title": "Axes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "axes"
         ],
         "title": "ProvenanceSummary",
-        "description": "Per-axis ``value -> row_count`` describing what the aggregate\naveraged over.\n\nLets the UI declare the slice each /results matrix sits on top of:\na 60% cell averaged across one prompt_hash means something\ndifferent than 60% across five. Keys are the axis name; values are\na ``{value: count}`` map of how many surviving rows had that value.\n\n``current`` carries the mainline value set for each axis (derived\nfrom cfg + version constants). The UI flags any axis value not in\nits ``current[axis]`` list as a non-current entry."
+        "description": "Per-axis breakdown of what slice the aggregate sits on top of.\n\n``axes`` is keyed by axis name (see ``versus.mainline.axis_order``)\nso new axes can be added without an envelope schema bump. The\ncomposite ``judge_model`` string is decomposed into component\naxes \u2014 every dimension a row carries gets its own current/stale\nstory."
       },
       "QuestionDedupeEventOut": {
         "properties": {

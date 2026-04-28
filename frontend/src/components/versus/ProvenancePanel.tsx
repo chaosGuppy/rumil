@@ -1,88 +1,113 @@
-import type { ProvenanceSummary } from "@/api/types.gen";
+import type { ProvenanceAxis, ProvenanceSummary } from "@/api/types.gen";
 
-type AxisKey = "prefix_config_hash" | "judge_model" | "judge_prompt_hash" | "judge_version" | "sampling_hash";
-
-const AXES: { key: AxisKey; label: string }[] = [
-  { key: "prefix_config_hash", label: "prefix_config_hash" },
-  { key: "judge_model", label: "judge_model" },
-  { key: "judge_prompt_hash", label: "judge_prompt_hash" },
-  { key: "judge_version", label: "judge_version" },
-  { key: "sampling_hash", label: "sampling_hash" },
+const AXIS_ORDER = [
+  "prefix_config_hash",
+  "judge_path",
+  "judge_base_model",
+  "judge_dimension",
+  "judge_prompt_hash",
+  "judge_version",
+  "judge_sampling_hash",
+  "judge_tool_hash",
+  "judge_pair_hash",
+  "judge_closer_hash",
+  "judge_budget",
 ];
 
-/** Combine N per-variant ProvenanceSummary objects into one map per
- *  axis (counts add) plus a unified ``current`` set (union). */
-function mergeAxes(bundles: ProvenanceSummary[]): {
-  counts: Record<AxisKey, Record<string, number>>;
-  current: Record<AxisKey, Set<string>>;
-} {
-  const counts = Object.fromEntries(AXES.map((a) => [a.key, {}])) as Record<
-    AxisKey,
-    Record<string, number>
-  >;
-  const current = Object.fromEntries(AXES.map((a) => [a.key, new Set<string>()])) as Record<
-    AxisKey,
-    Set<string>
-  >;
+/** Combine per-variant ProvenanceSummary objects into one merged
+ *  axes map. Counts add; ``current_values`` and ``value_labels``
+ *  union; ``description`` is taken from whichever bundle exposed it
+ *  first (they're identical by construction). */
+function mergeAxes(bundles: ProvenanceSummary[]): Record<string, ProvenanceAxis> {
+  const merged: Record<string, ProvenanceAxis> = {};
   for (const b of bundles) {
-    for (const { key } of AXES) {
-      const src = b[key] ?? {};
-      for (const [v, n] of Object.entries(src)) {
-        counts[key][v] = (counts[key][v] ?? 0) + n;
+    for (const [axis, info] of Object.entries(b.axes ?? {})) {
+      const slot = merged[axis] ?? {
+        description: info.description,
+        counts: {},
+        current_values: [],
+        value_labels: {},
+      };
+      for (const [v, n] of Object.entries(info.counts)) {
+        slot.counts[v] = (slot.counts[v] ?? 0) + n;
       }
-      const cur = b.current?.[key] ?? [];
-      for (const v of cur) current[key].add(v);
+      const cur = new Set([...slot.current_values, ...info.current_values]);
+      slot.current_values = Array.from(cur);
+      slot.value_labels = { ...slot.value_labels, ...info.value_labels };
+      merged[axis] = slot;
     }
   }
-  return { counts, current };
+  return merged;
 }
 
-/** Highlight values not in the mainline ``current`` set per axis. The
- *  rule used to be "<5% of the axis is rare" but that hid the real
- *  case (97% of rows on a stale prompt_hash with 3% on the current
- *  one). Anchoring to current flips the highlight to where the
- *  problem actually is. Empty ``current[axis]`` means "we don't know
- *  current here yet" — render values neutrally. */
+/** Rich provenance panel: each axis carries its own description so the
+ *  operator knows what the hash is computed over, and value_labels
+ *  surface the underlying KV (e.g. "essay_id / variant_id") next to
+ *  opaque hashes. Values not in ``current_values`` get the amber
+ *  "stale" treatment; values in it get a green border. Empty
+ *  current_values means "we don't know mainline for this axis yet" —
+ *  those values render neutrally. */
 export function ProvenancePanel({ summaries }: { summaries: ProvenanceSummary[] }) {
   if (summaries.length === 0) return null;
-  const { counts, current } = mergeAxes(summaries);
+  const merged = mergeAxes(summaries);
+  const axes = AXIS_ORDER.filter((a) => merged[a] && Object.keys(merged[a].counts).length > 0);
   return (
     <details className="prov-panel" open>
       <summary>provenance</summary>
       <dl className="prov-grid">
-        {AXES.map(({ key, label }) => {
-          const entries = Object.entries(counts[key]).sort((a, b) => b[1] - a[1]);
-          if (entries.length === 0) return null;
+        {axes.map((axis) => {
+          const info = merged[axis];
+          const entries = Object.entries(info.counts).sort((a, b) => b[1] - a[1]);
           const total = entries.reduce((s, [, n]) => s + n, 0);
-          const knownCurrent = current[key].size > 0;
-          let currentRows = 0;
-          for (const [v, n] of entries) if (current[key].has(v)) currentRows += n;
+          const currentSet = new Set(info.current_values);
+          const knownCurrent = currentSet.size > 0;
+          let mainlineRows = 0;
+          let mainlineDistinct = 0;
+          for (const [v, n] of entries) {
+            if (currentSet.has(v)) {
+              mainlineRows += n;
+              mainlineDistinct += 1;
+            }
+          }
           return (
-            <div key={key} className="prov-row">
+            <div key={axis} className="prov-row">
               <dt>
-                {label}
+                <div className="prov-axis-name">{axis}</div>
+                <div className="prov-axis-desc">{info.description}</div>
                 {knownCurrent && (
                   <div className="prov-axis-share">
-                    {Math.round((currentRows / total) * 100)}% current
+                    {mainlineRows} of {total} rows in mainline · {mainlineDistinct} of{" "}
+                    {entries.length} values
+                  </div>
+                )}
+                {!knownCurrent && (
+                  <div className="prov-axis-share muted">
+                    no mainline set declared
                   </div>
                 )}
               </dt>
               <dd>
                 {entries.map(([v, n]) => {
-                  const isCurrent = current[key].has(v);
+                  const isCurrent = currentSet.has(v);
                   const isStale = knownCurrent && !isCurrent;
                   const share = (n / total) * 100;
                   const cls = isStale ? "prov-val stale" : isCurrent ? "prov-val current" : "prov-val";
+                  const label = info.value_labels[v];
+                  const baseTitle = label
+                    ? `${label} · ${n} of ${total} rows`
+                    : `${n} of ${total} rows`;
                   const title = isStale
-                    ? `${n} of ${total} rows · NOT in mainline current set`
+                    ? `${baseTitle} · NOT in mainline`
                     : isCurrent
-                      ? `${n} of ${total} rows · current/mainline value`
-                      : `${n} of ${total} rows`;
+                      ? `${baseTitle} · current/mainline`
+                      : baseTitle;
                   return (
                     <span key={v} className={cls} title={title}>
                       <code>{v}</code>
+                      {label && <span className="prov-label">{label}</span>}
                       <span className="prov-n">
-                        {n} <span className="prov-share">({share.toFixed(1)}%)</span>
+                        {n}
+                        <span className="prov-share"> ({share.toFixed(1)}%)</span>
                       </span>
                     </span>
                   );
@@ -121,18 +146,27 @@ export function ProvenancePanel({ summaries }: { summaries: ProvenanceSummary[] 
           margin: 0 0 10px;
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 12px;
         }
         .prov-row {
           display: grid;
-          grid-template-columns: 200px 1fr;
-          gap: 12px;
+          grid-template-columns: 240px 1fr;
+          gap: 14px;
           align-items: start;
         }
         .prov-row dt {
-          color: var(--color-muted);
+          display: flex; flex-direction: column; gap: 2px;
+        }
+        .prov-axis-name {
           font-family: ui-monospace, Menlo, monospace;
           font-size: 11px;
+          color: var(--foreground);
+          font-weight: 600;
+        }
+        .prov-axis-desc {
+          font-size: 11px;
+          color: var(--color-muted);
+          line-height: 1.35;
         }
         .prov-axis-share {
           font-family: var(--font-geist-sans), -apple-system, system-ui, sans-serif;
@@ -142,16 +176,19 @@ export function ProvenancePanel({ summaries }: { summaries: ProvenanceSummary[] 
           text-transform: uppercase;
           letter-spacing: 0.04em;
         }
+        .prov-axis-share.muted { opacity: 0.6; font-style: italic; }
         .prov-row dd {
           margin: 0;
           display: flex; flex-wrap: wrap; gap: 6px;
         }
         .prov-val {
+          display: inline-flex; align-items: baseline; gap: 4px;
           font-size: 11px;
           color: var(--foreground);
           padding: 1px 6px;
           border-radius: 3px;
           border: 1px solid transparent;
+          line-height: 1.5;
         }
         .prov-val.current {
           border-color: hsl(140 30% 78%);
@@ -168,6 +205,12 @@ export function ProvenancePanel({ summaries }: { summaries: ProvenanceSummary[] 
             color: hsl(28 70% 78%);
             border-color: hsl(28 40% 35%);
           }
+        }
+        .prov-label {
+          color: var(--color-muted);
+          font-size: 10px;
+          font-style: italic;
+          padding-left: 2px;
         }
         .prov-n { color: var(--color-muted); font-size: 10px; margin-left: 4px; }
         .prov-share { font-variant-numeric: tabular-nums; }

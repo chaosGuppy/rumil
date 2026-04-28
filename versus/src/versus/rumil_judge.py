@@ -196,7 +196,8 @@ def _mirror_row(
         "verdict": verdict,
         "winner_source": winner_source,
         "reasoning_text": result.reasoning_text,
-        "prompt": "",
+        "prompt": getattr(result, "user_prompt", "") or "",
+        "system_prompt": getattr(result, "system_prompt", "") or "",
         "ts": dt.datetime.utcnow().isoformat() + "Z",
         "duration_s": round(time.time() - t0, 2),
         "raw_response": None,
@@ -395,7 +396,10 @@ async def run_ws(
                 # fed to the agent (agent reads pages via load_page /
                 # search / explore_subgraph, never the runs row). Safe
                 # to embed per-pair metadata for forensic traceability.
-                ph = prompt_hash_cache[(task_name, is_versus_crit)]
+                jm = _compose(task_name, is_versus_crit)
+                from versus.mainline import parse_judge_components
+
+                judge_components = parse_judge_components(jm)
                 await db.create_run(
                     name=f"versus-rumil-ws:{workspace}:{pair.essay_id}",
                     question_id=None,
@@ -403,11 +407,18 @@ async def run_ws(
                         "origin": "versus",
                         "variant": "ws",
                         "workspace": workspace,
-                        "model": model,
+                        "judge_model": jm,
                         "task_name": effective_task,
-                        "judge_prompt_hash": ph,
-                        "blind_judge_version": BLIND_JUDGE_VERSION,
                         "essay_id": pair.essay_id,
+                        # Full decomposition of judge_model — every
+                        # provenance axis the inspect/results UI keys
+                        # off, in one place for forensic traceability.
+                        # Lets a corrupt or regression-prone judge_model
+                        # parser still recover the slice this row was
+                        # judged under.
+                        **judge_components,
+                        "blind_judge_version": BLIND_JUDGE_VERSION,
+                        "judging_max_tokens": cfg.judging.max_tokens,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /
                         # order live on the judgment row in
@@ -584,7 +595,10 @@ async def run_orch(
                 # the runs row). Safe to embed judge identity AND
                 # per-pair metadata for forensic traceability of an
                 # individual orch run.
-                ph = prompt_hash_cache[(task_name, is_versus_crit)]
+                jm = _compose(task_name, is_versus_crit)
+                from versus.mainline import parse_judge_components
+
+                judge_components = parse_judge_components(jm)
                 await db.create_run(
                     name=f"versus-rumil-orch:{workspace}:{pair.essay_id}",
                     question_id=None,
@@ -592,12 +606,14 @@ async def run_orch(
                         "origin": "versus",
                         "variant": "orch",
                         "workspace": workspace,
-                        "model": model,
-                        "budget": budget,
+                        "judge_model": jm,
                         "task_name": effective_task,
-                        "judge_prompt_hash": ph,
-                        "blind_judge_version": BLIND_JUDGE_VERSION,
                         "essay_id": pair.essay_id,
+                        # Full decomposition of judge_model — see ws
+                        # variant for rationale.
+                        **judge_components,
+                        "blind_judge_version": BLIND_JUDGE_VERSION,
+                        "judging_max_tokens": cfg.judging.max_tokens,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /
                         # order live on the judgment row in

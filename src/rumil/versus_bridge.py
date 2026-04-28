@@ -165,6 +165,11 @@ class JudgeResult:
     run_id: str
     question_id: str
     cost_usd: float
+    # The exact system + user prompt the judge was given. Stored on
+    # the judgment row so audits can reconstruct what the judge saw
+    # without chasing :p<hash> back through git history.
+    system_prompt: str = ""
+    user_prompt: str = ""
 
 
 def _frontend_trace_url(run_id: str, call_id: str | None = None) -> str:
@@ -418,6 +423,8 @@ async def _judge_pair_ws_aware_inner(
         verdict=label_to_verdict(label),
         preference_label=label,
         reasoning_text=report_text,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
         trace_url=_frontend_trace_url(db.run_id, call.id),
         call_id=call.id,
         run_id=db.run_id,
@@ -516,7 +523,7 @@ async def _run_orch_closer(
     broadcaster: Broadcaster | None,
     *,
     render_fn: Callable[[DB, str], Awaitable[str]] | None = None,
-) -> tuple[str, Call]:
+) -> tuple[str, Call, str, str]:
     """Small closing call: read the orchestrator's research on ``question_id``
     and emit a 7-point preference label.
 
@@ -598,7 +605,7 @@ async def _run_orch_closer(
         await db.update_call_status(call.id, CallStatus.FAILED)
         raise
 
-    return report_text, call
+    return report_text, call, system_prompt, user_prompt
 
 
 async def judge_pair_orch(
@@ -637,7 +644,7 @@ async def judge_pair_orch(
             )
             raise
 
-        report_text, closer_call = await _run_orch_closer(
+        report_text, closer_call, closer_system_prompt, closer_user_prompt = await _run_orch_closer(
             db,
             question_id,
             task_body=task_body,
@@ -651,6 +658,8 @@ async def judge_pair_orch(
         verdict=label_to_verdict(label),
         preference_label=label,
         reasoning_text=report_text,
+        system_prompt=closer_system_prompt,
+        user_prompt=closer_user_prompt,
         trace_url=_frontend_trace_url(db.run_id, closer_call.id),
         call_id=closer_call.id,
         run_id=db.run_id,

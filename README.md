@@ -362,6 +362,38 @@ you're running against a different project.
 You can also pass `--container-tag TAG` to `main.py` directly if you've
 already built and pushed the image yourself.
 
+#### Forwarding local config into the cloud Job
+
+When you submit a run with `--executor prod` (or `--prod`), the CLI
+auto-forwards a curated subset of your locally-loaded `Settings` into
+the Job's container env. Any forwardable field whose value differs
+from its class default is sent in the request's `extra_env` and shadows
+the value the Job would otherwise inherit from the deployed `rumil-api`.
+
+This means experiment knobs you set locally — via `.env`,
+`.env.overrides`, or your shell — Just Work remotely:
+
+```bash
+# Run a remote orchestrator with an overridden model
+RUMIL_MODEL_OVERRIDE=claude-sonnet-4-6 \
+  uv run python main.py "is the sky blue?" --budget 2 --smoke-test \
+  --workspace cloud-config-scratch --prod
+```
+
+The forwarded set covers the per-run tuning surface (every
+`_capture_field`-marked Settings field) plus `RUMIL_MODEL_OVERRIDE`,
+`RUMIL_SMOKE_TEST`, `RUMIL_TEST_MODE`, and `FORCE_TWOPHASE_RECURSE`.
+
+Credentials, DB URLs, GCP identifiers, frontend/API URLs, and Langfuse
+keys are intentionally *not* forwarded — the Job inherits those from
+the deployed Pod's secrets and env, and a stray local override would
+point a cloud run at the wrong resources.
+
+The launcher endpoint (`POST /api/jobs/orchestrator-runs`) accepts an
+`extra_env` field for any Settings name; the curated CLI subset is just
+how `main.py` chooses what to send. Other clients (curl, scripts) can
+override anything they want.
+
 ### Testing individual calls
 
 `scripts/run_call.py` runs a single call type (find-considerations, assess, prioritize) against the local database, useful for development and debugging without the full orchestrator loop.

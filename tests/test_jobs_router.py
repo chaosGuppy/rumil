@@ -20,6 +20,7 @@ from rumil.k8s.submit import (
     JOB_LABEL_RUN_KIND_VALUE,
     JOB_LABEL_WORKSPACE,
 )
+from rumil.settings import override_settings
 
 
 @pytest.fixture
@@ -153,6 +154,88 @@ async def test_post_orchestrator_run_validates_request_body(mocker, auth_overrid
 
 
 @pytest.mark.asyncio
+async def test_post_orchestrator_run_rejects_unknown_extra_env_key(mocker, auth_overridden_client):
+    """Settings.all_env_keys() is the API trust boundary — unknown keys
+    are rejected at submission time so typos don't silently fall on
+    the floor (Settings is configured extra='ignore')."""
+    mocker.patch(
+        "rumil.api.jobs.submit_orchestrator_job",
+        return_value=("should-not-be-called", _FAKE_RUN_ID),
+    )
+    resp = await auth_overridden_client.post(
+        "/api/jobs/orchestrator-runs",
+        json={
+            "question": "q",
+            "budget": 1,
+            "workspace": "ws",
+            "extra_env": {"NOT_A_REAL_SETTING": "x"},
+        },
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_orchestrator_run_rejects_lowercase_extra_env_key(
+    mocker, auth_overridden_client
+):
+    mocker.patch(
+        "rumil.api.jobs.submit_orchestrator_job",
+        return_value=("should-not-be-called", _FAKE_RUN_ID),
+    )
+    resp = await auth_overridden_client.post(
+        "/api/jobs/orchestrator-runs",
+        json={
+            "question": "q",
+            "budget": 1,
+            "workspace": "ws",
+            "extra_env": {"available_moves": "extra"},
+        },
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_orchestrator_run_rejects_empty_extra_env_value(mocker, auth_overridden_client):
+    mocker.patch(
+        "rumil.api.jobs.submit_orchestrator_job",
+        return_value=("should-not-be-called", _FAKE_RUN_ID),
+    )
+    resp = await auth_overridden_client.post(
+        "/api/jobs/orchestrator-runs",
+        json={
+            "question": "q",
+            "budget": 1,
+            "workspace": "ws",
+            "extra_env": {"AVAILABLE_MOVES": ""},
+        },
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_orchestrator_run_forwards_extra_env_to_submitter(
+    mocker, auth_overridden_client
+):
+    fake_submit = mocker.patch(
+        "rumil.api.jobs.submit_orchestrator_job",
+        return_value=("rumil-orch-ws-extra", _FAKE_RUN_ID),
+    )
+    mocker.patch("rumil.api.jobs.build_logs_url", return_value="")
+    resp = await auth_overridden_client.post(
+        "/api/jobs/orchestrator-runs",
+        json={
+            "question": "q",
+            "budget": 1,
+            "workspace": "ws",
+            "extra_env": {"RUMIL_MODEL_OVERRIDE": "claude-sonnet-4-6"},
+        },
+    )
+    assert resp.status_code == 201
+    spec_arg = fake_submit.call_args.args[0]
+    assert spec_arg.extra_env == {"RUMIL_MODEL_OVERRIDE": "claude-sonnet-4-6"}
+
+
+@pytest.mark.asyncio
 async def test_post_orchestrator_run_returns_500_when_submitter_fails(
     mocker, auth_overridden_client
 ):
@@ -170,12 +253,17 @@ async def test_post_orchestrator_run_returns_500_when_submitter_fails(
 @pytest.mark.asyncio
 async def test_post_orchestrator_run_unauthorized_without_token():
     """No dependency override -> JWT path runs, returns 401 without bearer."""
+    # Pin auth_enabled=True regardless of the developer's local .env (the
+    # shared dev .env sets AUTH_ENABLED=0 for frictionless local API access,
+    # which would otherwise short-circuit the auth dependency to 200/201
+    # here).
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as anon:
-        resp = await anon.post(
-            "/api/jobs/orchestrator-runs",
-            json={"question": "q", "budget": 1, "workspace": "ws"},
-        )
+    with override_settings(auth_enabled=True):
+        async with AsyncClient(transport=transport, base_url="http://test") as anon:
+            resp = await anon.post(
+                "/api/jobs/orchestrator-runs",
+                json={"question": "q", "budget": 1, "workspace": "ws"},
+            )
     assert resp.status_code == 401
 
 
@@ -329,6 +417,7 @@ async def test_get_jobs_lists_with_label_selector(mocker, auth_overridden_client
 @pytest.mark.asyncio
 async def test_get_jobs_unauthorized_without_token():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as anon:
-        resp = await anon.get("/api/jobs")
+    with override_settings(auth_enabled=True):
+        async with AsyncClient(transport=transport, base_url="http://test") as anon:
+            resp = await anon.get("/api/jobs")
     assert resp.status_code == 401

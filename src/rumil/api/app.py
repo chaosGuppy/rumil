@@ -35,6 +35,7 @@ from rumil.api.schemas import (
     PageLoadEventOut,
     PageLoadStatsOut,
     PaginatedPagesOut,
+    PrioritizationCandidateOut,
     ProjectStatsOut,
     QuestionStatsOut,
     RealtimeConfigOut,
@@ -374,7 +375,22 @@ async def get_question_stats(
             detail="Stats are only available for question pages",
         )
     blob = await db.get_question_stats(page_id)
-    return QuestionStatsOut(question_id=page_id, **blob)
+    candidates = await db.get_prioritization_calls_with_question_as_candidate(page_id)
+    return QuestionStatsOut(
+        question_id=page_id,
+        prioritization_candidates=[
+            PrioritizationCandidateOut(
+                call_id=c.call_id,
+                run_id=c.run_id,
+                scope_page_id=c.scope_page_id,
+                scope_headline=c.scope_headline,
+                created_at=c.created_at,
+                is_scope=c.is_scope,
+            )
+            for c in candidates
+        ],
+        **blob,
+    )
 
 
 @app.get(

@@ -6953,6 +6953,45 @@
         "title": "PrefixVariantInfo",
         "description": "One prefix variant available in the active config.\n\nSurfaced on ResultsBundle so the /versus/results UI can render a\nvariant selector. ``id`` matches the yaml ``prefix.id`` /\n``prefix_variants[].id`` and is the value the UI passes back as\n``?prefix_label=<id>``."
       },
+      "PrioritizationCandidateOut": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "scope_page_id": {
+            "type": "string",
+            "title": "Scope Page Id"
+          },
+          "scope_headline": {
+            "type": "string",
+            "title": "Scope Headline"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "is_scope": {
+            "type": "boolean",
+            "title": "Is Scope"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_id",
+          "run_id",
+          "scope_page_id",
+          "scope_headline",
+          "created_at",
+          "is_scope"
+        ],
+        "title": "PrioritizationCandidateOut"
+      },
       "Project": {
         "properties": {
           "name": {
@@ -7296,6 +7335,14 @@
           },
           "subgraph": {
             "$ref": "#/components/schemas/Subgraph"
+          },
+          "prioritization_candidates": {
+            "items": {
+              "$ref": "#/components/schemas/PrioritizationCandidateOut"
+            },
+            "type": "array",
+            "title": "Prioritization Candidates",
+            "default": []
           }
         },
         "type": "object",
@@ -7310,7 +7357,8 @@
           "calls_per_question",
           "question_id",
           "subgraph_page_count",
-          "subgraph"
+          "subgraph",
+          "prioritization_candidates"
         ],
         "title": "QuestionStatsOut"
       },

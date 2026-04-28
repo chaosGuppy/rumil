@@ -33,24 +33,23 @@ from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 # edited. Printed in the failure message so the fix is unambiguous.
 _BUMP_GUIDANCE = {
     "versus-judge-shell.md": (
-        "Edits to the judge-shell affect every rumil-style judge "
-        "(ws/orch/text) AND the `text`/`anthropic:*` path via "
-        "compute_judge_prompt_hash. The :p<hash> suffix should fork "
-        "naturally via compute_prompt_hash, BUT if you're making a "
-        "semantic change the hash doesn't capture (e.g. whitespace-only "
-        "or load-bearing invariants), also bump BLIND_JUDGE_VERSION in "
-        "`versus.versions` (affects rumil:ws/orch/text) and/or "
-        "JUDGE_PROMPT_VERSION (affects anthropic:*/OpenRouter)."
+        "Edits to the judge-shell affect every judge variant "
+        "(blind/ws/orch). The composed prompt sha flows into "
+        "config_hash automatically — if you intended this edit, just "
+        'update EXPECTED_HASHES["versus-judge-shell.md"] to the new '
+        "value printed in the failure message."
     ),
     "versus-general-quality.md": (
-        "Dimension body for `general_quality`. The :p<hash> suffix "
-        "forks naturally via compute_prompt_hash. If semantics change "
-        "in a way the hash doesn't capture, bump BLIND_JUDGE_VERSION."
+        "Dimension body for `general_quality`. The composed prompt "
+        "sha forks config_hash automatically. If you intended this "
+        'edit, update EXPECTED_HASHES["versus-general-quality.md"] '
+        "to the printed sha."
     ),
     "versus-grounding.md": (
-        "Dimension body for `grounding`. The :p<hash> suffix forks "
-        "naturally via compute_prompt_hash. If semantics change in a "
-        "way the hash doesn't capture, bump BLIND_JUDGE_VERSION."
+        "Dimension body for `grounding`. The composed prompt sha "
+        "forks config_hash automatically. If you intended this edit, "
+        'update EXPECTED_HASHES["versus-grounding.md"] to the '
+        "printed sha."
     ),
 }
 

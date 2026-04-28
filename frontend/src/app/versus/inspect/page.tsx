@@ -215,11 +215,17 @@ export default async function VersusInspectPage({
 
   // First key per config_hash — the judgment-row that gets the
   // anchor id, so a ToC click jumps to that judge's first row.
+  // Also map config_hash -> judge_model_id so column headers and ToC
+  // entries render a model name rather than the opaque hex hash.
   const firstKeyByJudge = new Map<string, string>();
+  const judgeModelIdByHash = new Map<string, string>();
   for (const k of judgmentOrder) {
     const j = judgmentRows.get(k)!.values().next().value as Judgment;
     if (!firstKeyByJudge.has(j.config_hash)) {
       firstKeyByJudge.set(j.config_hash, k);
+    }
+    if (!judgeModelIdByHash.has(j.config_hash)) {
+      judgeModelIdByHash.set(j.config_hash, j.judge_model_id);
     }
   }
   const judgeOrder = Array.from(firstKeyByJudge.keys()).sort();
@@ -272,6 +278,7 @@ export default async function VersusInspectPage({
               variantBundles={variantBundles}
               sourceOrder={sourceOrder}
               judgeOrder={judgeOrder}
+              judgeModelIdByHash={judgeModelIdByHash}
             />
             <div className="inspect-content">
             <div className="inspect-titlebar">
@@ -600,7 +607,11 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
           const acc = new Map<string, Map<string, WinAccum>>();
           const judgesSet = new Set<string>();
           const gensSet = new Set<string>();
+          // Local config_hash -> judge_model_id map so column headers
+          // render the model name rather than the opaque hex hash.
+          const judgeModelIdByHash = new Map<string, string>();
           for (const j of v.judgments) {
+            judgeModelIdByHash.set(j.config_hash, j.judge_model_id);
             const r = genVsHumanAccum(j);
             if (!r) continue;
             const judge = j.config_hash;
@@ -640,7 +651,9 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                     <tr>
                       <th></th>
                       {judges.map((jb) => (
-                        <th key={jb} title={jb}>{shortModel(jb)}</th>
+                        <th key={jb} title={jb}>
+                          {shortModel(judgeModelIdByHash.get(jb) ?? jb)}
+                        </th>
                       ))}
                     </tr>
                   </thead>
@@ -1256,10 +1269,12 @@ function InspectToc({
   variantBundles,
   sourceOrder,
   judgeOrder,
+  judgeModelIdByHash,
 }: {
   variantBundles: VariantBundle[];
   sourceOrder: string[];
   judgeOrder: string[];
+  judgeModelIdByHash: Map<string, string>;
 }) {
   return (
     <nav className="inspect-toc" aria-label="Inspect contents">
@@ -1316,7 +1331,9 @@ function InspectToc({
                   data-model={jb}
                   data-always-show="1"
                 >
-                  <a href={`#${anchorId("judge", jb)}`}>{shortModel(jb)}</a>
+                  <a href={`#${anchorId("judge", jb)}`}>
+                    {shortModel(judgeModelIdByHash.get(jb) ?? jb)}
+                  </a>
                 </li>
               ))}
             </ul>

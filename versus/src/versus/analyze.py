@@ -29,23 +29,25 @@ def model_sort_key(judge: str) -> tuple:
     Families (left to right): gemini, openai, anthropic, other. Weak->strong
     within family: flash < pro for gemini, nano < mini < full for openai,
     haiku < sonnet < opus for anthropic. Variant (relevant for judges):
-    bare openrouter < anthropic: (legacy text) < rumil:text < rumil:ws <
-    rumil:orch.
+    blind < rumil:ws < rumil:orch.
+
+    Accepts both source-id strings ("human", "google/gemini-3-flash",
+    "paraphrase:openai/gpt-5") and the post-cleanup judge_model shape
+    (``<path>:<model>:<dim>:c<hash8>`` with path ∈ {blind, rumil:ws,
+    rumil:orch}).
     """
     low = judge.lower()
+    parts = judge.split(":")
 
     if low.startswith("rumil:orch:"):
-        variant = 4
-        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
-    elif low.startswith("rumil:ws:"):
         variant = 3
-        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
-    elif low.startswith("rumil:text:"):
+        base = parts[2] if len(parts) >= 3 else judge
+    elif low.startswith("rumil:ws:"):
         variant = 2
-        base = judge.split(":")[2] if len(judge.split(":")) >= 3 else judge
-    elif low.startswith("anthropic:"):
+        base = parts[2] if len(parts) >= 3 else judge
+    elif low.startswith("blind:"):
         variant = 1
-        base = judge.split(":", 1)[1]
+        base = parts[1] if len(parts) >= 2 else judge
     elif "/" in judge:
         variant = 0
         base = judge.split("/", 1)[1]
@@ -72,14 +74,7 @@ def model_sort_key(judge: str) -> tuple:
             strength = 1
         else:
             strength = 2
-    elif (
-        "claude" in base_low
-        or "haiku" in base_low
-        or "sonnet" in base_low
-        or "opus" in base_low
-        or low.startswith("anthropic")
-        or low.startswith("rumil:")
-    ):
+    elif "claude" in base_low or "haiku" in base_low or "sonnet" in base_low or "opus" in base_low:
         family = 2
         if "haiku" in base_low:
             strength = 0

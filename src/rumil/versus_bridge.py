@@ -90,9 +90,9 @@ def compute_tool_prompt_hash() -> str:
     orchestrator's dispatched calls inside ``judge_pair_orch`` use a
     broader tool set (find_considerations, assess, scout-*, etc.)
     that isn't passed from this bridge; those are covered by
-    ``BLIND_JUDGE_VERSION`` bumps at the semantic level. Hashing
-    workspace-exploration for both ws and orch keeps the key schemes
-    parallel and tracks docstring edits on the shared tools.
+    ``code_fingerprint`` over the orchestrators / calls / prompts
+    directories. Hashing workspace-exploration tool docstrings for
+    both ws and orch keeps the key schemes parallel.
 
     Parameters match the bridge's actual call sites: load_page's
     default_detail is "content", explore_subgraph's questions_only is
@@ -262,13 +262,12 @@ def compute_pair_surface_hash() -> str:
       only the key schema is hashed).
 
     Scope: ws/orch only. The blind path (single-turn LLM call, no DB)
-    doesn't read the Question page, so a page-surface edit there wouldn't
-    affect blind judgments — forking blind keys for a surface edit
-    would force unnecessary re-judging. Manual :v<N>
-    (:data:`BLIND_JUDGE_VERSION`) remains the fork mechanism for
-    semantic changes the auto-hash can't catch (inline user prompts,
-    disallowed_tools, orchestrator-internal tool set, etc.) and gates
-    all three judge paths (blind, ws, orch).
+    doesn't read the Question page, so a page-surface edit there
+    wouldn't affect blind judgments — forking blind keys for a
+    surface edit would force unnecessary re-judging. Inline user
+    prompts, ``disallowed_tools``, and the orchestrator-internal
+    tool set are covered by ``code_fingerprint`` over the bridge +
+    orchestrator + calls files.
     """
     sentinel = PairContext(**_surface_hash_sentinel())
     blob = json.dumps(
@@ -483,10 +482,8 @@ def compute_orch_closer_hash() -> str:
     tool-prompt-hash don't: the inline user-prompt template, the
     SDK agent's max_turns budget, the disallowed-tools set, and the
     rendering knobs the closer reads (page detail level, linked
-    detail, view min_importance). Stamped as ``:c<hash>`` on
-    ``rumil:orch:*`` judge_model strings so a closer-config edit
-    auto-forks the dedup key without a manual BLIND_JUDGE_VERSION
-    bump.
+    detail, view min_importance). Folded into the orch config dict
+    as ``closer_hash`` so an edit here auto-forks ``config_hash``.
 
     orch-only — the blind and ws paths don't have a closer step.
     """

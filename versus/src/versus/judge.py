@@ -1,11 +1,10 @@
 """Pairwise blind judging of completions with deterministic ordering.
 
-OpenRouter and ``anthropic:<model>`` (text-mode) judges share the same
-prompt source-of-truth as ``rumil:text`` / ``rumil:ws`` / ``rumil:orch``
--- the versus-judge-shell + the essay-adapted dimension body live in
+The blind, ws, and orch judges share a single prompt source-of-truth:
+the versus-judge-shell + essay-adapted dimension body live under
 ``prompts/versus-*.md`` and are loaded via :mod:`rumil.versus_bridge`.
-This means cross-judge rows are directly comparable on the prompt axis;
-the only real difference is the model + transport.
+Cross-judge rows are directly comparable on the prompt axis; the
+only real difference is model + transport.
 """
 
 from __future__ import annotations
@@ -13,9 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import itertools
-import json
 import pathlib
-import re
 import threading
 import time
 from collections.abc import Sequence
@@ -233,12 +230,12 @@ def render_judge_prompt(
     source_a_text: str,
     source_b_text: str,
 ) -> tuple[str, str]:
-    """Render the (system, user) prompt pair for a text-mode judge.
+    """Render the (system, user) prompt pair for a blind judge.
 
-    Uses ``versus-judge-shell.md`` + the essay-adapted dimension body as
-    the system prompt -- identical to what ``rumil:text`` (and the agent
-    variants) see, so cross-judge comparisons are apples-to-apples on the
-    prompt axis. The user message inlines the essay prefix and both
+    Uses ``versus-judge-shell.md`` + the essay-adapted dimension body
+    as the system prompt — identical to what the ws/orch agents see,
+    so cross-judge comparisons are apples-to-apples on the prompt
+    axis. The user message inlines the essay prefix and both
     continuations; no source ids are disclosed.
     """
     body = get_rumil_dimension_body(dimension)
@@ -451,11 +448,12 @@ def run_blind(
 ) -> None:
     """Run pairwise blind judgments across a mixed list of models.
 
-    Each model is routed via :func:`route_judge_model`: claude-* go direct
-    to Anthropic, others via OpenRouter. Same prompt construction across
-    all (the blind shell — no tool advertisements, pair inlined in user
-    message). Single key shape per row:
-    ``<canonical_model>:<dimension>:p<phash>:v<BLIND_JUDGE_VERSION>:s<shash>``.
+    Each model is routed via :func:`route_judge_model`: claude-* go
+    direct to Anthropic, others via OpenRouter. Same prompt
+    construction across all (the blind shell — no tool advertisements,
+    pair inlined in user message). Each row's display ``judge_model``
+    has shape ``blind:<model>:<dimension>:c<config_hash[:8]>``;
+    dedup is keyed on the row's ``config_hash``.
     """
     from versus import prepare
 

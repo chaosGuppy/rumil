@@ -187,7 +187,7 @@ async def main() -> None:
     db = await DB.create(run_id=args.run_id, prod=False, project_id=project_id, staged=True)
 
     with override_settings(rumil_model_override=args.model):
-        report_text, call = await _run_orch_closer(
+        report_text, call, _system_prompt, _user_prompt = await _run_orch_closer(
             db,
             args.question_id,
             task_body=task_body,

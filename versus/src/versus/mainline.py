@@ -1,10 +1,11 @@
 """Single-source helpers for "what's currently mainline."
 
-The yaml config + the per-module version constants
-(``SCHEMA_VERSION``, ``BLIND_JUDGE_VERSION``, etc) together define
-which slice of the data is "current and good." This module exposes
-small helpers so list endpoints, status reports, and aggregate
-endpoints all answer the question the same way.
+The yaml config + the structured judge config dict + per-module
+version constants (``COMPLETION_PROMPT_VERSION``,
+``PARAPHRASE_PROMPT_VERSION``, ``essay.SCHEMA_VERSION``) together
+define which slice of the data is "current and good." This module
+exposes small helpers so list endpoints, status reports, and
+aggregate endpoints all answer the question the same way.
 
 No new abstraction — the helpers just project (config + constants)
 onto the axes callers care about.
@@ -12,7 +13,6 @@ onto the axes callers care about.
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from collections.abc import Iterable
 

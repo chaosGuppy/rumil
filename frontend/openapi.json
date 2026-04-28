@@ -5031,6 +5031,10 @@
             "type": "string",
             "title": "Judge Model"
           },
+          "judge_model_id": {
+            "type": "string",
+            "title": "Judge Model Id"
+          },
           "config_hash": {
             "type": "string",
             "title": "Config Hash"
@@ -5216,6 +5220,7 @@
         "type": "object",
         "required": [
           "judge_model",
+          "judge_model_id",
           "config_hash",
           "prompt_hash",
           "sampling",
@@ -5281,6 +5286,10 @@
           "judge_model": {
             "type": "string",
             "title": "Judge Model"
+          },
+          "judge_model_id": {
+            "type": "string",
+            "title": "Judge Model Id"
           },
           "config_hash": {
             "type": "string",
@@ -5470,6 +5479,7 @@
           "display_second",
           "criterion",
           "judge_model",
+          "judge_model_id",
           "config_hash",
           "prompt_hash",
           "sampling",

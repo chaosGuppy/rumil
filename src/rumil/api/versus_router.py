@@ -266,6 +266,7 @@ class Judgment(pydantic.BaseModel):
     """
 
     judge_model: str
+    judge_model_id: str  # the underlying model id, e.g. "claude-opus-4-7"
     config_hash: str
     prompt_hash: str
     sampling: dict
@@ -310,6 +311,7 @@ class JudgmentDetail(pydantic.BaseModel):
     display_second: str
     criterion: str
     judge_model: str
+    judge_model_id: str
     config_hash: str
     prompt_hash: str
     sampling: dict
@@ -762,6 +764,7 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
         judgments.append(
             Judgment(
                 judge_model=jm,
+                judge_model_id=row_cfg["model"],
                 config_hash=row["config_hash"],
                 prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
                 sampling=row_cfg["sampling"] or row.get("sampling") or {},
@@ -1216,6 +1219,7 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             display_second=row.get("display_second", ""),
             criterion=row.get("criterion", ""),
             judge_model=jm,
+            judge_model_id=row_cfg["model"],
             config_hash=row["config_hash"],
             prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
             sampling=row_cfg["sampling"] or row.get("sampling") or {},

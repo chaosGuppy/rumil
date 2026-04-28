@@ -14,29 +14,23 @@ Adding a model, judge, criterion, or prefix-config must **never** re-run existin
 |---|---|
 | `data/completions.jsonl` | `essay_id · prefix_config_hash · source_id · sampling_hash` |
 | `data/paraphrases.jsonl` | `essay_id · model_id · sampling_hash` |
-| `data/judgments.jsonl`   | `essay_id · prefix_hash · sorted(source_a, source_b) · criterion · judge_model · order` |
+| `data/judgments.jsonl`   | `essay_id · prefix_hash · sorted(source_a, source_b) · criterion · config_hash · order` |
 
 `prefix_config_hash` mixes in essay content + prefix params (n_paragraphs, include_headers, length_tolerance) + `prepare.COMPLETION_PROMPT_VERSION`. `sampling_hash` covers sampling params (temperature/max_tokens/top_p) plus — for paraphrases — `paraphrase.PARAPHRASE_PROMPT_VERSION`.
 
 **If you edit a completion/paraphrase prompt template, bump the relevant `*_PROMPT_VERSION` constant.** Editing without bumping leaves old rows keyed as if the prompt hadn't changed — they silently persist.
 
-## Judge prompt versioning
+## Judge config + dedup
 
-`scripts/run_rumil_judgments.py` produces three judge_model shapes:
+Every judgment row carries a structured `config: dict` and `config_hash: str` produced by `versus.judge_config.make_judge_config(variant, ...)`. `config_hash` is the dedup primitive (`judgment_key` keys on it). `judge_model` is a short display string of the form `<path>:<model>:<dim>:c<hash8>` where `<path>` ∈ {`blind`, `rumil:ws`, `rumil:orch`} — purely cosmetic; it doesn't drive dedup.
 
-- Blind (default, no `--variant`): `<canonical_model>:<dim>:p<hash>:v<N>:s<hash>`. claude-* go direct to Anthropic; everything else through OpenRouter. Same shell + dimension prompt across providers.
-- `--variant ws`: `rumil:ws:<model>:<ws_short>:<task>:p<hash>:v<N>:t<hash>:q<hash>`.
-- `--variant orch`: `rumil:orch:<model>:<ws_short>:b<N>:<task>:p<hash>:v<N>:t<hash>:q<hash>`.
+The structured config covers, per variant:
 
-Five version knobs may appear in a key:
+- **blind**: `model`, `dimension`, `sampling`, `prompts.shell_hash` (sha8 of the composed shell + dimension body). claude-* models route direct to Anthropic; everything else through OpenRouter.
+- **ws**: blind fields + `workspace_id`, `tool_descriptions_hash` (sha8 of the workspace-exploration tools' docstrings), `pair_surface_hash` (sha8 of the agent-visible Question page surface — headline / content shape / extra-keys), `code_fingerprint` (per-directory + per-file sha over `JUDGE_CODE_FINGERPRINT_DIRS` and `JUDGE_CODE_FINGERPRINT_FILES`), `workspace_state_hash` (cheap watermark over baseline pages + page_links).
+- **orch**: ws fields + `budget`, `closer_hash` (sha8 over the orch closer's invariant config — user prompt template, max_turns, disallowed_tools, render knobs).
 
-- **`:p<hash>`** — automatic. `versus_bridge.compute_prompt_hash(task_body)` hashes the composed system prompt (shell + dimension body). The blind shell omits tool advertisements while ws/orch keeps them, so the two paths hash to different `:p<hash>` spaces even when the dimension body is identical. Any `.md` edit to `prompts/versus-judge-shell.md` or `prompts/versus-<dim>.md` forks the key.
-- **`:v<N>`** — manual. `versus_bridge.BLIND_JUDGE_VERSION` (re-exported from `versus.versions`). Now gates all three paths (blind, ws, orch). Bump when you make a semantic change the prompt hash and page-surface hash don't catch. **Unhashed surfaces to watch:** the inline user prompts in `judge_pair_ws_aware` / `_run_orch_closer`, `disallowed_tools` config, orchestrator-internal tool set. The Question page surface (`_build_headline`, `_format_pair_content`, `_versus_extra` key schema) is covered automatically by `:q<hash>` below on ws/orch; bump `:v<N>` when the surface-hash forking isn't enough.
-- **`:t<hash>`** — automatic, ws/orch only. `versus_bridge.compute_tool_prompt_hash()` hashes the `{tool_name: description_string}` map for the workspace-exploration tools (`search_workspace`, `load_page`, `explore_subgraph`). Edits to those tool docstrings fork the key. Does not cover the broader dispatch-call tool set used inside the orchestrator (those fork via `BLIND_JUDGE_VERSION`).
-- **`:q<hash>`** — automatic, ws/orch only. `versus_bridge.compute_pair_surface_hash()` hashes the agent-visible Versus Question page surface: the headline template (`_build_headline`), the content body shape (`_format_pair_content`), and the `_versus_extra` key schema. Edits to any of those auto-fork ws/orch keys; the blind path doesn't read the Question page so it isn't tagged with `:q<hash>`.
-- **`:s<hash>`** — automatic, blind path only. `judge.compute_sampling_hash(sampling)` hashes the sampling dict (`{"temperature": ..., "max_tokens": ...}`) so topups at a different temperature re-judge instead of silently no-opping.
-
-`versus.versions.JUDGE_PROMPT_VERSION` is retained for back-compat parsing of pre-collapse rows (`anthropic:<model>:p<hash>:v<N>:s<hash>` and `rumil:text:<model>:<dim>:...`); bumping it has no effect on new rows. Use `BLIND_JUDGE_VERSION` for any new fork.
+Adding a new "thing the LLM saw" is one place: extend `make_judge_config` (and the corresponding axis in `project_config_to_axes` so the provenance panel surfaces it). No flat-string parser to keep in sync.
 
 ## Sources, unified
 
@@ -91,8 +85,8 @@ UI routes (`/versus`, `/versus/judge`, `/versus/inspect`, `/versus/results`) mou
 `scripts/run_rumil_judgments.py` has three modes. See `.claude/skills/rumil-versus-judge/SKILL.md` for the detailed invocation guide, cost estimates, and confirmation thresholds.
 
 - Blind (default, no `--variant`) — single-turn LLM call using the blind shell + dimension prompt. Repeat `--model` for multi-model runs; each model routes by id (claude-* direct to Anthropic, others via OpenRouter). `judge_model = <canonical_model>:<dim>:p<hash>:v<N>:s<hash>`. Defaults to `cfg.judging.models`.
-- `--variant ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<ws>:<task>:p<hash>:v<N>:t<hash>:q<hash>`. Requires local Supabase.
-- `--variant orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<ws>:b<N>:<task>:p<hash>:v<N>:t<hash>:q<hash>`. Requires local Supabase. Expensive.
+- `--variant ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<dim>:c<hash8>`. Requires local Supabase.
+- `--variant orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<dim>:c<hash8>`. Requires local Supabase. Expensive.
 
 Model for ws/orch is passed explicitly through the bridge (`--model opus|sonnet|haiku|<full-id>`, default opus) — do not rely on `settings.model`. The bridge uses `override_settings(rumil_model_override=model)` to propagate to nested rumil calls.
 
@@ -119,4 +113,4 @@ uv run python scripts/status.py
 
 Exits 2 with a `STALE` banner when cached rows don't match current essays. To regenerate against current essays, run `run_paraphrases.py` + `run_completions.py` + `run_rumil_judgments.py` in order — old rows stay in the jsonls as historical record; new rows write under the new keys.
 
-Same logic applies when `PARAPHRASE_PROMPT_VERSION` or `BLIND_JUDGE_VERSION` is bumped — the status check picks up paraphrase staleness via `sampling_hash`; `BLIND_JUDGE_VERSION` bumps surface as a different `judge_model` column in analyze tables. (`JUDGE_PROMPT_VERSION` is legacy/back-compat only; bumping it has no effect on new rows.)
+Same logic applies when `PARAPHRASE_PROMPT_VERSION` is bumped — the status check picks up paraphrase staleness via `sampling_hash`. Edits to any judge-side prompt or covered-code path auto-fork `config_hash` (and therefore the dedup key); no manual version bump.

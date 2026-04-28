@@ -758,14 +758,26 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                     stale_hidden += 1
             continue
         jm = str(row.get("judge_model", ""))
-        base, phash, version = versus_judge.parse_judge_model_suffix(jm)
+        # Every row now carries ``config`` (current writes + backfill);
+        # provenance fields read from there directly.
+        row_cfg = row.get("config") if isinstance(row.get("config"), dict) else None
+        if row_cfg is None:
+            phash = None
+            version = None
+            base = jm
+            sampling = row.get("sampling")
+        else:
+            phash = f"p{row_cfg['prompts']['shell_hash']}"
+            version = f"v{row_cfg['prompts']['blind_judge_version']}"
+            base = f"{('blind' if row_cfg['variant'] == 'blind' else 'rumil:' + row_cfg['variant'])}:{row_cfg['model']}"
+            sampling = row_cfg.get("sampling") or row.get("sampling")
         judgments.append(
             Judgment(
                 judge_model=jm,
                 judge_model_base=base,
                 prompt_hash=phash,
                 judge_version=version,
-                sampling=row.get("sampling"),
+                sampling=sampling,
                 criterion=row.get("criterion", ""),
                 source_a=row.get("source_a", ""),
                 source_b=row.get("source_b", ""),
@@ -852,7 +864,8 @@ def _row_matches_filters(
     a = str(row.get("source_a", ""))
     b = str(row.get("source_b", ""))
     if filter_condition == "content-test":
-        j_base = versus_judge.base_judge_model(jm)
+        cfg = row.get("config") if isinstance(row.get("config"), dict) else None
+        j_base = cfg["model"] if cfg else jm
         baseline = f"paraphrase:{j_base}"
         if baseline not in (a, b):
             return False
@@ -1036,6 +1049,11 @@ def get_results(
     source_index = _build_completion_source_index(cfg)
     rows: list[JudgmentRow] = []
     matrix_input_rows: list[dict] = []
+    # ``judge_model -> structured config`` for rows that carry one.
+    # Lets ``judge_labels`` below derive header parts from config
+    # directly instead of re-parsing the flat string; legacy rows
+    # without a config field fall back to ``analyze.judge_label(jm)``.
+    config_by_judge_model: dict[str, dict] = {}
     total_judgments = 0
     rows_total_before_filter = 0
     stale_count = 0
@@ -1056,6 +1074,10 @@ def get_results(
             continue
         rows_total_before_filter += 1
         matrix_input_rows.append(row)
+        jm_for_label = str(row.get("judge_model", ""))
+        row_cfg = row.get("config")
+        if jm_for_label and isinstance(row_cfg, dict):
+            config_by_judge_model.setdefault(jm_for_label, row_cfg)
         if any_filter and not _row_matches_filters(
             row,
             filter_gen=filter_gen,
@@ -1148,7 +1170,16 @@ def get_results(
         active_criterion=criterion,
         gen_models=gen_models,
         judge_models=judge_models,
-        judge_labels={j: JudgeLabel(**versus_analyze.judge_label(j)) for j in judge_models},
+        judge_labels={
+            j: JudgeLabel(
+                **(
+                    versus_analyze.label_from_config(config_by_judge_model[j])
+                    if j in config_by_judge_model
+                    else {"variant": None, "model": j, "task": None, "phash": None}
+                )
+            )
+            for j in judge_models
+        },
         main_matrices=main_matrices,
         completion_per_source=completion_per_source,
         small_grid=small_grid,
@@ -1197,7 +1228,17 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
         if row.get("key") != key:
             continue
         jm = str(row.get("judge_model", ""))
-        base, phash, version = versus_judge.parse_judge_model_suffix(jm)
+        row_cfg = row.get("config") if isinstance(row.get("config"), dict) else None
+        if row_cfg is None:
+            phash = None
+            version = None
+            base = jm
+            sampling = row.get("sampling")
+        else:
+            phash = f"p{row_cfg['prompts']['shell_hash']}"
+            version = f"v{row_cfg['prompts']['blind_judge_version']}"
+            base = f"{('blind' if row_cfg['variant'] == 'blind' else 'rumil:' + row_cfg['variant'])}:{row_cfg['model']}"
+            sampling = row_cfg.get("sampling") or row.get("sampling")
         return JudgmentDetail(
             key=row["key"],
             essay_id=row.get("essay_id", ""),
@@ -1211,7 +1252,7 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
             judge_model_base=base,
             prompt_hash=phash,
             judge_version=version,
-            sampling=row.get("sampling"),
+            sampling=sampling,
             verdict=row.get("verdict"),
             winner_source=row.get("winner_source"),
             preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),

@@ -22,6 +22,9 @@ from versus.rumil_judge import _mirror_row, _PendingPair  # noqa: E402
 
 from versus import judge as versus_judge  # noqa: E402
 
+_STUB_CONFIG = {"variant": "ws", "model": "stub"}
+_STUB_CONFIG_HASH = "0123456789abcdef"
+
 # judgment_key: order slot produces distinct strings ------------------------
 
 
@@ -32,7 +35,7 @@ def test_judgment_key_ab_and_ba_produce_distinct_strings():
         source_a="human",
         source_b="openai/gpt-5.4",
         criterion="general_quality",
-        judge_model="anthropic:claude-haiku-4-5:pdeadbeef:v1:sfeedface",
+        config_hash="0123456789abcdef",
     )
     k_ab = versus_judge.judgment_key(**args, order="ab")
     k_ba = versus_judge.judgment_key(**args, order="ba")
@@ -42,15 +45,15 @@ def test_judgment_key_ab_and_ba_produce_distinct_strings():
 
 
 def test_judgment_key_sort_canonicalises_source_a_b():
-    k1 = versus_judge.judgment_key("e", "ph", "human", "openai/gpt-5.4", "c", "jm", order="ab")
-    k2 = versus_judge.judgment_key("e", "ph", "openai/gpt-5.4", "human", "c", "jm", order="ab")
+    k1 = versus_judge.judgment_key("e", "ph", "human", "openai/gpt-5.4", "c", "h", order="ab")
+    k2 = versus_judge.judgment_key("e", "ph", "openai/gpt-5.4", "human", "c", "h", order="ab")
     assert k1 == k2
 
 
 def test_judgment_key_requires_order_as_keyword():
     with pytest.raises(TypeError):
         versus_judge.judgment_key(  # pyright: ignore[reportCallIssue]
-            "e", "ph", "a", "b", "c", "jm"
+            "e", "ph", "a", "b", "c", "h"
         )
 
 
@@ -156,14 +159,30 @@ def _make_pending_pair(source_a_id: str, source_b_id: str, display_first_id: str
 
 def test_mirror_row_includes_order_ab_when_lower_is_first():
     pair = _make_pending_pair("human", "openai/gpt-5.4", display_first_id="human")
-    row = _mirror_row(pair, "rumil:text:m:d:p1:v1:s1", "rumil_d", _FakeJudgeResult(), t0=0.0)
+    row = _mirror_row(
+        pair,
+        "rumil:text:m:d:p1:v1:s1",
+        "rumil_d",
+        _FakeJudgeResult(),
+        t0=0.0,
+        config=_STUB_CONFIG,
+        config_hash=_STUB_CONFIG_HASH,
+    )
     assert row["order"] == "ab"
     assert row["key"].endswith("|ab")
 
 
 def test_mirror_row_includes_order_ba_when_higher_is_first():
     pair = _make_pending_pair("human", "openai/gpt-5.4", display_first_id="openai/gpt-5.4")
-    row = _mirror_row(pair, "rumil:text:m:d:p1:v1:s1", "rumil_d", _FakeJudgeResult(), t0=0.0)
+    row = _mirror_row(
+        pair,
+        "rumil:text:m:d:p1:v1:s1",
+        "rumil_d",
+        _FakeJudgeResult(),
+        t0=0.0,
+        config=_STUB_CONFIG,
+        config_hash=_STUB_CONFIG_HASH,
+    )
     assert row["order"] == "ba"
     assert row["key"].endswith("|ba")
 
@@ -171,14 +190,22 @@ def test_mirror_row_includes_order_ba_when_higher_is_first():
 def test_mirror_row_key_matches_judgment_key():
     pair = _make_pending_pair("human", "openai/gpt-5.4", display_first_id="openai/gpt-5.4")
     judge_model = "rumil:text:m:d:p1:v1:s1"
-    row = _mirror_row(pair, judge_model, "rumil_d", _FakeJudgeResult(), t0=0.0)
+    row = _mirror_row(
+        pair,
+        judge_model,
+        "rumil_d",
+        _FakeJudgeResult(),
+        t0=0.0,
+        config=_STUB_CONFIG,
+        config_hash=_STUB_CONFIG_HASH,
+    )
     expected = versus_judge.judgment_key(
         pair.essay_id,
         pair.prefix_hash,
         pair.source_a_id,
         pair.source_b_id,
         "rumil_d",
-        judge_model,
+        _STUB_CONFIG_HASH,
         "ba",
     )
     assert row["key"] == expected
@@ -206,15 +233,27 @@ def test_call_one_blind_row_includes_order(mocker):
         first=src_a,
         second=src_b,
         dimension="general_quality",
-        base_model="google/gemini-2.5-pro",
-        canonical_model="google/gemini-2.5-pro",
+        base_model="google/gemini-3-flash-preview",
+        canonical_model="google/gemini-3-flash-preview",
         provider="openrouter",
-        judge_model="google/gemini-2.5-pro:general_quality:p1:v1:s1",
+        judge_model="google/gemini-3-flash-preview:general_quality:p1:v1:s1",
         system_prompt="SYS",
         user_prompt="USER",
         key="fake-key",
         order="ab",
         sampling={"temperature": 0.0, "max_tokens": 2048},
+        config={
+            "variant": "blind",
+            "model": "google/gemini-3-flash-preview",
+            "dimension": "general_quality",
+            "sampling": {"temperature": 0.0, "max_tokens": 2048},
+            "prompts": {
+                "shell_hash": "deadbeef",
+                "blind_judge_version": 6,
+                "completion_prompt_version": 5,
+            },
+        },
+        config_hash="0123456789abcdef",
     )
     row = _call_one_blind(task, client=None)  # pyright: ignore[reportArgumentType]
     assert row["order"] == "ab"

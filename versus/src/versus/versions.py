@@ -9,10 +9,12 @@ dedup keys.
 - ``PARAPHRASE_PROMPT_VERSION``: folded into ``sampling_hash`` in
   :func:`versus.paraphrase.sampling_hash`. Bump when
   ``PARAPHRASE_INSTRUCTIONS`` changes.
-- ``BLIND_JUDGE_VERSION``: stamped onto every judge_model
-  (blind / ws / orch) by the bridge. Bump for semantic changes in
-  the bridge not captured by the auto-computed hashes (prompt-hash,
-  tool-hash, sampling-hash, closer-hash).
+- ``BLIND_JUDGE_VERSION``: manual override / escape hatch stamped
+  onto every judge_model (blind / ws / orch). With ``code_fingerprint``
+  in place for ws/orch, the auto-hashes catch most semantic changes.
+  Bump this only when you *want* to invalidate prior rows even when
+  no measurable input changed (e.g. you've reinterpreted what an
+  existing prompt means and want a hard fork without editing files).
 
 Numeric values match their former per-module locations.
 ``COMPLETION_PROMPT_VERSION = 5`` adds a
@@ -26,6 +28,29 @@ from __future__ import annotations
 
 COMPLETION_PROMPT_VERSION = 5
 PARAPHRASE_PROMPT_VERSION = 3
+
+# Curated set folded into ``code_fingerprint`` on every ws/orch
+# judgment config. Covers the bridge, sdk-agent, and (per directory)
+# every orchestrator + call + prompt that the agent's run can touch.
+# Directories collapse to a single per-directory sha so the config
+# dict stays compact while still forking on any constituent edit.
+# Anchored at the rumil repo root by judge_config helpers. Edits to
+# comments / whitespace re-fingerprint; that's a feature (drift is
+# visible in config diffs).
+JUDGE_CODE_FINGERPRINT_DIRS: tuple[tuple[str, str], ...] = (
+    ("src/rumil/orchestrators/", "*.py"),
+    ("src/rumil/calls/", "*.py"),
+    ("src/rumil/prompts/", "*.md"),
+    ("src/rumil/workspace_exploration/", "*.py"),
+)
+JUDGE_CODE_FINGERPRINT_FILES: tuple[str, ...] = (
+    "src/rumil/versus_bridge.py",
+    "src/rumil/versus_prompts.py",
+    "src/rumil/sdk_agent.py",
+    "src/rumil/llm.py",
+    "src/rumil/context.py",
+)
+
 # v4 (2026-04-23): extract_preference parses the LAST 7-point label in the
 # output instead of the first, so models that think-out-loud and revise
 # their rating don't get locked to an early mention. Unhashed surface

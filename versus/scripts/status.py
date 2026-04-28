@@ -166,9 +166,8 @@ def _judgments_per_variant(
         if matched_vid is None:
             orphaned += 1
             continue
-        judge_model = r.get("judge_model")
         criterion = r.get("criterion")
-        if judge_model and criterion and not judge.judge_prompt_is_current(judge_model, criterion):
+        if r.get("judge_model") and criterion and not judge.judge_prompt_is_current(r, criterion):
             prompt_stale[matched_vid] += 1
         else:
             current[matched_vid] += 1

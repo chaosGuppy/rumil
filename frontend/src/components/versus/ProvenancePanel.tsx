@@ -13,6 +13,9 @@ const AXIS_ORDER = [
   "judge_pair_hash",
   "judge_closer_hash",
   "judge_budget",
+  "judge_code_fingerprint",
+  "judge_workspace_contents_hash",
+  "config_hash",
 ];
 
 /** Combine per-variant ProvenanceSummary objects into one merged

@@ -99,112 +99,27 @@ def model_sort_key(judge: str) -> tuple:
     return (family, strength, base_low, variant, judge)
 
 
-from versus.mainline import (
-    CHASH_RE as _CLOSER_HASH_RE,
-)
-from versus.mainline import (
-    PHASH_RE as _PROMPT_HASH_RE,
-)
-from versus.mainline import (
-    QHASH_RE as _SURFACE_HASH_RE,
-)
-from versus.mainline import (
-    SHASH_RE as _SAMPLING_HASH_RE,
-)
-from versus.mainline import (
-    THASH_RE as _TOOL_HASH_RE,
-)
-from versus.mainline import (
-    VERSION_RE as _VERSION_TAG_RE,
-)
+def label_from_config(cfg: dict) -> dict:
+    """Derive the stacked column-header dict from a structured judge config.
 
-
-def _peel_ts_tag(parts: Sequence[str]) -> list[str]:
-    out = list(parts)
-    while out and (
-        _SAMPLING_HASH_RE.match(out[-1])
-        or _TOOL_HASH_RE.match(out[-1])
-        or _SURFACE_HASH_RE.match(out[-1])
-        or _CLOSER_HASH_RE.match(out[-1])
-    ):
-        out = out[:-1]
-    return out
-
-
-def _strip_phash_version(parts: Sequence[str]) -> tuple[list[str], str | None, str | None]:
-    """Peel trailing ``:s<hash>``, ``:t<hash>``, ``:q<hash>``, ``:v<N>``, then ``:p<hash>`` off a split judge_model.
-
-    The sampling / tool-prompt / pair-surface hashes are absorbed
-    silently (not returned) because the frontend doesn't render them
-    -- they exist only for dedup-key discipline. The human-readable
-    sampling dict lives on the judgment row; the tool-prompt text
-    lives in-repo under ``src/rumil/workspace_exploration/``; the pair
-    surface fork is automatic via ``compute_pair_surface_hash()``.
-    ``:t``, ``:s``, and ``:q`` peel symmetrically so any trailing
-    ordering is tolerated.
+    Returns ``{variant, model, task, phash}``. Drives the FE
+    column-header layout. Orch carries its budget; all variants
+    append the version tag.
     """
-    parts = _peel_ts_tag(parts)
-    version = None
-    if parts and _VERSION_TAG_RE.match(parts[-1]):
-        version = parts[-1]
-        parts = parts[:-1]
-    phash = None
-    if parts and _PROMPT_HASH_RE.match(parts[-1]):
-        phash = parts[-1]
-        parts = parts[:-1]
-    return parts, phash, version
-
-
-def judge_label(judge: str) -> dict:
-    """Break a judge_model id into stacked header parts.
-
-    Returns {variant, model, task, phash}. `phash` is the `:p<sha8>` prompt
-    version suffix; `:v<N>` is folded into `variant`. Handles the post-
-    collapse blind shape (``<canonical_model>:<dim>:p..:v..:s..``), the
-    rumil:ws / rumil:orch keys (unchanged), and the legacy shapes
-    (``rumil:text:*``, ``anthropic:*``, bare ``<provider>/<model>:p..``)
-    so old jsonl rows continue to render.
-    """
-    if judge.startswith("rumil:orch:") or judge.startswith("rumil:ws:"):
-        parts, phash, version = _strip_phash_version(judge.split(":"))
-        variant = f"{parts[0]}:{parts[1]}"
-        model = parts[2] if len(parts) >= 3 else judge
-        tail = parts[4:]  # skip ws_short hash
-        if tail and tail[0].startswith("b") and tail[0][1:].isdigit():
-            variant = f"{variant} {tail[0]}"
-            tail = tail[1:]
-        if version:
-            variant = f"{variant} {version}"
-        task = ":".join(tail) if tail else None
-        return {"variant": variant, "model": model, "task": task, "phash": phash}
-    if judge.startswith("rumil:text:"):
-        # Legacy: rumil:text:<model>:<dim>:p..:v..:s..
-        parts, phash, version = _strip_phash_version(judge.split(":"))
-        variant = f"rumil:text {version}" if version else "rumil:text"
-        model = parts[2] if len(parts) > 2 else judge
-        task = ":".join(parts[3:]) if len(parts) > 3 else None
-        return {"variant": variant, "model": model, "task": task, "phash": phash}
-    if judge.startswith("anthropic:"):
-        # Legacy: anthropic:<model>:p..:v..:s..
-        parts, phash, version = _strip_phash_version(judge.split(":"))
-        model = ":".join(parts[1:]) if len(parts) > 1 else judge
-        variant = f"anthropic {version}" if version else "anthropic"
-        return {"variant": variant, "model": model, "task": None, "phash": phash}
-    parts, phash, version = _strip_phash_version(judge.split(":"))
-    if len(parts) >= 2 and phash is not None:
-        # New blind shape: <canonical_model>:<dim>:p..:v..:s..
-        model = parts[0]
-        task = ":".join(parts[1:])
+    variant = cfg["variant"]
+    model = cfg["model"]
+    dim = cfg["dimension"]
+    bjv = cfg["prompts"]["blind_judge_version"]
+    phash = f"p{cfg['prompts']['shell_hash']}"
+    version_tag = f"v{bjv}"
+    if variant == "orch":
+        head = f"rumil:orch b{cfg['budget']} {version_tag}"
+    elif variant == "ws":
+        head = f"rumil:ws {version_tag}"
+    else:
         provider = model.split("/", 1)[0] if "/" in model else "anthropic"
-        variant = f"{provider} {version}" if version else provider
-        return {"variant": variant, "model": model, "task": task, "phash": phash}
-    if "/" in judge:
-        # Legacy bare-OR: <provider>/<model>:p..:v..:s..
-        base = ":".join(parts)
-        provider, model = base.split("/", 1)
-        variant = f"{provider} {version}" if version else provider
-        return {"variant": variant, "model": model, "task": None, "phash": phash}
-    return {"variant": None, "model": judge, "task": None, "phash": None}
+        head = f"{provider} {version_tag}"
+    return {"variant": head, "model": model, "task": dim, "phash": phash}
 
 
 def cell_color(pct: float) -> str:

@@ -42,90 +42,6 @@ def current_prefix_hashes_for(essay: versus_essay.Essay, cfg: versus_config.Conf
     return out
 
 
-# Suffix tag regexes — shared with versus.judge and versus.analyze
-# so adding a new tag (like :c<hash> for orch closer) only needs the
-# pattern added in one place.
-PHASH_RE = re.compile(r"^p[0-9a-f]{8}$")
-THASH_RE = re.compile(r"^t[0-9a-f]{8}$")
-QHASH_RE = re.compile(r"^q[0-9a-f]{8}$")
-SHASH_RE = re.compile(r"^s[0-9a-f]{8}$")
-CHASH_RE = re.compile(r"^c[0-9a-f]{8}$")
-VERSION_RE = re.compile(r"^v\d+$")
-BUDGET_RE = re.compile(r"^b\d+$")
-# Module-private aliases for backward-compat — original code used
-# the underscored names. Keeping both means renaming touches stay
-# tight without orphaning module-internal references.
-_PHASH_RE = PHASH_RE
-_THASH_RE = THASH_RE
-_QHASH_RE = QHASH_RE
-_SHASH_RE = SHASH_RE
-_CHASH_RE = CHASH_RE
-_VERSION_RE = VERSION_RE
-_BUDGET_RE = BUDGET_RE
-
-
-def parse_judge_components(jm: str) -> dict[str, str]:
-    """Decompose a flat ``judge_model`` string into its component
-    KVs (path, base_model, dimension, prompt_hash, version, sampling
-    hash, tool hash, pair hash, closer hash, budget). Anything not
-    present in this row's shape is omitted.
-
-    Recognizes the four current judge_model shapes:
-
-    - ``<provider>/<model>:p<hash>:v<n>:s<hash>`` (blind)
-    - ``<provider>/<model>:<dim>:p<hash>:v<n>:s<hash>`` (text legacy)
-    - ``rumil:ws:<model>:<ws_short>:<dim>:p<hash>:v<n>:t<hash>:q<hash>`` (ws)
-    - ``rumil:orch:<model>:<closer>:b<budget>:<dim>:p<hash>:v<n>:t<hash>[:q<hash>]`` (orch)
-    """
-    out: dict[str, str] = {}
-    parts = jm.split(":")
-    # Walk from right peeling typed suffix tags until we hit non-tag bits.
-    while parts:
-        tail = parts[-1]
-        if _PHASH_RE.match(tail):
-            out["judge_prompt_hash"] = tail
-        elif _VERSION_RE.match(tail):
-            out["judge_version"] = tail
-        elif _SHASH_RE.match(tail):
-            out["judge_sampling_hash"] = tail
-        elif _THASH_RE.match(tail):
-            out["judge_tool_hash"] = tail
-        elif _QHASH_RE.match(tail):
-            out["judge_pair_hash"] = tail
-        elif _CHASH_RE.match(tail):
-            out["judge_closer_hash"] = tail
-        else:
-            break
-        parts = parts[:-1]
-    # What remains is the path/identity prefix.
-    if not parts:
-        return out
-    if parts[0] == "rumil" and len(parts) >= 2 and parts[1] in ("orch", "ws", "text"):
-        out["judge_path"] = f"rumil:{parts[1]}"
-        if parts[1] == "orch" and len(parts) >= 6:
-            out["judge_base_model"] = parts[2]
-            out["judge_workspace_id"] = parts[3]
-            if _BUDGET_RE.match(parts[4]):
-                out["judge_budget"] = parts[4]
-            out["judge_dimension"] = parts[5]
-        elif parts[1] == "ws" and len(parts) >= 5:
-            out["judge_base_model"] = parts[2]
-            out["judge_workspace_id"] = parts[3]
-            out["judge_dimension"] = parts[4]
-        elif parts[1] == "text" and len(parts) >= 4:
-            out["judge_base_model"] = parts[2]
-            out["judge_dimension"] = parts[3]
-    else:
-        out["judge_path"] = "blind"
-        # blind shape can be just ``<model>`` or ``<model>:<dim>``.
-        if len(parts) == 1:
-            out["judge_base_model"] = parts[0]
-        elif len(parts) >= 2:
-            out["judge_base_model"] = parts[0]
-            out["judge_dimension"] = parts[1]
-    return out
-
-
 _AXES_ORDER = (
     "prefix_config_hash",
     "judge_path",
@@ -139,6 +55,9 @@ _AXES_ORDER = (
     "judge_pair_hash",
     "judge_closer_hash",
     "judge_budget",
+    "judge_code_fingerprint",
+    "judge_workspace_contents_hash",
+    "config_hash",
 )
 
 _AXIS_DESCRIPTIONS = {
@@ -195,6 +114,23 @@ _AXIS_DESCRIPTIONS = {
         "orch only — bumps when any of those knobs change."
     ),
     "judge_budget": ("Orch run budget — bN means N total dispatches. orch only."),
+    "judge_code_fingerprint": (
+        "Collapsed sha8 over the bridge + orchestrator + calls + "
+        "prompts + workspace-exploration content. ws/orch only — "
+        "forks when any covered file's bytes change. Per-file detail "
+        "lives in row['config']['code_fingerprint']."
+    ),
+    "judge_workspace_contents_hash": (
+        "sha16[:8] over baseline pages (id/type/headline/content) and "
+        "links visible to the agent at plan time. ws/orch only — forks "
+        "when the workspace mutates between runs."
+    ),
+    "config_hash": (
+        "Composite sha16 over the full structured judge config. The "
+        "set ID for a row's effective configuration: any change to "
+        "any input the judge saw forks this even when individual "
+        "component axes look unchanged."
+    ),
 }
 
 
@@ -259,24 +195,27 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
 def summarize_provenance(rows: Iterable[dict]) -> dict[str, dict[str, int]]:
     """Per-axis ``value -> count`` over the rows.
 
-    The ``judge_model`` flat string is decomposed into its component
-    KVs (path, base_model, dimension, prompt/version/sampling hashes,
-    plus orch-only knobs) and counted per axis. The full string lives
-    on the row for dedup/drill-in but isn't its own axis here.
+    Reads from ``row["config"]`` (the structured judge config written
+    by :func:`versus.judge_config.make_judge_config`). Pre-config rows
+    were backfilled by ``versus/scripts/backfill_judge_config.py``;
+    rows still without a config dict are skipped on the
+    judge-side axes. New axes can be added to
+    :func:`versus.judge_config.project_config_to_axes` without
+    extending any parser.
     """
+    from versus.judge_config import project_config_to_axes
+
     counts: dict[str, Counter] = {axis: Counter() for axis in _AXES_ORDER}
 
     for r in rows:
         ph = r.get("prefix_config_hash")
         if ph:
             counts["prefix_config_hash"][ph] += 1
-        jm = r.get("judge_model")
-        if jm:
-            kvs = parse_judge_components(jm)
-            for axis, value in kvs.items():
+        cfg = r.get("config")
+        if isinstance(cfg, dict):
+            for axis, value in project_config_to_axes(
+                cfg, config_hash=r.get("config_hash")
+            ).items():
                 if axis in counts:
                     counts[axis][value] += 1
-        sh = r.get("sampling_hash")
-        if sh:
-            counts["judge_sampling_hash"][sh] += 1
     return {axis: dict(c) for axis, c in counts.items()}

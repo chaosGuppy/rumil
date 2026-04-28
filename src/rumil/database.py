@@ -117,32 +117,54 @@ def _should_retry_db_exception(exc: BaseException) -> bool:
     )
 
 
-def _stop_after_db_retries(retry_state: RetryCallState) -> bool:
+def _exception_class(exc: BaseException | None) -> str:
+    """Bucket retryable DB exceptions by retry-budget class."""
+    return "timeout" if exc is not None and _is_statement_timeout(exc) else "other"
+
+
+def _bump_class_attempt(retry_state: RetryCallState, klass: str) -> int:
+    """Increment a per-class attempt counter on the retry state and return
+    the new count. Tenacity creates a fresh ``RetryCallState`` per wrapped
+    call, so the counters reset between calls but persist across retries
+    within a single call. Used to give 57014 its own retry budget without
+    consuming the larger ``max_db_retries`` cap."""
+    counts = getattr(retry_state, "_db_attempts_by_class", None)
+    if counts is None:
+        counts = {"timeout": 0, "other": 0}
+        retry_state._db_attempts_by_class = counts  # type: ignore[attr-defined]
+    counts[klass] += 1
+    return counts[klass]
+
+
+def _cap_for_class(klass: str) -> int:
     settings = get_settings()
+    if klass == "timeout":
+        return settings.max_db_statement_timeout_retries
+    return settings.max_db_retries
+
+
+def _stop_after_db_retries(retry_state: RetryCallState) -> bool:
+    # Each retryable exception class has its own attempt counter and cap, so
+    # a 57014 following a string of 503s still gets its full timeout budget
+    # rather than inheriting the 503s' attempt count.
     exc = retry_state.outcome.exception() if retry_state.outcome else None
-    cap = (
-        settings.max_db_statement_timeout_retries
-        if exc is not None and _is_statement_timeout(exc)
-        else settings.max_db_retries
-    )
-    return retry_state.attempt_number >= cap
+    klass = _exception_class(exc)
+    n = _bump_class_attempt(retry_state, klass)
+    return n >= _cap_for_class(klass)
 
 
 def _log_db_retry(retry_state: RetryCallState) -> None:
-    settings = get_settings()
     exc = retry_state.outcome.exception() if retry_state.outcome else None
     wait = retry_state.next_action.sleep if retry_state.next_action else 0
-    max_retries = (
-        settings.max_db_statement_timeout_retries
-        if exc is not None and _is_statement_timeout(exc)
-        else settings.max_db_retries
-    )
+    klass = _exception_class(exc)
+    counts = getattr(retry_state, "_db_attempts_by_class", {})
     log.warning(
-        "DB request failed (%s), retrying in %gs (attempt %d/%d)",
+        "DB request failed (%s), retrying in %gs (%s attempt %d/%d)",
         type(exc).__name__ if exc else "unknown",
         wait,
-        retry_state.attempt_number,
-        max_retries,
+        klass,
+        counts.get(klass, retry_state.attempt_number),
+        _cap_for_class(klass),
     )
 
 

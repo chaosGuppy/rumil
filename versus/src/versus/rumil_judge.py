@@ -310,11 +310,15 @@ async def run_ws(
     thash = compute_tool_prompt_hash()
     qhash = compute_pair_surface_hash()
 
+    sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
+    shash = judge.compute_sampling_hash(sampling)
+
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
         return (
-            f"rumil:ws:{model}:{ws_short}:{suffix}:p{ph}:v{BLIND_JUDGE_VERSION}:t{thash}:q{qhash}"
+            f"rumil:ws:{model}:{ws_short}:{suffix}:p{ph}:v{BLIND_JUDGE_VERSION}"
+            f":t{thash}:q{qhash}:s{shash}"
         )
 
     tasks = _plan_rumil_pairs(
@@ -493,12 +497,15 @@ async def run_orch(
     thash = compute_tool_prompt_hash()
     qhash = compute_pair_surface_hash()
 
+    sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
+    shash = judge.compute_sampling_hash(sampling)
+
     def _compose(task_name: str, is_versus_crit: bool) -> str:
         suffix = f"versus_{task_name}" if is_versus_crit else task_name
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
         return (
             f"rumil:orch:{model}:{ws_short}:b{budget}:{suffix}"
-            f":p{ph}:v{BLIND_JUDGE_VERSION}:t{thash}:q{qhash}"
+            f":p{ph}:v{BLIND_JUDGE_VERSION}:t{thash}:q{qhash}:s{shash}"
         )
 
     tasks = _plan_rumil_pairs(

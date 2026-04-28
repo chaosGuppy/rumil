@@ -193,18 +193,28 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
     union ``mainline.current_prefix_hashes_for`` across its essay
     set and merge the result in.
     """
+    from rumil.versus_bridge import (
+        compute_pair_surface_hash,
+        compute_tool_prompt_hash,
+    )
     from versus import judge as versus_judge
     from versus.versions import BLIND_JUDGE_VERSION
 
     out: dict[str, list[str]] = {axis: [] for axis in _AXES_ORDER}
+    # Blind path also has both blind and tools-mode prompt hashes in
+    # play (ws/orch use the tools-mode hash); union both so neither
+    # judge family is mis-flagged as stale.
     out["judge_prompt_hash"] = [
-        f"p{versus_judge.compute_judge_prompt_hash(c, with_tools=False)}"
+        f"p{versus_judge.compute_judge_prompt_hash(c, with_tools=tools)}"
         for c in cfg.judging.criteria
+        for tools in (False, True)
     ]
     out["judge_version"] = [f"v{BLIND_JUDGE_VERSION}"]
-    out["judge_path"] = ["blind"]
+    out["judge_path"] = ["blind", "rumil:ws", "rumil:orch"]
     out["judge_base_model"] = list(cfg.judging.models)
     out["judge_dimension"] = list(cfg.judging.criteria)
+    out["judge_tool_hash"] = [f"t{compute_tool_prompt_hash()}"]
+    out["judge_pair_hash"] = [f"q{compute_pair_surface_hash()}"]
     return out
 
 

@@ -925,7 +925,7 @@ export function StatsView({
             </div>
             <div className="panel-sublabel">
               {activeCallsView === "focus"
-                ? "calls, child questions, considerations and judgements for this question"
+                ? "calls, child questions, considerations, judgements and views for this question"
                 : "questions binned by total calls, stacked by call type"}
             </div>
           </div>

@@ -23,7 +23,7 @@ type FocusBar =
     }
   | {
       kind: "count";
-      key: "child_questions" | "considerations" | "judgements";
+      key: "child_questions" | "considerations" | "judgements" | "views";
       label: string;
       total: number;
       color: string;
@@ -80,6 +80,14 @@ function buildFocusBars(
       total: entry.judgements,
       color: "var(--type-judgement)",
       hatchColor: "var(--type-judgement-border)",
+    },
+    {
+      kind: "count",
+      key: "views",
+      label: "views",
+      total: entry.views,
+      color: "var(--type-view)",
+      hatchColor: "var(--type-view-border)",
     },
   ];
 }

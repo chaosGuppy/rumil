@@ -451,6 +451,10 @@ export type CallsForQuestion = {
      * Judgements
      */
     judgements: number;
+    /**
+     * Views
+     */
+    views: number;
 };
 
 /**

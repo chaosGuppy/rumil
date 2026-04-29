@@ -503,6 +503,34 @@ async def test_create_view_updater_mints_view_id_but_defers_persist(tmp_db):
     assert found_view is None
 
 
+async def test_create_view_materialize_raises_when_view_already_exists(tmp_db, view_setup):
+    """CreateView's materialize should refuse when a View already exists —
+    symmetric to UpdateView refusing when none exists. Callers should go
+    through View.refresh() (which routes to UpdateView) instead."""
+    from rumil.calls.create_view import CreateViewCall
+
+    q, _existing_view, _items = view_setup
+
+    call = Call(
+        call_type=CallType.CREATE_VIEW,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=q.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+    runner = CreateViewCall(q.id, call, tmp_db)
+    infra = CallInfra(
+        question_id=q.id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    updater = runner._make_workspace_updater()
+    with pytest.raises(ValueError, match="view already exists"):
+        await updater.materialize(infra)  # type: ignore[attr-defined]
+
+
 async def test_apply_item_score_updates_link(tmp_db, view_setup, call_infra):
     """_apply_item_score should update the VIEW_ITEM link's importance and section."""
     _, v, items = view_setup

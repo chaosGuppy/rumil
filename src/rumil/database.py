@@ -97,6 +97,17 @@ _DB_RETRYABLE_EXCEPTIONS = (
 )
 
 
+_PG_QUERY_CANCELED_SQLSTATE = "57014"
+
+
+def _is_statement_timeout(exc: BaseException) -> bool:
+    """Postgres SQLSTATE 57014 (query_canceled) — fires when a query exceeds
+    the role's statement_timeout. Load-induced under heavy concurrency; worth
+    retrying a few times, but with a tighter cap than other DB errors so we
+    don't mask a genuinely-slow query."""
+    return isinstance(exc, APIError) and exc.code == _PG_QUERY_CANCELED_SQLSTATE
+
+
 def _is_retryable_api_error(exc: BaseException) -> bool:
     # Gateway/upstream failures (e.g. Cloudflare 502, Supabase 503/504) come back
     # as APIError because postgrest can't parse the HTML error page as JSON.
@@ -114,23 +125,61 @@ def _is_retryable_api_error(exc: BaseException) -> bool:
 
 
 def _should_retry_db_exception(exc: BaseException) -> bool:
-    return isinstance(exc, _DB_RETRYABLE_EXCEPTIONS) or _is_retryable_api_error(exc)
+    return (
+        isinstance(exc, _DB_RETRYABLE_EXCEPTIONS)
+        or _is_retryable_api_error(exc)
+        or _is_statement_timeout(exc)
+    )
+
+
+def _exception_class(exc: BaseException | None) -> str:
+    """Bucket retryable DB exceptions by retry-budget class."""
+    return "timeout" if exc is not None and _is_statement_timeout(exc) else "other"
+
+
+def _bump_class_attempt(retry_state: RetryCallState, klass: str) -> int:
+    """Increment a per-class attempt counter on the retry state and return
+    the new count. Tenacity creates a fresh ``RetryCallState`` per wrapped
+    call, so the counters reset between calls but persist across retries
+    within a single call. Used to give 57014 its own retry budget without
+    consuming the larger ``max_db_retries`` cap."""
+    counts = getattr(retry_state, "_db_attempts_by_class", None)
+    if counts is None:
+        counts = {"timeout": 0, "other": 0}
+        retry_state._db_attempts_by_class = counts  # type: ignore[attr-defined]
+    counts[klass] += 1
+    return counts[klass]
+
+
+def _cap_for_class(klass: str) -> int:
+    settings = get_settings()
+    if klass == "timeout":
+        return settings.max_db_statement_timeout_retries
+    return settings.max_db_retries
 
 
 def _stop_after_db_retries(retry_state: RetryCallState) -> bool:
-    return retry_state.attempt_number >= get_settings().max_db_retries
+    # Each retryable exception class has its own attempt counter and cap, so
+    # a 57014 following a string of 503s still gets its full timeout budget
+    # rather than inheriting the 503s' attempt count.
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    klass = _exception_class(exc)
+    n = _bump_class_attempt(retry_state, klass)
+    return n >= _cap_for_class(klass)
 
 
 def _log_db_retry(retry_state: RetryCallState) -> None:
     exc = retry_state.outcome.exception() if retry_state.outcome else None
     wait = retry_state.next_action.sleep if retry_state.next_action else 0
-    max_retries = get_settings().max_db_retries
+    klass = _exception_class(exc)
+    counts = getattr(retry_state, "_db_attempts_by_class", {})
     log.warning(
-        "DB request failed (%s), retrying in %gs (attempt %d/%d)",
+        "DB request failed (%s), retrying in %gs (%s attempt %d/%d)",
         type(exc).__name__ if exc else "unknown",
         wait,
-        retry_state.attempt_number,
-        max_retries,
+        klass,
+        counts.get(klass, retry_state.attempt_number),
+        _cap_for_class(klass),
     )
 
 
@@ -1147,6 +1196,28 @@ class DB:
             link.to_page_id[:8],
             link.link_type.value,
         )
+        # First-write-wins dedup: if an active link with the same identity
+        # quadruple (from, to, link_type, direction) is already visible to
+        # this DB's run/staged scope, skip the insert. Re-saving by the same
+        # link.id falls through to the upsert path so explicit updates still
+        # work. The DB has no uniqueness index yet, so this is the only
+        # guard against accidental duplicates from concurrent or repeated
+        # save_link calls.
+        existing = await self._find_active_link(
+            from_page_id=link.from_page_id,
+            to_page_id=link.to_page_id,
+            link_type=link.link_type,
+            direction=link.direction,
+        )
+        if existing is not None and existing.id != link.id:
+            log.debug(
+                "save_link: dedup — %s -> %s (%s) already exists as %s",
+                link.from_page_id[:8],
+                link.to_page_id[:8],
+                link.link_type.value,
+                existing.id[:8],
+            )
+            return
         await self._execute(
             self.client.table("page_links").upsert(
                 {
@@ -1168,6 +1239,31 @@ class DB:
                 }
             )
         )
+
+    async def _find_active_link(
+        self,
+        *,
+        from_page_id: str,
+        to_page_id: str,
+        link_type: LinkType,
+        direction: ConsiderationDirection | None,
+    ) -> PageLink | None:
+        """Return any link visible in this DB's scope matching the identity
+        quadruple, or None. Honors staged-runs visibility (baseline + own
+        staged rows for staged DBs; baseline only for non-staged) via
+        ``get_links_from``'s built-in filter and event overlay.
+        """
+        direction_value = direction.value if direction else None
+        for link in await self.get_links_from(from_page_id):
+            if link.to_page_id != to_page_id:
+                continue
+            if link.link_type != link_type:
+                continue
+            existing_dir = link.direction.value if link.direction else None
+            if existing_dir != direction_value:
+                continue
+            return link
+        return None
 
     async def get_link(self, link_id: str) -> PageLink | None:
         query = self.client.table("page_links").select("*").eq("id", link_id)

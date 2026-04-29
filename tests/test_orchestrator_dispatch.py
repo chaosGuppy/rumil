@@ -572,15 +572,14 @@ async def test_execute_dispatch_assess_with_existing_view_redirects_to_create_vi
     mocked_helpers["simple"].assert_not_called()
 
 
-async def test_execute_dispatch_create_view_calls_create_view(
+async def test_execute_dispatch_create_view_routes_to_create_when_no_view(
     tmp_db,
     question_page,
     mocked_helpers,
     mocker,
 ):
-    # Ensure existing-view check doesn't short-circuit the assess path.
-    # (CreateViewDispatchPayload doesn't go through the assess branch, but
-    # guard anyway so the test is order-independent.)
+    # CreateViewDispatchPayload routes through view.refresh(); when no view
+    # exists, SectionedView.refresh fires create_view_for_question.
     mocker.patch.object(DB, "get_view_for_question", return_value=None)
 
     orch = await _make_orch(tmp_db)
@@ -614,6 +613,48 @@ async def test_execute_dispatch_create_view_calls_create_view(
     assert kwargs["call_id"] == "pre-4"
     assert kwargs["sequence_id"] == "seq-4"
     assert kwargs["sequence_position"] == 0
+    mocked_helpers["update_view"].assert_not_called()
+    mocked_helpers["assess"].assert_not_called()
+    mocked_helpers["simple"].assert_not_called()
+
+
+async def test_execute_dispatch_create_view_routes_to_update_when_view_exists(
+    tmp_db,
+    question_page,
+    mocked_helpers,
+    mocker,
+):
+    """When a view already exists, a CreateViewDispatchPayload should route
+    through view.refresh() to the update path — preventing the silent
+    VIEW_ITEM-loss that direct CreateView on an existing view caused."""
+    existing_view = mocker.MagicMock()
+    existing_view.id = "existing-view-id"
+    mocker.patch.object(DB, "get_view_for_question", return_value=existing_view)
+
+    orch = await _make_orch(tmp_db)
+    dispatch = Dispatch(
+        call_type=CallType.CREATE_VIEW,
+        payload=CreateViewDispatchPayload(
+            question_id=question_page.id,
+            reason="view-reason",
+            context_page_ids=["cv-1"],
+        ),
+    )
+
+    resolved, child_id = await orch._execute_dispatch(
+        dispatch,
+        question_page.id,
+        parent_call_id="parent-4b",
+        force=False,
+        call_id="pre-4b",
+        sequence_id="seq-4b",
+        sequence_position=0,
+    )
+
+    assert resolved == question_page.id
+    assert child_id == "child-update-view-id"
+    mocked_helpers["update_view"].assert_called_once()
+    mocked_helpers["create_view"].assert_not_called()
     mocked_helpers["assess"].assert_not_called()
     mocked_helpers["simple"].assert_not_called()
 

@@ -167,11 +167,14 @@ async def _handle_assess(ctx: DispatchContext, payload: BaseDispatchPayload) -> 
 
 
 async def _handle_create_view(ctx: DispatchContext, payload: BaseDispatchPayload) -> str | None:
-    from rumil.views.sectioned import create_view_for_question
-
+    """Create-view dispatch: route through ``view.refresh()`` so existing
+    views are updated rather than overwritten, and so the call type
+    matches the active view variant (sectioned → create/update; judgement
+    → assess)."""
     assert isinstance(payload, CreateViewDispatchPayload)
     log.info("Dispatch: create_view on %s — %s", ctx.d_label, payload.reason)
-    return await create_view_for_question(
+    view = get_active_view()
+    return await view.refresh(
         ctx.resolved_question_id,
         ctx.orchestrator.db,
         parent_call_id=ctx.parent_call_id,
@@ -181,6 +184,7 @@ async def _handle_create_view(ctx: DispatchContext, payload: BaseDispatchPayload
         call_id=ctx.call_id,
         sequence_id=ctx.sequence_id,
         sequence_position=ctx.sequence_position,
+        pool_question_id=ctx.pool_question_id,
     )
 
 

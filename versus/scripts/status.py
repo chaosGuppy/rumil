@@ -250,8 +250,7 @@ def main() -> None:
                 "essays + prompts, run:"
             )
             print("  uv run python scripts/run_completions.py")
-            print("  uv run python scripts/run_judgments.py")
-            print("  uv run python scripts/run_rumil_judgments.py  # rumil-style judges")
+            print("  uv run python scripts/run_rumil_judgments.py  # blind / ws / orch judges")
             sys.exit(2)
         print("\nall cached rows match current essays + prompts.")
 

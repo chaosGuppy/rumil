@@ -15,9 +15,9 @@ Usage:
         --render-variant default|expanded|view-only
 
 Writes a new VERSUS_JUDGE call into the same run so the trace UI
-shows it alongside the original closer. Does NOT write a judgment
-row to ``judgments.jsonl`` — this is just for inspecting the new
-closer's output.
+shows it alongside the original closer. Does NOT write a row to
+``versus_judgments`` — this is just for inspecting the new closer's
+output.
 """
 
 from __future__ import annotations

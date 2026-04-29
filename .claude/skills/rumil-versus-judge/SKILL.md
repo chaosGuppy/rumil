@@ -8,11 +8,10 @@ argument-hint: "[--variant ws|orch] [--workspace <name>] [--model opus|sonnet|ha
 # rumil-versus-judge
 
 Runs pairwise judgments on versus essay-continuation pairs against a
-rumil-adjacent judge backend, writing into the same
-`versus/data/judgments.jsonl` that OpenRouter judges use. The versus UI
-picks up the new rows automatically; rumil paths also mirror a trace
-URL + 7-point preference label + call/run/question IDs so the `/inspect`
-page can link back to the rumil trace.
+rumil-adjacent judge backend, writing into the `versus_judgments`
+Postgres table. The versus UI picks up the new rows automatically;
+rumil paths also store project_id / run_id / rumil_call_id so the
+`/inspect` page can link back to the rumil trace.
 
 ## Three modes
 
@@ -24,20 +23,20 @@ page can link back to the rumil trace.
 
 `<dim>` is the rumil dimension name selected via `--dimension`
 (e.g. `general_quality`, `grounding`). The trailing `c<hash8>` is the
-first eight hex chars of the row's `config_hash` — the dedup
+first eight hex chars of the row's `judge_inputs_hash` — the dedup
 primitive. The blind shell is **without** tool advertisements (no
 scope-question references, no `load_page`/`search_workspace`
 mentions); ws/orch shell keeps them. Both modes share the same
 template — see `rumil/versus_prompts.py` for the substitution dicts.
 
-Each row carries a structured `config: dict` plus `config_hash: str`.
-`config_hash` is computed by `versus.judge_config.make_judge_config`
-over every input the judge saw — model, sampling, prompt content,
-tool descriptions, pair surface, code fingerprint, workspace state,
-budget, closer config. Any change in any of those auto-forks the
-key; no manual version bump to remember. See `versus/AGENT.md` for
-the full structured-config schema and how it projects to the
-provenance panel's per-axis counters.
+Each row carries a structured `judge_inputs: dict`; the DB generates
+`judge_inputs_hash` from its canonical-form JSON. The blob is built by
+`versus.judge_config.make_judge_config` and covers every input the
+judge saw — model, sampling, prompt content, tool descriptions, pair
+surface, code fingerprint, workspace state, budget, closer config —
+plus `text_a_id` / `text_b_id` and `order` added at write time. Any
+change in any of those auto-forks the hash; no manual version bump to
+remember. See `versus/AGENT.md` for the full schema.
 
 ## When to use
 
@@ -47,10 +46,10 @@ provenance panel's per-axis counters.
 | "run rumil ws/orch judges on versus pairs" | this skill (`--variant ws|orch`) |
 | "A/B eval two rumil research runs" | rumil's `main.py --ab-eval A B` — different system |
 
-Versus must already have completions cached
-(`versus/data/completions.jsonl`). If it doesn't, the user needs
-`versus/scripts/fetch_essays.py` + `run_paraphrases.py` +
-`run_completions.py` first — flag that and stop.
+Versus must already have completions in the `versus_texts` table.
+If it doesn't, the user needs `versus/scripts/fetch_essays.py` +
+`run_completions.py` first — flag that and stop. Local Supabase must
+also be running (`supabase start` from the rumil repo root).
 
 **Before any topup run, check for staleness:**
 
@@ -236,8 +235,8 @@ manually background it mid-flight — when Claude Code's foreground
 process group detaches, the `&&` chain breaks between cmd1 and cmd2
 and cmd2 silently never fires. Also: manual-background tears down the
 tool's stdout capture, so `[plan] / [done]` lines get dropped even
-when the work itself completes (rows still land in judgments.jsonl
-because Python holds its own fd).
+when the work itself completes (rows still land in versus_judgments
+because Python holds its own DB connection).
 
 Safe pattern for long backgrounded runs:
 
@@ -245,8 +244,8 @@ Safe pattern for long backgrounded runs:
 uv run ... versus/scripts/run_rumil_judgments.py <flags> > /tmp/versus-run-<id>.log 2>&1
 ```
 
-with `run_in_background: true`. Watch progress by tailing
-`judgments.jsonl` (rows increment regardless of stdout) and the
+with `run_in_background: true`. Watch progress by querying
+`versus_judgments` (counts increment regardless of stdout) and the
 explicit logfile.
 
 ## Methodology pitfalls (observed on forethought essays vs. `redwood`)

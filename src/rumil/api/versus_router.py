@@ -831,8 +831,8 @@ class EssayJudgmentsResponse(pydantic.BaseModel):
       from essay re-import drift or a prefix-config bump.
 
     ``orphaned`` flags a judgment whose source_a / source_b is not
-    present in the current completions.jsonl at the same prefix_hash --
-    the judgment survived the variant check but its sources did not.
+    present in versus_texts at the same prefix_hash -- the judgment
+    survived the variant check but its sources did not.
     """
 
     judgments: list[Judgment]

@@ -192,10 +192,8 @@ def main() -> None:
     )
 
     cfg = config.load(args.config)
-    for field in ("completions_log", "judgments_log", "paraphrases_log"):
-        p = getattr(cfg.storage, field)
-        if not p.is_absolute():
-            setattr(cfg.storage, field, VERSUS_ROOT / p)
+    if not cfg.storage.paraphrases_log.is_absolute():
+        cfg.storage.paraphrases_log = VERSUS_ROOT / cfg.storage.paraphrases_log
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 

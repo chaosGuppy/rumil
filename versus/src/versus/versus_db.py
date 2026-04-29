@@ -174,16 +174,37 @@ def find_judgments(
     return q.execute().data
 
 
+# Columns to skip when callers don't need the full provider request/response
+# blobs. These are 90+% of the row payload — for /versus/results aggregation
+# we don't need them and shipping all of them adds tens of MB to the response.
+_TEXT_LIGHT_SELECT = (
+    "id,essay_id,kind,source_id,prefix_hash,model_id,text,params,request_hash,created_at"
+)
+_JUDGMENT_LIGHT_SELECT = (
+    "id,essay_id,prefix_hash,source_a,source_b,display_first,text_a_id,text_b_id,"
+    "criterion,variant,judge_model,judge_inputs,judge_inputs_hash,verdict,winner_source,"
+    "preference_label,reasoning_text,duration_s,project_id,run_id,rumil_call_id,"
+    "contamination_note,created_at"
+)
+
+
 def iter_texts(
     client: Client,
     *,
     essay_id: str | None = None,
     kind: TextKind | None = None,
     page_size: int = 1000,
+    light: bool = False,
 ) -> Iterator[dict]:
+    """Iterate versus_texts rows.
+
+    Pass ``light=True`` to skip the heavy ``request`` / ``response`` JSONB
+    columns — useful for aggregation paths that just need essay/source/text.
+    """
+    select = _TEXT_LIGHT_SELECT if light else "*"
     offset = 0
     while True:
-        q = client.table("versus_texts").select("*")
+        q = client.table("versus_texts").select(select)
         if essay_id is not None:
             q = q.eq("essay_id", essay_id)
         if kind is not None:
@@ -204,10 +225,19 @@ def iter_judgments(
     project_id: str | None = None,
     run_id: str | None = None,
     page_size: int = 1000,
+    light: bool = False,
 ) -> Iterator[dict]:
+    """Iterate versus_judgments rows.
+
+    Pass ``light=True`` to skip the heavy ``request`` / ``response`` JSONB
+    columns. The aggregation paths in /versus/results don't read those —
+    only the by-key inspector and the trace links do — and skipping them
+    cuts response payload by ~95%.
+    """
+    select = _JUDGMENT_LIGHT_SELECT if light else "*"
     offset = 0
     while True:
-        q = client.table("versus_judgments").select("*")
+        q = client.table("versus_judgments").select(select)
         if essay_id is not None:
             q = q.eq("essay_id", essay_id)
         if project_id is not None:

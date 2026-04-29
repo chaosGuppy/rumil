@@ -16,6 +16,7 @@ import functools
 import json
 import os
 import pathlib
+import time
 
 import pydantic
 from fastapi import APIRouter, Depends, HTTPException
@@ -162,6 +163,34 @@ def _iter_legacy_completions():
         yield _legacy_text_dict(row)
 
 
+# Process-local cache for the "light" projections of versus_judgments and
+# versus_texts. The aggregator endpoints (/results, /diagnostics) refetch
+# every page load; without caching, clicking around the UI hits the DB
+# repeatedly. The previous JSONL store had near-instant reads via an
+# in-memory cache keyed on (path, mtime, size); we approximate that here
+# with a small TTL. Stale-by-up-to-N-seconds is fine for an interactive
+# eval-results view — fresh data costs a hard refresh.
+_LIGHT_CACHE_TTL_S = 10.0
+_LIGHT_CACHE: dict[str, tuple[float, list[dict]]] = {}
+
+
+def _light_load(kind: str) -> list[dict]:
+    """Cached fetch of judgments/texts via the light projection."""
+    now = time.time()
+    cached = _LIGHT_CACHE.get(kind)
+    if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
+        return cached[1]
+    client = versus_db.get_client()
+    if kind == "judgments":
+        rows = list(versus_db.iter_judgments(client, light=True))
+    elif kind == "texts":
+        rows = list(versus_db.iter_texts(client, light=True))
+    else:
+        raise ValueError(f"unknown kind: {kind}")
+    _LIGHT_CACHE[kind] = (now, rows)
+    return rows
+
+
 def _config_path() -> pathlib.Path:
     return pathlib.Path(os.environ.get("VERSUS_CONFIG_PATH", _DEFAULT_CONFIG))
 
@@ -221,21 +250,24 @@ def _load_verdict(essay_id: str) -> dict | None:
         return None
 
 
-def _build_completion_source_index(
-    cfg: versus_config.Config,
+def _build_completion_source_index_from_rows(
+    text_rows: list[dict],
 ) -> dict[tuple[str, str], set[str]]:
-    """Index ``(essay_id, prefix_config_hash) -> {source_id, ...}`` over completions.
+    """Index ``(essay_id, prefix_hash) -> {source_id, ...}`` over pre-loaded texts.
 
-    Used to flag judgment rows as ``orphaned``: a row whose
-    ``prefix_config_hash`` IS current but whose ``source_a`` / ``source_b``
-    has no matching completion row (e.g. the completion was manually
-    removed, or judgment ran against a partially-generated set). Distinct
-    from staleness, which fires when the prefix_config_hash itself is old.
+    Used to flag judgment rows as ``orphaned``: a row whose ``prefix_hash``
+    IS current but whose ``source_a`` / ``source_b`` has no matching text
+    row (e.g. the text was manually removed, or judgment ran against a
+    partially-generated set). Distinct from staleness, which fires when
+    the prefix_hash itself is old.
+
+    Reads DB-shaped rows (versus_texts.prefix_hash). Callers passing
+    legacy-shaped rows should rename ``prefix_hash`` before calling.
     """
     index: dict[tuple[str, str], set[str]] = {}
-    for row in _iter_legacy_completions():
+    for row in text_rows:
         eid = row.get("essay_id")
-        ph = row.get("prefix_config_hash")
+        ph = row.get("prefix_hash")
         sid = row.get("source_id")
         if not (eid and ph and sid):
             continue
@@ -866,11 +898,14 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
         for p in versus_prepare.active_prefix_configs(cfg)
         if p.id != active_prefix_cfg.id
     }
-    source_index = _build_completion_source_index(cfg)
+    db_client = versus_db.get_client()
+    text_rows = list(versus_db.iter_texts(db_client))
+    source_index = _build_completion_source_index_from_rows(text_rows)
     judgments: list[Judgment] = []
     stale_hidden = 0
     other_variant_hidden = 0
-    for row in _iter_legacy_judgments():
+    for db_row in versus_db.iter_judgments(db_client):
+        row = _legacy_judgment_dict(db_row)
         if row.get("essay_id") != essay.id:
             continue
         if row.get("prefix_config_hash") != task.prefix_config_hash:
@@ -1025,7 +1060,16 @@ def get_results(
     active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     essays_status, current_prefix_hashes = _build_essays_status(cfg, prefix_cfg=active_prefix_cfg)
 
+    # Single fetch per request: every downstream consumer (matrix,
+    # matrix_by_source, the row loop, the source-stats loop, and the
+    # orphan check) re-iterates this same data. Light projection skips
+    # the multi-MB request/response JSONB blobs that no aggregation here
+    # actually reads. Cached briefly so click-arounds don't re-fetch.
+    all_judgments_db = _light_load("judgments")
+    all_texts_db = _light_load("texts")
+
     data = versus_analyze.matrix(
+        rows=all_judgments_db,
         include_contaminated=include_contaminated,
         current_prefix_hashes=current_prefix_hashes,
         include_stale=include_stale,
@@ -1058,6 +1102,7 @@ def get_results(
         )
 
     data_by_source = versus_analyze.matrix_by_source(
+        rows=all_judgments_db,
         include_contaminated=include_contaminated,
         current_prefix_hashes=current_prefix_hashes,
         include_stale=include_stale,
@@ -1111,7 +1156,7 @@ def get_results(
     # aggregate downstream (matrices, content-test, rows list) sees.
     # Counting raw rows here would over-report by every dupe + every
     # null-verdict placeholder and drift from the rendered totals.
-    source_index = _build_completion_source_index(cfg)
+    source_index = _build_completion_source_index_from_rows(all_texts_db)
     rows: list[JudgmentRow] = []
     matrix_input_rows: list[dict] = []
     # ``judge_model -> structured config``. Every row carries one
@@ -1123,7 +1168,8 @@ def get_results(
     stale_count = 0
     current_count = 0
     any_filter = bool(filter_gen or filter_judge or filter_condition or filter_criterion)
-    for row in _iter_legacy_judgments():
+    for db_row in all_judgments_db:
+        row = _legacy_judgment_dict(db_row)
         if row.get("verdict") is None:
             continue
         total_judgments += 1
@@ -1173,7 +1219,8 @@ def get_results(
 
     total_completions = 0
     source_stats: dict[str, dict] = {}
-    for row in _iter_legacy_completions():
+    for db_row in all_texts_db:
+        row = _legacy_text_dict(db_row)
         total_completions += 1
         if not include_stale and versus_analyze._prefix_hash_is_stale(row, current_prefix_hashes):
             continue
@@ -1394,7 +1441,8 @@ def get_diagnostics(
         titles[d["id"]] = d.get("title", d["id"])
 
     filtered_rows: list[dict] = []
-    for row in _iter_legacy_judgments():
+    for db_row in _light_load("judgments"):
+        row = _legacy_judgment_dict(db_row)
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):

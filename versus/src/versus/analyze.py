@@ -9,6 +9,7 @@ into SQL.
 from __future__ import annotations
 
 import collections
+from collections.abc import Iterable
 from typing import Any
 
 from versus import versus_db
@@ -161,15 +162,24 @@ def _prefix_hash_is_stale(row: dict, current_prefix_hashes: dict[str, str] | Non
 
 
 def _iter_filtered(
-    client,
+    client_or_rows,
     *,
     include_contaminated: bool,
     current_prefix_hashes: dict[str, str] | None,
     include_stale: bool,
     criterion: str | None = None,
 ):
-    """Yield judgment rows that pass the standard filters used across matrices."""
-    for row in versus_db.iter_judgments(client):
+    """Yield judgment rows that pass the standard filters used across matrices.
+
+    ``client_or_rows`` is either a supabase client (loads from DB) or an
+    iterable of pre-loaded rows. The router pre-loads once and passes the
+    list to all three matrix builders to avoid round-tripping per call.
+    """
+    if isinstance(client_or_rows, Iterable) and not hasattr(client_or_rows, "table"):
+        source = client_or_rows
+    else:
+        source = versus_db.iter_judgments(client_or_rows)
+    for row in source:
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):
@@ -182,6 +192,8 @@ def _iter_filtered(
 
 
 def content_test_matrix(
+    rows: Iterable[dict] | None = None,
+    *,
     client: Any | None = None,
     include_contaminated: bool = False,
     current_prefix_hashes: dict[str, str] | None = None,
@@ -197,12 +209,14 @@ def content_test_matrix(
     Cell value is fraction of J-picks-paraphrase:J (ties = 0.5).
 
     Returns ``{key: (pct, n, wins, ties, losses)}``.
+
+    Pass ``rows`` to reuse pre-loaded judgments; ``client`` is a fallback
+    that issues its own DB scan.
     """
-    if client is None:
-        client = versus_db.get_client()
+    source = rows if rows is not None else (client or versus_db.get_client())
     counts: dict[tuple[str, str, str], list[int]] = collections.defaultdict(lambda: [0, 0, 0])
     for row in _iter_filtered(
-        client,
+        source,
         include_contaminated=include_contaminated,
         current_prefix_hashes=current_prefix_hashes,
         include_stale=include_stale,
@@ -227,6 +241,8 @@ def content_test_matrix(
 
 
 def matrix(
+    rows: Iterable[dict] | None = None,
+    *,
     client: Any | None = None,
     criterion: str | None = None,
     include_contaminated: bool = False,
@@ -237,13 +253,13 @@ def matrix(
 
     Only counts pairs where one side is human. Ties count as 0.5 for human.
 
-    Returns ``{key: (pct, n, wins, ties, losses)}``.
+    Pass ``rows`` to reuse pre-loaded judgments; ``client`` is a fallback
+    that issues its own DB scan.
     """
-    if client is None:
-        client = versus_db.get_client()
+    source = rows if rows is not None else (client or versus_db.get_client())
     counts: dict[tuple[str, str, str, str], list[int]] = collections.defaultdict(lambda: [0, 0, 0])
     for row in _iter_filtered(
-        client,
+        source,
         include_contaminated=include_contaminated,
         current_prefix_hashes=current_prefix_hashes,
         include_stale=include_stale,
@@ -267,6 +283,8 @@ def matrix(
 
 
 def matrix_by_source(
+    rows: Iterable[dict] | None = None,
+    *,
     client: Any | None = None,
     include_contaminated: bool = False,
     current_prefix_hashes: dict[str, str] | None = None,
@@ -274,15 +292,15 @@ def matrix_by_source(
 ) -> dict[str, dict]:
     """Same as ``matrix()``, binned by essay source (essay_id prefix before ``__``).
 
-    Returns ``{source_id: matrix_dict}``. Single pass over the judgments.
+    Pass ``rows`` to reuse pre-loaded judgments; ``client`` is a fallback
+    that issues its own DB scan.
     """
-    if client is None:
-        client = versus_db.get_client()
+    source = rows if rows is not None else (client or versus_db.get_client())
     counts: dict[str, dict[tuple[str, str, str, str], list[int]]] = collections.defaultdict(
         lambda: collections.defaultdict(lambda: [0, 0, 0])
     )
     for row in _iter_filtered(
-        client,
+        source,
         include_contaminated=include_contaminated,
         current_prefix_hashes=current_prefix_hashes,
         include_stale=include_stale,

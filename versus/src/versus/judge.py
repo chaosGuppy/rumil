@@ -347,8 +347,9 @@ def _build_judge_inputs(
     base_config: dict,
     text_a_id: str,
     text_b_id: str,
+    order: Order,
 ) -> tuple[dict, str]:
-    """Augment a judge_config dict with text id refs and compute its hash.
+    """Augment a judge_config dict with text id refs + order and compute its hash.
 
     text_a_id / text_b_id naturally fork the hash when re-judging a
     different completion sample at the same prompt config — so two
@@ -358,6 +359,7 @@ def _build_judge_inputs(
     judge_inputs = dict(base_config)
     judge_inputs["text_a_id"] = text_a_id
     judge_inputs["text_b_id"] = text_b_id
+    judge_inputs["order"] = order
     return judge_inputs, versus_db.compute_canonical_hash(judge_inputs)
 
 
@@ -534,7 +536,7 @@ def run_blind(
                         canonical_model, dimension, sampling
                     )
                     judge_inputs, judge_inputs_hash = _build_judge_inputs(
-                        base_config, src_a.text_id, src_b.text_id
+                        base_config, src_a.text_id, src_b.text_id, order
                     )
                     dedup_key = (
                         essay_id,

@@ -149,13 +149,14 @@ def _plan_rumil_pairs(
                 display_second_id=second.source_id,
                 display_second_text=second.text,
             )
+            order = judge.order_from_display_first(a_id, b_id, first.source_id)
             for task_name, is_versus_crit in tasks_spec:
                 base_config, _, judge_model = compose_judge_config(task_name, is_versus_crit)
                 criterion_value = task_name if is_versus_crit else f"rumil_{task_name}"
                 # Predict the judge_inputs_hash that would land on the row, so
                 # we skip pairs that already have a row at this exact config.
                 predicted_inputs, predicted_hash = judge._build_judge_inputs(
-                    base_config, src_a.text_id, src_b.text_id
+                    base_config, src_a.text_id, src_b.text_id, order
                 )
                 del predicted_inputs  # only the hash is used for dedup
                 key = (essay_id, prefix_hash, a_id, b_id, criterion_value, predicted_hash)

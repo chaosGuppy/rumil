@@ -53,6 +53,9 @@ class OrchestratorRunRequest(BaseModel):
     # are non-orchestrator modes and aren't supported remotely.
     auto_summary: bool = False
     auto_self_improve: bool = False
+    # Optional steering string for --self-improve. Only meaningful when
+    # auto_self_improve is True; ignored otherwise.
+    improvement_instructions: str | None = None
 
     available_moves: str | None = None
     available_calls: str | None = None

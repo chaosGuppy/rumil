@@ -101,6 +101,10 @@ uv run python main.py --self-improve QUESTION_ID
 # Investigate and self-improve in one command (analyses the just-finished run)
 uv run python main.py "Your question here" --budget 20 --self-improve
 
+# Steer the self-improvement analysis with free-text instructions
+uv run python main.py --self-improve QUESTION_ID \
+    --improvement-instructions "concentrate on prioritization quality"
+
 # Evaluate the judgement quality for a question
 uv run python main.py --evaluate QUESTION_ID
 

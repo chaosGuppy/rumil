@@ -94,6 +94,32 @@ def test_container_command_forwards_auto_self_improve_as_bare_flag():
     assert idx == len(cmd) - 1 or cmd[idx + 1].startswith("--")
 
 
+def test_container_command_forwards_improvement_instructions():
+    cmd = list(
+        _build_container_command(
+            _spec(
+                auto_self_improve=True,
+                improvement_instructions="focus on prioritization",
+            ),
+            run_id=_RUN_ID,
+        )
+    )
+    assert "--improvement-instructions" in cmd
+    idx = cmd.index("--improvement-instructions")
+    assert cmd[idx + 1] == "focus on prioritization"
+
+
+def test_container_command_omits_improvement_instructions_without_self_improve():
+    """The flag is meaningless without --self-improve, so don't forward it."""
+    cmd = list(
+        _build_container_command(
+            _spec(improvement_instructions="focus on prioritization"),
+            run_id=_RUN_ID,
+        )
+    )
+    assert "--improvement-instructions" not in cmd
+
+
 def test_container_command_omits_auto_flags_by_default():
     cmd = _build_container_command(_spec(), run_id=_RUN_ID)
     assert "--summary" not in cmd

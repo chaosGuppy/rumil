@@ -107,6 +107,20 @@ def test_request_from_args_forwards_auto_self_improve():
     assert spec.auto_summary is False
 
 
+def test_request_from_args_forwards_improvement_instructions():
+    args = _args_namespace(
+        self_improve_id="__auto__",
+        improvement_instructions="focus on prioritization quality",
+    )
+    spec = _request_from_args(args)
+    assert spec.improvement_instructions == "focus on prioritization quality"
+
+
+def test_request_from_args_no_improvement_instructions_by_default():
+    spec = _request_from_args(_args_namespace())
+    assert spec.improvement_instructions is None
+
+
 def test_request_from_args_ignores_summary_with_real_id():
     """`--summary <QID>` is the standalone (non-orchestrator) mode and is
     rejected before it reaches the request builder; defensively, a real ID

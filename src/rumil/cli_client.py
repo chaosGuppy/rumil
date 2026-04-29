@@ -76,6 +76,7 @@ def _request_from_args(args: argparse.Namespace) -> OrchestratorRunRequest:
         no_trace=bool(getattr(args, "no_trace", False)),
         auto_summary=getattr(args, "summary_id", None) == "__auto__",
         auto_self_improve=getattr(args, "self_improve_id", None) == "__auto__",
+        improvement_instructions=getattr(args, "improvement_instructions", None),
         available_moves=getattr(args, "available_moves", None),
         available_calls=getattr(args, "available_calls", None),
         view_variant=getattr(args, "view_variant", None),

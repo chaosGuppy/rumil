@@ -4,7 +4,8 @@ LLM interface. Wraps the Anthropic API and handles exchange persistence.
 Exports:
   - call_api: API call with retries and optional exchange logging
   - text_call: plain text call
-  - structured_call: structured output via messages.parse
+  - structured_call: structured output via messages.parse, or via
+        messages.create with manual JSON parsing when parse_manually=True
 
 Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
             LLMExchangeMetadata.

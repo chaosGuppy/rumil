@@ -451,6 +451,10 @@ export type CallsForQuestion = {
      * Judgements
      */
     judgements: number;
+    /**
+     * Views
+     */
+    views: number;
 };
 
 /**
@@ -2078,6 +2082,12 @@ export type OrchestratorRunRequest = {
      * Container Tag
      */
     container_tag?: string | null;
+    /**
+     * Extra Env
+     */
+    extra_env?: {
+        [key: string]: string;
+    };
 };
 
 /**

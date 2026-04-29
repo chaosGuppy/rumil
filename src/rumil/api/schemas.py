@@ -393,6 +393,7 @@ class CallsForQuestion(BaseModel):
     child_questions: int
     considerations: int
     judgements: int
+    views: int
 
 
 class StatsOut(BaseModel):

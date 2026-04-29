@@ -266,6 +266,7 @@ async def test_question_stats_isolated(tmp_db):
     assert entry["child_questions"] == 0
     assert entry["considerations"] == 0
     assert entry["judgements"] == 0
+    assert entry["views"] == 0
 
 
 @pytest.mark.asyncio

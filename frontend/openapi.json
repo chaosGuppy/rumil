@@ -3658,6 +3658,10 @@
           "judgements": {
             "type": "integer",
             "title": "Judgements"
+          },
+          "views": {
+            "type": "integer",
+            "title": "Views"
           }
         },
         "type": "object",
@@ -3668,7 +3672,8 @@
           "total",
           "child_questions",
           "considerations",
-          "judgements"
+          "judgements",
+          "views"
         ],
         "title": "CallsForQuestion"
       },
@@ -6353,6 +6358,13 @@
               }
             ],
             "title": "Container Tag"
+          },
+          "extra_env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Extra Env"
           }
         },
         "type": "object",

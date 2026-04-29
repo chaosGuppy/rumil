@@ -118,6 +118,60 @@ class CreateViewContext(ContextBuilder):
         )
 
 
+class FreeformViewContext(ContextBuilder):
+    """Context for FreeformView creation/update: question, considerations,
+    judgements, child-question takes via embedding-based context. Existing-view
+    section content is fed per-section by the workspace updater on update calls,
+    so this builder does not inline it."""
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        question = await infra.db.get_page(infra.question_id)
+        query = question.headline if question else infra.question_id
+
+        result = await build_embedding_based_context(
+            query,
+            infra.db,
+            scope_question_id=infra.question_id,
+            require_take_for_questions=True,
+        )
+        working_page_ids = result.page_ids
+        preloaded_ids = list(infra.call.context_page_ids or [])
+
+        context_text = result.context_text
+        if preloaded_ids:
+            pages_by_id = await infra.db.get_pages_by_ids(preloaded_ids)
+            parts_pre: list[str] = []
+            for pid in preloaded_ids:
+                page = pages_by_id.get(pid)
+                if page:
+                    parts_pre += [
+                        "",
+                        "---",
+                        "",
+                        f"## Pre-loaded Page: `{pid[:8]}`",
+                        "",
+                        await format_page(
+                            page,
+                            PageDetail.CONTENT,
+                            db=infra.db,
+                            track=True,
+                            track_tags={"source": "preloaded"},
+                        ),
+                    ]
+            context_text += "\n".join(parts_pre)
+
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            preloaded_ids=preloaded_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+        )
+
+
 class RedTeamContext(ContextBuilder):
     """Context for red-teaming: loads the View, judgements, subquestion map,
     and high-confidence claims to enable structural challenge of the overall picture."""

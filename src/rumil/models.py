@@ -86,6 +86,8 @@ class CallType(str, Enum):
     CREATE_VIEW = "create_view"
     GLOBAL_PRIORITIZATION = "global_prioritization"
     UPDATE_VIEW = "update_view"
+    CREATE_FREEFORM_VIEW = "create_freeform_view"
+    UPDATE_FREEFORM_VIEW = "update_freeform_view"
     GENERATE_SPEC = "generate_spec"
     GENERATE_ARTEFACT = "generate_artefact"
     CRITIQUE_ARTEFACT = "critique_artefact"

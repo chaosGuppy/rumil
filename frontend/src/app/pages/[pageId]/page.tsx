@@ -186,10 +186,12 @@ function titleCase(sec: string): string {
 function ViewItemsSection({
   linksFrom,
   sections,
+  viewKind,
   stagedRunId,
 }: {
   linksFrom: LinkedPageOut[];
   sections: string[];
+  viewKind?: string;
   stagedRunId?: string;
 }) {
   const viewItems = linksFrom.filter(
@@ -211,6 +213,41 @@ function ViewItemsSection({
   const orderedSections = sections.length > 0
     ? sections.filter((s) => bySection.has(s))
     : Array.from(bySection.keys());
+
+  if (viewKind === "freeform") {
+    return (
+      <div className="freeform-view">
+        {orderedSections.map((sec, idx) => {
+          const items = bySection.get(sec) ?? [];
+          return (
+            <article key={sec} className="freeform-section">
+              <header className="freeform-section-header">
+                <span className="freeform-section-counter">
+                  {String(idx + 1).padStart(2, "0")}
+                </span>
+                <h3 className="freeform-section-heading">{titleCase(sec)}</h3>
+              </header>
+              <div className="freeform-section-body">
+                {items.map((lp) => (
+                  <div key={lp.page.id} className="freeform-section-prose">
+                    <Markdown remarkPlugins={[remarkGfm]}>
+                      {lp.page.content || ""}
+                    </Markdown>
+                    <Link
+                      href={withStagedRun(`/pages/${lp.page.id}`, stagedRunId)}
+                      className="freeform-section-permalink"
+                    >
+                      {lp.page.id.slice(0, 8)}
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div className="view-items-section">
@@ -534,6 +571,11 @@ export default async function PageDetailPage({
           <ViewItemsSection
             linksFrom={links_from}
             sections={page.sections ?? []}
+            viewKind={
+              typeof page.extra?.view_kind === "string"
+                ? (page.extra.view_kind as string)
+                : undefined
+            }
             stagedRunId={stagedRunId}
           />
         )}
@@ -1353,5 +1395,98 @@ const styles = `
   .view-item-headline {
     font-size: 0.85rem;
     line-height: 1.35;
+  }
+
+  .freeform-view {
+    margin-top: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+    max-width: 42rem;
+  }
+  .freeform-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.85rem;
+    border-top: 1px solid var(--color-border);
+    padding-top: 1.4rem;
+  }
+  .freeform-section:first-child {
+    border-top: none;
+    padding-top: 0;
+  }
+  .freeform-section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+  }
+  .freeform-section-counter {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 0.7rem;
+    color: var(--type-view);
+    letter-spacing: 0.05em;
+    font-feature-settings: "tnum";
+  }
+  .freeform-section-heading {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-muted);
+    margin: 0;
+  }
+  .freeform-section-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    border-left: 2px solid var(--type-view-border);
+    padding-left: 1.1rem;
+  }
+  .freeform-section-prose {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    font-size: 1rem;
+    line-height: 1.65;
+    color: var(--color-foreground, inherit);
+  }
+  .freeform-section-prose p {
+    margin: 0 0 0.9rem 0;
+  }
+  .freeform-section-prose p:last-child {
+    margin-bottom: 0;
+  }
+  .freeform-section-prose ul,
+  .freeform-section-prose ol {
+    margin: 0 0 0.9rem 0;
+    padding-left: 1.4rem;
+  }
+  .freeform-section-prose li {
+    margin: 0.2rem 0;
+  }
+  .freeform-section-prose blockquote {
+    margin: 0.9rem 0;
+    padding-left: 0.9rem;
+    border-left: 2px solid var(--color-border);
+    color: var(--color-muted);
+    font-style: italic;
+  }
+  .freeform-section-prose code {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 0.92em;
+  }
+  .freeform-section-permalink {
+    display: inline-block;
+    margin-top: 0.6rem;
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--color-border);
+    padding-bottom: 1px;
+  }
+  .freeform-section-permalink:hover {
+    color: var(--type-view);
+    border-bottom-color: var(--type-view);
   }
 `;

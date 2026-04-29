@@ -1330,7 +1330,8 @@ async def async_main():
         dest="view_variant",
         default=None,
         help="View variant (default: 'sectioned'). Options: 'sectioned' "
-        "(importance-scored items), 'judgement' (flat NL judgement).",
+        "(importance-scored items), 'judgement' (flat NL judgement), "
+        "'freeform' (four long-form prose sections).",
     )
     parser.add_argument(
         "--ingest-num-claims",

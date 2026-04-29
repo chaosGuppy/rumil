@@ -31,6 +31,52 @@ DEFAULT_VIEW_SECTIONS: list[str] = [
     "other",
 ]
 
+FREEFORM_VIEW_SECTIONS: list[str] = [
+    "framing_and_interpretation",
+    "assertions_and_deductions",
+    "research_direction",
+    "returns_to_further_research",
+]
+
+FREEFORM_VIEW_SECTION_BRIEFS: dict[str, str] = {
+    "framing_and_interpretation": (
+        "Write the **framing_and_interpretation** section.\n\n"
+        "What is this question really about? At a very high level, what is "
+        "important to consider when investigating it? Are there frames that "
+        "might seem important superficially but, on deeper reflection, should "
+        "be deprioritised? Are there ambiguities in the question, and if so, "
+        "what are the most helpful resolutions?"
+    ),
+    "assertions_and_deductions": (
+        "Write the **assertions_and_deductions** section.\n\n"
+        "What can we state about the answer to this question, and at what "
+        "confidence level? Reasoning carefully and deeply from the available "
+        "(likely uncertain) evidence, claims, and crystallised knowledge, "
+        "what can we derive? Use language that carefully and faithfully "
+        "conveys uncertainty, and show how that uncertainty propagates "
+        "through your reasoning. Do not introduce meaningless probabilities "
+        "over high-level, undefined propositions; only reason in terms of "
+        "probabilities when the proposition is precise enough that the "
+        "assignment is genuinely meaningful. Otherwise, prefer language like "
+        '"confident", "uncertain", "would expect to update upon further '
+        'research".'
+    ),
+    "research_direction": (
+        "Write the **research_direction** section.\n\n"
+        "What cruxes and key unknowns would, if investigated, most improve "
+        "our answer to the question?"
+    ),
+    "returns_to_further_research": (
+        "Write the **returns_to_further_research** section.\n\n"
+        "How much reducible uncertainty remains in the question? How far "
+        'are we from a "perfect" (i.e. maximally-uncertainty-reduced) '
+        "answer? And what does the curve of returns to further research "
+        "look like? Is it flat for a long time but spikes at high enough "
+        "effort? Does it saturate quickly? Linear for a long time before "
+        "saturating? Or something else?"
+    ),
+}
+
 
 def compute_round_budget(total: int, used: int) -> int:
     """Decide how much budget to allocate to a single prioritization round.

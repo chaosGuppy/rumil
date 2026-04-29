@@ -526,3 +526,68 @@ def make_explore_subgraph_tool(
         input_schema=_ExploreSubgraphInput.model_json_schema(),
         fn=fn,
     )
+
+
+_IMPACT_FILTER_WALK_LINK_TYPES = frozenset(
+    {
+        LinkType.CHILD_QUESTION,
+        LinkType.CONSIDERATION,
+        LinkType.ANSWERS,
+        LinkType.SUMMARIZES,
+        LinkType.DEPENDS_ON,
+        LinkType.RELATED,
+        LinkType.VARIANT,
+    }
+)
+_IMPACT_FILTER_EVIDENCE_TYPES = frozenset({PageType.CLAIM, PageType.JUDGEMENT, PageType.SUMMARY})
+
+
+async def bfs_evidence_pages_within_distance(
+    root_id: str,
+    db: DB,
+    max_distance: int,
+) -> list[Page]:
+    """Active evidence pages reachable within *max_distance* hops from *root_id*.
+
+    Walks the page graph undirected through CHILD_QUESTION / CONSIDERATION /
+    ANSWERS / SUMMARIZES / DEPENDS_ON / RELATED / VARIANT edges, capped at
+    *max_distance* hops. Returns claim / judgement / summary pages only,
+    excluding superseded pages and pages with `hidden=True`.
+
+    O(max_distance) DB round trips: one batched outgoing-links and one batched
+    incoming-links query per BFS layer, plus one batched page fetch.
+    """
+    visited: set[str] = {root_id}
+    frontier: list[str] = [root_id]
+    out: list[Page] = []
+    for _ in range(max_distance):
+        outgoing = await db.get_links_from_many(frontier)
+        incoming = await db.get_links_to_many(frontier)
+        next_ids: set[str] = set()
+        for pid in frontier:
+            for l in outgoing.get(pid, []):
+                if l.link_type in _IMPACT_FILTER_WALK_LINK_TYPES and l.to_page_id not in visited:
+                    next_ids.add(l.to_page_id)
+            for l in incoming.get(pid, []):
+                if l.link_type in _IMPACT_FILTER_WALK_LINK_TYPES and l.from_page_id not in visited:
+                    next_ids.add(l.from_page_id)
+        if not next_ids:
+            break
+        fetched = await db.get_pages_by_ids(list(next_ids))
+        # Mark all reachable pages visited so we don't revisit them at greater
+        # depth, but only collect evidence pages into the output.
+        for pid in next_ids:
+            visited.add(pid)
+        layer_evidence: list[Page] = []
+        for pid in next_ids:
+            p = fetched.get(pid)
+            if p is None or p.is_superseded or p.hidden:
+                continue
+            if p.page_type in _IMPACT_FILTER_EVIDENCE_TYPES:
+                layer_evidence.append(p)
+        out.extend(layer_evidence)
+        # The next BFS layer expands from EVERY active reachable page (not just
+        # evidence) so question-tree nodes can pull in their attached
+        # considerations on the next hop.
+        frontier = [pid for pid, p in fetched.items() if p is not None and not p.is_superseded]
+    return out

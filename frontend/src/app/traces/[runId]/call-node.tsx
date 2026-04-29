@@ -1468,6 +1468,40 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           ))}
         </div>
       )}
+      {event.event === "impact_filter" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">candidates</span>
+            <span className="trace-kv-value">
+              {event.candidates_accepted} accepted / {event.candidates_scored} scored
+              {event.final_threshold_percentile
+                ? ` (threshold p${event.final_threshold_percentile})`
+                : ""}
+            </span>
+          </div>
+          <div className="trace-kv">
+            <span className="trace-kv-key">chars</span>
+            <span className="trace-kv-value">
+              {event.inner_context_chars.toLocaleString()} inner
+              {" + "}
+              {event.accepted_chars.toLocaleString()} added
+            </span>
+          </div>
+          <div className="trace-kv">
+            <span className="trace-kv-key">scoring</span>
+            <span className="trace-kv-value">{event.scoring_model}</span>
+          </div>
+          {event.paring_triggered && (
+            <div className="trace-kv">
+              <span className="trace-kv-key">paring</span>
+              <span className="trace-kv-value">
+                {event.paring_kept_pages ?? "?"} pages, {(event.paring_kept_chars ?? 0).toLocaleString()} chars
+                {event.pare_model ? ` (${event.pare_model})` : ""}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });

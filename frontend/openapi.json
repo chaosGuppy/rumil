@@ -2393,6 +2393,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/QuestionDedupeEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ImpactFilterEventOut"
                       }
                     ],
                     "discriminator": {
@@ -2429,7 +2432,8 @@
                         "phase_skipped": "#/components/schemas/PhaseSkippedEventOut",
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
-                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut"
+                        "question_dedupe": "#/components/schemas/QuestionDedupeEventOut",
+                        "impact_filter": "#/components/schemas/ImpactFilterEventOut"
                       }
                     }
                   },
@@ -3584,8 +3588,10 @@
           "ab_eval_summary",
           "run_eval",
           "create_view",
+          "create_view_max_effort",
           "global_prioritization",
           "update_view",
+          "update_view_max_effort",
           "generate_spec",
           "generate_artefact",
           "critique_artefact",
@@ -4803,6 +4809,109 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImpactFilterEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "impact_filter",
+            "title": "Event",
+            "default": "impact_filter"
+          },
+          "inner_context_chars": {
+            "type": "integer",
+            "title": "Inner Context Chars",
+            "default": 0
+          },
+          "paring_triggered": {
+            "type": "boolean",
+            "title": "Paring Triggered",
+            "default": false
+          },
+          "paring_kept_pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paring Kept Pages"
+          },
+          "paring_kept_chars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paring Kept Chars"
+          },
+          "candidates_scored": {
+            "type": "integer",
+            "title": "Candidates Scored",
+            "default": 0
+          },
+          "candidates_accepted": {
+            "type": "integer",
+            "title": "Candidates Accepted",
+            "default": 0
+          },
+          "accepted_chars": {
+            "type": "integer",
+            "title": "Accepted Chars",
+            "default": 0
+          },
+          "final_threshold_percentile": {
+            "type": "integer",
+            "title": "Final Threshold Percentile",
+            "default": 0
+          },
+          "scoring_model": {
+            "type": "string",
+            "title": "Scoring Model",
+            "default": ""
+          },
+          "pare_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pare Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "inner_context_chars",
+          "paring_triggered",
+          "paring_kept_pages",
+          "paring_kept_chars",
+          "candidates_scored",
+          "candidates_accepted",
+          "accepted_chars",
+          "final_threshold_percentile",
+          "scoring_model",
+          "pare_model"
+        ],
+        "title": "ImpactFilterEventOut"
       },
       "JobListItem": {
         "properties": {
@@ -6292,6 +6401,17 @@
             "type": "boolean",
             "title": "Auto Self Improve",
             "default": false
+          },
+          "improvement_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Improvement Instructions"
           },
           "available_moves": {
             "anyOf": [

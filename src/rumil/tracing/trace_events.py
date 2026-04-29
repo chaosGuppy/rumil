@@ -332,6 +332,20 @@ class QuestionDedupeEvent(BaseModel):
     decision_reasoning: str = ""
 
 
+class ImpactFilterEvent(BaseModel):
+    event: Literal["impact_filter"] = "impact_filter"
+    inner_context_chars: int = 0
+    paring_triggered: bool = False
+    paring_kept_pages: int | None = None
+    paring_kept_chars: int | None = None
+    candidates_scored: int = 0
+    candidates_accepted: int = 0
+    accepted_chars: int = 0
+    final_threshold_percentile: int = 0
+    scoring_model: str = ""
+    pare_model: str | None = None
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -364,6 +378,7 @@ TraceEvent = Annotated[
     | PhaseSkippedEvent
     | GlobalPhaseCompletedEvent
     | UpdateViewPhaseCompletedEvent
-    | QuestionDedupeEvent,
+    | QuestionDedupeEvent
+    | ImpactFilterEvent,
     Field(discriminator="event"),
 ]

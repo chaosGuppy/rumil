@@ -1858,6 +1858,7 @@ class DB:
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
+        call_params: dict | None = None,
     ) -> Call:
         log.debug(
             "create_call: type=%s, scope=%s, parent=%s, budget=%s",
@@ -1876,6 +1877,7 @@ class DB:
             context_page_ids=list(context_page_ids) if context_page_ids else [],
             sequence_id=sequence_id,
             sequence_position=sequence_position,
+            call_params=call_params,
         )
         if call_id is not None:
             call.id = call_id

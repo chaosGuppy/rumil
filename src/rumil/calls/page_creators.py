@@ -276,6 +276,7 @@ class MultiRoundLoop(WorkspaceUpdater):
             metadata=meta,
             db=infra.db,
             cache=True,
+            parse_manually=True,
         )
         if result.parsed:
             log.info(

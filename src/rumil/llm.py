@@ -6,7 +6,8 @@ Exports:
   - call_anthropic_api: Anthropic API call with retries and optional exchange logging
   - call_google_api: Vertex AI (google-genai) call with retries and optional exchange logging
   - text_call: plain text call (dispatches by model name)
-  - structured_call: structured output via messages.parse / response_schema
+  - structured_call: structured output via messages.parse / response_schema, or via
+        messages.create with manual JSON parsing when parse_manually=True
 
 Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
             LLMExchangeMetadata.
@@ -997,6 +998,7 @@ async def _structured_call_cached(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     model: str | None = None,
+    cache: bool = True,
 ) -> StructuredCallResult[T]:
     """Structured output via create() + manual JSON parsing for cache reuse.
 
@@ -1020,7 +1022,7 @@ async def _structured_call_cached(
             tools=tools,
             metadata=metadata,
             db=db,
-            cache=True,
+            cache=cache,
         )
         response_text = ""
         for block in api_resp.message.content:
@@ -1218,8 +1220,15 @@ async def _structured_call_parse(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    cache: bool = False,
 ) -> StructuredCallResult[T]:
-    """Structured output via messages.parse (no cache sharing with create)."""
+    """Structured output via messages.parse.
+
+    messages.parse adds ``output_config.format`` to the request, which puts
+    these calls in a different cache namespace than plain ``messages.create``
+    calls (agent loops, ``call_api`` directly). Use ``parse_manually=True``
+    in ``structured_call`` to share cache with create-mode calls.
+    """
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     model = model or settings.model
@@ -1229,7 +1238,7 @@ async def _structured_call_parse(
         "model": model,
         "max_tokens": max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
         "system": system_prompt,
-        "messages": msg_list,
+        "messages": _add_cache_breakpoint(msg_list) if cache else msg_list,
     }
     if _supports_sampling_params(model):
         parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
@@ -1327,6 +1336,7 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    parse_manually: bool = False,
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
@@ -1345,6 +1355,7 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    parse_manually: bool = False,
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
@@ -1363,6 +1374,7 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    parse_manually: bool = False,
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
@@ -1380,15 +1392,27 @@ async def structured_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    parse_manually: bool = False,
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
 ) -> StructuredCallResult[T] | StructuredCallResult[BaseModel]:
     """Run an LLM call that returns structured output matching response_model.
 
-    When cache=True, uses messages.create with manual JSON parsing so the
-    request shares the same cache namespace as agent loop calls. Otherwise
-    uses messages.parse with output_format for guaranteed schema adherence.
+    Two orthogonal flags control behavior:
+
+    - ``cache``: when True, places a cache breakpoint on the last message
+      so the request can be cached/read by subsequent calls.
+    - ``parse_manually``: when True, uses ``messages.create`` with the
+      JSON schema injected into the user message and validates the
+      response with pydantic. This puts the call in the same cache
+      namespace as agent-loop ``messages.create`` calls. Set this when
+      the structured call is part of a sequence whose other calls use
+      ``messages.create`` (e.g. fruit checks / closing reviews that share
+      tools and conversation history with a preceding agent loop). When
+      False (default), uses ``messages.parse`` with ``output_format``
+      for native schema adherence — preferable for pure structured-call
+      sequences since the API enforces the schema.
 
     Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
     Pass `tools` to share cache prefix with agent calls.
@@ -1401,7 +1425,7 @@ async def structured_call(
     config for tasks that don't benefit from reasoning. For mostly-mechanical
     text generation (like writing prose from a complete spec) thinking just
     eats the max_tokens budget without improving quality. Only takes effect
-    on the cache=False path.
+    on the parse path (``parse_manually=False``).
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
@@ -1412,9 +1436,10 @@ async def structured_call(
     model_name = response_model.__name__ if response_model else "None"
     effective_model = model or get_settings().model
     log.debug(
-        "structured_call: response_model=%s, cache=%s, model=%s",
+        "structured_call: response_model=%s, cache=%s, parse_manually=%s, model=%s",
         model_name,
         cache,
+        parse_manually,
         effective_model,
     )
 
@@ -1432,15 +1457,15 @@ async def structured_call(
             model=effective_model,
         )
 
-    if cache and response_model is not None:
+    if parse_manually and response_model is not None:
         if max_tokens is not None:
             raise ValueError(
-                "max_tokens is not supported on the cached (cache=True) path yet; "
+                "max_tokens is not supported on the parse_manually=True path yet; "
                 "plumb it through call_anthropic_api if you need it."
             )
         if disable_thinking:
             raise ValueError(
-                "disable_thinking is not supported on the cached (cache=True) path yet."
+                "disable_thinking is not supported on the parse_manually=True path yet."
             )
         return await _structured_call_cached(
             system_prompt,
@@ -1450,6 +1475,7 @@ async def structured_call(
             metadata=metadata,
             db=db,
             model=model,
+            cache=cache,
         )
     return await _structured_call_parse(
         system_prompt,
@@ -1462,4 +1488,5 @@ async def structured_call(
         model=model,
         max_tokens=max_tokens,
         disable_thinking=disable_thinking,
+        cache=cache,
     )

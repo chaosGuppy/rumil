@@ -259,6 +259,7 @@ async def _self_assessment(
         metadata=meta,
         db=infra.db,
         cache=True,
+        parse_manually=True,
     )
     review_data = review_result.parsed.model_dump() if review_result.parsed else {}
 

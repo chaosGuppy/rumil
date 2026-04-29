@@ -1,9 +1,13 @@
-"""Report staleness of cached completions / paraphrases / judgments.
+"""Report staleness of cached completions / judgments in versus_*.
 
 After an essay re-import (any change that bumps ``prefix_config_hash``)
-the existing rows in ``data/*.jsonl`` reference the OLD essay markdown.
-They aren't deleted — they just no longer reflect what ``prepare()``
-would produce today. Topup runs against stale rows judge old text.
+the existing rows in versus_texts / versus_judgments reference the OLD
+essay markdown. They aren't deleted — they just no longer reflect what
+``prepare()`` would produce today. Topup runs against stale rows judge
+old text.
+
+Paraphrase tracking is deferred (paraphrase generation is not currently
+wired in this branch); when it comes back add a third section here.
 
 Usage:
 
@@ -17,7 +21,6 @@ import argparse
 import json
 import pathlib
 import sys
-from collections import Counter
 
 VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -33,10 +36,8 @@ except ModuleNotFoundError:
     )
     raise SystemExit(1)
 
-from versus import config, jsonl, judge, prepare  # noqa: E402
+from versus import config, judge, prepare, versus_db  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
-from versus import mainline as versus_mainline  # noqa: E402
-from versus import paraphrase as _paraphrase  # noqa: E402
 
 
 def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
@@ -90,14 +91,14 @@ def _current_prefix_hashes(
     return out
 
 
-def _current_paraphrase_sampling_hashes(cfg: config.Config) -> set[str]:
-    return {_paraphrase.sampling_hash(m) for m in _paraphrase.paraphrase_models(cfg)}
+def _scan_texts() -> list[dict]:
+    client = versus_db.get_client()
+    return list(versus_db.iter_texts(client))
 
 
-def _scan_jsonl(path: pathlib.Path) -> list[dict]:
-    if not path.is_file():
-        return []
-    return list(jsonl.read(path))
+def _scan_judgments() -> list[dict]:
+    client = versus_db.get_client()
+    return list(versus_db.iter_judgments(client))
 
 
 def _completions_per_variant(
@@ -116,7 +117,7 @@ def _completions_per_variant(
     unknown = 0
     for r in rows:
         eid = r.get("essay_id")
-        ph = r.get("prefix_config_hash")
+        ph = r.get("prefix_hash")
         if not any(eid in m for m in variant_hashes.values()):
             unknown += 1
             continue
@@ -129,20 +130,6 @@ def _completions_per_variant(
         if not matched:
             orphaned += 1
     return per_variant, orphaned, unknown
-
-
-def _stale_paraphrases(rows: list[dict], current_samp: set[str], known_essays: set[str]) -> Counter:
-    c = Counter({"current": 0, "stale_prompt": 0, "unknown_essay": 0})
-    for r in rows:
-        eid = r.get("essay_id")
-        sh = r.get("sampling_hash")
-        if eid not in known_essays:
-            c["unknown_essay"] += 1
-        elif sh not in current_samp:
-            c["stale_prompt"] += 1
-        else:
-            c["current"] += 1
-    return c
 
 
 def _judgments_per_variant(
@@ -164,7 +151,7 @@ def _judgments_per_variant(
     unknown = 0
     for r in rows:
         eid = r.get("essay_id")
-        ph = r.get("prefix_config_hash")
+        ph = r.get("prefix_hash")
         if not any(eid in m for m in variant_hashes.values()):
             unknown += 1
             continue
@@ -198,16 +185,13 @@ def main() -> None:
         sys.exit(1)
     variants = prepare.active_prefix_configs(cfg)
     variant_hashes = {v.id: _current_prefix_hashes(cfg, essays, prefix_cfg=v) for v in variants}
-    current_samp = _current_paraphrase_sampling_hashes(cfg)
 
-    completions = _scan_jsonl(VERSUS_ROOT / "data" / "completions.jsonl")
-    paraphrases = _scan_jsonl(VERSUS_ROOT / "data" / "paraphrases.jsonl")
-    judgments = _scan_jsonl(VERSUS_ROOT / "data" / "judgments.jsonl")
+    completions = _scan_texts()
+    judgments = _scan_judgments()
 
     comp_per_variant, comp_orphaned, comp_unknown = _completions_per_variant(
         completions, variant_hashes
     )
-    para_counts = _stale_paraphrases(paraphrases, current_samp, set(essays))
     judg_current, judg_prompt_stale, judg_orphaned, judg_unknown = _judgments_per_variant(
         judgments, variant_hashes
     )
@@ -221,7 +205,6 @@ def main() -> None:
             "unknown_essay": comp_unknown,
             "total": len(completions),
         },
-        "paraphrases": dict(para_counts),
         "judgments": {
             "per_variant_current": judg_current,
             "per_variant_prompt_stale": judg_prompt_stale,
@@ -234,12 +217,7 @@ def main() -> None:
     if args.json:
         print(json.dumps(payload, indent=2))
     else:
-        any_stale = (
-            comp_orphaned
-            or para_counts["stale_prompt"]
-            or judg_orphaned
-            or sum(judg_prompt_stale.values())
-        )
+        any_stale = comp_orphaned or judg_orphaned or sum(judg_prompt_stale.values())
         if any_stale:
             print("=" * 60)
             print("WARNING: stale cached rows detected")
@@ -261,12 +239,6 @@ def main() -> None:
             f"orphaned={comp_orphaned:5d}  unknown_essay={comp_unknown:3d}"
         )
         print(
-            f"  paraphrases total={sum(para_counts.values()):5d}  "
-            f"current={para_counts['current']:5d}  "
-            f"stale_prompt={para_counts['stale_prompt']:5d}  "
-            f"unknown_essay={para_counts['unknown_essay']:3d}"
-        )
-        print(
             f"  judgments   total={judg_total:5d}  "
             f"orphaned={judg_orphaned:5d}  unknown_essay={judg_unknown:3d}"
         )
@@ -277,7 +249,6 @@ def main() -> None:
                 "use an outdated judge prompt. To regenerate against current "
                 "essays + prompts, run:"
             )
-            print("  uv run python scripts/run_paraphrases.py")
             print("  uv run python scripts/run_completions.py")
             print("  uv run python scripts/run_judgments.py")
             print("  uv run python scripts/run_rumil_judgments.py  # rumil-style judges")

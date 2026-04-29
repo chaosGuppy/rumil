@@ -45,7 +45,6 @@ from rumil.tracing.trace_events import (
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
     DispatchTraceItem,
-    ErrorEvent,
     PhaseSkippedEvent,
     ScoringCompletedEvent,
     SubquestionScoreItem,
@@ -121,6 +120,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             parent_call_id=parent_call_id,
             budget_allocated=initial_prioritization_budget,
             workspace=Workspace.PRIORITIZATION,
+            call_params={"phase": "initial"},
         )
         self._call_id = p_call.id
         self._initial_call = p_call
@@ -162,7 +162,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                     round_budget = effective
                 else:
                     round_budget = await self._paced_budget(effective)
-                result = await self._get_next_batch(
+                result = await self.get_dispatches(
                     root_question_id,
                     round_budget,
                     total_remaining=effective,
@@ -171,40 +171,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 if not result.dispatch_sequences and not result.children:
                     break
 
-                tasks: list = []
-                if result.dispatch_sequences:
-                    tasks.append(
-                        self._run_sequences(
-                            result.dispatch_sequences,
-                            root_question_id,
-                            result.call_id,
-                        )
-                    )
-                for child, child_qid in result.children:
-                    tasks.append(child.run(child_qid))
-
-                if not tasks:
+                results = await self.execute_dispatches(result, root_question_id)
+                if not results:
                     break
-
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for r in results:
-                    if isinstance(r, Exception):
-                        log.error("Concurrent dispatch failed: %s", r, exc_info=r)
-                        if result.call_id:
-                            trace = CallTrace(
-                                result.call_id,
-                                self.db,
-                                broadcaster=self.broadcaster,
-                            )
-                            await trace.record(
-                                ErrorEvent(
-                                    message=(
-                                        f"Concurrent dispatch failed: {type(r).__name__}: {r}"
-                                    ),
-                                    phase="dispatch",
-                                )
-                            )
-
                 if not any(not isinstance(r, Exception) for r in results):
                     break
 
@@ -296,14 +265,16 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             "Initial prioritization skipped — question already has a judgement or view.",
         )
 
-    async def _get_next_batch(
+    async def get_dispatches(
         self,
-        question_id: str,
+        root_question_id: str,
         budget: int,
+        *,
         parent_call_id: str | None = None,
         total_remaining: int | None = None,
         last_call: bool = False,
     ) -> PrioritizationResult:
+        question_id = root_question_id
         if self._invocation == 0:
             self._invocation += 1
             if await self._needs_initial_prioritization(question_id):
@@ -369,6 +340,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 workspace=Workspace.PRIORITIZATION,
                 sequence_id=self._sequence_id,
                 sequence_position=self._seq_position if self._sequence_id else None,
+                call_params={"phase": "initial"},
             )
             if self._sequence_id is not None:
                 self._seq_position += 1
@@ -493,6 +465,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             workspace=Workspace.PRIORITIZATION,
             sequence_id=self._sequence_id,
             sequence_position=self._seq_position if self._sequence_id else None,
+            call_params={"phase": "main_phase"},
         )
         if self._sequence_id is not None:
             self._seq_position += 1
@@ -613,18 +586,22 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         # the LLM dispatching, peer cycles can only consume more from the pool.
         # Using a fresh snapshot ensures the budget line and the Coordination
         # context section agree on what's available.
+        # Skip the bailout when the pool was never registered (e.g. callers
+        # that invoke get_dispatches outside the run() loop, like
+        # scripts/run_prio.py): "no pool" must not look like "drained to zero".
         fresh_pool = await self.db.qbp_get(question_id)
-        budget = min(budget, max(fresh_pool.remaining, 0))
-        # If the pool drained between top-of-loop and now (i.e. peer cycles
-        # consumed our slice), bail before calling the LLM with budget 0/-1.
-        # The outer loop will break on the empty result.
-        if budget <= 0:
-            await mark_call_completed(
-                p_call,
-                self.db,
-                "Pool drained by peer cycles before this round could plan.",
-            )
-            return PrioritizationResult(dispatch_sequences=[], call_id=p_call.id)
+        if fresh_pool.registered:
+            budget = min(budget, max(fresh_pool.remaining, 0))
+            # If the pool drained between top-of-loop and now (i.e. peer cycles
+            # consumed our slice), bail before calling the LLM with budget 0/-1.
+            # The outer loop will break on the empty result.
+            if budget <= 0:
+                await mark_call_completed(
+                    p_call,
+                    self.db,
+                    "Pool drained by peer cycles before this round could plan.",
+                )
+                return PrioritizationResult(dispatch_sequences=[], call_id=p_call.id)
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,

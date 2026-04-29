@@ -74,12 +74,19 @@ class QuestionBudgetPool:
     their assigned budget to the pool and draw from it together. The pool
     is the authoritative stop signal for prio loops; the run-level budget
     remains the authoritative ceiling.
+
+    ``registered=False`` indicates that no pool row exists — the caller
+    bypassed ``qbp_register`` (e.g. ``scripts/run_prio.py`` running
+    ``get_dispatches`` outside ``run()``). Bailout checks should treat
+    this as "no pool gate" rather than "drained to zero", to match
+    ``qbp_consume``'s sentinel behaviour for the same case.
     """
 
     question_id: str
     contributed: int
     consumed: int
     active_calls: int
+    registered: bool = True
 
     @property
     def remaining(self) -> int:
@@ -1851,6 +1858,7 @@ class DB:
         call_id: str | None = None,
         sequence_id: str | None = None,
         sequence_position: int | None = None,
+        call_params: dict | None = None,
     ) -> Call:
         log.debug(
             "create_call: type=%s, scope=%s, parent=%s, budget=%s",
@@ -1869,6 +1877,7 @@ class DB:
             context_page_ids=list(context_page_ids) if context_page_ids else [],
             sequence_id=sequence_id,
             sequence_position=sequence_position,
+            call_params=call_params,
         )
         if call_id is not None:
             call.id = call_id
@@ -2006,6 +2015,7 @@ class DB:
                 contributed=0,
                 consumed=0,
                 active_calls=0,
+                registered=False,
             )
         r = rows[0]
         return QuestionBudgetPool(

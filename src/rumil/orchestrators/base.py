@@ -8,6 +8,7 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from enum import StrEnum
 
 from rumil.calls.stages import CallRunner
 from rumil.constants import SMOKE_TEST_MAX_ROUNDS, compute_round_budget
@@ -19,6 +20,7 @@ from rumil.models import (
     Dispatch,
 )
 from rumil.orchestrators.common import (
+    PrioritizationResult,
     _create_broadcaster,
 )
 from rumil.orchestrators.dispatch_handlers import (
@@ -28,9 +30,22 @@ from rumil.orchestrators.dispatch_handlers import (
 from rumil.settings import get_settings
 from rumil.tracing import observe, propagate_attributes
 from rumil.tracing.broadcast import Broadcaster
-from rumil.tracing.trace_events import DispatchExecutedEvent
-from rumil.tracing.tracer import get_trace
+from rumil.tracing.trace_events import DispatchExecutedEvent, ErrorEvent
+from rumil.tracing.tracer import CallTrace, get_trace
 from rumil.views import get_active_view
+
+
+class OrchestrationStage(StrEnum):
+    """Stages of a single orchestrator round.
+
+    Used by scripts to truncate the round at a specific boundary —
+    e.g. run only ``get_dispatches`` to inspect what would be dispatched
+    without actually executing it.
+    """
+
+    GET_DISPATCHES = "get_dispatches"
+    EXECUTE_DISPATCHES = "execute_dispatches"
+
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +99,12 @@ class BaseOrchestrator(ABC):
         # budget consumption debits this question's pool. None for
         # orchestrators outside a per-question prio cycle.
         self.pool_question_id: str | None = None
+        # Test/dev knob: when True, ``execute_dispatches`` runs only the
+        # scout dispatches (call_type starting with ``scout_``) from the
+        # selected dispatches and skips recursive children. Lets callers
+        # like scripts/run_prio.py spend on scouts to inspect their
+        # outputs without firing off the rest of the planned work.
+        self.run_initial_scouts_only: bool = False
 
     async def _pacing_params(self) -> tuple[int, int]:
         """Return (total, used) for budget pacing.
@@ -340,6 +361,100 @@ class BaseOrchestrator(ABC):
 
         sequence_results = await asyncio.gather(*tasks)
         return any(sequence_results)
+
+    async def get_dispatches(
+        self,
+        root_question_id: str,
+        budget: int,
+        *,
+        parent_call_id: str | None = None,
+        total_remaining: int | None = None,
+        last_call: bool = False,
+    ) -> PrioritizationResult:
+        """Run the prioritization step and return the planned dispatches.
+
+        Round-based orchestrators (TwoPhase, ClaimInvestigation, Experimental)
+        implement this as their per-round prioritization. Calling this without
+        ``execute_dispatches`` lets callers inspect what would be dispatched
+        without actually running the calls. Orchestrators with a different
+        shape (e.g. GlobalPrioOrchestrator) leave the default which raises.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement the "
+            "get_dispatches / execute_dispatches stage model."
+        )
+
+    async def execute_dispatches(
+        self,
+        result: PrioritizationResult,
+        root_question_id: str,
+    ) -> list:
+        """Run sequences and recursive children from ``result`` concurrently.
+
+        Returns the gather result list (with exceptions preserved). Returns
+        an empty list when there is nothing to execute. Errors are logged
+        and recorded on the prioritization call's trace if ``result.call_id``
+        is set; the caller decides whether to break based on the returned
+        list (typically: stop when it is empty or all entries are exceptions).
+
+        When ``self.run_initial_scouts_only`` is True, ``result`` is filtered
+        to scout-only sequences (every dispatch's ``call_type`` starts with
+        ``scout_``) and recursive children are skipped — useful for
+        inspecting scout outputs without firing off downstream work.
+        """
+        if self.run_initial_scouts_only:
+            scout_sequences = [
+                seq
+                for seq in result.dispatch_sequences
+                if seq and all(d.call_type.value.startswith("scout_") for d in seq)
+            ]
+            skipped = len(result.dispatch_sequences) - len(scout_sequences)
+            if skipped or result.children:
+                log.info(
+                    "run_initial_scouts_only: kept %d scout sequence(s); "
+                    "dropped %d non-scout sequence(s) and %d recursive child(ren).",
+                    len(scout_sequences),
+                    skipped,
+                    len(result.children),
+                )
+            result = PrioritizationResult(
+                dispatch_sequences=scout_sequences,
+                call_id=result.call_id,
+                children=(),
+            )
+
+        tasks: list = []
+        if result.dispatch_sequences:
+            tasks.append(
+                self._run_sequences(
+                    result.dispatch_sequences,
+                    root_question_id,
+                    result.call_id,
+                )
+            )
+        for child, child_qid in result.children:
+            tasks.append(child.run(child_qid))
+
+        if not tasks:
+            return []
+
+        gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in gather_results:
+            if isinstance(r, Exception):
+                log.error("Concurrent dispatch failed: %s", r, exc_info=r)
+                if result.call_id:
+                    trace = CallTrace(
+                        result.call_id,
+                        self.db,
+                        broadcaster=self.broadcaster,
+                    )
+                    await trace.record(
+                        ErrorEvent(
+                            message=(f"Concurrent dispatch failed: {type(r).__name__}: {r}"),
+                            phase="dispatch",
+                        )
+                    )
+        return gather_results
 
     @abstractmethod
     async def run(self, root_question_id: str) -> None: ...

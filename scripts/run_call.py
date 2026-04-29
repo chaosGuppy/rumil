@@ -7,6 +7,13 @@ Usage:
     # Find considerations on an existing question by ID
     uv run python scripts/run_call.py find-considerations --question-id <UUID>
 
+    # Run the same call against several questions in parallel
+    uv run python scripts/run_call.py find-considerations --question-id <UUID1> <UUID2> <UUID3>
+
+    # Mix existing question ids with new question texts; everything runs in parallel
+    uv run python scripts/run_call.py find-considerations \\
+        "Why is water wet?" "Is the sky blue?" --question-id <UUID1> <UUID2>
+
     # Assess an existing question
     uv run python scripts/run_call.py assess --question-id <UUID>
 
@@ -30,12 +37,18 @@ If --question-id points at a question staged under another run, that run's run_i
 is adopted automatically so the call continues inside the staged lineage (budget
 is added to rather than clobbered; no new `runs` row is created). Passing
 --no-stage against a staged question is rejected.
+
+When multiple targets are passed (any mix of --question-id values and positional
+question texts), each gets its own run_id / DB / staging adoption logic and the
+calls execute concurrently via asyncio.gather.
 """
 
 import argparse
 import asyncio
 import logging
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
@@ -181,6 +194,126 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         print(f"Unknown call type: {call_type}")
 
 
+@dataclass
+class _TaskPlan:
+    """Resolved per-target state, populated by ``_prepare_task`` before execution."""
+
+    db: DB
+    question_id: str
+    headline: str
+    run_id: str
+    adopted_run_id: str | None
+    is_new_question: bool
+    frontend_url: str
+    langfuse_url: str | None
+
+
+async def _prepare_task(
+    args: argparse.Namespace,
+    *,
+    question_id: str | None,
+    question_text: str | None,
+) -> _TaskPlan | None:
+    """Resolve staging/project/question/budget/run-row for one target.
+
+    Runs quietly (no logging.basicConfig yet) so the gathered plan list can be
+    printed as a clean header before the noisy execution phase begins.
+    """
+    settings = get_settings()
+    workspace = args.workspace
+    staged_flag = not args.no_stage
+
+    adopted_run_id: str | None = None
+    if question_id:
+        probe = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod, staged=False)
+        info = await probe.get_page_staging_info(question_id)
+        if info is None:
+            print(f"Question {question_id} not found.")
+            return None
+        is_staged, owning_run_id, _owning_project_id = info
+        if is_staged:
+            if not staged_flag:
+                print(
+                    f"Question {question_id[:8]} is staged under run {owning_run_id[:8]}; "
+                    "cannot run with --no-stage. Drop --no-stage to adopt the staged run."
+                )
+                return None
+            adopted_run_id = owning_run_id
+
+    run_id = adopted_run_id or str(uuid.uuid4())
+    db = await DB.create(run_id=run_id, prod=args.prod, staged=staged_flag)
+    project = await db.get_or_create_project(workspace)
+    db.project_id = project.id
+
+    is_new_question = False
+    if question_id:
+        page = await db.get_page(question_id)
+        if not page:
+            print(f"Question {question_id} not found.")
+            return None
+        if page.project_id and page.project_id != db.project_id:
+            db.project_id = page.project_id
+        resolved_text = page.headline
+        resolved_qid = question_id
+    else:
+        assert question_text is not None
+        resolved_text = question_text
+        resolved_qid = await create_root_question(resolved_text, db)
+        is_new_question = True
+
+    if adopted_run_id:
+        await db.add_budget(args.budget)
+    else:
+        await db.init_budget(args.budget)
+
+    name = args.name or resolved_text
+    config = settings.capture_config()
+    if not adopted_run_id:
+        await db.create_run(name=name, question_id=resolved_qid, config=config)
+
+    langfuse_url: str | None = None
+    if get_langfuse() is not None:
+        lf_base = settings.langfuse_base_url.rstrip("/")
+        langfuse_url = f"{lf_base}/sessions?sessionId={db.run_id}"
+
+    return _TaskPlan(
+        db=db,
+        question_id=resolved_qid,
+        headline=resolved_text,
+        run_id=db.run_id,
+        adopted_run_id=adopted_run_id,
+        is_new_question=is_new_question,
+        frontend_url=settings.frontend_url,
+        langfuse_url=langfuse_url,
+    )
+
+
+def _print_plan_header(plans: Sequence[_TaskPlan], *, title: str = "Targets") -> None:
+    if not plans:
+        return
+    print()
+    print(f"=== {title} ({len(plans)}) ===")
+    for p in plans:
+        if p.is_new_question:
+            kind = "NEW    "
+        elif p.adopted_run_id:
+            kind = "ADOPTED"
+        else:
+            kind = "EXIST  "
+        headline = p.headline if len(p.headline) <= 100 else p.headline[:97] + "..."
+        print(f"  [{kind}] q={p.question_id[:8]} run={p.run_id[:8]}  {headline}")
+        print(f"           Trace: {p.frontend_url}/traces/{p.run_id}")
+        if p.langfuse_url:
+            print(f"           Langfuse: {p.langfuse_url}")
+    print()
+
+
+async def _execute_task(args: argparse.Namespace, plan: _TaskPlan) -> None:
+    print(f"Running {args.call_type} on {plan.question_id[:8]}...")
+    await run_call(args, plan.db, plan.question_id)
+    print(f"Done with {plan.question_id[:8]}.")
+
+
 async def run(args: argparse.Namespace) -> None:
     settings = get_settings()
     if args.available_moves is not None:
@@ -192,6 +325,23 @@ async def run(args: argparse.Namespace) -> None:
     if args.force_twophase_recurse:
         settings.force_twophase_recurse = True
 
+    question_ids: list[str] = list(args.question_id) if args.question_id else []
+    question_texts: list[str] = list(args.question_text) if args.question_text else []
+
+    if not question_ids and not question_texts:
+        print("Provide at least one question text or --question-id.")
+        return
+
+    prep_tasks = [
+        _prepare_task(args, question_id=qid, question_text=None) for qid in question_ids
+    ] + [_prepare_task(args, question_id=None, question_text=qt) for qt in question_texts]
+    plan_results = await asyncio.gather(*prep_tasks)
+    plans: list[_TaskPlan] = [p for p in plan_results if p is not None]
+    if not plans:
+        return
+
+    _print_plan_header(plans)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
@@ -199,76 +349,8 @@ async def run(args: argparse.Namespace) -> None:
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
-    workspace = args.workspace
-    staged_flag = not args.no_stage
-
-    adopted_run_id: str | None = None
-    if args.question_id:
-        probe = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod, staged=False)
-        info = await probe.get_page_staging_info(args.question_id)
-        if info is None:
-            print(f"Question {args.question_id} not found.")
-            return
-        is_staged, owning_run_id, _owning_project_id = info
-        if is_staged:
-            if not staged_flag:
-                print(
-                    f"Question {args.question_id[:8]} is staged under run {owning_run_id[:8]}; "
-                    "cannot run with --no-stage. Drop --no-stage to adopt the staged run."
-                )
-                return
-            adopted_run_id = owning_run_id
-
-    run_id = adopted_run_id or str(uuid.uuid4())
-    db = await DB.create(run_id=run_id, prod=args.prod, staged=staged_flag)
-    project = await db.get_or_create_project(workspace)
-    db.project_id = project.id
-
-    frontend = settings.frontend_url
-
-    if args.question_id:
-        question_id = args.question_id
-        page = await db.get_page(question_id)
-        if not page:
-            print(f"Question {question_id} not found.")
-            return
-        if page.project_id and page.project_id != db.project_id:
-            db.project_id = page.project_id
-        question_text = page.headline
-        if adopted_run_id:
-            print(f"Adopted staged run {adopted_run_id[:8]} for question: {question_text}")
-        else:
-            print(f"Using existing question: {question_text}")
-    elif args.question_text:
-        question_text = args.question_text
-        question_id = await create_root_question(question_text, db)
-        print(f"Created question: {question_id[:8]}")
-    else:
-        print("Provide a question text or --question-id.")
-        return
-
-    print(f"Trace: {frontend}/traces/{db.run_id}")
-    if get_langfuse() is not None:
-        lf_base = settings.langfuse_base_url.rstrip("/")
-        print(f"Langfuse session: {lf_base}/sessions?sessionId={db.run_id}")
-    print()
-    if adopted_run_id:
-        await db.add_budget(args.budget)
-    else:
-        await db.init_budget(args.budget)
-
-    name = args.name or question_text
-    config = settings.capture_config()
-    if not adopted_run_id:
-        await db.create_run(
-            name=name,
-            question_id=question_id,
-            config=config,
-        )
-
-    print(f"Running {args.call_type} on {question_id[:8]}...")
-    await run_call(args, db, question_id)
-    print("\nDone.")
+    await asyncio.gather(*(_execute_task(args, p) for p in plans))
+    _print_plan_header(plans, title="Recap")
 
 
 def main() -> None:
@@ -289,11 +371,18 @@ def main() -> None:
     )
     parser.add_argument(
         "question_text",
-        nargs="?",
-        default=None,
-        help="Question text (creates a new question)",
+        nargs="*",
+        default=[],
+        help="One or more question texts. Each creates a new question; multiple "
+        "texts (and/or --question-id values) run in parallel.",
     )
-    parser.add_argument("--question-id", help="Existing question UUID")
+    parser.add_argument(
+        "--question-id",
+        nargs="+",
+        metavar="UUID",
+        help="One or more existing question UUIDs. Combined with positional "
+        "question texts, all targets run in parallel (each gets its own run_id).",
+    )
     parser.add_argument("--budget", type=int, default=5, help="Budget (default: 5)")
     parser.add_argument(
         "--max-rounds",

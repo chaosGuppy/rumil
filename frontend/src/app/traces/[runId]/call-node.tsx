@@ -47,6 +47,8 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   find_considerations: "#5b8def",
   assess: "#a07cdf",
   prioritization: "#d4943a",
+  initial_prioritization: "#e8a64d",
+  main_phase_prioritization: "#b87320",
   recurse: "#e8853a",
   ingest: "#4dab6f",
   reframe: "#c46b6b",
@@ -66,6 +68,18 @@ const CALL_TYPE_ACCENT: Record<string, string> = {
   web_research: "#c4884d",
   evaluate: "#d46b9f",
 };
+
+function displayCallType(call: {
+  call_type: string;
+  call_params?: { [key: string]: unknown } | null;
+}): string {
+  if (call.call_type === "prioritization" && call.call_params) {
+    const phase = call.call_params.phase;
+    if (phase === "initial") return "initial_prioritization";
+    if (phase === "main_phase") return "main_phase_prioritization";
+  }
+  return call.call_type;
+}
 
 function compactTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -1666,7 +1680,8 @@ export const CallNode = memo(function CallNode({
     }
   }, [isHashTarget]);
   const duration = getDuration(call);
-  const accent = CALL_TYPE_ACCENT[call.call_type] || "#7a8a9e";
+  const callTypeLabel = displayCallType(call);
+  const accent = CALL_TYPE_ACCENT[callTypeLabel] || "#7a8a9e";
 
   const warningCount = useMemo(
     () =>
@@ -1725,7 +1740,7 @@ export const CallNode = memo(function CallNode({
           className="trace-call-header"
         >
           <span className="trace-call-type">
-            {call.call_type}
+            {callTypeLabel}
           </span>
           {node.scope_page_summary && (
             <span className="trace-call-scope">{node.scope_page_summary}</span>
@@ -1758,7 +1773,12 @@ export const CallNode = memo(function CallNode({
         <div className="trace-call-body">
           {call.call_params && Object.keys(call.call_params).length > 0 && (
             <div className="trace-call-params">
-              {Object.entries(call.call_params).map(([key, value]) => (
+              {Object.entries(call.call_params)
+                .filter(
+                  ([key]) =>
+                    !(call.call_type === "prioritization" && key === "phase"),
+                )
+                .map(([key, value]) => (
                 <span key={key} className="trace-call-param">
                   <span className="trace-call-param-label">
                     {key.replace(/_/g, " ")}

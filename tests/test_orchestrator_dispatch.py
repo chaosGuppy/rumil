@@ -62,21 +62,35 @@ class ScriptedOrchestrator(BaseOrchestrator):
         self._call_id = call_id
         self.get_calls_count = 0
 
+    async def get_dispatches(
+        self,
+        root_question_id,
+        budget,
+        *,
+        parent_call_id=None,
+        total_remaining=None,
+        last_call=False,
+    ):
+        if self._index >= len(self._batches):
+            return PrioritizationResult(dispatch_sequences=[], call_id=self._call_id)
+        batch = self._batches[self._index]
+        self._index += 1
+        self.get_calls_count += 1
+        if not batch:
+            return PrioritizationResult(dispatch_sequences=[], call_id=self._call_id)
+        return PrioritizationResult(dispatch_sequences=[batch], call_id=self._call_id)
+
     async def run(self, root_question_id):
         await self._setup()
         try:
-            for batch in self._batches:
+            while True:
                 remaining = await self.db.budget_remaining()
                 if remaining <= 0:
                     break
-                self.get_calls_count += 1
-                if not batch:
+                result = await self.get_dispatches(root_question_id, remaining)
+                if not result.dispatch_sequences and not result.children:
                     break
-                await self._run_sequences(
-                    [batch],
-                    root_question_id,
-                    self._call_id,
-                )
+                await self.execute_dispatches(result, root_question_id)
         finally:
             await self._teardown()
 
@@ -274,7 +288,7 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
     dispatches = [[_assess_dispatch(question_page.id)]]
     call_count = 0
 
-    async def fake_get_next_batch(question_id, budget, parent_call_id=None, **kwargs):
+    async def fake_get_dispatches(question_id, budget, **kwargs):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -284,7 +298,7 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
             )
         return PrioritizationResult(dispatch_sequences=[])
 
-    mocker.patch.object(orch, "_get_next_batch", side_effect=fake_get_next_batch)
+    mocker.patch.object(orch, "get_dispatches", side_effect=fake_get_dispatches)
     mocker.patch.object(
         DB,
         "resolve_page_id",

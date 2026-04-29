@@ -28,11 +28,18 @@ import time
 from collections import defaultdict
 from typing import Any
 
-from versus.versus_db import get_client, insert_judgment, insert_text
+from versus.versus_db import (
+    get_client,
+    insert_judgment,
+    insert_text,
+    upsert_essay,
+    upsert_essay_verdict,
+)
 
 DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
 COMPLETIONS = DATA_DIR / "completions.jsonl"
 JUDGMENTS = DATA_DIR / "judgments.jsonl"
+ESSAYS_DIR = DATA_DIR / "essays"
 
 
 def _load_jsonl(path: pathlib.Path) -> list[dict]:

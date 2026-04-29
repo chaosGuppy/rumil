@@ -34,6 +34,86 @@ def get_client(*, prod: bool = False) -> Client:
     return create_client(url, key)
 
 
+def upsert_essay(
+    client: Client,
+    *,
+    id: str,
+    source_id: str,
+    url: str,
+    title: str,
+    author: str,
+    pub_date: str,
+    blocks: list[dict[str, Any]],
+    markdown: str,
+    schema_version: int,
+    image_count: int = 0,
+    raw_html: str | None = None,
+) -> None:
+    """Insert or replace an essay row by id.
+
+    Verdict columns are left untouched here — see ``upsert_essay_verdict``.
+    The fetcher's responsibility is the parsed essay body; the validator's
+    is the verdict.
+    """
+    row = {
+        "id": id,
+        "source_id": source_id,
+        "url": url,
+        "title": title,
+        "author": author,
+        "pub_date": pub_date,
+        "blocks": blocks,
+        "markdown": markdown,
+        "schema_version": schema_version,
+        "image_count": image_count,
+        "raw_html": raw_html,
+    }
+    client.table("versus_essays").upsert(row, on_conflict="id").execute()
+
+
+def upsert_essay_verdict(
+    client: Client,
+    *,
+    essay_id: str,
+    clean: bool,
+    issues: list[dict[str, Any]],
+    model: str,
+    validator_version: int,
+    request: Mapping[str, Any] | None,
+    response: Mapping[str, Any] | None,
+) -> None:
+    """Update the verdict slot on an existing essay row."""
+    import datetime as dt
+
+    update = {
+        "verdict_clean": clean,
+        "verdict_issues": issues,
+        "verdict_model": model,
+        "verdict_version": validator_version,
+        "verdict_request": dict(request) if request is not None else None,
+        "verdict_response": dict(response) if response is not None else None,
+        "verdict_at": dt.datetime.now(dt.UTC).isoformat(),
+    }
+    client.table("versus_essays").update(update).eq("id", essay_id).execute()
+
+
+def get_essay(client: Client, essay_id: str) -> dict | None:
+    rows = client.table("versus_essays").select("*").eq("id", essay_id).execute().data
+    return rows[0] if rows else None
+
+
+def iter_essays(client: Client, *, source_id: str | None = None) -> Iterator[dict]:
+    """Iterate all essay rows, optionally filtered by source.
+
+    Returns rows in id order so callers see a stable enumeration.
+    """
+    q = client.table("versus_essays").select("*")
+    if source_id is not None:
+        q = q.eq("source_id", source_id)
+    rows = q.order("id").execute().data
+    yield from rows
+
+
 def insert_text(
     client: Client,
     *,

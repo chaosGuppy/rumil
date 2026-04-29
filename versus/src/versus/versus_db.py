@@ -174,16 +174,24 @@ def find_judgments(
     return q.execute().data
 
 
-# Columns to skip when callers don't need the full provider request/response
-# blobs. These are 90+% of the row payload — for /versus/results aggregation
-# we don't need them and shipping all of them adds tens of MB to the response.
+# Columns shipped under the light projection. /versus/results and the
+# diagnostics pane just need essay/source/verdict-level fields plus
+# judge_inputs (for label rendering) and response_words (for source-stat
+# averages). Excluded:
+#   - request / response: multi-MB provider blobs, only the per-judgment
+#     inspector reads them.
+#   - reasoning_text: ~6 MB across the dataset; only the inspector renders
+#     full reasoning, /results doesn't show previews here.
+#   - text: ~13 MB across the dataset. Only used to compute
+#     response_words for /results — that count now lives in the generated
+#     response_words column on versus_texts.
 _TEXT_LIGHT_SELECT = (
-    "id,essay_id,kind,source_id,prefix_hash,model_id,text,params,request_hash,created_at"
+    "id,essay_id,kind,source_id,prefix_hash,model_id,response_words,params,request_hash,created_at"
 )
 _JUDGMENT_LIGHT_SELECT = (
     "id,essay_id,prefix_hash,source_a,source_b,display_first,text_a_id,text_b_id,"
     "criterion,variant,judge_model,judge_inputs,judge_inputs_hash,verdict,winner_source,"
-    "preference_label,reasoning_text,duration_s,project_id,run_id,rumil_call_id,"
+    "preference_label,duration_s,project_id,run_id,rumil_call_id,"
     "contamination_note,created_at"
 )
 

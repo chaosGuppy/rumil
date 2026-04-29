@@ -125,7 +125,10 @@ def _legacy_text_dict(row: dict) -> dict:
         },
         "prompt": _user_prompt_from_request(row.get("request")),
         "response_text": text,
-        "response_words": len(text.split()),
+        # Prefer the generated response_words column when present (light
+        # projection); fall back to a Python split on the full text for
+        # callers that fetched the heavy projection.
+        "response_words": row["response_words"] if "response_words" in row else len(text.split()),
         "target_words": params.get("target_words", 0),
         "ts": params.get("ts") or row.get("created_at"),
         "duration_s": params.get("duration_s"),

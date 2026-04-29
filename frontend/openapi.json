@@ -580,7 +580,7 @@
           "versus"
         ],
         "summary": "Get Judgment By Key",
-        "description": "Look up the verbatim row for a single judgment key.\n\nUsed by the side-panel inspector on /versus/results so a reader can see\nthe prompt + reasoning + raw response that produced a verdict. The key\ncontains `|` and `:` so callers must pass it as a query param.",
+        "description": "Look up the verbatim row for a single judgment key.\n\nUsed by the side-panel inspector on /versus/results so a reader can see\nthe prompt + reasoning + raw response that produced a verdict. The key\nis the row's primary-key UUID, so this is a direct lookup \u2014 no scan.",
         "operationId": "get_judgment_by_key_api_versus_judgments_by_key_get",
         "parameters": [
           {
@@ -4436,7 +4436,7 @@
           "other_variant_hidden"
         ],
         "title": "EssayJudgmentsResponse",
-        "description": "Judgments for a single essay at one prefix variant.\n\nRows whose ``prefix_config_hash`` doesn't match the selected variant\nare filtered out of ``judgments``. They split into two buckets:\n\n- ``other_variant_hidden``: hash matches a *different* active prefix\n  variant for this essay (e.g. you're viewing ``no_headers`` and 227\n  rows belong to ``default``). Not stale \u2014 just a different cohort.\n- ``stale_hidden``: hash matches no current variant. Genuinely stale\n  from essay re-import drift or a prefix-config bump.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in the current completions.jsonl at the same prefix_hash --\nthe judgment survived the variant check but its sources did not."
+        "description": "Judgments for a single essay at one prefix variant.\n\nRows whose ``prefix_config_hash`` doesn't match the selected variant\nare filtered out of ``judgments``. They split into two buckets:\n\n- ``other_variant_hidden``: hash matches a *different* active prefix\n  variant for this essay (e.g. you're viewing ``no_headers`` and 227\n  rows belong to ``default``). Not stale \u2014 just a different cohort.\n- ``stale_hidden``: hash matches no current variant. Genuinely stale\n  from essay re-import drift or a prefix-config bump.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in versus_texts at the same prefix_hash -- the judgment\nsurvived the variant check but its sources did not."
       },
       "EssayMeta": {
         "properties": {
@@ -5519,6 +5519,14 @@
             "type": "string",
             "title": "Source B"
           },
+          "display_first": {
+            "type": "string",
+            "title": "Display First"
+          },
+          "display_second": {
+            "type": "string",
+            "title": "Display Second"
+          },
           "criterion": {
             "type": "string",
             "title": "Criterion"
@@ -5589,6 +5597,8 @@
           "prefix_config_hash",
           "source_a",
           "source_b",
+          "display_first",
+          "display_second",
           "criterion",
           "judge_model",
           "judge_model_id",
@@ -5603,7 +5613,7 @@
           "orphaned"
         ],
         "title": "JudgmentRow",
-        "description": "One row in the raw-judgments explorer at the bottom of /results."
+        "description": "One row in the raw-judgments explorer at the bottom of /results.\n\n``source_a``/``source_b`` are the alphabetical canonical ordering used\nfor the dedup key \u2014 stable identity across rows. ``display_first``/\n``display_second`` are what the judge actually saw as \"Continuation A\"\nand \"B\"; they diverge from canonical roughly half the time. The\n``verdict`` letter (``A``/``B``/``tie``) refers to display order, not\ncanonical, so the rows-table renders display order alongside the\ncanonical pair to keep the mapping legible."
       },
       "LLMExchangeEventOut": {
         "properties": {

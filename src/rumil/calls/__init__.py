@@ -7,6 +7,7 @@ from rumil.calls.create_view_max_effort import CreateViewMaxEffortCall
 from rumil.calls.critique_artefact import CritiqueArtefactCall
 from rumil.calls.critique_artefact_request_only import RequestOnlyCritiqueArtefactCall
 from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.freeform_view import CreateFreeformViewCall, UpdateFreeformViewCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.generate_spec import GenerateSpecCall
 from rumil.calls.impact_filtered_context import ImpactFilteredContext
@@ -39,6 +40,7 @@ __all__ = [
     "AssessCall",
     "BigAssessCall",
     "CallRunner",
+    "CreateFreeformViewCall",
     "CreateViewCall",
     "CreateViewMaxEffortCall",
     "CritiqueArtefactCall",
@@ -66,6 +68,7 @@ __all__ = [
     "ScoutParadigmCasesCall",
     "ScoutSubquestionsCall",
     "ScoutWebQuestionsCall",
+    "UpdateFreeformViewCall",
     "UpdateViewCall",
     "UpdateViewMaxEffortCall",
     "WebResearchCall",

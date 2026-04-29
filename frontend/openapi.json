@@ -3592,6 +3592,8 @@
           "global_prioritization",
           "update_view",
           "update_view_max_effort",
+          "create_freeform_view",
+          "update_freeform_view",
           "generate_spec",
           "generate_artefact",
           "critique_artefact",

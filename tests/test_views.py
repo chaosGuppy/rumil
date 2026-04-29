@@ -28,7 +28,7 @@ def test_get_active_view_rejects_unknown_variant():
 
 
 def test_view_variants_exposes_known_names():
-    assert set(VIEW_VARIANTS) == {"sectioned", "judgement"}
+    assert set(VIEW_VARIANTS) == {"sectioned", "judgement", "freeform"}
 
 
 async def test_sectioned_view_exists_reflects_db_state(tmp_db, question_page, mocker):

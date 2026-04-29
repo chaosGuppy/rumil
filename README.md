@@ -175,7 +175,8 @@ uv run python main.py "Your question" --available-moves default --budget 10
 uv run python main.py "Your question" --available-calls multi-subquestion --budget 20
 
 # Select a view variant (the ever-evolving best summary of a question)
-# 'sectioned' = importance-scored items (default), 'judgement' = flat NL judgement page
+# 'sectioned' = importance-scored items (default), 'judgement' = flat NL judgement page,
+# 'freeform' = four long-form prose sections (framing, deductions, research direction, returns curve)
 uv run python main.py "Your question" --view-variant judgement --budget 10
 
 # Tune how many considerations each ingest call extracts (default: 4)

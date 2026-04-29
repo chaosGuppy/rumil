@@ -165,6 +165,8 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
+        CallType.CREATE_FREEFORM_VIEW: [],
+        CallType.UPDATE_FREEFORM_VIEW: [],
         CallType.GENERATE_SPEC: [
             MoveType.ADD_SPEC_ITEM,
         ],
@@ -336,6 +338,8 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
+        CallType.CREATE_FREEFORM_VIEW: [],
+        CallType.UPDATE_FREEFORM_VIEW: [],
         CallType.GENERATE_SPEC: [
             MoveType.ADD_SPEC_ITEM,
         ],

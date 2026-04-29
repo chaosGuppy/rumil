@@ -13,7 +13,7 @@ themselves depend on pieces of `rumil.orchestrators`).
 from rumil.settings import get_settings
 from rumil.views.base import View
 
-VIEW_VARIANTS: tuple[str, ...] = ("sectioned", "judgement")
+VIEW_VARIANTS: tuple[str, ...] = ("sectioned", "judgement", "freeform")
 
 
 def get_active_view() -> View:
@@ -27,4 +27,8 @@ def get_active_view() -> View:
         from rumil.views.judgement import JudgementView
 
         return JudgementView()
+    if variant == "freeform":
+        from rumil.views.freeform import FreeformView
+
+        return FreeformView()
     raise ValueError(f"Unknown view_variant: {variant!r}. Valid values: {list(VIEW_VARIANTS)}")

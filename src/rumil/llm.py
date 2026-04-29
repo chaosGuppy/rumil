@@ -544,6 +544,7 @@ async def call_anthropic_api(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     cache: bool = False,
+    effort: str | None = None,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
@@ -563,8 +564,13 @@ async def call_anthropic_api(
         kwargs["temperature"] = DEFAULT_TEMPERATURE
     if (thinking := _thinking_config(model)) is not None:
         kwargs["thinking"] = thinking
-    if (effort := _effort_level(model)) is not None:
-        kwargs["output_config"] = {"effort": effort}
+    base_effort = _effort_level(model)
+    # Caller can override only when the model actually supports `effort`;
+    # for Haiku/older Sonnet `_effort_level` returns None and the param is
+    # not accepted by the API.
+    effective_effort = effort if (effort is not None and base_effort is not None) else base_effort
+    if effective_effort is not None:
+        kwargs["output_config"] = {"effort": effective_effort}
     if tools:
         kwargs["tools"] = tools
 
@@ -925,6 +931,8 @@ async def text_call(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     model: str | None = None,
+    cache: bool = False,
+    effort: str | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
@@ -932,7 +940,11 @@ async def text_call(
     Pass `metadata` and `db` together to persist the exchange and record a
     trace event against the call identified by `metadata.call_id`. Pass `model`
     to override the default model — names starting with ``gemini-`` route to
-    Vertex AI, everything else routes to Anthropic.
+    Vertex AI, everything else routes to Anthropic. Pass `cache=True` to place
+    a prompt-cache breakpoint on the last message (Anthropic only — the Google
+    branch ignores it). Pass `effort` (e.g. ``"max"``) to override the default
+    effort level derived from the model; ignored for models that do not support
+    the effort parameter.
     """
     settings = get_settings()
     effective_model = model or settings.model
@@ -961,6 +973,8 @@ async def text_call(
         msg_list,
         metadata=metadata,
         db=db,
+        cache=cache,
+        effort=effort,
     )
     for block in api_resp.message.content:
         if isinstance(block, TextBlock):

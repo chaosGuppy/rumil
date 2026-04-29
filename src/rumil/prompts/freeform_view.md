@@ -8,7 +8,7 @@ This is one of the most crucial steps in our research process, so give thorough,
 
 In order, you will write:
 
-1. **Framing and interpertation** — What is this question _really_ about? Which high-level considerations, factors, dynamics, and frames truly matter, which superficially-attractive ones should be deprioritised? What ambiguities are inherent in the question, if any, and what is the space of useful resolutions of these?
+1. **Framing and interpretation** — What is this question _really_ about? Which high-level considerations, factors, dynamics, and frames truly matter, which superficially-attractive ones should be deprioritised? What ambiguities are inherent in the question, if any, and what is the space of useful resolutions of these?
 2. **Assertions and deductions** — What can we say about the answer, and at what confidence? Using careful reasoning, propagating uncertainty throughout, what incisive deductions can we make?
 3. **Research direction** — What cruxes and key unknowns would, if investigated, most improve the answer?
 4. **Returns to further research** — How much reducible uncertainty remains? What does the curve of returns to further research look like?

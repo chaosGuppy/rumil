@@ -843,7 +843,7 @@ export type ErrorEventOut = {
 /**
  * EssayDetail
  *
- * Essay + the prompts shown to completion / judge / paraphrase models.
+ * Essay + the prompts shown to completion / judge models.
  */
 export type EssayDetail = {
     /**
@@ -898,10 +898,6 @@ export type EssayDetail = {
      * Judge Prompt Hash
      */
     judge_prompt_hash: string;
-    /**
-     * Paraphrase Prompt Template
-     */
-    paraphrase_prompt_template: string;
     /**
      * Criteria
      */
@@ -2078,6 +2074,12 @@ export type OrchestratorRunRequest = {
      * Container Tag
      */
     container_tag?: string | null;
+    /**
+     * Extra Env
+     */
+    extra_env?: {
+        [key: string]: string;
+    };
 };
 
 /**

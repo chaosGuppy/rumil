@@ -27,7 +27,6 @@ from versus import diagnostics as versus_diagnostics
 from versus import essay as versus_essay
 from versus import judge as versus_judge
 from versus import mainline as versus_mainline
-from versus import paraphrase as versus_paraphrase
 from versus import prepare as versus_prepare
 from versus import versus_db
 from versus import view as versus_view
@@ -336,7 +335,7 @@ class EssayMeta(pydantic.BaseModel):
 
 
 class EssayDetail(pydantic.BaseModel):
-    """Essay + the prompts shown to completion / judge / paraphrase models."""
+    """Essay + the prompts shown to completion / judge models."""
 
     id: str
     title: str
@@ -355,7 +354,6 @@ class EssayDetail(pydantic.BaseModel):
     # on judgment rows — lets the UI correlate "this template" with
     # "rows that used it".
     judge_prompt_hash: str
-    paraphrase_prompt_template: str
     criteria: list[str]
     # Available prefix variants and the one this response was rendered
     # for. Used by the /versus/inspect dropdown so users can flip the
@@ -758,9 +756,6 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         source_a_text="{{ CONTINUATION A }}",
         source_b_text="{{ CONTINUATION B }}",
     )
-    paraphrase_prompt_template = versus_paraphrase.PARAPHRASE_INSTRUCTIONS.replace(
-        "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
-    )
     judge_prompt_hash = versus_judge.compute_judge_prompt_hash(primary_criterion, with_tools=False)
     return EssayDetail(
         id=essay.id,
@@ -776,7 +771,6 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         judge_system_prompt_template=judge_system,
         judge_user_prompt_template=judge_user,
         judge_prompt_hash=judge_prompt_hash,
-        paraphrase_prompt_template=paraphrase_prompt_template,
         criteria=list(cfg.judging.criteria),
         prefix_variants=[
             PrefixVariantInfo(
@@ -1036,20 +1030,16 @@ def get_results(
         current_prefix_hashes=current_prefix_hashes,
         include_stale=include_stale,
     )
-    content_data = versus_analyze.content_test_matrix(
-        include_contaminated=include_contaminated,
-        current_prefix_hashes=current_prefix_hashes,
-        include_stale=include_stale,
-    )
 
+    # Conditions are limited to "completion" while paraphrase generation is
+    # deferred. When paraphrase comes back, restore "paraphrase" alongside
+    # and re-emit the content-test matrix from analyze.content_test_matrix.
     conditions_present = sorted({k[2] for k in data}) if data else []
-    conditions = [c for c in ("completion", "paraphrase") if c in conditions_present] or (
-        conditions_present
-    )
+    conditions = [c for c in ("completion",) if c in conditions_present] or conditions_present
     criteria = cfg.judging.criteria
 
-    present_gens = {k[0] for k in data if k[2] in conditions} | {k[0] for k in content_data}
-    present_judges = {k[1] for k in data if k[2] in conditions} | {k[1] for k in content_data}
+    present_gens = {k[0] for k in data if k[2] in conditions}
+    present_judges = {k[1] for k in data if k[2] in conditions}
     gen_models = sorted(present_gens, key=versus_analyze.model_sort_key)
     judge_models = sorted(present_judges, key=versus_analyze.model_sort_key)
 
@@ -1066,22 +1056,6 @@ def get_results(
                 ),
             )
         )
-    main_matrices.append(
-        Matrix(
-            condition="content-test",
-            meta=_cond_meta("content-test"),
-            cells=_cells_out(
-                versus_view.matrix_cells(
-                    content_data,
-                    gen_models,
-                    judge_models,
-                    "content-test",
-                    criterion,
-                    keyed_by_condition=False,
-                )
-            ),
-        )
-    )
 
     data_by_source = versus_analyze.matrix_by_source(
         include_contaminated=include_contaminated,
@@ -1131,27 +1105,6 @@ def get_results(
                 ],
             )
         )
-    small_grid.append(
-        SmallGridRow(
-            condition="content-test",
-            per_crit=[
-                CriterionMatrix(
-                    criterion=crit,
-                    cells=_cells_out(
-                        versus_view.matrix_cells(
-                            content_data,
-                            gen_models,
-                            judge_models,
-                            "content-test",
-                            crit,
-                            keyed_by_condition=False,
-                        )
-                    ),
-                )
-                for crit in criteria
-            ],
-        )
-    )
 
     # `total_judgments` is the deduped count of rows with a verdict -- this
     # is what the "N judgments" header in the UI means and what every

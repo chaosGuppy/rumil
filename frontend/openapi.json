@@ -4320,10 +4320,6 @@
             "type": "string",
             "title": "Judge Prompt Hash"
           },
-          "paraphrase_prompt_template": {
-            "type": "string",
-            "title": "Paraphrase Prompt Template"
-          },
           "criteria": {
             "items": {
               "type": "string"
@@ -4358,13 +4354,12 @@
           "judge_system_prompt_template",
           "judge_user_prompt_template",
           "judge_prompt_hash",
-          "paraphrase_prompt_template",
           "criteria",
           "prefix_variants",
           "active_prefix_label"
         ],
         "title": "EssayDetail",
-        "description": "Essay + the prompts shown to completion / judge / paraphrase models."
+        "description": "Essay + the prompts shown to completion / judge models."
       },
       "EssayFlagOut": {
         "properties": {
@@ -6353,6 +6348,13 @@
               }
             ],
             "title": "Container Tag"
+          },
+          "extra_env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Extra Env"
           }
         },
         "type": "object",

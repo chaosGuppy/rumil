@@ -10,6 +10,7 @@ from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.generate_spec import GenerateSpecCall
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
+from rumil.calls.red_team import RedTeamCall
 from rumil.calls.refine_spec import RefineSpecCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
@@ -42,6 +43,7 @@ __all__ = [
     "GenerateSpecCall",
     "IngestCall",
     "LinkSubquestionsCall",
+    "RedTeamCall",
     "RefineSpecCall",
     "RequestOnlyCritiqueArtefactCall",
     "ScoutAnalogiesCall",

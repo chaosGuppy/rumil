@@ -94,6 +94,7 @@ class CallType(str, Enum):
     # Envelope call for mutations made from Claude Code's broader context
     # (not a rumil-internal call with carefully scoped prompt). Never
     # dispatchable from prioritization — only created by .claude/ skills.
+    RED_TEAM = "red_team"
     CLAUDE_CODE_DIRECT = "claude_code_direct"
     # Pairwise judgment between two essay continuations, driven by the
     # external `versus` harness. Uses single-arm workspace-exploration

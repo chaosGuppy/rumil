@@ -118,6 +118,66 @@ class CreateViewContext(ContextBuilder):
         )
 
 
+class RedTeamContext(ContextBuilder):
+    """Context for red-teaming: loads the View, judgements, subquestion map,
+    and high-confidence claims to enable structural challenge of the overall picture."""
+
+    async def build_context(self, infra: CallInfra) -> ContextResult:
+        question = await infra.db.get_page(infra.question_id)
+        query = question.headline if question else infra.question_id
+
+        result = await build_embedding_based_context(
+            query,
+            infra.db,
+            scope_question_id=infra.question_id,
+            require_take_for_questions=True,
+        )
+        working_page_ids = result.page_ids
+
+        context_text = result.context_text
+
+        existing_view = await infra.db.get_view_for_question(infra.question_id)
+        if existing_view:
+            items = await infra.db.get_view_items(existing_view.id)
+            if items:
+                parts = ["\n\n---\n\n## Current View (this is what you are red-teaming)\n"]
+                for page, link in items:
+                    imp = f"I{link.importance}" if link.importance else "unscored"
+                    formatted = await format_page(
+                        page,
+                        PageDetail.CONTENT,
+                        linked_detail=None,
+                        db=infra.db,
+                        track=True,
+                        track_tags={"source": "red_team_view"},
+                    )
+                    parts.append(
+                        f"\n### [{page.page_type.value.upper()} R{page.robustness} {imp}] "
+                        f"`{page.id[:8]}` — {page.headline}\n\n"
+                        f"{formatted}\n"
+                    )
+                context_text += "\n".join(parts)
+
+        child_questions = await infra.db.get_child_questions(infra.question_id)
+        if child_questions:
+            parts_sq = ["\n\n---\n\n## Subquestion Map (investigation structure)\n"]
+            for cq in child_questions:
+                judgements = await infra.db.get_judgements_for_question(cq.id)
+                status = "has judgement" if judgements else "no judgement yet"
+                parts_sq.append(f"- `{cq.id[:8]}` — {cq.headline} ({status})")
+            context_text += "\n".join(parts_sq)
+
+        return ContextResult(
+            context_text=context_text,
+            working_page_ids=working_page_ids,
+            full_page_ids=result.full_page_ids,
+            abstract_page_ids=result.abstract_page_ids,
+            summary_page_ids=result.summary_page_ids,
+            distillation_page_ids=result.distillation_page_ids,
+            budget_usage=result.budget_usage,
+        )
+
+
 class EmbeddingContext(ContextBuilder):
     """Embedding-based context. Used by embedding variants."""
 

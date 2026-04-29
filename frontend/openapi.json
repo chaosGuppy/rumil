@@ -3591,6 +3591,7 @@
           "critique_artefact",
           "critique_artefact_request_only",
           "refine_spec",
+          "red_team",
           "claude_code_direct",
           "versus_judge"
         ],

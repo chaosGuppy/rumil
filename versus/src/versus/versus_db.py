@@ -71,6 +71,34 @@ def upsert_essay(
     client.table("versus_essays").upsert(row, on_conflict="id").execute()
 
 
+def mirror_essay(essay: Any, raw_html: str | None = None) -> None:
+    """Upsert a parsed Essay into versus_essays from a fresh-fetcher path.
+
+    Shared helper for the per-source fetchers so they don't each
+    duplicate the same insert/exception-handler block. Logs and swallows
+    DB errors so a network blip during fetch doesn't lose the disk-cached
+    essay.
+    """
+    try:
+        client = get_client()
+        upsert_essay(
+            client,
+            id=essay.id,
+            source_id=essay.source_id,
+            url=essay.url,
+            title=essay.title,
+            author=essay.author,
+            pub_date=essay.pub_date,
+            blocks=[{"type": b.type, "text": b.text} for b in essay.blocks],
+            markdown=essay.markdown,
+            schema_version=essay.schema_version,
+            image_count=essay.image_count,
+            raw_html=raw_html,
+        )
+    except Exception as e:
+        print(f"[warn] essay DB upsert failed for {getattr(essay, 'id', '?')}: {e}")
+
+
 def upsert_essay_verdict(
     client: Client,
     *,

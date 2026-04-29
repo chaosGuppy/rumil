@@ -43,7 +43,7 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {RUMIL_ROOT} && uv run python versus/scripts/run_rumil_judgments.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from versus import envcascade  # noqa: E402
 

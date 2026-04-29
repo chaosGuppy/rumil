@@ -34,11 +34,10 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/run_completions.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from versus import complete, config, prepare, sources  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
-from versus import mainline as versus_mainline  # noqa: E402
 
 
 def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_essay.Essay | None:

@@ -41,7 +41,7 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {RUMIL_ROOT} && uv run python versus/scripts/rerun_orch_closer.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from rumil.context import format_page, render_view  # noqa: E402
 from rumil.database import DB  # noqa: E402

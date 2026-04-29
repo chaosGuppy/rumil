@@ -32,7 +32,7 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/build_self_vs_human_html.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from versus.essay import Block, Essay  # noqa: E402
 
@@ -157,7 +157,7 @@ def main() -> None:
         for vid in VARIANT_ORDER
         for m, _ in MODEL_ORDER
     }
-    for (eid, vid, model_id), r in judgments.items():
+    for (_eid, vid, model_id), r in judgments.items():
         ws = r.get("winner_source")
         t = tallies[(vid, model_id)]
         t["n"] += 1

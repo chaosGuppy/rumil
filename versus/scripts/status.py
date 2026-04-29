@@ -34,7 +34,7 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/status.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from versus import config, judge, prepare, versus_db  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402

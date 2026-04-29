@@ -8,9 +8,9 @@ dict + its sha256 are stored on every new row alongside the existing
 ``judge_model`` string.
 
 This module is the single compose site for all three judge paths
-(blind / ws / orch); the historical inline f-strings in
-``versus.judge.compose_blind_judge_model`` and the ``_compose`` lambdas
-in ``versus.rumil_judge.run_ws`` / ``run_orch`` all delegate here.
+(blind / ws / orch); ``versus.judge.build_blind_judge_config`` and the
+``_compose`` lambdas in ``versus.rumil_judge.run_ws`` / ``run_orch`` all
+delegate here.
 
 The visible ``judge_model`` shape is unchanged from the pre-config era
 so existing dedup keys keep matching; ``config_hash`` is additive

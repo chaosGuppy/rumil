@@ -393,6 +393,7 @@ class CallsForQuestion(BaseModel):
     child_questions: int
     considerations: int
     judgements: int
+    views: int
 
 
 class StatsOut(BaseModel):
@@ -436,10 +437,22 @@ class Subgraph(BaseModel):
     edges: list[SubgraphEdge]
 
 
+class PrioritizationCandidateOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+
+    call_id: str
+    run_id: str
+    scope_page_id: str
+    scope_headline: str
+    created_at: datetime
+    is_scope: bool
+
+
 class QuestionStatsOut(StatsOut):
     question_id: str
     subgraph_page_count: int
     subgraph: Subgraph
+    prioritization_candidates: list[PrioritizationCandidateOut] = []
 
 
 class PageLoadEventOut(BaseModel):

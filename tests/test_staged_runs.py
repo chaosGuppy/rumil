@@ -51,8 +51,11 @@ async def _link(db: DB, from_page: Page, to_page: Page) -> PageLink:
 async def project_id():
     db = await DB.create(run_id=str(uuid.uuid4()))
     project = await db.get_or_create_project(f"test-staged-{uuid.uuid4().hex[:8]}")
-    yield project.id
-    await db._execute(db.client.table("projects").delete().eq("id", project.id))
+    try:
+        yield project.id
+    finally:
+        await db._execute(db.client.table("projects").delete().eq("id", project.id))
+        await db.close()
 
 
 @pytest_asyncio.fixture
@@ -60,8 +63,11 @@ async def baseline_db(project_id):
     """A non-staged DB that creates baseline data."""
     db = await _make_db(project_id, staged=False)
     await db.init_budget(100)
-    yield db
-    await db.delete_run_data()
+    try:
+        yield db
+    finally:
+        await db.delete_run_data()
+        await db.close()
 
 
 @pytest_asyncio.fixture
@@ -69,16 +75,22 @@ async def staged_db(project_id):
     """A staged DB whose writes should be isolated."""
     db = await _make_db(project_id, staged=True)
     await db.init_budget(100)
-    yield db
-    await db.delete_run_data()
+    try:
+        yield db
+    finally:
+        await db.delete_run_data()
+        await db.close()
 
 
 @pytest_asyncio.fixture
 async def observer_db(project_id):
     """A non-staged DB that observes — should never see staged data."""
     db = await _make_db(project_id, staged=False)
-    yield db
-    await db.delete_run_data()
+    try:
+        yield db
+    finally:
+        await db.delete_run_data()
+        await db.close()
 
 
 async def test_staged_pages_invisible_to_observers(baseline_db, staged_db, observer_db):

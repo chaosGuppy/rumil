@@ -451,6 +451,10 @@ export type CallsForQuestion = {
      * Judgements
      */
     judgements: number;
+    /**
+     * Views
+     */
+    views: number;
 };
 
 /**
@@ -2435,6 +2439,36 @@ export type PrefixVariantInfo = {
 };
 
 /**
+ * PrioritizationCandidateOut
+ */
+export type PrioritizationCandidateOut = {
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Scope Page Id
+     */
+    scope_page_id: string;
+    /**
+     * Scope Headline
+     */
+    scope_headline: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Is Scope
+     */
+    is_scope: boolean;
+};
+
+/**
  * Project
  */
 export type Project = {
@@ -2694,6 +2728,10 @@ export type QuestionStatsOut = {
      */
     subgraph_page_count: number;
     subgraph: Subgraph;
+    /**
+     * Prioritization Candidates
+     */
+    prioritization_candidates: Array<PrioritizationCandidateOut>;
 };
 
 /**

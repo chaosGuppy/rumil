@@ -126,10 +126,3 @@ def namespaced_id(source_id: str, slug: str) -> str:
     and jsonl values. Callers should pass a ``slug`` free of ``__``.
     """
     return f"{source_id}__{slug}"
-
-
-def clean_slug(s: str) -> str:
-    """Slugify a URL path component. Lowercase, collapse non-alnum to single '-'."""
-    s = s.strip().lower()
-    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
-    return s

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   Bar,
@@ -12,7 +13,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { CallsForQuestion, DegreeCell, Subgraph } from "@/api";
+import type {
+  CallsForQuestion,
+  DegreeCell,
+  PrioritizationCandidateOut,
+  Subgraph,
+} from "@/api";
 import {
   QuestionFocusBars,
   SubquestionFocusGrid,
@@ -30,7 +36,19 @@ export type StatsViewData = {
   credence_histogram: Histogram;
   calls_per_question: Array<CallsForQuestion>;
   subgraph?: Subgraph;
+  prioritization_candidates?: Array<PrioritizationCandidateOut>;
 };
+
+function formatRelativeShort(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const deltaSec = (Date.now() - then) / 1000;
+  if (deltaSec < 60) return `${Math.max(1, Math.floor(deltaSec))}s ago`;
+  if (deltaSec < 3600) return `${Math.floor(deltaSec / 60)}m ago`;
+  if (deltaSec < 86400) return `${Math.floor(deltaSec / 3600)}h ago`;
+  if (deltaSec < 86400 * 30) return `${Math.floor(deltaSec / 86400)}d ago`;
+  return new Date(iso).toISOString().slice(0, 10);
+}
 
 const TYPE_ORDER = [
   "question",
@@ -645,6 +663,64 @@ export function StatsView({
           height: 0.55rem;
           border: 1px solid var(--color-border);
         }
+
+        .prio-candidates {
+          display: flex;
+          flex-direction: column;
+        }
+        .prio-candidate-row {
+          display: grid;
+          grid-template-columns: 5.5rem auto 1fr auto;
+          align-items: baseline;
+          gap: 0.75rem;
+          padding: 0.55rem 0.25rem;
+          border-bottom: 1px dashed var(--color-border);
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.75rem;
+          color: var(--color-foreground);
+          text-decoration: none;
+          transition: background 0.12s ease;
+        }
+        .prio-candidate-row:last-child {
+          border-bottom: none;
+        }
+        .prio-candidate-row:hover {
+          background: var(--color-surface);
+        }
+        .prio-candidate-row .ts {
+          color: var(--color-muted);
+          font-variant-numeric: tabular-nums;
+          letter-spacing: 0.02em;
+        }
+        .prio-candidate-row .scope-badge {
+          font-size: 0.6rem;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          padding: 0.1rem 0.35rem;
+          border: 1px solid var(--type-question);
+          color: var(--type-question);
+          line-height: 1;
+        }
+        .prio-candidate-row .scope-badge.parent {
+          border-color: var(--color-border);
+          color: var(--color-muted);
+        }
+        .prio-candidate-row .headline {
+          font-family: var(--font-geist-sans), system-ui, sans-serif;
+          font-size: 0.78rem;
+          color: var(--color-foreground);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .prio-candidate-row .arrow {
+          color: var(--color-muted);
+          opacity: 0.7;
+        }
+        .prio-candidate-row:hover .arrow {
+          color: var(--color-accent);
+          opacity: 1;
+        }
       `}</style>
 
       {leadingPanel}
@@ -925,7 +1001,7 @@ export function StatsView({
             </div>
             <div className="panel-sublabel">
               {activeCallsView === "focus"
-                ? "calls, child questions, considerations and judgements for this question"
+                ? "calls, child questions, considerations, judgements and views for this question"
                 : "questions binned by total calls, stacked by call type"}
             </div>
           </div>
@@ -1109,6 +1185,48 @@ export function StatsView({
           </>
         )}
       </div>
+
+      {anchorId && data.prioritization_candidates !== undefined && (
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <div className="panel-label">Prioritization candidates</div>
+              <div className="panel-sublabel">
+                prio calls where this question was in the dispatchable set
+                (scope = this question, or this question is a direct child of
+                the scope)
+              </div>
+            </div>
+          </div>
+          {data.prioritization_candidates.length === 0 ? (
+            <div className="empty-panel">
+              no prioritization calls have considered this question
+            </div>
+          ) : (
+            <div className="prio-candidates">
+              {data.prioritization_candidates.map((c) => (
+                <Link
+                  key={c.call_id}
+                  href={`/traces/${c.run_id}#call-${c.call_id.slice(0, 8)}`}
+                  className="prio-candidate-row"
+                  title={`prio call ${c.call_id.slice(0, 8)} · scope ${c.scope_page_id.slice(0, 8)}`}
+                >
+                  <span className="ts">{formatRelativeShort(c.created_at)}</span>
+                  <span
+                    className={`scope-badge${c.is_scope ? "" : " parent"}`}
+                  >
+                    {c.is_scope ? "scope" : "parent"}
+                  </span>
+                  <span className="headline">
+                    {c.scope_headline || c.scope_page_id.slice(0, 8)}
+                  </span>
+                  <span className="arrow">→</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {focusAvailable && anchorId && data.subgraph && (
         <div className="panel">

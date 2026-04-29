@@ -373,6 +373,25 @@ def iter_judgments(
         offset += page_size
 
 
+def _jsonb_canonical_text(payload: Any) -> str:
+    """Render ``payload`` the way Postgres's ``jsonb::text`` cast does.
+
+    Postgres jsonb sorts object keys by (length, name) — *not* alphabetically.
+    Lists preserve insertion order. Spacing is ``": "`` after colons and
+    ``", "`` between elements. Reproducing that exactly is what makes
+    Python-side hash prediction agree with the DB-side generated column.
+    """
+    if isinstance(payload, dict):
+        items = sorted(payload.items(), key=lambda kv: (len(kv[0]), kv[0]))
+        body = ", ".join(
+            f"{json.dumps(k, ensure_ascii=False)}: {_jsonb_canonical_text(v)}" for k, v in items
+        )
+        return "{" + body + "}"
+    if isinstance(payload, list):
+        return "[" + ", ".join(_jsonb_canonical_text(x) for x in payload) + "]"
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def compute_canonical_hash(payload: Mapping[str, Any]) -> str:
     """Compute the same hash a generated jsonb column would produce.
 
@@ -380,10 +399,10 @@ def compute_canonical_hash(payload: Mapping[str, Any]) -> str:
     without round-tripping through the DB — works for either the
     ``request`` column (request_hash) or ``judge_inputs`` (judge_inputs_hash).
     Mirrors the SQL expression ``encode(digest(<col>::text, 'sha256'), 'hex')``:
-    jsonb canonicalizes keys alphabetically, so we serialize with
-    ``sort_keys=True`` and Postgres's text-form spacing.
+    matches Postgres's jsonb canonical text form (length-then-alpha key
+    sort, ``": "`` / ``", "`` spacing, recursive into nested objects).
     """
     import hashlib
 
-    canonical = json.dumps(payload, sort_keys=True, separators=(", ", ": "), ensure_ascii=False)
+    canonical = _jsonb_canonical_text(dict(payload))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

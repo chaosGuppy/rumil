@@ -162,11 +162,11 @@ async def _prepare_task(
     )
 
 
-def _print_plan_header(plans: Sequence[_TaskPlan]) -> None:
+def _print_plan_header(plans: Sequence[_TaskPlan], *, title: str = "Targets") -> None:
     if not plans:
         return
     print()
-    print(f"=== Targets ({len(plans)}) ===")
+    print(f"=== {title} ({len(plans)}) ===")
     for p in plans:
         if p.is_new_question:
             kind = "NEW    "
@@ -250,6 +250,7 @@ async def run(args: argparse.Namespace) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     await asyncio.gather(*(_execute_task(args, p) for p in plans))
+    _print_plan_header(plans, title="Recap")
 
 
 def main() -> None:

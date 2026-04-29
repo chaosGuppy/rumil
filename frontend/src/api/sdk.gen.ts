@@ -82,7 +82,7 @@ export const getResultsApiVersusResultsGet = <ThrowOnError extends boolean = fal
  *
  * Used by the side-panel inspector on /versus/results so a reader can see
  * the prompt + reasoning + raw response that produced a verdict. The key
- * contains `|` and `:` so callers must pass it as a query param.
+ * is the row's primary-key UUID, so this is a direct lookup — no scan.
  */
 export const getJudgmentByKeyApiVersusJudgmentsByKeyGet = <ThrowOnError extends boolean = false>(options: Options<GetJudgmentByKeyApiVersusJudgmentsByKeyGetData, ThrowOnError>) => (options.client ?? client).get<GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses, GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors, ThrowOnError>({ url: '/api/versus/judgments/by-key', ...options });
 

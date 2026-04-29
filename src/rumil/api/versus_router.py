@@ -573,13 +573,24 @@ class SourceSummary(pydantic.BaseModel):
 
 
 class JudgmentRow(pydantic.BaseModel):
-    """One row in the raw-judgments explorer at the bottom of /results."""
+    """One row in the raw-judgments explorer at the bottom of /results.
+
+    ``source_a``/``source_b`` are the alphabetical canonical ordering used
+    for the dedup key — stable identity across rows. ``display_first``/
+    ``display_second`` are what the judge actually saw as "Continuation A"
+    and "B"; they diverge from canonical roughly half the time. The
+    ``verdict`` letter (``A``/``B``/``tie``) refers to display order, not
+    canonical, so the rows-table renders display order alongside the
+    canonical pair to keep the mapping legible.
+    """
 
     key: str
     essay_id: str
     prefix_config_hash: str
     source_a: str
     source_b: str
+    display_first: str
+    display_second: str
     criterion: str
     judge_model: str
     judge_model_id: str
@@ -1184,6 +1195,8 @@ def get_results(
                 prefix_config_hash=row.get("prefix_config_hash", ""),
                 source_a=row["source_a"],
                 source_b=row["source_b"],
+                display_first=row.get("display_first") or "",
+                display_second=row.get("display_second") or "",
                 criterion=row["criterion"],
                 judge_model=row["judge_model"],
                 judge_model_id=row["config"]["model"],

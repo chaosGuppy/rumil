@@ -16,11 +16,13 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
             <tr>
               <th>essay</th>
               <th title="prefix_config_hash">prefix</th>
-              <th>source_a</th>
-              <th>source_b</th>
+              <th title="alphabetical canonical (dedup-key) ordering">source_a</th>
+              <th title="alphabetical canonical (dedup-key) ordering">source_b</th>
+              <th title="what the judge saw as Continuation A">shown_A</th>
+              <th title="what the judge saw as Continuation B">shown_B</th>
               <th>criterion</th>
               <th>judge</th>
-              <th>verdict</th>
+              <th title="verdict letter refers to display order (shown_A / shown_B)">verdict</th>
               <th>winner</th>
               <th>preference</th>
               <th>ts</th>
@@ -52,6 +54,8 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
                 </td>
                 <td className="versus-mono">{r.source_a}</td>
                 <td className="versus-mono">{r.source_b}</td>
+                <td className="versus-mono">{r.display_first}</td>
+                <td className="versus-mono">{r.display_second}</td>
                 <td>{r.criterion}</td>
                 <td className="versus-mono" title={r.judge_model}>{r.judge_model_id}</td>
                 <td>{r.verdict}</td>

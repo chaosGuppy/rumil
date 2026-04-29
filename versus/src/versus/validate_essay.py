@@ -15,7 +15,7 @@ import json
 import pathlib
 import re
 
-from versus import anthropic_client
+from versus import anthropic_client, versus_db
 
 VALIDATOR_MODEL = "claude-sonnet-4-6"
 VALIDATOR_MAX_TOKENS = 4000
@@ -179,8 +179,6 @@ def validate(
     The sibling versus_essays row must already exist (the fetcher upserts
     the body before the validator runs); we don't conjure it here.
     """
-    from versus import versus_db
-
     md_hash = content_hash(markdown)
     path = verdict_path(cache_dir, essay_id)
     if not force:

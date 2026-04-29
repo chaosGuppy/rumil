@@ -715,12 +715,15 @@ router = APIRouter(
 
 
 def _load_essay(essay_id: str) -> versus_essay.Essay | None:
-    """Load one essay row from versus_essays as an Essay object."""
-    client = versus_db.get_client()
-    row = versus_db.get_essay(client, essay_id)
-    if row is None:
-        return None
-    return versus_prepare.essay_from_db_row(row)
+    """Load one essay row from versus_essays as an Essay object.
+
+    Reads from the ``_load_essay_rows()`` TTL cache so the typical
+    list-then-detail navigation doesn't pay a DB round-trip per click.
+    """
+    for row in _load_essay_rows():
+        if row.get("id") == essay_id:
+            return versus_prepare.essay_from_db_row(row)
+    return None
 
 
 @router.get("/essays", response_model=list[EssayMeta])

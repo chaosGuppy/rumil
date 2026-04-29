@@ -219,7 +219,10 @@ def import_judgments(client, text_lookup: dict[TextKey, list[str]]) -> None:
         config = row.get("config") or {}
         variant = config.get("variant", "blind")
         sa, sb = sorted([row["source_a"], row["source_b"]])
-        prefix = row["prefix_config_hash"]
+        prefix = row.get("prefix_config_hash")
+        if prefix is None:
+            n_skipped += 1
+            continue
         ta_key: TextKey = (row["essay_id"], sa, prefix)
         tb_key: TextKey = (row["essay_id"], sb, prefix)
         ta_ids = text_lookup.get(ta_key) or []
@@ -251,7 +254,7 @@ def import_judgments(client, text_lookup: dict[TextKey, list[str]]) -> None:
             insert_judgment(
                 client,
                 essay_id=row["essay_id"],
-                prefix_hash=row["prefix_config_hash"],
+                prefix_hash=prefix,
                 source_a=sa,
                 source_b=sb,
                 display_first=row.get("display_first") or sa,

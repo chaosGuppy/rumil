@@ -7,6 +7,7 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from versus import versus_db
 from versus.essay import Block, Essay, blocks_to_markdown, is_current_schema
 from versus.versions import COMPLETION_PROMPT_VERSION
 
@@ -136,8 +137,6 @@ def load_essays(client=None) -> list[Essay]:
     Filters out anything that doesn't pass ``is_current_schema`` so
     callers see exactly what /versus would enumerate. Stable order by id.
     """
-    from versus import versus_db
-
     if client is None:
         client = versus_db.get_client()
     out: list[Essay] = []

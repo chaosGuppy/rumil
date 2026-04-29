@@ -17,6 +17,7 @@ insert. This keeps temperature>0 replicates first-class.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from collections.abc import Iterator, Mapping
 from typing import Any, Literal
@@ -111,8 +112,6 @@ def upsert_essay_verdict(
     response: Mapping[str, Any] | None,
 ) -> None:
     """Update the verdict slot on an existing essay row."""
-    import datetime as dt
-
     update = {
         "verdict_clean": clean,
         "verdict_issues": issues,

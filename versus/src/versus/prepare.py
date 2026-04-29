@@ -114,46 +114,57 @@ def resolve_prefix_cfg(cfg, label: str | None):
     raise ValueError(f"unknown prefix label {label!r}; valid: {valid}")
 
 
-def current_prefix_hashes(cfg, essays_dir, *, prefix_cfg=None) -> dict[str, str]:
-    """Return ``{essay_id: prefix_config_hash}`` for every cached essay.
+def essay_from_db_row(row: dict) -> Essay:
+    """Reconstruct an ``Essay`` from a versus_essays DB row."""
+    return Essay(
+        id=row["id"],
+        source_id=row["source_id"],
+        url=row.get("url", ""),
+        title=row.get("title", ""),
+        author=row.get("author", ""),
+        pub_date=row.get("pub_date", ""),
+        blocks=[Block(**b) for b in row.get("blocks") or []],
+        markdown=row.get("markdown", ""),
+        image_count=row.get("image_count", 0),
+        schema_version=row.get("schema_version", 0),
+    )
 
-    Loads each essay JSON in ``essays_dir`` (skipping ``.verdict.json``
-    companion files) and runs :func:`prepare` to compute the live hash
-    that's a function of essay content + prefix params + prompt version.
-    Used by judging scripts with ``--current-only`` to skip groups whose
+
+def load_essays(client=None) -> list[Essay]:
+    """Load all essays from versus_essays as Essay objects.
+
+    Filters out anything that doesn't pass ``is_current_schema`` so
+    callers see exactly what /versus would enumerate. Stable order by id.
+    """
+    from versus import versus_db
+
+    if client is None:
+        client = versus_db.get_client()
+    out: list[Essay] = []
+    for row in versus_db.iter_essays(client):
+        # Mimic is_current_schema(d) — DB rows aren't dicts of the JSON
+        # form so we recheck on the row itself.
+        if not is_current_schema(row):
+            continue
+        out.append(essay_from_db_row(row))
+    return out
+
+
+def current_prefix_hashes(cfg, *, prefix_cfg=None, client=None) -> dict[str, str]:
+    """Return ``{essay_id: prefix_config_hash}`` for every essay in versus_essays.
+
+    Runs :func:`prepare` per essay to compute the live hash (a function
+    of essay content + prefix params + COMPLETION_PROMPT_VERSION). Used
+    by judging scripts with ``--current-only`` to skip groups whose
     prefix_hash is no longer current.
 
     ``prefix_cfg`` defaults to ``cfg.prefix``. Pass a sibling from
     ``cfg.prefix_variants`` to compute live hashes under that variant
     (the API uses this to scope staleness to a selected variant).
     """
-    import json
-    import pathlib
-
     pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
     out: dict[str, str] = {}
-    d = pathlib.Path(essays_dir)
-    if not d.exists():
-        return out
-    for path in sorted(d.glob("*.json")):
-        if path.name.endswith(".verdict.json"):
-            continue
-        data = json.loads(path.read_text())
-        if "source_id" not in data:
-            # Legacy (pre-multi-source) essay JSON — skip. Re-fetch to upgrade.
-            continue
-        essay = Essay(
-            id=data["id"],
-            source_id=data["source_id"],
-            url=data.get("url", ""),
-            title=data.get("title", ""),
-            author=data.get("author", ""),
-            pub_date=data.get("pub_date", ""),
-            blocks=[Block(**b) for b in data["blocks"]],
-            markdown=data.get("markdown", ""),
-            image_count=data.get("image_count", 0),
-            schema_version=data.get("schema_version", 0),
-        )
+    for essay in load_essays(client):
         task = prepare(
             essay,
             n_paragraphs=pcfg.n_paragraphs,
@@ -164,35 +175,18 @@ def current_prefix_hashes(cfg, essays_dir, *, prefix_cfg=None) -> dict[str, str]
     return out
 
 
-def active_essay_ids(essays_dir, exclude_ids: Iterable[str]) -> set[str]:
+def active_essay_ids(exclude_ids: Iterable[str], client=None) -> set[str]:
     """Essay IDs in the current canonical set.
 
     Applies the same gate as the API's ``_build_essays_status``:
-    legacy pre-multi-source JSONs are skipped, essays at an older
-    ``schema_version`` are skipped, and ``exclude_ids`` are skipped.
-    Used by ``scripts/run_completions.py`` / ``run_judgments.py``
+    legacy pre-multi-source rows are skipped (versus_essays only holds
+    current-schema rows post-backfill), and ``exclude_ids`` are skipped.
+    Used by ``scripts/run_completions.py`` / ``run_rumil_judgments.py``
     ``--active`` so they touch exactly the essays ``/versus`` would
     enumerate.
     """
-    import pathlib
-
     exclude = set(exclude_ids)
-    out: set[str] = set()
-    d = pathlib.Path(essays_dir)
-    if not d.exists():
-        return out
-    for path in sorted(d.glob("*.json")):
-        if path.name.endswith(".verdict.json"):
-            continue
-        data = json.loads(path.read_text())
-        if "source_id" not in data:
-            continue
-        if not is_current_schema(data):
-            continue
-        if data["id"] in exclude:
-            continue
-        out.add(data["id"])
-    return out
+    return {e.id for e in load_essays(client) if e.id not in exclude}
 
 
 def split_paraphrase(

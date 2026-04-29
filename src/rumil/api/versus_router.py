@@ -13,7 +13,6 @@ without config; everything else returns 503 if config is missing.
 from __future__ import annotations
 
 import functools
-import json
 import os
 import pathlib
 import time
@@ -199,6 +198,23 @@ def _per_essay_load(kind: str, essay_id: str) -> list[dict]:
     return rows
 
 
+def _load_essay_rows() -> list[dict]:
+    """Cached fetch of all versus_essays rows.
+
+    Reuses the LIGHT cache slot under key "essays" — the table is small
+    (~30 rows) and the row payload includes markdown / blocks which we
+    do read per request to compute prefix_hash and render content.
+    """
+    now = time.time()
+    cached = _LIGHT_CACHE.get("essays")
+    if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
+        return cached[1]
+    client = versus_db.get_client()
+    rows = list(versus_db.iter_essays(client))
+    _LIGHT_CACHE["essays"] = (now, rows)
+    return rows
+
+
 def _light_load(kind: str) -> list[dict]:
     """Cached fetch of judgments/texts via the light projection."""
     now = time.time()
@@ -248,31 +264,6 @@ def _resolve_path(p: pathlib.Path) -> pathlib.Path:
     if p.is_absolute():
         return p
     return _REPO_ROOT / "versus" / p
-
-
-def _essays_dir() -> pathlib.Path:
-    cfg = _cfg_cached()
-    if cfg:
-        return _resolve_path(cfg.essays.cache_dir)
-    return _data_dir() / "essays"
-
-
-def _iter_essay_paths() -> list[pathlib.Path]:
-    """Essay JSONs only — skips ``<id>.verdict.json`` and other companions."""
-    d = _essays_dir()
-    if not d.exists():
-        return []
-    return sorted(p for p in d.glob("*.json") if not p.name.endswith(".verdict.json"))
-
-
-def _load_verdict(essay_id: str) -> dict | None:
-    p = _essays_dir() / f"{essay_id}.verdict.json"
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except json.JSONDecodeError:
-        return None
 
 
 def _build_completion_source_index_from_rows(
@@ -328,35 +319,20 @@ def _build_essays_status(
     ``cfg.prefix_variants`` to compute the map under that variant — this
     is how the UI scopes staleness to a selected variant.
 
-    Reads cached essay JSONs + their adjacent ``.verdict.json`` files. If
-    no essays are cached, returns empty containers (matrix filtering is a
-    no-op when ``current_prefix_hashes`` is empty).
+    Reads from versus_essays. If the table is empty, returns empty
+    containers (matrix filtering is a no-op when ``current_prefix_hashes``
+    is empty).
     """
     pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
     statuses: list[EssayStatus] = []
     current: dict[str, str] = {}
     exclude = set(cfg.essays.exclude_ids)
-    for path in _iter_essay_paths():
-        with open(path) as f:
-            d = json.load(f)
-        if "source_id" not in d:
+    for row in _load_essay_rows():
+        if row["id"] in exclude:
             continue
-        if not versus_essay.is_current_schema(d):
+        if not versus_essay.is_current_schema(row):
             continue
-        if d["id"] in exclude:
-            continue
-        essay = versus_essay.Essay(
-            id=d["id"],
-            source_id=d["source_id"],
-            url=d["url"],
-            title=d["title"],
-            author=d["author"],
-            pub_date=d["pub_date"],
-            blocks=[versus_essay.Block(**b) for b in d["blocks"]],
-            markdown=d.get("markdown", ""),
-            image_count=d.get("image_count", 0),
-            schema_version=d.get("schema_version", 0),
-        )
+        essay = versus_prepare.essay_from_db_row(row)
         task = versus_prepare.prepare(
             essay,
             n_paragraphs=pcfg.n_paragraphs,
@@ -364,16 +340,15 @@ def _build_essays_status(
             length_tolerance=cfg.completion.length_tolerance,
         )
         current[essay.id] = task.prefix_config_hash
-        verdict = _load_verdict(essay.id)
         statuses.append(
             EssayStatus(
                 essay_id=essay.id,
                 title=essay.title,
                 schema_version=essay.schema_version,
                 current_prefix_hash=task.prefix_config_hash,
-                validator_clean=verdict["clean"] if verdict else None,
-                validator_issues=len(verdict["issues"]) if verdict else 0,
-                validator_model=verdict.get("model") if verdict else None,
+                validator_clean=row.get("verdict_clean"),
+                validator_issues=len(row.get("verdict_issues") or []),
+                validator_model=row.get("verdict_model"),
             )
         )
     return statuses, current
@@ -729,24 +704,12 @@ router = APIRouter(
 
 
 def _load_essay(essay_id: str) -> versus_essay.Essay | None:
-    p = _essays_dir() / f"{essay_id}.json"
-    if not p.exists():
+    """Load one essay row from versus_essays as an Essay object."""
+    client = versus_db.get_client()
+    row = versus_db.get_essay(client, essay_id)
+    if row is None:
         return None
-    with open(p) as f:
-        d = json.load(f)
-    if "source_id" not in d:
-        return None
-    return versus_essay.Essay(
-        id=d["id"],
-        source_id=d["source_id"],
-        url=d["url"],
-        title=d["title"],
-        author=d["author"],
-        pub_date=d["pub_date"],
-        blocks=[versus_essay.Block(**b) for b in d["blocks"]],
-        markdown=d.get("markdown", ""),
-        schema_version=d.get("schema_version", 0),
-    )
+    return versus_prepare.essay_from_db_row(row)
 
 
 @router.get("/essays", response_model=list[EssayMeta])
@@ -759,15 +722,10 @@ def list_essays(include_legacy: bool = False) -> list[EssayMeta]:
     confusing the inspect dropdown. Pass ``include_legacy=true`` to
     include them anyway (no UI surfaces this yet; it's a debug escape).
     """
-    paths = _iter_essay_paths()
-    if not paths and not _essays_dir().exists():
-        raise HTTPException(503, f"versus essays dir not found: {_essays_dir()}")
     cfg = _cfg_cached()
     exclude = set(cfg.essays.exclude_ids) if cfg else set()
     out: list[EssayMeta] = []
-    for p in paths:
-        with open(p) as f:
-            d = json.load(f)
+    for d in _load_essay_rows():
         if d.get("id") in exclude:
             continue
         if not include_legacy and not versus_essay.is_current_schema(d):
@@ -1462,11 +1420,7 @@ def get_diagnostics(
     active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     _, current_prefix_hashes = _build_essays_status(cfg, prefix_cfg=active_prefix_cfg)
 
-    titles: dict[str, str] = {}
-    for p in _iter_essay_paths():
-        with open(p) as f:
-            d = json.load(f)
-        titles[d["id"]] = d.get("title", d["id"])
+    titles: dict[str, str] = {d["id"]: d.get("title", d["id"]) for d in _load_essay_rows()}
 
     filtered_rows: list[dict] = []
     for db_row in _light_load("judgments"):

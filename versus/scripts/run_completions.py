@@ -124,7 +124,7 @@ def main() -> None:
     essays = [e for e in essays if e.id not in exclude]
 
     if args.active:
-        active = prepare.active_essay_ids(cfg.essays.cache_dir, cfg.essays.exclude_ids)
+        active = prepare.active_essay_ids(cfg.essays.exclude_ids)
         essays = [e for e in essays if e.id in active]
     if args.essay:
         # --essay is a hard list, not an intersection with fetch_all.

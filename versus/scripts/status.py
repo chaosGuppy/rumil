@@ -42,35 +42,7 @@ from versus import essay as versus_essay  # noqa: E402
 
 def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
     exclude = set(cfg.essays.exclude_ids)
-    out: dict[str, versus_essay.Essay] = {}
-    for path in sorted(cfg.essays.cache_dir.glob("*.json")):
-        if path.name.endswith(".verdict.json"):
-            continue
-        d = json.loads(path.read_text())
-        if "source_id" not in d:
-            # Legacy pre-multi-source JSON — skip. Re-fetch to upgrade.
-            continue
-        if not versus_essay.is_current_schema(d):
-            # Older schema — the API's staleness gate excludes these from
-            # ``current_prefix_hashes`` so rows against them show as
-            # "essay-not-current" in /versus. Match that here: drop the
-            # essay, and its rows fall into ``unknown_essay`` below.
-            continue
-        if d["id"] in exclude:
-            continue
-        out[d["id"]] = versus_essay.Essay(
-            id=d["id"],
-            source_id=d["source_id"],
-            url=d["url"],
-            title=d["title"],
-            author=d["author"],
-            pub_date=d["pub_date"],
-            blocks=[versus_essay.Block(**b) for b in d["blocks"]],
-            markdown=d["markdown"],
-            image_count=d.get("image_count", 0),
-            schema_version=d["schema_version"],
-        )
-    return out
+    return {e.id: e for e in prepare.load_essays() if e.id not in exclude}
 
 
 def _current_prefix_hashes(

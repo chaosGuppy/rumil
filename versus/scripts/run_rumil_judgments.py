@@ -169,9 +169,12 @@ def main() -> None:
         "--prefix-label",
         default=None,
         help=(
-            "Scope --current-only to a specific prefix variant (default: "
-            "the canonical `prefix:` entry). Sibling variants live under "
-            "`prefix_variants:` in config.yaml; pass their `id`."
+            "Restrict planning to a specific prefix variant. When set, only "
+            "rows whose prefix_hash matches that variant's current hash are "
+            "enumerated — stale rows under that variant are excluded too. "
+            "Without this flag, every prefix_hash present in versus_texts "
+            "is eligible. Sibling variants live under `prefix_variants:` "
+            "in config.yaml; pass their `id`."
         ),
     )
     ap.add_argument(
@@ -198,13 +201,18 @@ def main() -> None:
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 
     if args.active:
-        active = prepare.active_essay_ids(cfg.essays.cache_dir, cfg.essays.exclude_ids)
+        active = prepare.active_essay_ids(cfg.essays.exclude_ids)
         essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
     else:
         essay_ids = args.essay
 
-    prefix_cfg = prepare.resolve_prefix_cfg(cfg, args.prefix_label)
-    print(f"[prefix] using variant {prefix_cfg.id!r}")
+    prefix_cfg = (
+        prepare.resolve_prefix_cfg(cfg, args.prefix_label)
+        if args.prefix_label is not None
+        else None
+    )
+    if prefix_cfg is not None:
+        print(f"[prefix] restricting to variant {prefix_cfg.id!r}")
 
     if args.variant is None:
         # Blind path: route claude-* direct to Anthropic, others via OpenRouter.

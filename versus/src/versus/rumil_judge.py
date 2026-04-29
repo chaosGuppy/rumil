@@ -99,16 +99,19 @@ def _plan_rumil_pairs(
     - ``essay_ids``: restrict to pairs from these essays
     - ``contestants``: restrict to pairs where both source_ids are in this list
     - ``vs_human``: restrict to pairs where one side is ``"human"``
-    - ``current_only``: skip groups whose prefix_hash isn't current
-    - ``prefix_cfg``: which prefix variant counts as current (default canonical)
+    - ``current_only``: skip groups whose prefix_hash isn't the current
+      canonical hash for the essay (or the requested ``prefix_cfg`` variant)
+    - ``prefix_cfg``: when non-None, hard-restrict to rows whose prefix_hash
+      matches that variant's current hash. Implies current-only filtering
+      for that variant.
     """
     from versus import prepare
 
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
     current_hashes = (
-        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir, prefix_cfg=prefix_cfg)
-        if current_only
+        prepare.current_prefix_hashes(cfg, prefix_cfg=prefix_cfg)
+        if (current_only or prefix_cfg is not None)
         else None
     )
     db = versus_db.get_client()
@@ -309,6 +312,7 @@ async def run_ws(
     # their explicit constructor arg.
     probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
     project = await _resolve_workspace(probe_db, workspace)
+    probe_db.project_id = project.id
     ws_short = project.id[:8]
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
@@ -542,6 +546,7 @@ async def run_orch(
     # needs to see baseline rows.
     probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
     project = await _resolve_workspace(probe_db, workspace)
+    probe_db.project_id = project.id
     ws_short = project.id[:8]
 
     task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}

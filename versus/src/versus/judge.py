@@ -502,8 +502,8 @@ def run_blind(
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
     current_hashes = (
-        prepare.current_prefix_hashes(cfg, cfg.essays.cache_dir, prefix_cfg=prefix_cfg)
-        if current_only
+        prepare.current_prefix_hashes(cfg, prefix_cfg=prefix_cfg)
+        if (current_only or prefix_cfg is not None)
         else None
     )
 

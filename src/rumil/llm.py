@@ -32,6 +32,8 @@ from anthropic.types import (
     ToolUseBlock,
     WebSearchToolResultBlock,
 )
+from google import genai
+from google.genai import types as genai_types
 from pydantic import BaseModel, ValidationError
 from tenacity import (
     RetryCallState,
@@ -715,7 +717,6 @@ def _to_google_contents(messages: Sequence[dict]) -> list[Any]:
     aren't supported on this path; raise if any are encountered so callers
     fail loudly rather than silently dropping them.
     """
-    from google.genai import types as genai_types
 
     contents: list[Any] = []
     for msg in messages:
@@ -729,7 +730,7 @@ def _to_google_contents(messages: Sequence[dict]) -> list[Any]:
                 )
                 if btype not in (None, "text"):
                     raise ValueError(
-                        f"call_google_api does not support content block type "
+                        "call_google_api does not support content block type "
                         f"{btype!r}; only plain text messages are supported."
                     )
         text = _extract_text_from_anthropic_content(content)
@@ -797,9 +798,6 @@ async def call_google_api(
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
-
-    from google import genai
-    from google.genai import types as genai_types
 
     settings = get_settings()
     if not settings.gcp_project_id:

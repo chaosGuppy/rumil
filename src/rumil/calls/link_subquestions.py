@@ -236,6 +236,7 @@ class LinkerClosingReviewer(ClosingReviewer):
             metadata=meta,
             db=infra.db,
             cache=True,
+            parse_manually=True,
         )
 
         remaining = 0

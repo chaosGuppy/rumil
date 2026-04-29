@@ -979,6 +979,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             metadata=meta,
             db=self.db,
             cache=True,
+            parse_manually=True,
         )
 
         if result.response_text:

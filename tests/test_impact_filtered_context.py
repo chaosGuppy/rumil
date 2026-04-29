@@ -151,6 +151,52 @@ async def test_excludes_inner_pages_from_candidates(mocker, tmp_db, question_pag
     assert inner_page.id not in seen_ids
 
 
+async def test_excludes_excluded_page_ids(mocker, tmp_db, question_page, view_call):
+    """Pages listed in inner_result.excluded_page_ids are never scored.
+
+    UpdateViewContext lists pages already cited by existing view items as
+    excluded; the wrapper must respect that exclusion even though those
+    pages don't appear in working_page_ids or any tier ID list.
+    """
+    cited_page = _make_evidence("Already cited by an existing view item", "C" * 200)
+    candidate = _make_evidence("Fresh candidate", "Y" * 200)
+    inner = ContextResult(
+        context_text="STANDARD CONTEXT",
+        working_page_ids=[],
+        excluded_page_ids=[cited_page.id],
+    )
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.bfs_evidence_pages_within_distance",
+        new_callable=mocker.AsyncMock,
+        return_value=[cited_page, candidate],
+    )
+
+    seen_ids: list[str] = []
+
+    async def fake_structured_call(**kwargs):
+        msg = kwargs["user_message"]
+        if cited_page.headline in msg:
+            seen_ids.append(cited_page.id)
+        if candidate.headline in msg:
+            seen_ids.append(candidate.id)
+        return _FakeStructuredCallResult(
+            ImpactVerdict(new_information="x", impact_reasoning="y", impact_percentile=50)
+        )
+
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.structured_call",
+        side_effect=fake_structured_call,
+    )
+
+    wrapper = ImpactFilteredContext(inner_builder=_StubInnerBuilder(inner))
+    infra = _make_infra(tmp_db, view_call, question_page)
+    with override_settings(rumil_smoke_test=""):
+        await wrapper.build_context(infra)
+
+    assert candidate.id in seen_ids
+    assert cited_page.id not in seen_ids
+
+
 async def test_floor_percentile_drops_low_scores(mocker, tmp_db, question_page, view_call):
     """Pages scored below floor_percentile are not included even if budget allows."""
     inner = ContextResult(context_text="ctx", working_page_ids=[])

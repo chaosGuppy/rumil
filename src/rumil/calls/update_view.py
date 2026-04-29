@@ -318,6 +318,11 @@ class UpdateViewContext(ContextBuilder):
             context_text=context_text,
             working_page_ids=result.page_ids + child_page_ids + claim_page_ids,
             preloaded_ids=preloaded_ids,
+            # cited_ids and item_ids were excluded from the embedding search
+            # (they're already represented inside the existing view items, so
+            # re-rendering them would be redundant). Surface them here so any
+            # wrapper that adds extra candidates also excludes them.
+            excluded_page_ids=list(cited_ids | set(item_ids)),
         )
 
 

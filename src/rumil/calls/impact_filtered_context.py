@@ -342,6 +342,10 @@ class ImpactFilteredContext(ContextBuilder):
         excluded_ids.update(pared_result.abstract_page_ids)
         excluded_ids.update(pared_result.summary_page_ids)
         excluded_ids.update(pared_result.distillation_page_ids)
+        # Pages the inner builder deliberately kept out of the context (e.g.
+        # pages already cited by existing view items in the update_view path)
+        # must not be re-injected by our BFS.
+        excluded_ids.update(pared_result.excluded_page_ids)
 
         candidates = await bfs_evidence_pages_within_distance(
             infra.question_id,
@@ -452,7 +456,14 @@ class ImpactFilteredContext(ContextBuilder):
         base_chars: int,
         char_budget: int,
         floor_percentile: int,
-    ) -> tuple[list[Page], int, int]:
+    ) -> tuple[Sequence[Page], int, int]:
+        # Threshold semantics: pick the highest percentile T such that
+        # {pages with percentile >= T} fits in budget. This is NOT a knapsack
+        # — we walk in descending percentile order and stop at the first page
+        # that doesn't fit. Skipping a too-large page and continuing with
+        # smaller-but-lower-percentile pages would silently change the
+        # rank-by-threshold semantics into a value-density pack, which is a
+        # different algorithm than the one the caller specifies.
         ordered = sorted(scored, key=lambda item: -item[1].impact_percentile)
         accepted: list[Page] = []
         total = base_chars

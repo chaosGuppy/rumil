@@ -1,10 +1,12 @@
 """
-LLM interface. Wraps the Anthropic API and handles exchange persistence.
+LLM interface. Wraps the Anthropic and Google (Vertex AI) APIs and handles
+exchange persistence.
 
 Exports:
-  - call_api: API call with retries and optional exchange logging
-  - text_call: plain text call
-  - structured_call: structured output via messages.parse
+  - call_anthropic_api: Anthropic API call with retries and optional exchange logging
+  - call_google_api: Vertex AI (google-genai) call with retries and optional exchange logging
+  - text_call: plain text call (dispatches by model name)
+  - structured_call: structured output via messages.parse / response_schema
 
 Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
             LLMExchangeMetadata.
@@ -30,6 +32,8 @@ from anthropic.types import (
     ToolUseBlock,
     WebSearchToolResultBlock,
 )
+from google import genai
+from google.genai import types as genai_types
 from pydantic import BaseModel, ValidationError
 from tenacity import (
     RetryCallState,
@@ -89,12 +93,27 @@ def _effort_level(model: str) -> str | None:
 log = logging.getLogger(__name__)
 
 
+def _exc_status(exc: BaseException | None) -> int | None:
+    """Best-effort HTTP status extraction across SDKs.
+
+    Anthropic exceptions expose `status_code`; google-genai's APIError
+    exposes `code`. Falling back across both lets the same retry logic
+    serve both providers.
+    """
+    if exc is None:
+        return None
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(exc, "code", None)
+    return status if isinstance(status, int) else None
+
+
 def _is_retryable(exc: BaseException) -> bool:
     """Return True if the exception represents a transient API error."""
-    status = getattr(exc, "status_code", None)
+    status = _exc_status(exc)
     name = type(exc).__name__.lower()
     return (
-        status in (429, 500, 529)
+        status in (429, 500, 502, 503, 529)
         or "overloaded" in name
         or "ratelimit" in name
         or "internalserver" in name
@@ -105,7 +124,7 @@ def _is_retryable(exc: BaseException) -> bool:
 def _stop_after_status_retries(retry_state: RetryCallState) -> bool:
     """Stop callback that respects per-status retry limits from settings."""
     exc = retry_state.outcome.exception() if retry_state.outcome else None
-    status = getattr(exc, "status_code", None) if exc else None
+    status = _exc_status(exc)
     max_retries = get_settings().get_max_retries(status)
     return retry_state.attempt_number >= max_retries
 
@@ -113,7 +132,7 @@ def _stop_after_status_retries(retry_state: RetryCallState) -> bool:
 def _log_before_retry(retry_state: RetryCallState) -> None:
     """Log a warning before each retry attempt."""
     exc = retry_state.outcome.exception() if retry_state.outcome else None
-    status = getattr(exc, "status_code", None) if exc else None
+    status = _exc_status(exc)
     name = type(exc).__name__.lower() if exc else "unknown"
     label = f"HTTP {status}" if status else name
     wait = retry_state.next_action.sleep if retry_state.next_action else 0
@@ -370,7 +389,7 @@ class LLMExchangeMetadata:
     """Context for automatically saving an LLM exchange to the database.
 
     Encapsulates the parameters needed by save_llm_exchange that are not
-    already present in the call_api / structured_call signatures.
+    already present in the call_anthropic_api / structured_call signatures.
 
     `user_message` is only used for single-turn calls (text_call). For
     multi-turn calls the full message stack is serialized automatically
@@ -514,7 +533,7 @@ def _enrich_langfuse_generation(
 
 
 @observe(as_type="generation", name="anthropic.messages.create")
-async def call_api(
+async def call_anthropic_api(
     client: anthropic.AsyncAnthropic,
     model: str,
     system_prompt: str,
@@ -649,6 +668,254 @@ async def call_api(
     return APIResponse(message=response, duration_ms=elapsed_ms)
 
 
+GEMINI_MODEL_PREFIX = "gemini-"
+
+
+def is_google_model(model: str) -> bool:
+    return model.startswith(GEMINI_MODEL_PREFIX)
+
+
+@dataclass
+class GoogleAPIResponse:
+    """Provider-neutral wrapper around a google-genai GenerateContentResponse.
+
+    Carries only what `text_call`/`structured_call` consume — the underlying
+    response is kept on `raw` for debugging.
+    """
+
+    text: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_input_tokens: int
+    duration_ms: int
+    raw: Any
+
+
+def _extract_text_from_anthropic_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+                elif "text" in block:
+                    parts.append(block["text"])
+            else:
+                text = getattr(block, "text", None)
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return ""
+
+
+def _to_google_contents(messages: Sequence[dict]) -> list[Any]:
+    """Convert Anthropic-style messages to Gemini `Content` objects.
+
+    Maps role "assistant" → "model" and flattens text blocks. Tool-use blocks
+    aren't supported on this path; raise if any are encountered so callers
+    fail loudly rather than silently dropping them.
+    """
+
+    contents: list[Any] = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        gemini_role = "model" if role == "assistant" else "user"
+        content = msg.get("content")
+        if isinstance(content, list):
+            for block in content:
+                btype = (
+                    block.get("type") if isinstance(block, dict) else getattr(block, "type", None)
+                )
+                if btype not in (None, "text"):
+                    raise ValueError(
+                        "call_google_api does not support content block type "
+                        f"{btype!r}; only plain text messages are supported."
+                    )
+        text = _extract_text_from_anthropic_content(content)
+        contents.append(genai_types.Content(role=gemini_role, parts=[genai_types.Part(text=text)]))
+    return contents
+
+
+def _enrich_langfuse_generation_google(
+    *,
+    model: str,
+    messages: Sequence[dict],
+    response: Any,
+    elapsed_ms: int,
+    config: dict | None = None,
+) -> None:
+    """Populate the active Langfuse generation span for a Gemini call."""
+    client = get_langfuse()
+    if client is None:
+        return
+    try:
+        usage = getattr(response, "usage_metadata", None)
+        input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+        output_tokens = getattr(usage, "candidates_token_count", 0) or 0
+        cache_read = getattr(usage, "cached_content_token_count", 0) or 0
+        cost_usd = compute_cost(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=cache_read,
+        )
+        output_text = getattr(response, "text", None) or ""
+        client.update_current_generation(
+            model=model,
+            input=_serialize_messages(messages),
+            output=output_text or None,
+            model_parameters=config or {},
+            usage_details={
+                "input": input_tokens,
+                "output": output_tokens,
+                "cache_read_input": cache_read,
+            },
+            cost_details={"total": cost_usd} if cost_usd else None,
+            metadata={"duration_ms": elapsed_ms},
+        )
+    except Exception as exc:
+        log.debug("Langfuse enrichment (google) failed: %s", exc)
+
+
+@observe(as_type="generation", name="google.generate_content")
+async def call_google_api(
+    model: str,
+    system_prompt: str,
+    messages: list[dict],
+    *,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
+) -> GoogleAPIResponse:
+    """Make a single Vertex AI (google-genai) call with retry logic.
+
+    Mirrors the responsibilities of `call_anthropic_api`: retries on transient
+    errors, persists the exchange when `metadata`/`db` are provided, records a
+    Langfuse generation, and surfaces a normalised response. Tool-use is not
+    supported on this path yet.
+    """
+    if bool(metadata) != bool(db):
+        raise ValueError("metadata and db must be provided together")
+
+    settings = get_settings()
+    if not settings.gcp_project_id:
+        raise OSError(
+            "GCP_PROJECT_ID must be set to use Vertex AI / Gemini models. "
+            "Set it in your environment or .env."
+        )
+    client = genai.Client(
+        vertexai=True,
+        project=settings.gcp_project_id,
+        location=settings.gcp_location,
+    )
+
+    system_prompt = _with_date_suffix(system_prompt)
+    contents = _to_google_contents(messages)
+    config = genai_types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        temperature=DEFAULT_TEMPERATURE,
+        max_output_tokens=DEFAULT_MAX_TOKENS,
+    )
+
+    log.debug(
+        "Google API call: model=%s, system_prompt_len=%d, messages=%d",
+        model,
+        len(system_prompt),
+        len(messages),
+    )
+
+    @_api_retry
+    async def _do_api_call() -> Any:
+        start = time.monotonic()
+        response = await client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config,
+        )
+        elapsed = int((time.monotonic() - start) * 1000)
+        response._elapsed_ms = elapsed  # type: ignore[attr-defined]
+        return response
+
+    try:
+        response = await _do_api_call()
+    except Exception as e:
+        log.error("Google API call failed: %s", e, exc_info=True)
+        trace = get_trace()
+        if trace:
+            phase = metadata.phase if metadata else "api_call"
+            await trace.record(
+                ErrorEvent(
+                    message=f"Google API call failed: {type(e).__name__}: {e}",
+                    phase=phase,
+                )
+            )
+        raise
+
+    elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
+    usage = getattr(response, "usage_metadata", None)
+    input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+    output_tokens = getattr(usage, "candidates_token_count", 0) or 0
+    cache_read = getattr(usage, "cached_content_token_count", 0) or 0
+    response_text = getattr(response, "text", None) or ""
+
+    log.debug(
+        "Google API response: usage=%d/%d tokens, duration=%dms",
+        input_tokens,
+        output_tokens,
+        elapsed_ms,
+    )
+
+    if metadata and db:
+        serialized = _serialize_messages(messages) if len(messages) > 1 else None
+        try:
+            await _save_exchange(
+                metadata,
+                db=db,
+                model=model,
+                system_prompt=system_prompt,
+                response_text=response_text or None,
+                tool_calls=[],
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                duration_ms=elapsed_ms,
+                cache_read_input_tokens=cache_read,
+                user_messages=serialized,
+            )
+        except Exception as exc:
+            log.error(
+                "Failed to save google exchange for call %s: %s",
+                metadata.call_id[:8],
+                exc,
+                exc_info=True,
+            )
+            trace = get_trace()
+            if trace:
+                await trace.record(
+                    ErrorEvent(
+                        message=(f"Failed to save exchange: {type(exc).__name__}: {exc}"),
+                        phase=metadata.phase,
+                    )
+                )
+
+    _enrich_langfuse_generation_google(
+        model=model,
+        messages=messages,
+        response=response,
+        elapsed_ms=elapsed_ms,
+        config={"temperature": DEFAULT_TEMPERATURE, "max_output_tokens": DEFAULT_MAX_TOKENS},
+    )
+    return GoogleAPIResponse(
+        text=response_text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_read_input_tokens=cache_read,
+        duration_ms=elapsed_ms,
+        raw=response,
+    )
+
+
 async def text_call(
     system_prompt: str,
     user_message: str = "",
@@ -656,24 +923,39 @@ async def text_call(
     messages: list[dict] | None = None,
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
+    model: str | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
     Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
     Pass `metadata` and `db` together to persist the exchange and record a
-    trace event against the call identified by `metadata.call_id`.
+    trace event against the call identified by `metadata.call_id`. Pass `model`
+    to override the default model — names starting with ``gemini-`` route to
+    Vertex AI, everything else routes to Anthropic.
     """
     settings = get_settings()
-    api_key = settings.require_anthropic_key()
-    model = settings.model
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    effective_model = model or settings.model
     msg_list = messages if messages is not None else [{"role": "user", "content": user_message}]
     if metadata is not None and metadata.user_message is None:
         metadata.user_message = user_message
-    log.debug("text_call: messages=%d", len(msg_list))
-    api_resp = await call_api(
+    log.debug("text_call: messages=%d, model=%s", len(msg_list), effective_model)
+
+    if is_google_model(effective_model):
+        google_resp = await call_google_api(
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+        )
+        log.debug("text_call returned %d chars", len(google_resp.text))
+        return google_resp.text
+
+    api_key = settings.require_anthropic_key()
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    api_resp = await call_anthropic_api(
         client,
-        model,
+        effective_model,
         system_prompt,
         msg_list,
         metadata=metadata,
@@ -718,9 +1000,9 @@ async def _structured_call_cached(
 ) -> StructuredCallResult[T]:
     """Structured output via create() + manual JSON parsing for cache reuse.
 
-    Uses call_api (messages.create) so the request shares the same cache
-    namespace as agent loop calls. Injects the JSON schema into the last
-    user message and validates the response with pydantic.
+    Uses call_anthropic_api (messages.create) so the request shares the same
+    cache namespace as agent loop calls. Injects the JSON schema into the
+    last user message and validates the response with pydantic.
     """
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
@@ -730,7 +1012,7 @@ async def _structured_call_cached(
 
     max_parse_attempts = 2
     for parse_attempt in range(max_parse_attempts):
-        api_resp = await call_api(
+        api_resp = await call_anthropic_api(
             client,
             effective_model,
             system_prompt,
@@ -804,6 +1086,97 @@ async def _structured_call_cached(
                 response_text=response_text or None,
                 input_tokens=api_resp.message.usage.input_tokens,
                 output_tokens=api_resp.message.usage.output_tokens,
+                duration_ms=api_resp.duration_ms,
+            )
+
+    raise RuntimeError("Unreachable: parse retry loop exhausted")
+
+
+async def _structured_call_google(
+    system_prompt: str,
+    response_model: type[T] | None,
+    msg_list: list[dict],
+    *,
+    metadata: LLMExchangeMetadata | None = None,
+    db: DB | None = None,
+    model: str,
+) -> StructuredCallResult[T]:
+    """Structured output via Vertex AI: schema-injection + JSON parsing.
+
+    Mirrors `_structured_call_cached` but uses `call_google_api` and adapts
+    the parse-retry messages to Gemini's "model" role.
+    """
+    if response_model is None:
+        raise ValueError(
+            "structured_call against Gemini requires a response_model; "
+            "schema-less structured calls aren't supported on this path."
+        )
+    schema_text = _schema_instruction(response_model)
+    inject_msgs = _inject_into_last_user_message(msg_list, schema_text)
+
+    max_parse_attempts = 2
+    for parse_attempt in range(max_parse_attempts):
+        api_resp = await call_google_api(
+            model,
+            system_prompt,
+            inject_msgs,
+            metadata=metadata,
+            db=db,
+        )
+        response_text = api_resp.text
+        try:
+            raw = _extract_json(response_text)
+            parsed = response_model.model_validate(raw)
+            log.debug(
+                "structured_call (google) success: %s, usage=%d/%d tokens",
+                response_model.__name__,
+                api_resp.input_tokens,
+                api_resp.output_tokens,
+            )
+            return StructuredCallResult(
+                parsed=parsed,
+                response_text=response_text or None,
+                input_tokens=api_resp.input_tokens,
+                output_tokens=api_resp.output_tokens,
+                duration_ms=api_resp.duration_ms,
+            )
+        except (json.JSONDecodeError, ValueError, ValidationError) as exc:
+            if parse_attempt < max_parse_attempts - 1:
+                log.warning(
+                    "structured_call (google): parse attempt %d failed (%s), retrying",
+                    parse_attempt + 1,
+                    exc,
+                )
+                inject_msgs = list(inject_msgs)
+                inject_msgs.append({"role": "assistant", "content": response_text})
+                inject_msgs.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your previous response could not be parsed as valid JSON "
+                            "matching the schema. Please try again, responding with ONLY "
+                            "the JSON object."
+                        ),
+                    }
+                )
+                continue
+            log.warning(
+                "structured_call (google): all parse attempts failed (%s), returning empty result",
+                exc,
+            )
+            trace = get_trace()
+            if trace:
+                phase = metadata.phase if metadata else "structured_call"
+                await trace.record(
+                    ErrorEvent(
+                        message=f"Structured call parse failed: {exc}",
+                        phase=phase,
+                    )
+                )
+            return StructuredCallResult(
+                response_text=response_text or None,
+                input_tokens=api_resp.input_tokens,
+                output_tokens=api_resp.output_tokens,
                 duration_ms=api_resp.duration_ms,
             )
 
@@ -1037,17 +1410,33 @@ async def structured_call(
 
     raw_msgs = messages if messages is not None else [{"role": "user", "content": user_message}]
     model_name = response_model.__name__ if response_model else "None"
+    effective_model = model or get_settings().model
     log.debug(
-        "structured_call: response_model=%s, cache=%s",
+        "structured_call: response_model=%s, cache=%s, model=%s",
         model_name,
         cache,
+        effective_model,
     )
+
+    if is_google_model(effective_model):
+        if tools is not None or tool_choice is not None:
+            raise ValueError(
+                "tools/tool_choice are not supported on the Gemini structured_call path yet."
+            )
+        return await _structured_call_google(
+            system_prompt,
+            response_model,
+            raw_msgs,
+            metadata=metadata,
+            db=db,
+            model=effective_model,
+        )
 
     if cache and response_model is not None:
         if max_tokens is not None:
             raise ValueError(
                 "max_tokens is not supported on the cached (cache=True) path yet; "
-                "plumb it through call_api if you need it."
+                "plumb it through call_anthropic_api if you need it."
             )
         if disable_thinking:
             raise ValueError(

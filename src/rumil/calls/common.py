@@ -21,7 +21,7 @@ from rumil.llm import (
     Tool,
     ToolCall,
     build_user_message,
-    call_api,
+    call_anthropic_api,
     structured_call,
 )
 from rumil.models import (
@@ -197,7 +197,7 @@ async def run_single_call(
         phase=phase,
         user_message=user_message if user_message else None,
     )
-    api_resp = await call_api(
+    api_resp = await call_anthropic_api(
         client,
         settings.model,
         system_prompt,
@@ -311,7 +311,7 @@ async def run_agent_loop(
             round_num=round_num,
             user_message=user_message if round_num == 0 else None,
         )
-        api_resp = await call_api(
+        api_resp = await call_anthropic_api(
             client,
             settings.model,
             system_prompt,

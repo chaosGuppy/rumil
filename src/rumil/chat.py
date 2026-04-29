@@ -31,7 +31,7 @@ from rumil.database import DB
 from rumil.embeddings import search_pages
 from rumil.llm import (
     Tool,
-    call_api,
+    call_anthropic_api,
     structured_call,
 )
 from rumil.models import (
@@ -475,7 +475,7 @@ async def _chat_loop(
             while True:
                 label = "Thinking" if round_num == 0 else "Searching"
                 async with _spinner(label):
-                    api_resp = await call_api(
+                    api_resp = await call_anthropic_api(
                         client,
                         model,
                         system_prompt,

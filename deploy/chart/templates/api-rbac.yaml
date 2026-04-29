@@ -4,8 +4,13 @@ RBAC for the orchestrator-job feature:
   and read Jobs (and stream pod logs) in this namespace so the
   /api/jobs/orchestrator-runs endpoint can spawn jobs.
 - rumil-orchestrator-job SA: used by the orchestrator pods themselves.
-  Intentionally has NO RBAC — orchestrator pods only talk to Supabase and
-  Anthropic, never to the k8s API. Distinct SA limits blast radius.
+  Intentionally has NO k8s RBAC — orchestrator pods only talk to Supabase
+  and external LLM APIs, never to the k8s API. Distinct SA limits blast
+  radius.
+
+Both KSAs are annotated for Workload Identity so they can call Vertex AI
+as the rumil-vertex-ai GSA. Provision the GSA + WI bindings with
+deploy/infra/setup-vertex-ai.sh.
 
 Names are literal (not templated through rumil.fullname) because
 src/rumil/k8s/submit.py and deploy/k8s/orchestrator-job.yaml reference them
@@ -18,6 +23,8 @@ metadata:
   labels:
     {{- include "rumil.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
+  annotations:
+    iam.gke.io/gcp-service-account: rumil-vertex-ai@{{ .Values.api.env.GCP_PROJECT_ID }}.iam.gserviceaccount.com
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -26,6 +33,8 @@ metadata:
   labels:
     {{- include "rumil.labels" . | nindent 4 }}
     app.kubernetes.io/component: orchestrator-job
+  annotations:
+    iam.gke.io/gcp-service-account: rumil-vertex-ai@{{ .Values.api.env.GCP_PROJECT_ID }}.iam.gserviceaccount.com
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

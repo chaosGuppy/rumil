@@ -27,7 +27,7 @@ from rumil.models import (
 )
 from rumil.moves.base import MoveState
 from rumil.tracing.tracer import CallTrace
-from rumil.views.freeform import FreeformView
+from rumil.views.freeform import FreeformView, create_freeform_view_for_question
 
 
 def _question(headline: str = "Test question") -> Page:
@@ -361,8 +361,6 @@ async def test_freeform_view_render_for_executive_summary_returns_none_without_v
 @pytest.mark.integration
 async def test_freeform_view_create_end_to_end(tmp_db):
     """Real-LLM end-to-end: a CreateFreeformView call produces 1 view + 4 sections."""
-    from rumil.views.freeform import create_freeform_view_for_question
-
     q = Page(
         page_type=PageType.QUESTION,
         layer=PageLayer.SQUIDGY,

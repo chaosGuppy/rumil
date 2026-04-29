@@ -145,7 +145,7 @@ class _CreateFreeformViewUpdater(WorkspaceUpdater):
             raise ValueError(
                 f"CreateFreeformViewCall on question {question_id[:8]} but a view "
                 f"already exists ({existing_view.id[:8]}). Use UpdateFreeformViewCall "
-                f"or FreeformView.refresh()."
+                "or FreeformView.refresh()."
             )
 
         question = await db.get_page(question_id)
@@ -218,7 +218,7 @@ class _UpdateFreeformViewUpdater(WorkspaceUpdater):
         existing_view = await db.get_view_for_question(question_id)
         if existing_view is None:
             raise RuntimeError(
-                f"UpdateFreeformViewCall requires an existing View for question "
+                "UpdateFreeformViewCall requires an existing View for question "
                 f"{question_id[:8]}, but none was found."
             )
 

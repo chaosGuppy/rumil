@@ -6,6 +6,7 @@ from rumil.calls.create_view import CreateViewCall
 from rumil.calls.critique_artefact import CritiqueArtefactCall
 from rumil.calls.critique_artefact_request_only import RequestOnlyCritiqueArtefactCall
 from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.freeform_view import CreateFreeformViewCall, UpdateFreeformViewCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.generate_spec import GenerateSpecCall
 from rumil.calls.ingest import IngestCall
@@ -36,6 +37,7 @@ __all__ = [
     "AssessCall",
     "BigAssessCall",
     "CallRunner",
+    "CreateFreeformViewCall",
     "CreateViewCall",
     "CritiqueArtefactCall",
     "FindConsiderationsCall",
@@ -61,6 +63,7 @@ __all__ = [
     "ScoutParadigmCasesCall",
     "ScoutSubquestionsCall",
     "ScoutWebQuestionsCall",
+    "UpdateFreeformViewCall",
     "UpdateViewCall",
     "WebResearchCall",
 ]

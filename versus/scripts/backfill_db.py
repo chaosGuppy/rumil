@@ -46,6 +46,93 @@ def _load_jsonl(path: pathlib.Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def import_essays(client) -> None:
+    """Import data/essays/<id>.json + <id>.verdict.json into versus_essays.
+
+    Idempotent (upsert by id). Verdict columns get populated when the
+    sibling .verdict.json exists; the JSONL/file cache only has clean +
+    issues + model + validator_version, not the raw request/response, so
+    those stay null on backfilled rows. Future re-validations under the
+    new code path will fill them.
+
+    raw_html is intentionally not loaded — backfill stays bytes-light and
+    the fetcher will populate raw_html on the next refresh.
+    """
+    from versus import essay as versus_essay
+
+    if not ESSAYS_DIR.exists():
+        print("Skipping essays import: data/essays/ doesn't exist.")
+        return
+    essay_paths = sorted(
+        p for p in ESSAYS_DIR.glob("*.json") if not p.name.endswith(".verdict.json")
+    )
+    print(f"Importing {len(essay_paths)} essay rows...")
+    n_essays = 0
+    n_verdicts = 0
+    n_skipped = 0
+    n_stale_schema = 0
+    for p in essay_paths:
+        try:
+            d = json.loads(p.read_text())
+        except json.JSONDecodeError as e:
+            print(f"  skipped malformed essay {p.name}: {e}")
+            n_skipped += 1
+            continue
+        if "source_id" not in d or "id" not in d:
+            print(f"  skipped pre-multi-source essay {p.name}")
+            n_skipped += 1
+            continue
+        if not versus_essay.is_current_schema(d):
+            # Old-schema essays are duplicates of their namespaced replacements
+            # (``ai-for-decision-advice`` vs ``forethought__ai-for-...``) and
+            # aren't eval-relevant — the router already filters them via
+            # is_current_schema.
+            n_stale_schema += 1
+            continue
+        try:
+            upsert_essay(
+                client,
+                id=d["id"],
+                source_id=d["source_id"],
+                url=d.get("url", ""),
+                title=d.get("title", ""),
+                author=d.get("author", ""),
+                pub_date=d.get("pub_date", ""),
+                blocks=d.get("blocks", []),
+                markdown=d.get("markdown", ""),
+                schema_version=d.get("schema_version", 0),
+                image_count=d.get("image_count", 0),
+                raw_html=None,
+            )
+            n_essays += 1
+        except Exception as e:
+            print(f"  skipped essay upsert {d.get('id')}: {e}")
+            n_skipped += 1
+            continue
+
+        verdict_path = ESSAYS_DIR / f"{d['id']}.verdict.json"
+        if verdict_path.exists():
+            try:
+                v = json.loads(verdict_path.read_text())
+                upsert_essay_verdict(
+                    client,
+                    essay_id=d["id"],
+                    clean=bool(v["clean"]),
+                    issues=v.get("issues", []),
+                    model=v.get("model", "unknown"),
+                    validator_version=v.get("validator_version", 0),
+                    request=None,
+                    response=None,
+                )
+                n_verdicts += 1
+            except Exception as e:
+                print(f"  skipped verdict for {d['id']}: {e}")
+    print(
+        f"  done. {n_essays} essays, {n_verdicts} verdicts, "
+        f"{n_skipped} skipped, {n_stale_schema} stale-schema duplicates skipped."
+    )
+
+
 def _synthesize_completion_request(row: dict) -> dict[str, Any] | None:
     """Build a provider-shaped request dict from a completion JSONL row.
 
@@ -223,6 +310,12 @@ def main() -> None:
     args = parser.parse_args()
 
     client = get_client(prod=args.prod)
+
+    # Essays import is a safe upsert (idempotent on id), so it runs
+    # unconditionally — separate from the texts/judgments gate.
+    t_essays = time.time()
+    import_essays(client)
+    print(f"  essays: {time.time() - t_essays:.1f}s")
 
     existing_texts = client.table("versus_texts").select("id", count="exact").limit(1).execute()
     existing_judgments = (

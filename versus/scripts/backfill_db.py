@@ -56,14 +56,21 @@ def _synthesize_completion_request(row: dict) -> dict[str, Any] | None:
     return request
 
 
-def import_texts(client) -> dict[tuple[str, str], str]:
-    """Insert texts and return ``{(essay_id, source_id): text_id}`` lookup.
+# Lookup key on (essay, source, prefix). Replicates (temperature>0 sampling)
+# legitimately produce multiple text rows under the same key — we keep all of
+# them so import_judgments can flag the ambiguity instead of silently picking
+# the last-inserted one.
+TextKey = tuple[str, str, str | None]
+
+
+def import_texts(client) -> dict[TextKey, list[str]]:
+    """Insert texts and return ``{(essay_id, source_id, prefix_hash): [text_id, ...]}``.
 
     Paraphrase generation is deferred — paraphrase-file rows and
     paraphrase-derived completion rows are skipped. The JSONL archive still
     holds them if we want to re-import once the paraphrase model is settled.
     """
-    lookup: dict[tuple[str, str], str] = {}
+    lookup: dict[TextKey, list[str]] = defaultdict(list)
     completion_rows = _load_jsonl(COMPLETIONS)
 
     print(f"Importing {len(completion_rows)} completion-file rows (skipping paraphrase-derived)...")
@@ -92,17 +99,22 @@ def import_texts(client) -> dict[tuple[str, str], str]:
             print(f"  skipped completion row {i} ({row.get('key')}): {e}")
             n_skipped += 1
             continue
-        lookup[(row["essay_id"], row["source_id"])] = text_id
+        lookup[(row["essay_id"], row["source_id"], row.get("prefix_config_hash"))].append(text_id)
         if i % 100 == 0:
             print(f"  ... {i}/{len(completion_rows)}")
-    print(f"  done. Skipped {n_skipped} (errors), {n_skipped_paraphrase} (paraphrase-derived).")
+    n_dup_keys = sum(1 for v in lookup.values() if len(v) > 1)
+    print(
+        f"  done. Skipped {n_skipped} (errors), {n_skipped_paraphrase} (paraphrase-derived). "
+        f"{n_dup_keys} keys have replicates."
+    )
     return lookup
 
 
-def import_judgments(client, text_lookup: dict[tuple[str, str], str]) -> None:
+def import_judgments(client, text_lookup: dict[TextKey, list[str]]) -> None:
     rows = _load_jsonl(JUDGMENTS)
     print(f"Importing {len(rows)} judgment rows (skipping paraphrase-touching)...")
-    missing_text: dict[tuple[str, str], int] = defaultdict(int)
+    missing_text: dict[TextKey, int] = defaultdict(int)
+    ambiguous_text: dict[TextKey, int] = defaultdict(int)
     n_skipped = 0
     n_skipped_paraphrase = 0
     n_inserted = 0
@@ -113,14 +125,24 @@ def import_judgments(client, text_lookup: dict[tuple[str, str], str]) -> None:
         config = row.get("config") or {}
         variant = config.get("variant", "blind")
         sa, sb = sorted([row["source_a"], row["source_b"]])
-        ta_key = (row["essay_id"], sa)
-        tb_key = (row["essay_id"], sb)
-        text_a_id = text_lookup.get(ta_key)
-        text_b_id = text_lookup.get(tb_key)
-        if text_a_id is None or text_b_id is None:
-            missing_text[ta_key if text_a_id is None else tb_key] += 1
+        prefix = row["prefix_config_hash"]
+        ta_key: TextKey = (row["essay_id"], sa, prefix)
+        tb_key: TextKey = (row["essay_id"], sb, prefix)
+        ta_ids = text_lookup.get(ta_key) or []
+        tb_ids = text_lookup.get(tb_key) or []
+        if not ta_ids or not tb_ids:
+            missing_text[ta_key if not ta_ids else tb_key] += 1
             n_skipped += 1
             continue
+        # JSONL judgment rows don't record which specific replicate they
+        # were judged against. Pick the first inserted text deterministically
+        # (insert order = JSONL order) and tally the ambiguity for the summary.
+        if len(ta_ids) > 1:
+            ambiguous_text[ta_key] += 1
+        if len(tb_ids) > 1:
+            ambiguous_text[tb_key] += 1
+        text_a_id = ta_ids[0]
+        text_b_id = tb_ids[0]
 
         # judge_inputs = the existing config dict, plus text id refs.
         judge_inputs = dict(config)
@@ -154,6 +176,8 @@ def import_judgments(client, text_lookup: dict[tuple[str, str], str]) -> None:
                 project_id=None,  # project lookup not attempted; runs may be pruned
                 run_id=row.get("rumil_run_id"),
                 rumil_call_id=row.get("rumil_call_id"),
+                rumil_question_id=row.get("rumil_question_id"),
+                rumil_cost_usd=row.get("rumil_cost_usd"),
                 contamination_note=row.get("contamination_note"),
             )
             n_inserted += 1
@@ -171,6 +195,14 @@ def import_judgments(client, text_lookup: dict[tuple[str, str], str]) -> None:
         print("  missing texts (first 10):")
         for k, count in list(missing_text.items())[:10]:
             print(f"    {k}: {count} judgments unresolved")
+    if ambiguous_text:
+        n_amb_judgments = sum(ambiguous_text.values())
+        print(
+            f"  warning: {n_amb_judgments} judgments resolved against a (essay, source, prefix) "
+            f"key with multiple text replicates ({len(ambiguous_text)} keys). "
+            f"JSONL doesn't record which replicate was judged — picked first by insert order. "
+            f"Going forward judgments carry text_a_id/text_b_id explicitly."
+        )
 
 
 def main() -> None:

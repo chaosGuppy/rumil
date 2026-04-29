@@ -22,6 +22,7 @@ import pydantic
 from fastapi import APIRouter, Depends, HTTPException
 
 from rumil.api.auth import require_admin
+from rumil.settings import get_settings
 from versus import analyze as versus_analyze
 from versus import config as versus_config
 from versus import diagnostics as versus_diagnostics
@@ -88,11 +89,20 @@ def _legacy_judgment_dict(row: dict) -> dict:
         "sampling": judge_inputs.get("sampling"),
         "rumil_call_id": row.get("rumil_call_id"),
         "rumil_run_id": row.get("run_id"),
-        "rumil_question_id": judge_inputs.get("rumil_question_id"),
-        "rumil_trace_url": judge_inputs.get("rumil_trace_url"),
-        "rumil_cost_usd": judge_inputs.get("rumil_cost_usd"),
+        "rumil_question_id": row.get("rumil_question_id"),
+        "rumil_trace_url": _trace_url(row.get("run_id"), row.get("rumil_call_id")),
+        "rumil_cost_usd": row.get("rumil_cost_usd"),
         "contamination_note": row.get("contamination_note"),
     }
+
+
+def _trace_url(run_id: str | None, call_id: str | None) -> str | None:
+    """Compose a frontend trace URL from run + call ids; None if no run."""
+    if not run_id:
+        return None
+    base = get_settings().frontend_url.rstrip("/")
+    anchor = f"#call-{call_id[:8]}" if call_id else ""
+    return f"{base}/traces/{run_id}{anchor}"
 
 
 def _other_source(row: dict) -> str | None:
@@ -150,20 +160,6 @@ def _user_prompt_from_request(request: dict | None) -> str | None:
     if messages:
         return (messages[0] or {}).get("content")
     return None
-
-
-def _iter_legacy_judgments():
-    """Yield versus_judgments rows in legacy JSONL shape."""
-    client = versus_db.get_client()
-    for row in versus_db.iter_judgments(client):
-        yield _legacy_judgment_dict(row)
-
-
-def _iter_legacy_completions():
-    """Yield versus_texts rows in legacy completion JSONL shape."""
-    client = versus_db.get_client()
-    for row in versus_db.iter_texts(client):
-        yield _legacy_text_dict(row)
 
 
 # Process-local cache for the "light" projections of versus_judgments and
@@ -1352,45 +1348,49 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
 
     Used by the side-panel inspector on /versus/results so a reader can see
     the prompt + reasoning + raw response that produced a verdict. The key
-    contains `|` and `:` so callers must pass it as a query param.
+    is the row's primary-key UUID, so this is a direct lookup — no scan.
     """
     _cfg_required()
-    for row in _iter_legacy_judgments():
-        if row.get("key") != key:
-            continue
-        jm = str(row.get("judge_model", ""))
-        row_cfg = row["config"]
-        return JudgmentDetail(
-            key=row["key"],
-            essay_id=row.get("essay_id", ""),
-            prefix_config_hash=row.get("prefix_config_hash", ""),
-            source_a=row.get("source_a", ""),
-            source_b=row.get("source_b", ""),
-            display_first=row.get("display_first", ""),
-            display_second=row.get("display_second", ""),
-            criterion=row.get("criterion", ""),
-            judge_model=jm,
-            judge_model_id=row_cfg["model"],
-            config_hash=row["config_hash"],
-            prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
-            sampling=row_cfg["sampling"] or row.get("sampling") or {},
-            verdict=row.get("verdict"),
-            winner_source=row.get("winner_source"),
-            preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
-            is_rumil=jm.startswith("rumil:"),
-            contamination_note=row.get("contamination_note"),
-            prompt=row.get("prompt"),
-            reasoning_text=row.get("reasoning_text"),
-            raw_response=row.get("raw_response"),
-            rumil_trace_url=row.get("rumil_trace_url"),
-            rumil_question_id=row.get("rumil_question_id"),
-            rumil_call_id=row.get("rumil_call_id"),
-            rumil_run_id=row.get("rumil_run_id"),
-            rumil_cost_usd=row.get("rumil_cost_usd"),
-            ts=row.get("ts"),
-            duration_s=row.get("duration_s"),
-        )
-    raise HTTPException(404, f"judgment key not found: {key}")
+    client = versus_db.get_client()
+    resp = client.table("versus_judgments").select("*").eq("id", key).limit(1).execute()
+    if not resp.data:
+        raise HTTPException(404, f"judgment key not found: {key}")
+    db_row = resp.data[0]
+    if not isinstance(db_row, dict):
+        raise HTTPException(500, "unexpected row shape from versus_judgments")
+    row = _legacy_judgment_dict(db_row)
+    jm = str(row.get("judge_model", ""))
+    row_cfg = row["config"]
+    return JudgmentDetail(
+        key=row["key"],
+        essay_id=row.get("essay_id", ""),
+        prefix_config_hash=row.get("prefix_config_hash", ""),
+        source_a=row.get("source_a", ""),
+        source_b=row.get("source_b", ""),
+        display_first=row.get("display_first", ""),
+        display_second=row.get("display_second", ""),
+        criterion=row.get("criterion", ""),
+        judge_model=jm,
+        judge_model_id=row_cfg["model"],
+        config_hash=row["config_hash"],
+        prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
+        sampling=row_cfg["sampling"] or row.get("sampling") or {},
+        verdict=row.get("verdict"),
+        winner_source=row.get("winner_source"),
+        preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
+        is_rumil=jm.startswith("rumil:"),
+        contamination_note=row.get("contamination_note"),
+        prompt=row.get("prompt"),
+        reasoning_text=row.get("reasoning_text"),
+        raw_response=row.get("raw_response"),
+        rumil_trace_url=row.get("rumil_trace_url"),
+        rumil_question_id=row.get("rumil_question_id"),
+        rumil_call_id=row.get("rumil_call_id"),
+        rumil_run_id=row.get("rumil_run_id"),
+        rumil_cost_usd=row.get("rumil_cost_usd"),
+        ts=row.get("ts"),
+        duration_s=row.get("duration_s"),
+    )
 
 
 class JudgeBiasRowOut(pydantic.BaseModel):

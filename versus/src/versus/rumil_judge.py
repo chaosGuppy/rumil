@@ -219,7 +219,6 @@ def _mirror_row(
         "duration_s": round(time.time() - t0, 2),
         "rumil_call_id": result.call_id,
         "rumil_run_id": result.run_id,
-        "rumil_trace_url": result.trace_url,
         "rumil_question_id": result.question_id,
         "rumil_cost_usd": result.cost_usd,
     }
@@ -487,6 +486,8 @@ async def run_ws(
                     project_id=project.id,
                     run_id=run_id,
                     rumil_call_id=row["rumil_call_id"],
+                    rumil_question_id=row["rumil_question_id"],
+                    rumil_cost_usd=row["rumil_cost_usd"],
                 )
                 done += 1
                 print(
@@ -718,6 +719,8 @@ async def run_orch(
                     project_id=project.id,
                     run_id=run_id,
                     rumil_call_id=row["rumil_call_id"],
+                    rumil_question_id=row["rumil_question_id"],
+                    rumil_cost_usd=row["rumil_cost_usd"],
                 )
                 done += 1
                 print(

@@ -85,6 +85,8 @@ def insert_judgment(
     project_id: str | None = None,
     run_id: str | None = None,
     rumil_call_id: str | None = None,
+    rumil_question_id: str | None = None,
+    rumil_cost_usd: float | None = None,
     contamination_note: str | None = None,
 ) -> str:
     if source_a > source_b:
@@ -112,6 +114,8 @@ def insert_judgment(
         "project_id": project_id,
         "run_id": run_id,
         "rumil_call_id": rumil_call_id,
+        "rumil_question_id": rumil_question_id,
+        "rumil_cost_usd": rumil_cost_usd,
         "contamination_note": contamination_note,
     }
     resp = client.table("versus_judgments").insert(row).execute()
@@ -192,7 +196,7 @@ _JUDGMENT_LIGHT_SELECT = (
     "id,essay_id,prefix_hash,source_a,source_b,display_first,text_a_id,text_b_id,"
     "criterion,variant,judge_model,judge_inputs,judge_inputs_hash,verdict,winner_source,"
     "preference_label,duration_s,project_id,run_id,rumil_call_id,"
-    "contamination_note,created_at"
+    "rumil_question_id,rumil_cost_usd,contamination_note,created_at"
 )
 
 

@@ -175,6 +175,32 @@ def _iter_legacy_completions():
 # eval-results view — fresh data costs a hard refresh.
 _LIGHT_CACHE_TTL_S = 10.0
 _LIGHT_CACHE: dict[str, tuple[float, list[dict]]] = {}
+# Per-essay cache for the inspect view's per-variant fetches. Server-side
+# essay_id filter cuts the payload to ~5-30 rows; the cache makes switching
+# back to a recently-viewed essay instant.
+_PER_ESSAY_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
+
+
+def _per_essay_load(kind: str, essay_id: str) -> list[dict]:
+    """Cached fetch of judgments/texts scoped to one essay.
+
+    Returns the full (heavy) projection because the per-essay inspect
+    view renders prompts, reasoning_text, and the source-text content.
+    """
+    key = (kind, essay_id)
+    now = time.time()
+    cached = _PER_ESSAY_CACHE.get(key)
+    if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
+        return cached[1]
+    client = versus_db.get_client()
+    if kind == "judgments":
+        rows = list(versus_db.iter_judgments(client, essay_id=essay_id))
+    elif kind == "texts":
+        rows = list(versus_db.iter_texts(client, essay_id=essay_id))
+    else:
+        raise ValueError(f"unknown kind: {kind}")
+    _PER_ESSAY_CACHE[key] = (now, rows)
+    return rows
 
 
 def _light_load(kind: str) -> list[dict]:
@@ -834,10 +860,12 @@ def get_essay_sources(essay_id: str, prefix_label: str | None = None) -> list[So
     )
     # Multiple completion rows can share the same source_id (different
     # sampling_hash); collapse to one per source_id, last-row-wins, to match
-    # versus_judge.load_sources_by_essay.
+    # versus_judge.load_sources_by_essay. Server-side essay_id filter scopes
+    # to ~5-10 rows instead of ~430.
     by_source: dict[str, Source] = {}
-    for row in _iter_legacy_completions():
-        if row["essay_id"] != essay.id or row["prefix_config_hash"] != task.prefix_config_hash:
+    for db_row in _per_essay_load("texts", essay.id):
+        row = _legacy_text_dict(db_row)
+        if row["prefix_config_hash"] != task.prefix_config_hash:
             continue
         by_source[row["source_id"]] = Source(
             source_id=row["source_id"],
@@ -901,16 +929,13 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
         for p in versus_prepare.active_prefix_configs(cfg)
         if p.id != active_prefix_cfg.id
     }
-    db_client = versus_db.get_client()
-    text_rows = list(versus_db.iter_texts(db_client))
+    text_rows = _per_essay_load("texts", essay.id)
     source_index = _build_completion_source_index_from_rows(text_rows)
     judgments: list[Judgment] = []
     stale_hidden = 0
     other_variant_hidden = 0
-    for db_row in versus_db.iter_judgments(db_client):
+    for db_row in _per_essay_load("judgments", essay.id):
         row = _legacy_judgment_dict(db_row)
-        if row.get("essay_id") != essay.id:
-            continue
         if row.get("prefix_config_hash") != task.prefix_config_hash:
             if row.get("verdict") is not None:
                 if row.get("prefix_config_hash") in other_variant_hashes:

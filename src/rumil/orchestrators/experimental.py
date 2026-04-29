@@ -43,7 +43,6 @@ from rumil.tracing.trace_events import (
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
     DispatchTraceItem,
-    ErrorEvent,
     ExperimentalScoringCompletedEvent,
     ExperimentalSubquestionScoreItem,
     PhaseSkippedEvent,
@@ -159,7 +158,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 set_experimental_scout_budget(effective)
 
                 round_budget = await self._paced_budget(effective)
-                result = await self._get_next_batch(
+                result = await self.get_dispatches(
                     root_question_id,
                     round_budget,
                     total_remaining=effective,
@@ -167,40 +166,9 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 if not result.dispatch_sequences and not result.children:
                     break
 
-                tasks: list = []
-                if result.dispatch_sequences:
-                    tasks.append(
-                        self._run_sequences(
-                            result.dispatch_sequences,
-                            root_question_id,
-                            result.call_id,
-                        )
-                    )
-                for child, child_qid in result.children:
-                    tasks.append(child.run(child_qid))
-
-                if not tasks:
+                results = await self.execute_dispatches(result, root_question_id)
+                if not results:
                     break
-
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for r in results:
-                    if isinstance(r, Exception):
-                        log.error("Concurrent dispatch failed: %s", r, exc_info=r)
-                        if result.call_id:
-                            trace = CallTrace(
-                                result.call_id,
-                                self.db,
-                                broadcaster=self.broadcaster,
-                            )
-                            await trace.record(
-                                ErrorEvent(
-                                    message=(
-                                        f"Concurrent dispatch failed: {type(r).__name__}: {r}"
-                                    ),
-                                    phase="dispatch",
-                                )
-                            )
-
                 if not any(not isinstance(r, Exception) for r in results):
                     break
 
@@ -277,13 +245,17 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             f"Initial prioritization skipped — {reason}",
         )
 
-    async def _get_next_batch(
+    async def get_dispatches(
         self,
-        question_id: str,
+        root_question_id: str,
         budget: int,
+        *,
         parent_call_id: str | None = None,
         total_remaining: int | None = None,
+        last_call: bool = False,
     ) -> PrioritizationResult:
+        del last_call  # unused — experimental does not gate on last-call
+        question_id = root_question_id
         if self._invocation == 0:
             self._invocation += 1
             effective_remaining = total_remaining if total_remaining is not None else budget
@@ -612,17 +584,21 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         # the LLM dispatching, peer cycles can only consume more from the pool.
         # Using a fresh snapshot ensures the budget line and the Coordination
         # context section agree on what's available.
+        # Skip the bailout when the pool was never registered (e.g. callers
+        # that invoke get_dispatches outside the run() loop, like
+        # scripts/run_prio.py): "no pool" must not look like "drained to zero".
         fresh_pool = await self.db.qbp_get(question_id)
-        budget = min(budget, max(fresh_pool.remaining, 0))
-        # If the pool drained between top-of-loop and now (i.e. peer cycles
-        # consumed our slice), bail before calling the LLM with budget 0/-1.
-        if budget <= 1:
-            await mark_call_completed(
-                p_call,
-                self.db,
-                "Pool drained by peer cycles before this round could plan.",
-            )
-            return PrioritizationResult(dispatch_sequences=[], call_id=p_call.id)
+        if fresh_pool.registered:
+            budget = min(budget, max(fresh_pool.remaining, 0))
+            # If the pool drained between top-of-loop and now (i.e. peer cycles
+            # consumed our slice), bail before calling the LLM with budget 0/-1.
+            if budget <= 1:
+                await mark_call_completed(
+                    p_call,
+                    self.db,
+                    "Pool drained by peer cycles before this round could plan.",
+                )
+                return PrioritizationResult(dispatch_sequences=[], call_id=p_call.id)
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,

@@ -4,7 +4,7 @@ Budget is tracked here; prioritization and review calls are free.
 """
 
 from rumil.database import DB
-from rumil.orchestrators.base import BaseOrchestrator
+from rumil.orchestrators.base import BaseOrchestrator, OrchestrationStage
 from rumil.orchestrators.claim_investigation import ClaimInvestigationOrchestrator
 from rumil.orchestrators.common import (
     PRIORITIZATION_MOVES,
@@ -55,6 +55,7 @@ __all__ = [
     "ExperimentalOrchestrator",
     "FruitResult",
     "GlobalPrioOrchestrator",
+    "OrchestrationStage",
     "Orchestrator",
     "PrioritizationResult",
     "SubquestionScore",

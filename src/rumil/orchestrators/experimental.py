@@ -120,6 +120,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             parent_call_id=parent_call_id,
             budget_allocated=initial_prioritization_budget,
             workspace=Workspace.PRIORITIZATION,
+            call_params={"phase": "initial"},
         )
         self._call_id = p_call.id
         self._initial_call = p_call
@@ -413,6 +414,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 workspace=Workspace.PRIORITIZATION,
                 sequence_id=self._sequence_id,
                 sequence_position=self._seq_position if self._sequence_id else None,
+                call_params={"phase": "initial"},
             )
             if self._sequence_id is not None:
                 self._seq_position += 1
@@ -538,6 +540,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             workspace=Workspace.PRIORITIZATION,
             sequence_id=self._sequence_id,
             sequence_position=self._seq_position if self._sequence_id else None,
+            call_params={"phase": "main_phase"},
         )
         if self._sequence_id is not None:
             self._seq_position += 1

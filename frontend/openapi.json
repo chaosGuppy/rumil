@@ -3586,6 +3586,8 @@
           "create_view",
           "global_prioritization",
           "update_view",
+          "create_freeform_view",
+          "update_freeform_view",
           "generate_spec",
           "generate_artefact",
           "critique_artefact",
@@ -6292,6 +6294,17 @@
             "type": "boolean",
             "title": "Auto Self Improve",
             "default": false
+          },
+          "improvement_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Improvement Instructions"
           },
           "available_moves": {
             "anyOf": [

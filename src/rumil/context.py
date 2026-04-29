@@ -504,6 +504,42 @@ async def render_view(
     return "\n".join(parts)
 
 
+async def render_freeform_view(
+    view: Page,
+    items_with_links: Sequence[tuple[Page, PageLink]],
+) -> str:
+    """Render a FreeformView page as concatenated section prose.
+
+    Sections are rendered in the order specified by ``view.sections``;
+    unknown sections fall after them in arbitrary order. Items without
+    section metadata are skipped.
+    """
+    parts: list[str] = [f"## View: {view.headline}", ""]
+
+    sections_order = view.sections or []
+    section_index = {s: i for i, s in enumerate(sections_order)}
+
+    by_section: dict[str, tuple[Page, PageLink]] = {}
+    for page, link in items_with_links:
+        if link.section:
+            by_section[link.section] = (page, link)
+
+    ordered_sections = sorted(
+        by_section.keys(),
+        key=lambda s: section_index.get(s, 999),
+    )
+    for sec in ordered_sections:
+        label = sec.replace("_", " ").title()
+        page, _link = by_section[sec]
+        parts.append(f"### {label}")
+        parts.append("")
+        if page.content:
+            parts.append(page.content.strip())
+            parts.append("")
+
+    return "\n".join(parts)
+
+
 async def render_child_investigation_results(
     db: DB,
     parent_question_id: str,

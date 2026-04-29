@@ -397,7 +397,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'create_freeform_view' | 'update_freeform_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'red_team' | 'claude_code_direct' | 'versus_judge';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'create_view_max_effort' | 'global_prioritization' | 'update_view' | 'update_view_max_effort' | 'create_freeform_view' | 'update_freeform_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'red_team' | 'claude_code_direct' | 'versus_judge';
 
 /**
  * CallTypeFruitScoreItem
@@ -1238,6 +1238,64 @@ export type HttpValidationError = {
      * Detail
      */
     detail?: Array<ValidationError>;
+};
+
+/**
+ * ImpactFilterEventOut
+ */
+export type ImpactFilterEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'impact_filter';
+    /**
+     * Inner Context Chars
+     */
+    inner_context_chars: number;
+    /**
+     * Paring Triggered
+     */
+    paring_triggered: boolean;
+    /**
+     * Paring Kept Pages
+     */
+    paring_kept_pages: number | null;
+    /**
+     * Paring Kept Chars
+     */
+    paring_kept_chars: number | null;
+    /**
+     * Candidates Scored
+     */
+    candidates_scored: number;
+    /**
+     * Candidates Accepted
+     */
+    candidates_accepted: number;
+    /**
+     * Accepted Chars
+     */
+    accepted_chars: number;
+    /**
+     * Final Threshold Percentile
+     */
+    final_threshold_percentile: number;
+    /**
+     * Scoring Model
+     */
+    scoring_model: string;
+    /**
+     * Pare Model
+     */
+    pare_model: string | null;
 };
 
 /**
@@ -4989,7 +5047,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'update_view_phase_completed';
     } & UpdateViewPhaseCompletedEventOut) | ({
         event: 'question_dedupe';
-    } & QuestionDedupeEventOut)>;
+    } & QuestionDedupeEventOut) | ({
+        event: 'impact_filter';
+    } & ImpactFilterEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

@@ -152,7 +152,16 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
+        CallType.CREATE_VIEW_MAX_EFFORT: [
+            MoveType.CREATE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
         CallType.UPDATE_VIEW: [
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
+        CallType.UPDATE_VIEW_MAX_EFFORT: [
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
@@ -316,7 +325,16 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
+        CallType.CREATE_VIEW_MAX_EFFORT: [
+            MoveType.CREATE_VIEW_ITEM,
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
         CallType.UPDATE_VIEW: [
+            MoveType.LOAD_PAGE,
+            MoveType.UPDATE_EPISTEMIC,
+        ],
+        CallType.UPDATE_VIEW_MAX_EFFORT: [
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],

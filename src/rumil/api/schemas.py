@@ -26,6 +26,7 @@ from rumil.tracing.trace_events import (
     ExplorePageEvent,
     GlobalPhaseCompletedEvent,
     GroundingTasksGeneratedEvent,
+    ImpactFilterEvent,
     LinkSubquestionsCompleteEvent,
     LLMExchangeEvent,
     LoadPageEvent,
@@ -206,6 +207,10 @@ class QuestionDedupeEventOut(QuestionDedupeEvent, _TraceEnvelopeMixin):
     pass
 
 
+class ImpactFilterEventOut(ImpactFilterEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -238,7 +243,8 @@ TraceEventOut = Annotated[
     | PhaseSkippedEventOut
     | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut
-    | QuestionDedupeEventOut,
+    | QuestionDedupeEventOut
+    | ImpactFilterEventOut,
     Field(discriminator="event"),
 ]
 

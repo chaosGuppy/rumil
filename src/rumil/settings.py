@@ -200,6 +200,15 @@ class Settings(BaseSettings):
     big_assess_abstract_page_similarity_floor: float | None = _capture_field(default=None)
     document_floor_delta: float = _capture_field(default=0.25)
 
+    impact_filter_scoring_model: str = _capture_field(default="claude-sonnet-4-6")
+    impact_filter_pare_model: str = _capture_field(default="claude-opus-4-7")
+    impact_filter_token_budget: int = _capture_field(default=200_000)
+    impact_filter_floor_percentile: int = _capture_field(default=25)
+    impact_filter_pare_threshold_tokens: int = _capture_field(default=50_000)
+    impact_filter_pare_target_tokens: int = _capture_field(default=50_000)
+    impact_filter_max_distance: int = _capture_field(default=4)
+    impact_filter_concurrency: int = _capture_field(default=10)
+
     @property
     def is_test_mode(self) -> bool:
         return bool(self.rumil_test_mode)

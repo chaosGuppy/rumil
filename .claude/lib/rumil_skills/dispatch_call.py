@@ -29,6 +29,7 @@ import sys
 
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
+from rumil.calls.create_view_max_effort import CreateViewMaxEffortCall
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
@@ -46,6 +47,7 @@ from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
+from rumil.calls.update_view_max_effort import UpdateViewMaxEffortCall
 from rumil.calls.web_research import WebResearchCall
 from rumil.constants import DEFAULT_FRUIT_THRESHOLD
 from rumil.database import DB
@@ -84,6 +86,8 @@ CALL_TYPES = [
     "assess",
     "web-research",
     "create-view",
+    "create-view-max-effort",
+    "update-view-max-effort",
     *_SCOUT_MAP.keys(),
 ]
 
@@ -147,6 +151,22 @@ async def _dispatch(
         call.call_params = _tag_call_params(call, "rumil-dispatch")
         await db.save_call(call)
         runner = CreateViewCall(question_id, call, db)
+        await runner.run()
+        return call
+
+    if call_type_str == "create-view-max-effort":
+        call = await db.create_call(CallType.CREATE_VIEW_MAX_EFFORT, scope_page_id=question_id)
+        call.call_params = _tag_call_params(call, "rumil-dispatch")
+        await db.save_call(call)
+        runner = CreateViewMaxEffortCall(question_id, call, db)
+        await runner.run()
+        return call
+
+    if call_type_str == "update-view-max-effort":
+        call = await db.create_call(CallType.UPDATE_VIEW_MAX_EFFORT, scope_page_id=question_id)
+        call.call_params = _tag_call_params(call, "rumil-dispatch")
+        await db.save_call(call)
+        runner = UpdateViewMaxEffortCall(question_id, call, db)
         await runner.run()
         return call
 

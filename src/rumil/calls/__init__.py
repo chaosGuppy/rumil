@@ -3,12 +3,14 @@
 from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
+from rumil.calls.create_view_max_effort import CreateViewMaxEffortCall
 from rumil.calls.critique_artefact import CritiqueArtefactCall
 from rumil.calls.critique_artefact_request_only import RequestOnlyCritiqueArtefactCall
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.freeform_view import CreateFreeformViewCall, UpdateFreeformViewCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.generate_spec import GenerateSpecCall
+from rumil.calls.impact_filtered_context import ImpactFilteredContext
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.red_team import RedTeamCall
@@ -30,6 +32,7 @@ from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
 from rumil.calls.update_view import UpdateViewCall
+from rumil.calls.update_view_max_effort import UpdateViewMaxEffortCall
 from rumil.calls.web_research import WebResearchCall
 
 __all__ = [
@@ -39,10 +42,12 @@ __all__ = [
     "CallRunner",
     "CreateFreeformViewCall",
     "CreateViewCall",
+    "CreateViewMaxEffortCall",
     "CritiqueArtefactCall",
     "FindConsiderationsCall",
     "GenerateArtefactCall",
     "GenerateSpecCall",
+    "ImpactFilteredContext",
     "IngestCall",
     "LinkSubquestionsCall",
     "RedTeamCall",
@@ -65,5 +70,6 @@ __all__ = [
     "ScoutWebQuestionsCall",
     "UpdateFreeformViewCall",
     "UpdateViewCall",
+    "UpdateViewMaxEffortCall",
     "WebResearchCall",
 ]

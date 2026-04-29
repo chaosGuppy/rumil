@@ -57,6 +57,12 @@ class ContextResult:
     # Set by ingest-style builders: the source page whose content is being
     # folded into the prompt.
     source_page_id: str | None = None
+    # Pages the inner builder deliberately *kept out* of the context — e.g.
+    # pages already cited by existing view items, structural items, etc.
+    # Wrappers that pull additional candidates into the context (such as
+    # ImpactFilteredContext) must respect this exclusion so they don't
+    # re-inject what the inner builder went to the trouble of excluding.
+    excluded_page_ids: Sequence[str] = field(default_factory=list)
 
 
 @dataclass

@@ -7,7 +7,7 @@ import anthropic.types
 import pytest
 
 from rumil.calls.common import run_agent_loop
-from rumil.llm import Tool, _with_date_suffix, call_api
+from rumil.llm import Tool, _with_date_suffix, call_anthropic_api
 from rumil.moves.base import MoveState
 
 TODAY = date.today().strftime("%Y-%m-%d")
@@ -22,15 +22,15 @@ def test_with_date_suffix_appends_date():
 
 def test_with_date_suffix_does_not_double_when_called_twice():
     """Calling _with_date_suffix on an already-suffixed string adds a second copy,
-    but call_api always receives the *original* prompt so this shouldn't happen
+    but call_anthropic_api always receives the *original* prompt so this shouldn't happen
     in practice. This test documents the raw function behavior."""
     once = _with_date_suffix("Base prompt.")
     twice = _with_date_suffix(once)
     assert twice.count(DATE_MARKER) == 2
 
 
-async def test_call_api_sends_date_in_system_prompt(mocker):
-    """call_api should inject the date suffix into the system prompt it sends."""
+async def test_call_anthropic_api_sends_date_in_system_prompt(mocker):
+    """call_anthropic_api should inject the date suffix into the system prompt it sends."""
     fake_usage = anthropic.types.Usage(input_tokens=10, output_tokens=5)
     fake_message = anthropic.types.Message(
         id="msg_test",
@@ -45,7 +45,7 @@ async def test_call_api_sends_date_in_system_prompt(mocker):
     fake_client = mocker.MagicMock()
     fake_client.messages.create = mock_create
 
-    await call_api(
+    await call_anthropic_api(
         fake_client,
         "claude-haiku-4-5-20251001",
         "You are helpful.",

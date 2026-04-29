@@ -126,6 +126,10 @@ class Settings(BaseSettings):
     # CLI just prints whatever URL the API returns.
     gcp_project_id: str = ""
     gcp_cluster_name: str = "differential"
+    # Vertex AI region for google-genai calls. "global" routes to the
+    # multi-region endpoint; gemini-3-flash-preview is only served there
+    # at the moment.
+    gcp_location: str = "global"
     voyage_ai_api_key: str = ""
     jina_api_key: str = ""
     langfuse_public_key: str = ""

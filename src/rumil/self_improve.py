@@ -21,7 +21,7 @@ from anthropic.types import TextBlock, ToolUseBlock
 
 from rumil.calls.common import execute_tool_uses, prepare_tools
 from rumil.database import DB, _row_to_call
-from rumil.llm import Tool, call_api
+from rumil.llm import Tool, call_anthropic_api
 from rumil.models import Call, Page, PageType
 from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
@@ -520,7 +520,7 @@ async def _run_agent(
     final_text = ""
 
     for round_num in range(MAX_AGENT_ROUNDS):
-        api_resp = await call_api(
+        api_resp = await call_anthropic_api(
             client,
             model,
             system_prompt,

@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
+    "dev": "./scripts/with-env-overrides.sh next dev --turbopack",
+    "build": "./scripts/with-env-overrides.sh next build --turbopack",
+    "start": "./scripts/with-env-overrides.sh next start",
     "lint": "eslint",
     "generate-api": "openapi-ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.99.0",
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.104.1",
     "@tanstack/react-query": "^5.90.21",
     "next": "16.1.6",
     "react": "19.1.0",

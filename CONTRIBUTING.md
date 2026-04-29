@@ -18,13 +18,32 @@ supabase start
 
 # 4. Env files
 cp .env.template .env                           # fill in ANTHROPIC_API_KEY
-cp frontend/.env.local.example frontend/.env.local
+cp frontend/.env.template frontend/.env
 
 # 5. Install git pre-commit hook
 uv run pre-commit install
 ```
 
 If `pre-commit install` errors with `Cowardly refusing to install hooks with core.hooksPath set`, your repo has a local `core.hooksPath` override. Either unset it (`git config --unset-all core.hooksPath`) or run hooks manually via `just precommit-all` / `uv run pre-commit run --all-files`.
+
+## Auth in local dev
+
+The deployed app has two gates: an invite password (`/welcome`) and Google OAuth via Supabase (`/sign-in`). For local dev you almost always want to skip both — the example env files do this by default.
+
+- Set `AUTH_ENABLED=0` in **both** `.env` (backend) and `frontend/.env` (frontend). The example files ship with this set. The middleware then skips the invite cookie and the Supabase session check, and the API skips JWT verification. The two sides must agree — if only the frontend has it, every `/api/*` call 401s.
+- To exercise the real flow locally, unset `AUTH_ENABLED` (or set to `1`) and fill in `INVITE_PASSWORD`, `INVITE_SECRET`, and the `NEXT_PUBLIC_SUPABASE_*` vars in `frontend/.env`. Local Google OAuth isn't wired up in `supabase/config.toml`, so the `/sign-in` button won't actually complete a flow against `supabase start` — you'd need to point at a real Supabase project.
+
+Local overrides (per-worktree port numbers, individual dev preferences) live in `.env.overrides` and `frontend/.env.overrides`, both `.gitignore`d and layered on top of `.env` / `frontend/.env` at runtime. The workmux `post_create` hook writes them automatically when you spin up a worktree, but they're plain files — you can also write them by hand without any worktree setup.
+
+### Submitting orchestrator runs to Kubernetes (`--executor prod`)
+
+To use `--prod` (or `--db prod --executor prod`) the laptop needs to mint a short-lived Supabase JWT that the API verifies via the same `Depends(get_current_user)` flow the frontend uses. Set in your `.env`:
+
+- `SUPABASE_JWT_SECRET` — same HS256 secret as the prod `rumil-api-secrets`. The CLI signs JWTs with it.
+- `RUMIL_API_URL` — only needs to be set to override the default `https://api.rumil.ink`.
+- `DEFAULT_CLI_USER_ID` — optional. Defaults to a shared CLI service-account user baked into `Settings`. Set this to attribute jobs to a specific Supabase user instead.
+
+You don't need `kubectl` or a kubeconfig — the API does the cluster work for you.
 
 ## Common tasks
 

@@ -2,10 +2,739 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Rumil API",
-    "description": "Read-only API for the Rumil research workspace.",
+    "description": "Read-only browsing API for the Rumil research workspace, plus the /api/jobs endpoints used by the job-monitoring UI: POST /api/jobs/orchestrator-runs submits a Kubernetes Job and GET /api/jobs lists recent orchestrator Jobs in the cluster.",
     "version": "0.1.0"
   },
   "paths": {
+    "/api/jobs/orchestrator-runs": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create Orchestrator Run",
+        "operationId": "create_orchestrator_run_api_jobs_orchestrator_runs_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrchestratorRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchestratorRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List Jobs",
+        "description": "List orchestrator Jobs (newest first), capped at 200 rows.\n\nFiltered to `rumil.ink/run-kind=orchestrator` so non-orchestrator Jobs\nin the namespace are excluded. Jobs that pre-date the run-id/workspace/\nquestion metadata rollout \u2014 or any other Job that happens to share the\nrun-kind label without our full metadata \u2014 are silently skipped.",
+        "operationId": "list_jobs_api_jobs_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobListItem"
+                  },
+                  "title": "Response List Jobs Api Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/essays": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "List Essays",
+        "description": "List essays at the current essay-cache schema version.\n\nOld cached snapshots (pre-rename, ``schema_version < SCHEMA_VERSION``)\nare skipped by default \u2014 they often have stale prefix_config_hashes\nand would show up as a near-duplicate of the freshly-cached entry,\nconfusing the inspect dropdown. Pass ``include_legacy=true`` to\ninclude them anyway (no UI surfaces this yet; it's a debug escape).",
+        "operationId": "list_essays_api_versus_essays_get",
+        "parameters": [
+          {
+            "name": "include_legacy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Legacy"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EssayMeta"
+                  },
+                  "title": "Response List Essays Api Versus Essays Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/essays/{essay_id}": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Essay",
+        "operationId": "get_essay_api_versus_essays__essay_id__get",
+        "parameters": [
+          {
+            "name": "essay_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Essay Id"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EssayDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/essays/{essay_id}/sources": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Essay Sources",
+        "operationId": "get_essay_sources_api_versus_essays__essay_id__sources_get",
+        "parameters": [
+          {
+            "name": "essay_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Essay Id"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Source"
+                  },
+                  "title": "Response Get Essay Sources Api Versus Essays  Essay Id  Sources Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/essays/{essay_id}/judgments": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Essay Judgments",
+        "operationId": "get_essay_judgments_api_versus_essays__essay_id__judgments_get",
+        "parameters": [
+          {
+            "name": "essay_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Essay Id"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EssayJudgmentsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/results": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Results",
+        "operationId": "get_results_api_versus_results_get",
+        "parameters": [
+          {
+            "name": "criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Criterion"
+            }
+          },
+          {
+            "name": "include_contaminated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Contaminated"
+            }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Stale"
+            }
+          },
+          {
+            "name": "filter_gen",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Gen"
+            }
+          },
+          {
+            "name": "filter_judge",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Judge"
+            }
+          },
+          {
+            "name": "filter_condition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Condition"
+            }
+          },
+          {
+            "name": "filter_criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Filter Criterion"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsBundle"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/judgments/by-key": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Judgment By Key",
+        "description": "Look up the verbatim row for a single judgment key.\n\nUsed by the side-panel inspector on /versus/results so a reader can see\nthe prompt + reasoning + raw response that produced a verdict. The key\ncontains `|` and `:` so callers must pass it as a query param.",
+        "operationId": "get_judgment_by_key_api_versus_judgments_by_key_get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgmentDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versus/diagnostics": {
+      "get": {
+        "tags": [
+          "versus"
+        ],
+        "summary": "Get Diagnostics",
+        "description": "Post-hoc bias / n-floor / per-essay sanity over the judgments log.\n\nFilters mirror /results so the pane's numbers line up with the\nmatrix the operator is currently looking at.",
+        "operationId": "get_diagnostics_api_versus_diagnostics_get",
+        "parameters": [
+          {
+            "name": "criterion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Criterion"
+            }
+          },
+          {
+            "name": "include_contaminated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Contaminated"
+            }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Stale"
+            }
+          },
+          {
+            "name": "prefix_label",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Prefix Label"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsBundle"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -28,6 +757,52 @@
         }
       }
     },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Get Me",
+        "operationId": "get_me_api_auth_me_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthUserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "summary": "List Projects",
@@ -41,6 +816,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -85,6 +876,22 @@
               "type": "string",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -123,6 +930,22 @@
             "schema": {
               "type": "string",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -247,6 +1070,16 @@
             }
           },
           {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
             "name": "staged_run_id",
             "in": "query",
             "required": false,
@@ -260,6 +1093,22 @@
                 }
               ],
               "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -326,6 +1175,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -391,6 +1256,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -439,6 +1320,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -493,6 +1390,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -539,6 +1452,16 @@
             }
           },
           {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
             "name": "project_id",
             "in": "query",
             "required": false,
@@ -546,6 +1469,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -593,6 +1532,16 @@
             }
           },
           {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
             "name": "project_id",
             "in": "query",
             "required": false,
@@ -600,6 +1549,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -670,6 +1635,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -718,6 +1699,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -774,6 +1771,22 @@
                 }
               ],
               "title": "Staged Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -841,6 +1854,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -888,6 +1917,32 @@
             "schema": {
               "$ref": "#/components/schemas/Workspace",
               "default": "research"
+            }
+          },
+          {
+            "name": "include_hidden",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Hidden"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -948,6 +2003,22 @@
               ],
               "title": "Question Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -1001,6 +2072,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -1049,6 +2136,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1103,6 +2206,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -1151,6 +2270,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1330,6 +2465,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -1383,6 +2534,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -1431,6 +2598,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1485,6 +2668,22 @@
               "default": "",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -1515,6 +2714,24 @@
       "get": {
         "summary": "Get Realtime Config",
         "operationId": "get_realtime_config_api_realtime_config_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1522,6 +2739,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RealtimeConfigOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1567,6 +2794,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1624,6 +2867,22 @@
               "type": "string",
               "default": "",
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1915,6 +3174,29 @@
           "user_message"
         ],
         "title": "AgentStartedEventOut"
+      },
+      "AuthUserOut": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "email",
+          "is_admin"
+        ],
+        "title": "AuthUserOut"
       },
       "AutocompactEventOut": {
         "properties": {
@@ -2304,8 +3586,14 @@
           "create_view",
           "global_prioritization",
           "update_view",
+          "generate_spec",
+          "generate_artefact",
+          "critique_artefact",
+          "critique_artefact_request_only",
+          "refine_spec",
           "red_team",
-          "claude_code_direct"
+          "claude_code_direct",
+          "versus_judge"
         ],
         "title": "CallType"
       },
@@ -2384,6 +3672,93 @@
           "judgements"
         ],
         "title": "CallsForQuestion"
+      },
+      "Cell": {
+        "properties": {
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "wins": {
+            "type": "integer",
+            "title": "Wins"
+          },
+          "ties": {
+            "type": "integer",
+            "title": "Ties"
+          },
+          "losses": {
+            "type": "integer",
+            "title": "Losses"
+          },
+          "tie_frac": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tie Frac"
+          },
+          "ci_lo": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Lo"
+          },
+          "ci_hi": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Hi"
+          },
+          "bg": {
+            "type": "string",
+            "title": "Bg"
+          },
+          "fg": {
+            "type": "string",
+            "title": "Fg"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pct",
+          "n",
+          "wins",
+          "ties",
+          "losses",
+          "tie_frac",
+          "ci_lo",
+          "ci_hi",
+          "bg",
+          "fg"
+        ],
+        "title": "Cell",
+        "description": "One aggregated (gen, judge, condition[, criterion]) cell.\n\n``pct`` treats ties as 0.5. ``wins`` / ``ties`` / ``losses`` are the raw\ncounts that feed it (``n = wins + ties + losses``). ``tie_frac`` is the\nshare of judgments that were explicit ties \u2014 so a 50% cell from all-ties\nvisually contrasts with a 50/50 split. ``ci_lo`` / ``ci_hi`` is the\nWilson 95% interval on ``pct`` (None when ``n == 0``)."
       },
       "ClaimReassessedEventOut": {
         "properties": {
@@ -2475,6 +3850,34 @@
         ],
         "title": "ClaimScoreItem"
       },
+      "ConditionMeta": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "pair": {
+            "type": "string",
+            "title": "Pair"
+          },
+          "cell_meaning": {
+            "type": "string",
+            "title": "Cell Meaning"
+          },
+          "value_picks": {
+            "type": "string",
+            "title": "Value Picks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "pair",
+          "cell_meaning",
+          "value_picks"
+        ],
+        "title": "ConditionMeta"
+      },
       "ConsiderationDirection": {
         "type": "string",
         "enum": [
@@ -2537,6 +3940,64 @@
               }
             ],
             "title": "Budget"
+          },
+          "full_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Full Pages",
+            "default": []
+          },
+          "abstract_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Abstract Pages",
+            "default": []
+          },
+          "summary_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Summary Pages",
+            "default": []
+          },
+          "distillation_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Distillation Pages",
+            "default": []
+          },
+          "scope_linked_pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Scope Linked Pages",
+            "default": []
+          },
+          "budget_usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Budget Usage",
+            "default": {}
+          },
+          "context_text": {
+            "type": "string",
+            "title": "Context Text",
+            "default": ""
+          },
+          "context_text_chars": {
+            "type": "integer",
+            "title": "Context Text Chars",
+            "default": 0
           }
         },
         "type": "object",
@@ -2547,9 +4008,38 @@
           "working_context_page_ids",
           "preloaded_page_ids",
           "source_page_id",
-          "budget"
+          "budget",
+          "full_pages",
+          "abstract_pages",
+          "summary_pages",
+          "distillation_pages",
+          "scope_linked_pages",
+          "budget_usage",
+          "context_text",
+          "context_text_chars"
         ],
         "title": "ContextBuiltEventOut"
+      },
+      "CriterionMatrix": {
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/GenJudgeCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "criterion",
+          "cells"
+        ],
+        "title": "CriterionMatrix"
       },
       "DedupeCandidateItem": {
         "properties": {
@@ -2596,6 +4086,44 @@
           "avg_in"
         ],
         "title": "DegreeCell"
+      },
+      "DiagnosticsBundle": {
+        "properties": {
+          "judge_bias": {
+            "items": {
+              "$ref": "#/components/schemas/JudgeBiasRowOut"
+            },
+            "type": "array",
+            "title": "Judge Bias"
+          },
+          "biased_judge_count": {
+            "type": "integer",
+            "title": "Biased Judge Count"
+          },
+          "small_n_cells": {
+            "items": {
+              "$ref": "#/components/schemas/SmallNCellOut"
+            },
+            "type": "array",
+            "title": "Small N Cells"
+          },
+          "essay_flags": {
+            "items": {
+              "$ref": "#/components/schemas/EssayFlagOut"
+            },
+            "type": "array",
+            "title": "Essay Flags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judge_bias",
+          "biased_judge_count",
+          "small_n_cells",
+          "essay_flags"
+        ],
+        "title": "DiagnosticsBundle",
+        "description": "Summary counts + three sections for the Diagnostics pane.\n\n`biased_judge_count` uses a |A%-50| > 5pp threshold so the banner\nline matches the default color thresholds in the UI."
       },
       "DispatchExecutedEventOut": {
         "properties": {
@@ -2739,6 +4267,285 @@
         ],
         "title": "ErrorEventOut"
       },
+      "EssayDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "pub_date": {
+            "type": "string",
+            "title": "Pub Date"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "markdown": {
+            "type": "string",
+            "title": "Markdown"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
+          "target_words": {
+            "type": "integer",
+            "title": "Target Words"
+          },
+          "completion_prompt": {
+            "type": "string",
+            "title": "Completion Prompt"
+          },
+          "judge_system_prompt_template": {
+            "type": "string",
+            "title": "Judge System Prompt Template"
+          },
+          "judge_user_prompt_template": {
+            "type": "string",
+            "title": "Judge User Prompt Template"
+          },
+          "judge_prompt_hash": {
+            "type": "string",
+            "title": "Judge Prompt Hash"
+          },
+          "paraphrase_prompt_template": {
+            "type": "string",
+            "title": "Paraphrase Prompt Template"
+          },
+          "criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Criteria"
+          },
+          "prefix_variants": {
+            "items": {
+              "$ref": "#/components/schemas/PrefixVariantInfo"
+            },
+            "type": "array",
+            "title": "Prefix Variants"
+          },
+          "active_prefix_label": {
+            "type": "string",
+            "title": "Active Prefix Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "author",
+          "pub_date",
+          "url",
+          "markdown",
+          "schema_version",
+          "prefix_config_hash",
+          "target_words",
+          "completion_prompt",
+          "judge_system_prompt_template",
+          "judge_user_prompt_template",
+          "judge_prompt_hash",
+          "paraphrase_prompt_template",
+          "criteria",
+          "prefix_variants",
+          "active_prefix_label"
+        ],
+        "title": "EssayDetail",
+        "description": "Essay + the prompts shown to completion / judge / paraphrase models."
+      },
+      "EssayFlagOut": {
+        "properties": {
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "n_judgments": {
+            "type": "integer",
+            "title": "N Judgments"
+          },
+          "tie_rate_pct": {
+            "type": "number",
+            "title": "Tie Rate Pct"
+          },
+          "tie_flag": {
+            "type": "boolean",
+            "title": "Tie Flag"
+          },
+          "sweep_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sweep Source"
+          },
+          "sweep_n": {
+            "type": "integer",
+            "title": "Sweep N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "essay_id",
+          "title",
+          "n_judgments",
+          "tie_rate_pct",
+          "tie_flag",
+          "sweep_source",
+          "sweep_n"
+        ],
+        "title": "EssayFlagOut"
+      },
+      "EssayJudgmentsResponse": {
+        "properties": {
+          "judgments": {
+            "items": {
+              "$ref": "#/components/schemas/Judgment"
+            },
+            "type": "array",
+            "title": "Judgments"
+          },
+          "stale_hidden": {
+            "type": "integer",
+            "title": "Stale Hidden"
+          },
+          "other_variant_hidden": {
+            "type": "integer",
+            "title": "Other Variant Hidden"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judgments",
+          "stale_hidden",
+          "other_variant_hidden"
+        ],
+        "title": "EssayJudgmentsResponse",
+        "description": "Judgments for a single essay at one prefix variant.\n\nRows whose ``prefix_config_hash`` doesn't match the selected variant\nare filtered out of ``judgments``. They split into two buckets:\n\n- ``other_variant_hidden``: hash matches a *different* active prefix\n  variant for this essay (e.g. you're viewing ``no_headers`` and 227\n  rows belong to ``default``). Not stale \u2014 just a different cohort.\n- ``stale_hidden``: hash matches no current variant. Genuinely stale\n  from essay re-import drift or a prefix-config bump.\n\n``orphaned`` flags a judgment whose source_a / source_b is not\npresent in the current completions.jsonl at the same prefix_hash --\nthe judgment survived the variant check but its sources did not."
+      },
+      "EssayMeta": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "author": {
+            "type": "string",
+            "title": "Author"
+          },
+          "pub_date": {
+            "type": "string",
+            "title": "Pub Date"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source_id",
+          "title",
+          "author",
+          "pub_date",
+          "url",
+          "schema_version"
+        ],
+        "title": "EssayMeta",
+        "description": "Headline metadata for one cached essay."
+      },
+      "EssayStatus": {
+        "properties": {
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "current_prefix_hash": {
+            "type": "string",
+            "title": "Current Prefix Hash"
+          },
+          "validator_clean": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validator Clean"
+          },
+          "validator_issues": {
+            "type": "integer",
+            "title": "Validator Issues"
+          },
+          "validator_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validator Model"
+          }
+        },
+        "type": "object",
+        "required": [
+          "essay_id",
+          "title",
+          "schema_version",
+          "current_prefix_hash",
+          "validator_clean",
+          "validator_issues",
+          "validator_model"
+        ],
+        "title": "EssayStatus",
+        "description": "Per-essay state for the /results \"essays\" panel.\n\nSurfaces both validator output (clean? how many issues?) and the\ncurrent ``prefix_config_hash`` so a reader can spot when essay text\nhas drifted out from under cached judgments."
+      },
       "EvaluationCompleteEventOut": {
         "properties": {
           "ts": {
@@ -2878,6 +4685,29 @@
         ],
         "title": "ExplorePageEventOut"
       },
+      "GenJudgeCell": {
+        "properties": {
+          "gen_model": {
+            "type": "string",
+            "title": "Gen Model"
+          },
+          "judge_model": {
+            "type": "string",
+            "title": "Judge Model"
+          },
+          "cell": {
+            "$ref": "#/components/schemas/Cell"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gen_model",
+          "judge_model",
+          "cell"
+        ],
+        "title": "GenJudgeCell",
+        "description": "One (gen_model, judge_model) cell with its rendered colors."
+      },
       "GlobalPhaseCompletedEventOut": {
         "properties": {
           "ts": {
@@ -2968,6 +4798,818 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "JobListItem": {
+        "properties": {
+          "job_name": {
+            "type": "string",
+            "title": "Job Name"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "failed",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "workspace": {
+            "type": "string",
+            "title": "Workspace"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "trace_url": {
+            "type": "string",
+            "title": "Trace Url"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "title": "Owner User Id",
+            "default": ""
+          },
+          "logs_url": {
+            "type": "string",
+            "title": "Logs Url",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_name",
+          "namespace",
+          "status",
+          "created_at",
+          "run_id",
+          "workspace",
+          "question",
+          "trace_url"
+        ],
+        "title": "JobListItem",
+        "description": "One row in GET /api/jobs. Built from a V1Job's metadata only."
+      },
+      "JudgeBiasRowOut": {
+        "properties": {
+          "judge_base": {
+            "type": "string",
+            "title": "Judge Base"
+          },
+          "n_total": {
+            "type": "integer",
+            "title": "N Total"
+          },
+          "all_a_pct": {
+            "type": "number",
+            "title": "All A Pct"
+          },
+          "all_ci_lo_pct": {
+            "type": "number",
+            "title": "All Ci Lo Pct"
+          },
+          "all_ci_hi_pct": {
+            "type": "number",
+            "title": "All Ci Hi Pct"
+          },
+          "n_cvc": {
+            "type": "integer",
+            "title": "N Cvc"
+          },
+          "cvc_a_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc A Pct"
+          },
+          "cvc_ci_lo_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc Ci Lo Pct"
+          },
+          "cvc_ci_hi_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvc Ci Hi Pct"
+          },
+          "content_bias_pp": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Bias Pp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judge_base",
+          "n_total",
+          "all_a_pct",
+          "all_ci_lo_pct",
+          "all_ci_hi_pct",
+          "n_cvc",
+          "cvc_a_pct",
+          "cvc_ci_lo_pct",
+          "cvc_ci_hi_pct",
+          "content_bias_pp"
+        ],
+        "title": "JudgeBiasRowOut",
+        "description": "Per-judge A-preference breakdown.\n\n`all_*` covers every judged row; `cvc_*` covers only\ncompletion-vs-completion pairs (neither side is human), which is the\npure-position-bias signal. `content_bias_pp` is the all - cvc gap in\npercentage points; null when cvc n<20."
+      },
+      "JudgeLabel": {
+        "properties": {
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task"
+          },
+          "phash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "variant",
+          "model",
+          "task",
+          "phash"
+        ],
+        "title": "JudgeLabel",
+        "description": "Stacked column-header parts for a judge model id."
+      },
+      "Judgment": {
+        "properties": {
+          "judge_model": {
+            "type": "string",
+            "title": "Judge Model"
+          },
+          "judge_model_id": {
+            "type": "string",
+            "title": "Judge Model Id"
+          },
+          "config_hash": {
+            "type": "string",
+            "title": "Config Hash"
+          },
+          "prompt_hash": {
+            "type": "string",
+            "title": "Prompt Hash"
+          },
+          "sampling": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Sampling"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "source_a": {
+            "type": "string",
+            "title": "Source A"
+          },
+          "source_b": {
+            "type": "string",
+            "title": "Source B"
+          },
+          "display_first": {
+            "type": "string",
+            "title": "Display First"
+          },
+          "display_second": {
+            "type": "string",
+            "title": "Display Second"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "winner_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Source"
+          },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
+          "reasoning_preview": {
+            "type": "string",
+            "title": "Reasoning Preview"
+          },
+          "reasoning_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Text"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt"
+          },
+          "is_rumil": {
+            "type": "boolean",
+            "title": "Is Rumil"
+          },
+          "rumil_trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Trace Url"
+          },
+          "rumil_question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Question Id"
+          },
+          "rumil_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Call Id"
+          },
+          "rumil_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Run Id"
+          },
+          "rumil_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Cost Usd"
+          },
+          "contamination_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contamination Note"
+          },
+          "orphaned": {
+            "type": "boolean",
+            "title": "Orphaned"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "judge_model",
+          "judge_model_id",
+          "config_hash",
+          "prompt_hash",
+          "sampling",
+          "criterion",
+          "source_a",
+          "source_b",
+          "display_first",
+          "display_second",
+          "verdict",
+          "winner_source",
+          "preference_label",
+          "reasoning_preview",
+          "reasoning_text",
+          "prompt",
+          "system_prompt",
+          "is_rumil",
+          "rumil_trace_url",
+          "rumil_question_id",
+          "rumil_call_id",
+          "rumil_run_id",
+          "rumil_cost_usd",
+          "contamination_note",
+          "orphaned",
+          "prefix_config_hash"
+        ],
+        "title": "Judgment",
+        "description": "One pairwise judgment row, shaped for the inspect view.\n\nIncludes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``\nso the inspect UI can render them inline (matching the standalone\nself-vs-human HTML viewer). Older rows may not have ``system_prompt``\nor ``prompt`` populated; both are optional."
+      },
+      "JudgmentDetail": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
+          "source_a": {
+            "type": "string",
+            "title": "Source A"
+          },
+          "source_b": {
+            "type": "string",
+            "title": "Source B"
+          },
+          "display_first": {
+            "type": "string",
+            "title": "Display First"
+          },
+          "display_second": {
+            "type": "string",
+            "title": "Display Second"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "judge_model": {
+            "type": "string",
+            "title": "Judge Model"
+          },
+          "judge_model_id": {
+            "type": "string",
+            "title": "Judge Model Id"
+          },
+          "config_hash": {
+            "type": "string",
+            "title": "Config Hash"
+          },
+          "prompt_hash": {
+            "type": "string",
+            "title": "Prompt Hash"
+          },
+          "sampling": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Sampling"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "winner_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Winner Source"
+          },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
+          "is_rumil": {
+            "type": "boolean",
+            "title": "Is Rumil"
+          },
+          "contamination_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contamination Note"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "reasoning_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Text"
+          },
+          "raw_response": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Response"
+          },
+          "rumil_trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Trace Url"
+          },
+          "rumil_question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Question Id"
+          },
+          "rumil_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Call Id"
+          },
+          "rumil_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Run Id"
+          },
+          "rumil_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumil Cost Usd"
+          },
+          "ts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ts"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "essay_id",
+          "prefix_config_hash",
+          "source_a",
+          "source_b",
+          "display_first",
+          "display_second",
+          "criterion",
+          "judge_model",
+          "judge_model_id",
+          "config_hash",
+          "prompt_hash",
+          "sampling",
+          "verdict",
+          "winner_source",
+          "preference_label",
+          "is_rumil",
+          "contamination_note",
+          "prompt",
+          "reasoning_text",
+          "raw_response",
+          "rumil_trace_url",
+          "rumil_question_id",
+          "rumil_call_id",
+          "rumil_run_id",
+          "rumil_cost_usd",
+          "ts",
+          "duration_s"
+        ],
+        "title": "JudgmentDetail",
+        "description": "Full judgment row for the side-panel inspector on /versus/results.\n\nIncludes the verbatim prompt + reasoning text + raw provider response,\nso a reader can audit what the judge actually saw and said. Most fields\nare optional because the shape varies across judge variants (OpenRouter\nvs anthropic vs rumil:text vs rumil:ws/orch)."
+      },
+      "JudgmentRow": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "essay_id": {
+            "type": "string",
+            "title": "Essay Id"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
+          "source_a": {
+            "type": "string",
+            "title": "Source A"
+          },
+          "source_b": {
+            "type": "string",
+            "title": "Source B"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "judge_model": {
+            "type": "string",
+            "title": "Judge Model"
+          },
+          "judge_model_id": {
+            "type": "string",
+            "title": "Judge Model Id"
+          },
+          "config_hash": {
+            "type": "string",
+            "title": "Config Hash"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict"
+          },
+          "winner": {
+            "type": "string",
+            "title": "Winner"
+          },
+          "preference_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Label"
+          },
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "is_rumil": {
+            "type": "boolean",
+            "title": "Is Rumil"
+          },
+          "contamination_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contamination Note"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "orphaned": {
+            "type": "boolean",
+            "title": "Orphaned"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "essay_id",
+          "prefix_config_hash",
+          "source_a",
+          "source_b",
+          "criterion",
+          "judge_model",
+          "judge_model_id",
+          "config_hash",
+          "verdict",
+          "winner",
+          "preference_label",
+          "ts",
+          "is_rumil",
+          "contamination_note",
+          "stale",
+          "orphaned"
+        ],
+        "title": "JudgmentRow",
+        "description": "One row in the raw-judgments explorer at the bottom of /results."
       },
       "LLMExchangeEventOut": {
         "properties": {
@@ -3095,6 +5737,17 @@
               }
             ],
             "title": "Tool Uses"
+          },
+          "langfuse_trace_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Langfuse Trace Url"
           }
         },
         "type": "object",
@@ -3112,7 +5765,8 @@
           "duration_ms",
           "cost_usd",
           "has_thinking",
-          "tool_uses"
+          "tool_uses",
+          "langfuse_trace_url"
         ],
         "title": "LLMExchangeEventOut"
       },
@@ -3405,7 +6059,11 @@
           "depends_on",
           "view_item",
           "view_of",
-          "meta_for"
+          "meta_for",
+          "spec_of",
+          "artefact_of",
+          "critique_of",
+          "generated_from"
         ],
         "title": "LinkType"
       },
@@ -3473,6 +6131,31 @@
         ],
         "title": "LoadPageEventOut"
       },
+      "Matrix": {
+        "properties": {
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ConditionMeta"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/GenJudgeCell"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "condition",
+          "meta",
+          "cells"
+        ],
+        "title": "Matrix"
+      },
       "MoveTraceItem": {
         "properties": {
           "type": {
@@ -3533,6 +6216,188 @@
           "moves"
         ],
         "title": "MovesExecutedEventOut"
+      },
+      "OrchestratorRunRequest": {
+        "properties": {
+          "question": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question"
+          },
+          "continue_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continue Id"
+          },
+          "budget": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Budget"
+          },
+          "workspace": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Workspace"
+          },
+          "smoke_test": {
+            "type": "boolean",
+            "title": "Smoke Test",
+            "default": false
+          },
+          "quiet": {
+            "type": "boolean",
+            "title": "Quiet",
+            "default": false
+          },
+          "debug": {
+            "type": "boolean",
+            "title": "Debug",
+            "default": false
+          },
+          "force_twophase_recurse": {
+            "type": "boolean",
+            "title": "Force Twophase Recurse",
+            "default": false
+          },
+          "no_trace": {
+            "type": "boolean",
+            "title": "No Trace",
+            "default": false
+          },
+          "auto_summary": {
+            "type": "boolean",
+            "title": "Auto Summary",
+            "default": false
+          },
+          "auto_self_improve": {
+            "type": "boolean",
+            "title": "Auto Self Improve",
+            "default": false
+          },
+          "available_moves": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Moves"
+          },
+          "available_calls": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Calls"
+          },
+          "view_variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Variant"
+          },
+          "ingest_num_claims": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingest Num Claims"
+          },
+          "run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Name"
+          },
+          "container_tag": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Tag"
+          },
+          "extra_env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Extra Env"
+          }
+        },
+        "type": "object",
+        "required": [
+          "budget",
+          "workspace"
+        ],
+        "title": "OrchestratorRunRequest",
+        "description": "Inputs for a remote orchestrator run.\n\nMirrors the subset of `main.py` flags that are forwarded into the\nin-pod CLI invocation. Flags that only make sense on the laptop\n(--db, --executor, --staged, --env-file, --run-id-file, --cli-user-id)\nare intentionally absent \u2014 the in-pod run is always `--db prod\n--executor local`.\n\nExactly one of `question` (start a new investigation) or\n`continue_id` (resume an existing question by ID) must be set."
+      },
+      "OrchestratorRunResponse": {
+        "properties": {
+          "job_name": {
+            "type": "string",
+            "title": "Job Name"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "logs_url": {
+            "type": "string",
+            "title": "Logs Url",
+            "default": ""
+          },
+          "trace_url": {
+            "type": "string",
+            "title": "Trace Url",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_name",
+          "run_id"
+        ],
+        "title": "OrchestratorRunResponse"
       },
       "Page": {
         "properties": {
@@ -3702,6 +6567,11 @@
             "type": "string",
             "title": "Run Id",
             "default": ""
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
           }
         },
         "type": "object",
@@ -3730,7 +6600,8 @@
           "fruit_remaining",
           "sections",
           "meta_type",
-          "run_id"
+          "run_id",
+          "hidden"
         ],
         "title": "Page"
       },
@@ -3992,7 +6863,9 @@
           "summary",
           "view",
           "view_item",
-          "view_meta"
+          "view_meta",
+          "spec_item",
+          "artefact"
         ],
         "title": "PageType"
       },
@@ -4064,6 +6937,30 @@
         ],
         "title": "PhaseSkippedEventOut"
       },
+      "PrefixVariantInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "n_paragraphs": {
+            "type": "integer",
+            "title": "N Paragraphs"
+          },
+          "include_headers": {
+            "type": "boolean",
+            "title": "Include Headers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "n_paragraphs",
+          "include_headers"
+        ],
+        "title": "PrefixVariantInfo",
+        "description": "One prefix variant available in the active config.\n\nSurfaced on ResultsBundle so the /versus/results UI can render a\nvariant selector. ``id`` matches the yaml ``prefix.id`` /\n``prefix_variants[].id`` and is the value the UI passes back as\n``?prefix_label=<id>``."
+      },
       "Project": {
         "properties": {
           "name": {
@@ -4083,6 +6980,17 @@
             "type": "boolean",
             "title": "Hidden",
             "default": false
+          },
+          "owner_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner User Id"
           }
         },
         "type": "object",
@@ -4090,7 +6998,8 @@
           "name",
           "id",
           "created_at",
-          "hidden"
+          "hidden",
+          "owner_user_id"
         ],
         "title": "Project"
       },
@@ -4185,6 +7094,69 @@
           "id"
         ],
         "title": "ProposedSubquestion"
+      },
+      "ProvenanceAxis": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "current_values": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Current Values"
+          },
+          "value_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Value Labels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "description",
+          "counts",
+          "current_values",
+          "value_labels"
+        ],
+        "title": "ProvenanceAxis",
+        "description": "One axis of the provenance summary.\n\n``description`` says what the value or hash is computed over, so\nthe operator knows what would change it. ``counts`` is value ->\nrow count over the surviving rows. ``current_values`` is the\nmainline set (UI flags anything not in this list as non-current).\n``value_labels`` turns opaque hashes into readable strings where\nderivable (e.g. a ``prefix_config_hash`` maps back to its\noriginating ``\"essay_id / variant_id\"``)."
+      },
+      "ProvenanceSummary": {
+        "properties": {
+          "axes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProvenanceAxis"
+            },
+            "type": "object",
+            "title": "Axes"
+          },
+          "axis_order": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Axis Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "axes",
+          "axis_order"
+        ],
+        "title": "ProvenanceSummary",
+        "description": "Per-axis breakdown of what slice the aggregate sits on top of.\n\n``axes`` is keyed by axis name; ``axis_order`` declares the panel\nrendering order (set by the backend's ``versus.mainline.axis_order``)\nso the FE doesn't maintain a parallel list. New axes appear\nautomatically in the right place."
       },
       "QuestionDedupeEventOut": {
         "properties": {
@@ -4458,6 +7430,170 @@
         ],
         "title": "RenderQuestionSubgraphEventOut"
       },
+      "ResultsBundle": {
+        "properties": {
+          "conditions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Conditions"
+          },
+          "criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Criteria"
+          },
+          "active_criterion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Criterion"
+          },
+          "gen_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Gen Models"
+          },
+          "judge_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Judge Models"
+          },
+          "judge_labels": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JudgeLabel"
+            },
+            "type": "object",
+            "title": "Judge Labels"
+          },
+          "main_matrices": {
+            "items": {
+              "$ref": "#/components/schemas/Matrix"
+            },
+            "type": "array",
+            "title": "Main Matrices"
+          },
+          "completion_per_source": {
+            "items": {
+              "$ref": "#/components/schemas/SourceMatrix"
+            },
+            "type": "array",
+            "title": "Completion Per Source"
+          },
+          "small_grid": {
+            "items": {
+              "$ref": "#/components/schemas/SmallGridRow"
+            },
+            "type": "array",
+            "title": "Small Grid"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/JudgmentRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "total_judgments": {
+            "type": "integer",
+            "title": "Total Judgments"
+          },
+          "total_completions": {
+            "type": "integer",
+            "title": "Total Completions"
+          },
+          "sources_summary": {
+            "items": {
+              "$ref": "#/components/schemas/SourceSummary"
+            },
+            "type": "array",
+            "title": "Sources Summary"
+          },
+          "essays_status": {
+            "items": {
+              "$ref": "#/components/schemas/EssayStatus"
+            },
+            "type": "array",
+            "title": "Essays Status"
+          },
+          "stale_count": {
+            "type": "integer",
+            "title": "Stale Count"
+          },
+          "current_count": {
+            "type": "integer",
+            "title": "Current Count"
+          },
+          "include_stale": {
+            "type": "boolean",
+            "title": "Include Stale"
+          },
+          "include_contaminated": {
+            "type": "boolean",
+            "title": "Include Contaminated"
+          },
+          "row_filter": {
+            "$ref": "#/components/schemas/RowFilter"
+          },
+          "rows_total_before_filter": {
+            "type": "integer",
+            "title": "Rows Total Before Filter"
+          },
+          "prefix_variants": {
+            "items": {
+              "$ref": "#/components/schemas/PrefixVariantInfo"
+            },
+            "type": "array",
+            "title": "Prefix Variants"
+          },
+          "active_prefix_label": {
+            "type": "string",
+            "title": "Active Prefix Label"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ProvenanceSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conditions",
+          "criteria",
+          "active_criterion",
+          "gen_models",
+          "judge_models",
+          "judge_labels",
+          "main_matrices",
+          "completion_per_source",
+          "small_grid",
+          "rows",
+          "total_judgments",
+          "total_completions",
+          "sources_summary",
+          "essays_status",
+          "stale_count",
+          "current_count",
+          "include_stale",
+          "include_contaminated",
+          "row_filter",
+          "rows_total_before_filter",
+          "prefix_variants",
+          "active_prefix_label",
+          "provenance"
+        ],
+        "title": "ResultsBundle"
+      },
       "ReviewCompleteEventOut": {
         "properties": {
           "ts": {
@@ -4506,6 +7642,63 @@
           "confidence"
         ],
         "title": "ReviewCompleteEventOut"
+      },
+      "RowFilter": {
+        "properties": {
+          "gen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gen"
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "criterion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Criterion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gen",
+          "judge",
+          "condition",
+          "criterion"
+        ],
+        "title": "RowFilter",
+        "description": "Echoed back on ResultsBundle when the row list is filtered.\n\nPopulated from ``?filter_gen=`` / ``?filter_judge=`` /\n``?filter_condition=`` / ``?filter_criterion=`` \u2014 the cell-drill-in\nlinkage from MatrixTable cells into the raw-judgments table below."
       },
       "RunListItemOut": {
         "properties": {
@@ -4716,6 +7909,181 @@
           "dispatch_guidance"
         ],
         "title": "ScoringCompletedEventOut"
+      },
+      "SmallGridRow": {
+        "properties": {
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "per_crit": {
+            "items": {
+              "$ref": "#/components/schemas/CriterionMatrix"
+            },
+            "type": "array",
+            "title": "Per Crit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "condition",
+          "per_crit"
+        ],
+        "title": "SmallGridRow"
+      },
+      "SmallNCellOut": {
+        "properties": {
+          "gen_model": {
+            "type": "string",
+            "title": "Gen Model"
+          },
+          "judge_base": {
+            "type": "string",
+            "title": "Judge Base"
+          },
+          "condition": {
+            "type": "string",
+            "title": "Condition"
+          },
+          "criterion": {
+            "type": "string",
+            "title": "Criterion"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gen_model",
+          "judge_base",
+          "condition",
+          "criterion",
+          "n"
+        ],
+        "title": "SmallNCellOut"
+      },
+      "Source": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "words": {
+            "type": "integer",
+            "title": "Words"
+          },
+          "target": {
+            "type": "integer",
+            "title": "Target"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "prefix_config_hash": {
+            "type": "string",
+            "title": "Prefix Config Hash"
+          },
+          "sampling_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampling Hash"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "kind",
+          "text",
+          "words",
+          "target",
+          "prompt",
+          "prefix_config_hash",
+          "sampling_hash",
+          "model_id"
+        ],
+        "title": "Source",
+        "description": "One generated continuation (or the held-out human remainder).\n\n``prompt`` is the verbatim completion prompt the model received,\nstored on the row (legacy rows and the human baseline have no\nprompt \u2014 the inspect UI falls back to the template in that case)."
+      },
+      "SourceMatrix": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "matrix": {
+            "$ref": "#/components/schemas/Matrix"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "matrix"
+        ],
+        "title": "SourceMatrix",
+        "description": "A main matrix restricted to one essay source (e.g. forethought / redwood / carlsmith).\n\nWraps a regular :class:`Matrix` so the gen/judge axes match the all-source\nmatrix above; ``source_id`` is the essay-source label rendered in the UI."
+      },
+      "SourceSummary": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "avg_words": {
+            "type": "integer",
+            "title": "Avg Words"
+          },
+          "avg_delta_pct": {
+            "type": "number",
+            "title": "Avg Delta Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "n",
+          "avg_words",
+          "avg_delta_pct"
+        ],
+        "title": "SourceSummary"
       },
       "SubagentCompletedEventOut": {
         "properties": {

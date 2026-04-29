@@ -13,9 +13,13 @@ dependencies = [
     "supabase>=2.0.0",
     "uvicorn[standard]>=0.41.0",
     "voyageai>=0.3.2",
-    "claude-agent-sdk>=0.1.0",
+    "claude-agent-sdk>=0.1.66",
     "tenacity>=9.0.0",
     "google-genai>=1.72",
+    "versus",
+    "pyjwt[crypto]>=2.11.0",
+    "langfuse>=4.5.1",
+    "kubernetes>=33.0.0",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +33,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rumil"]
+
+[tool.uv.sources]
+versus = { path = "versus", editable = true }
 
 [dependency-groups]
 dev = [
@@ -48,7 +55,7 @@ addopts = "-n auto --dist worksteal"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["frontend", "supabase", "data"]
+extend-exclude = ["frontend", "supabase", "data", "versus"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

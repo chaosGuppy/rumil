@@ -2,7 +2,7 @@
 
 import pytest
 
-from rumil.models import Page, PageLayer, PageType, Workspace
+from rumil.models import LinkType, Page, PageLayer, PageLink, PageType, Workspace
 from rumil.settings import override_settings
 from rumil.views import VIEW_VARIANTS, get_active_view
 from rumil.views.judgement import JudgementView
@@ -107,3 +107,135 @@ async def test_judgement_view_refresh_calls_assess_with_summarise_false(
     assert result == "judgement-call-id"
     assess_mock.assert_called_once()
     assert assess_mock.call_args.kwargs["summarise"] is False
+
+
+async def _save_judgement(db, question: Page, headline: str, robustness: int = 3) -> Page:
+    judgement = Page(
+        page_type=PageType.JUDGEMENT,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=f"Body for {headline}",
+        headline=headline,
+        robustness=robustness,
+    )
+    await db.save_page(judgement)
+    await db.save_link(
+        PageLink(
+            from_page_id=judgement.id,
+            to_page_id=question.id,
+            link_type=LinkType.ANSWERS,
+        )
+    )
+    return judgement
+
+
+async def _save_view(db, question: Page, headline: str, robustness: int = 4) -> Page:
+    view = Page(
+        page_type=PageType.VIEW,
+        layer=PageLayer.WIKI,
+        workspace=Workspace.RESEARCH,
+        content=f"Body for {headline}",
+        headline=headline,
+        sections=["broader_context", "confident_views"],
+        robustness=robustness,
+    )
+    await db.save_page(view)
+    await db.save_link(
+        PageLink(
+            from_page_id=view.id,
+            to_page_id=question.id,
+            link_type=LinkType.VIEW_OF,
+        )
+    )
+    return view
+
+
+async def test_judgement_view_headline_page_returns_latest_judgement(tmp_db, question_page):
+    await _save_judgement(tmp_db, question_page, "Older take", robustness=2)
+    latest = await _save_judgement(tmp_db, question_page, "Newer take", robustness=4)
+
+    headline = await JudgementView().headline_page(question_page.id, tmp_db)
+
+    assert headline is not None
+    assert headline.id == latest.id
+
+
+async def test_judgement_view_headline_page_returns_none_when_absent(tmp_db, question_page):
+    headline = await JudgementView().headline_page(question_page.id, tmp_db)
+    assert headline is None
+
+
+async def test_sectioned_view_headline_page_returns_view(tmp_db, question_page):
+    view = await _save_view(tmp_db, question_page, "View on Q")
+
+    headline = await SectionedView().headline_page(question_page.id, tmp_db)
+
+    assert headline is not None
+    assert headline.id == view.id
+
+
+async def test_sectioned_view_headline_page_returns_none_when_absent(tmp_db, question_page):
+    headline = await SectionedView().headline_page(question_page.id, tmp_db)
+    assert headline is None
+
+
+async def test_judgement_view_headline_pages_many_batches(
+    tmp_db, question_page, child_question_page
+):
+    judgement = await _save_judgement(tmp_db, child_question_page, "Child take")
+
+    result = await JudgementView().headline_pages_many(
+        [question_page.id, child_question_page.id], tmp_db
+    )
+
+    assert result[question_page.id] is None
+    child_headline = result[child_question_page.id]
+    assert child_headline is not None
+    assert child_headline.id == judgement.id
+
+
+async def test_sectioned_view_headline_pages_many_batches(
+    tmp_db, question_page, child_question_page
+):
+    view = await _save_view(tmp_db, child_question_page, "View on child")
+
+    result = await SectionedView().headline_pages_many(
+        [question_page.id, child_question_page.id], tmp_db
+    )
+
+    assert result[question_page.id] is None
+    child_headline = result[child_question_page.id]
+    assert child_headline is not None
+    assert child_headline.id == view.id
+
+
+async def test_judgement_view_render_for_executive_summary(tmp_db, question_page):
+    await _save_judgement(tmp_db, question_page, "The take", robustness=4)
+
+    rendered = await JudgementView().render_for_executive_summary(question_page.id, tmp_db)
+
+    assert rendered is not None
+    assert "The take" in rendered
+
+
+async def test_judgement_view_render_for_executive_summary_returns_none_when_absent(
+    tmp_db, question_page
+):
+    rendered = await JudgementView().render_for_executive_summary(question_page.id, tmp_db)
+    assert rendered is None
+
+
+async def test_sectioned_view_render_for_executive_summary(tmp_db, question_page):
+    await _save_view(tmp_db, question_page, "View headline")
+
+    rendered = await SectionedView().render_for_executive_summary(question_page.id, tmp_db)
+
+    assert rendered is not None
+    assert "View headline" in rendered
+
+
+async def test_sectioned_view_render_for_executive_summary_returns_none_when_absent(
+    tmp_db, question_page
+):
+    rendered = await SectionedView().render_for_executive_summary(question_page.id, tmp_db)
+    assert rendered is None

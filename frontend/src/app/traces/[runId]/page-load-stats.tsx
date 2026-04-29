@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PageLoadStatsOut, PageLoadEventOut } from "@/api/types.gen";
 import { CLIENT_API_BASE } from "@/api-config";
+import { clientFetch } from "@/lib/client-fetch";
 
 const DETAIL_ORDER = ["content", "abstract", "headline"];
 
@@ -102,7 +103,7 @@ export function PageLoadStats({ runId }: { runId: string }) {
   const [activeTags, setActiveTags] = useState<string[]>(["call_type"]);
 
   useEffect(() => {
-    fetch(`${CLIENT_API_BASE}/api/runs/${runId}/page-load-stats`)
+    clientFetch(`${CLIENT_API_BASE}/api/runs/${runId}/page-load-stats`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setStats)
       .catch(() => setError(true));

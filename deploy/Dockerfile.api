@@ -5,6 +5,8 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src/rumil ./src/rumil
+COPY versus/pyproject.toml ./versus/
+COPY versus/src ./versus/src
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.13-slim
@@ -15,3 +17,6 @@ CMD ["uvicorn", "rumil.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
 WORKDIR /app
 COPY --from=build /app/.venv .venv
+# main.py is the entrypoint when this image is run as an orchestrator Job
+# (see src/rumil/k8s/submit.py). It is not used by the API container itself.
+COPY main.py ./

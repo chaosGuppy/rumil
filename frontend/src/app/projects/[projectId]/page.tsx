@@ -6,9 +6,11 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import type { Page, PageType, PaginatedPagesOut, Project, RunListItemOut } from "@/api";
 
 import { CLIENT_API_BASE as API_BASE } from "@/api-config";
+import { clientFetch } from "@/lib/client-fetch";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { withStagedRun } from "@/lib/staged-run-href";
 import { WorkspaceIndicator } from "@/components/workspace-indicator";
+import { useCurrentUser } from "@/lib/use-current-user";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
 const PAGE_TYPES: PageType[] = [
@@ -98,6 +100,8 @@ export default function PagesIndexPage() {
   const [showSuperseded, setShowSuperseded] = useState(false);
   const { activeStagedRunId, setActiveStagedRunId } = useStagedRun();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const currentUser = useCurrentUser();
+  const isAdmin = currentUser?.is_admin ?? false;
 
   useDocumentTitle(projectName);
 
@@ -111,7 +115,7 @@ export default function PagesIndexPage() {
   }, []);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
+    clientFetch(`${API_BASE}/api/projects/${projectId}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: Project | null) => {
         if (data) setProjectName(data.name);
@@ -129,7 +133,7 @@ export default function PagesIndexPage() {
     params.set("limit", String(PAGE_SIZE));
     const qs = params.toString();
     const url = `${API_BASE}/api/projects/${projectId}/pages?${qs}`;
-    fetch(url, { cache: "no-store" })
+    clientFetch(url, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : { items: [], total_count: 0, offset: 0, limit: PAGE_SIZE }))
       .then((data: PaginatedPagesOut) => {
         setPages(data.items);
@@ -139,12 +143,16 @@ export default function PagesIndexPage() {
   }, [projectId, showSuperseded, activeStagedRunId, debouncedSearch, activeType, currentOffset]);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/projects/${projectId}/runs`, {
+    if (!isAdmin) {
+      setRuns([]);
+      return;
+    }
+    clientFetch(`${API_BASE}/api/projects/${projectId}/runs`, {
       cache: "no-store",
     })
       .then((res) => (res.ok ? res.json() : []))
       .then((data: RunListItemOut[]) => setRuns(data));
-  }, [projectId]);
+  }, [projectId, isAdmin]);
 
   const toggleType = (t: PageType) => {
     setActiveType((prev) => (prev === t ? null : t));
@@ -822,9 +830,11 @@ export default function PagesIndexPage() {
           <h1>Pages</h1>
           <div className="subtitle">{totalCount} total</div>
         </div>
-        <div className="pages-header-nav">
-          <Link href={`/projects/${projectId}/stats`}>Stats</Link>
-        </div>
+        {isAdmin && (
+          <div className="pages-header-nav">
+            <Link href={`/projects/${projectId}/stats`}>Stats</Link>
+          </div>
+        )}
       </div>
 
       {runs.length > 0 && (

@@ -23,7 +23,7 @@ class AssessCall(CallRunner):
     def _make_context_builder(self) -> ContextBuilder:
         return EmbeddingContext(
             self.call_type,
-            require_judgement_for_questions=True,
+            require_take_for_questions=True,
         )
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:

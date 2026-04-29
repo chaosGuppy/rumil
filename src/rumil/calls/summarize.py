@@ -2,7 +2,6 @@
 
 import logging
 from datetime import UTC, datetime
-from pathlib import Path
 
 from pydantic import BaseModel, Field
 
@@ -21,14 +20,14 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.prompts import PROMPTS_DIR as _PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.tracing.page_load_tracking import page_track_scope
 from rumil.tracing.trace_events import ContextBuiltEvent, ErrorEvent, PageRef
 from rumil.tracing.tracer import CallTrace, set_trace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
-
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 
 SYSTEM_PROMPT = (_PROMPTS_DIR / "summarize.md").read_text()
 
@@ -36,9 +35,9 @@ TASK = (
     "Produce a summary of this question subtree with three components:\n\n"
     "CONTENT (~1000 words, shorter is fine if the material doesn't require it): "
     "A structured synthesis covering: the question, the current state of evidence "
-    "(key considerations for and against, with their epistemic weight), any judgements "
-    "rendered and their confidence levels, what the child questions contribute and their "
-    "current state, and what remains uncertain or unresolved.\n\n"
+    "(key considerations for and against, with their epistemic weight), the current take "
+    "on the question and its confidence level, what the child questions contribute and "
+    "their current state, and what remains uncertain or unresolved.\n\n"
     "HEADLINE (~30 words): Fully self-contained. State the question, the current "
     "best answer or stance, and the main caveat. Must make sense with zero prior context.\n\n"
     "ABSTRACT (~200 words): Fully self-contained. Include the core conclusion, "
@@ -107,20 +106,27 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
         )
     )
 
+    view = get_active_view()
     considerations = await db.get_considerations_for_question(question_id)
-    judgements = await db.get_judgements_for_question(question_id)
+    headline = await view.headline_page(question_id, db)
     children = await db.get_child_questions(question_id)
+    child_headlines = await view.headline_pages_many([c.id for c in children], db)
     page_refs.extend(ref(p) for p, _ in considerations)
-    page_refs.extend(ref(j) for j in judgements)
+    if headline is not None:
+        page_refs.append(ref(headline))
     page_refs.extend(ref(c) for c in children)
+    for ch in children:
+        ch_headline = child_headlines.get(ch.id)
+        if ch_headline is not None:
+            page_refs.append(ref(ch_headline))
 
     if considerations:
         index_lines = ["Index of direct pages:"]
         for page, link in considerations:
             direction = f" [{link.direction.value}]" if link.direction else ""
             index_lines.append(f"- [consideration{direction}] {page.headline}")
-        for j in judgements:
-            index_lines.append(f"- [judgement R{j.robustness}] {j.headline}")
+        if headline is not None:
+            index_lines.append(f"- [take R{headline.robustness}] {headline.headline}")
         for child in children:
             index_lines.append(f"- [child question] {child.headline}")
         parts.append(_section("Index", "\n".join(index_lines)))
@@ -140,31 +146,22 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             cons_parts.append(f"**Consideration{direction}:**\n\n{formatted}")
         parts.append(_section("Direct Considerations (full)", "\n\n---\n\n".join(cons_parts)))
 
-    if judgements:
-        most_recent = max(judgements, key=lambda j: j.created_at)
-        formatted_j = await format_page(
-            most_recent,
-            PageDetail.CONTENT,
-            linked_detail=None,
-            db=db,
-            track=True,
-            track_tags=summary_tag,
-        )
-        parts.append(_section("Most Recent Judgement (full)", formatted_j))
-        older = [j for j in judgements if j.id != most_recent.id]
-        if older:
-            older_lines = [
-                await format_page(j, PageDetail.HEADLINE, track=True, track_tags=summary_tag)
-                for j in older
-            ]
-            parts.append(
-                _section(
-                    "Earlier Judgements (summaries)",
-                    "\n".join(f"- {line}" for line in older_lines),
-                )
-            )
+    if headline is not None:
+        formatted_take = await view.render_for_executive_summary(question_id, db)
+        if formatted_take:
+            parts.append(_section("Current Take (full)", formatted_take))
 
     if children:
+        grandchildren_by_parent: dict[str, list[Page]] = {}
+        all_grandchildren: list[Page] = []
+        for child in children:
+            gcs = await db.get_child_questions(child.id)
+            grandchildren_by_parent[child.id] = gcs
+            all_grandchildren.extend(gcs)
+        grandchild_headlines = await view.headline_pages_many(
+            [gc.id for gc in all_grandchildren], db
+        )
+
         child_parts = []
         for child in children:
             child_section_parts: list[str] = [f"**Child question:** {child.headline}"]
@@ -184,19 +181,17 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
             else:
                 child_section_parts.append("_(No summary available yet)_")
 
-            child_judgements = await db.get_judgements_for_question(child.id)
-            if child_judgements:
-                page_refs.extend(ref(j) for j in child_judgements)
-                most_recent_j = max(child_judgements, key=lambda j: j.created_at)
-                formatted_cj = await format_page(
-                    most_recent_j,
+            child_headline = child_headlines.get(child.id)
+            if child_headline is not None:
+                formatted_ch = await format_page(
+                    child_headline,
                     PageDetail.ABSTRACT,
                     linked_detail=None,
                     db=db,
                     track=True,
                     track_tags=summary_tag,
                 )
-                child_section_parts.append(f"**Judgement (medium):**\n{formatted_cj}")
+                child_section_parts.append(f"**Take (medium):**\n{formatted_ch}")
 
             child_considerations = await db.get_considerations_for_question(child.id)
             if child_considerations:
@@ -208,7 +203,7 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                 ]
                 child_section_parts.append("**Considerations (short):**\n" + "\n".join(con_lines))
 
-            grandchildren = await db.get_child_questions(child.id)
+            grandchildren = grandchildren_by_parent.get(child.id, [])
             if grandchildren:
                 page_refs.extend(ref(gc) for gc in grandchildren)
                 gc_lines = []
@@ -216,9 +211,9 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                     gc_summary = await db.get_latest_summary_for_question(gc.id)
                     if gc_summary:
                         page_refs.append(ref(gc_summary))
-                    gc_judgements = await db.get_judgements_for_question(gc.id)
-                    if gc_judgements:
-                        page_refs.extend(ref(j) for j in gc_judgements)
+                    gc_headline = grandchild_headlines.get(gc.id)
+                    if gc_headline is not None:
+                        page_refs.append(ref(gc_headline))
                     gc_hl = await format_page(
                         gc, PageDetail.HEADLINE, track=True, track_tags=summary_tag
                     )
@@ -234,20 +229,20 @@ async def _build_summary_context(question_id: str, db: DB) -> tuple[str, list[Pa
                         if gc_summary
                         else None
                     )
-                    gc_short_j = (
+                    gc_short_take = (
                         await format_page(
-                            max(gc_judgements, key=lambda j: j.created_at),
+                            gc_headline,
                             PageDetail.HEADLINE,
                             track=True,
                             track_tags=summary_tag,
                         )
-                        if gc_judgements
+                        if gc_headline is not None
                         else None
                     )
                     gc_lines.append(
                         f"  - {gc_hl}"
                         + (f"\n    Summary: {gc_medium}" if gc_medium else "")
-                        + (f"\n    Judgement: {gc_short_j}" if gc_short_j else "")
+                        + (f"\n    Take: {gc_short_take}" if gc_short_take else "")
                     )
                 child_section_parts.append("**Grandchild questions:**\n" + "\n".join(gc_lines))
 
@@ -345,7 +340,7 @@ async def summarize_question(
                 robustness=2,
                 robustness_reasoning=(
                     "Auto-generated subtree summary — robustness could be "
-                    "strengthened by cross-checking the cited judgements and "
+                    "strengthened by cross-checking the cited takes and "
                     "resolving any conflicting subtree conclusions."
                 ),
                 provenance_model=get_settings().model,

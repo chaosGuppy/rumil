@@ -21,7 +21,6 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import anthropic
@@ -40,7 +39,13 @@ from tenacity import (
 )
 
 from rumil.pricing import compute_cost
+from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
+from rumil.tracing import (
+    get_langfuse,
+    langfuse_trace_url_for_current_observation,
+    observe,
+)
 from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
 from rumil.tracing.tracer import get_trace
 
@@ -80,8 +85,6 @@ def _effort_level(model: str) -> str | None:
         return "high"
     return None
 
-
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 log = logging.getLogger(__name__)
 
@@ -177,15 +180,27 @@ _SCOUT_BUDGET_CALL_TYPES: frozenset[str] = frozenset(
 )
 
 
-def build_system_prompt(call_type: str, *, include_citations: bool = True) -> str:
+def build_system_prompt(
+    call_type: str,
+    *,
+    include_preamble: bool = True,
+    include_citations: bool = True,
+) -> str:
     """Combine preamble + call-type instructions + citations into one system prompt.
 
     Pass ``include_citations=False`` for calls that do not create any content-bearing
     pages (e.g. prioritization, scoring) — the inline-citation rules have nothing to
     attach to in those calls and only add noise.
+
+    Pass ``include_preamble=False`` for calls whose prompts must not assume any
+    rumil-workspace framing (e.g. generate_artefact, where the LLM is acting as
+    a domain-neutral writer with only a spec for context). When preamble is off,
+    citations and grounding are also skipped since they're workspace-specific.
     """
-    preamble = _load_file("preamble.md")
     instructions = _load_file(f"{call_type}.md")
+    if not include_preamble:
+        return instructions
+    preamble = _load_file("preamble.md")
     grounding = _load_file("grounding.md")
     parts = [preamble, instructions]
     if include_citations:
@@ -356,13 +371,17 @@ class LLMExchangeMetadata:
 
     Encapsulates the parameters needed by save_llm_exchange that are not
     already present in the call_api / structured_call signatures.
+
+    `user_message` is only used for single-turn calls (text_call). For
+    multi-turn calls the full message stack is serialized automatically
+    from the `messages` arg and persisted to `user_messages` on the
+    exchange row.
     """
 
     call_id: str
     phase: str
     round_num: int | None = None
     user_message: str | None = None
-    user_messages: list[dict] | None = None
 
 
 async def _save_exchange(
@@ -377,6 +396,7 @@ async def _save_exchange(
     duration_ms: int,
     cache_creation_input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
+    user_messages: Sequence[dict] | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event."""
     exchange_id = await db.save_llm_exchange(
@@ -392,7 +412,7 @@ async def _save_exchange(
         round_num=metadata.round_num,
         cache_creation_input_tokens=cache_creation_input_tokens or None,
         cache_read_input_tokens=cache_read_input_tokens or None,
-        user_messages=metadata.user_messages,
+        user_messages=user_messages,
     )
     cost_usd = compute_cost(
         model=model,
@@ -414,10 +434,86 @@ async def _save_exchange(
                 cache_read_input_tokens=cache_read_input_tokens or None,
                 duration_ms=duration_ms,
                 cost_usd=cost_usd or None,
+                langfuse_trace_url=langfuse_trace_url_for_current_observation(),
             )
         )
 
 
+def _extract_model_parameters(api_kwargs: dict) -> dict:
+    """Pull Anthropic-API params into the flat shape Langfuse renders in the UI.
+
+    Skips `system`/`messages` (they go into `input`). Flattens nested config
+    dicts (`thinking`, `output_config`) into individual keys since
+    update_current_generation's model_parameters slot is shallow.
+    """
+    params: dict = {}
+    for key in ("model", "max_tokens", "temperature"):
+        if key in api_kwargs:
+            params[key] = api_kwargs[key]
+    if (tools := api_kwargs.get("tools")) is not None:
+        params["tool_count"] = len(tools)
+    if (thinking := api_kwargs.get("thinking")) is not None:
+        for k, v in thinking.items():
+            params[f"thinking_{k}"] = v
+    if (output_config := api_kwargs.get("output_config")) is not None:
+        for k, v in output_config.items():
+            params[k] = v
+    if (tool_choice := api_kwargs.get("tool_choice")) is not None:
+        params["tool_choice"] = str(tool_choice)
+    return params
+
+
+def _enrich_langfuse_generation(
+    *,
+    model: str,
+    messages: Sequence[dict],
+    response: anthropic.types.Message,
+    elapsed_ms: int,
+    api_kwargs: dict | None = None,
+) -> None:
+    """Populate the active Langfuse generation span with model, IO, and usage.
+
+    No-op when Langfuse is disabled or no observation is active.
+    """
+    client = get_langfuse()
+    if client is None:
+        return
+    try:
+        usage = response.usage
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cost_usd = compute_cost(
+            model=model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_creation_input_tokens=cache_creation,
+            cache_read_input_tokens=cache_read,
+        )
+        output_text = "".join(
+            block.text for block in response.content if isinstance(block, TextBlock)
+        )
+        client.update_current_generation(
+            model=model,
+            input=_serialize_messages(messages),
+            output=output_text or None,
+            model_parameters=_extract_model_parameters(api_kwargs or {}),
+            usage_details={
+                "input": usage.input_tokens,
+                "output": usage.output_tokens,
+                "cache_creation_input": cache_creation,
+                "cache_read_input": cache_read,
+            },
+            cost_details={"total": cost_usd} if cost_usd else None,
+            metadata={
+                "stop_reason": response.stop_reason,
+                "duration_ms": elapsed_ms,
+            },
+        )
+    except Exception as exc:
+        log.debug("Langfuse enrichment failed: %s", exc)
+
+
+@observe(as_type="generation", name="anthropic.messages.create")
 async def call_api(
     client: anthropic.AsyncAnthropic,
     model: str,
@@ -509,8 +605,7 @@ async def call_api(
                         "content": block.model_dump(mode="json")["content"],
                     }
                 )
-        if metadata.user_messages is None and len(messages) > 1:
-            metadata.user_messages = _serialize_messages(messages)
+        serialized = _serialize_messages(messages) if len(messages) > 1 else None
         try:
             await _save_exchange(
                 metadata,
@@ -527,6 +622,7 @@ async def call_api(
                 )
                 or 0,
                 cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                user_messages=serialized,
             )
         except Exception as exc:
             log.error(
@@ -543,6 +639,13 @@ async def call_api(
                         phase=metadata.phase,
                     )
                 )
+    _enrich_langfuse_generation(
+        model=model,
+        messages=messages,
+        response=response,
+        elapsed_ms=elapsed_ms,
+        api_kwargs=kwargs,
+    )
     return APIResponse(message=response, duration_ms=elapsed_ms)
 
 
@@ -729,6 +832,7 @@ def _inject_into_last_user_message(
     return msgs
 
 
+@observe(as_type="generation", name="anthropic.messages.parse")
 async def _structured_call_parse(
     system_prompt: str,
     response_model: type[T] | None,
@@ -739,6 +843,8 @@ async def _structured_call_parse(
     metadata: LLMExchangeMetadata | None = None,
     db: DB | None = None,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T]:
     """Structured output via messages.parse (no cache sharing with create)."""
     settings = get_settings()
@@ -748,16 +854,17 @@ async def _structured_call_parse(
 
     parse_kwargs: dict = {
         "model": model,
-        "max_tokens": DEFAULT_MAX_TOKENS,
+        "max_tokens": max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
         "system": system_prompt,
         "messages": msg_list,
     }
     if _supports_sampling_params(model):
         parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
-    if (thinking := _thinking_config(model)) is not None:
-        parse_kwargs["thinking"] = thinking
-    if (effort := _effort_level(model)) is not None:
-        parse_kwargs["output_config"] = {"effort": effort}
+    if not disable_thinking:
+        if (thinking := _thinking_config(model)) is not None:
+            parse_kwargs["thinking"] = thinking
+        if (effort := _effort_level(model)) is not None:
+            parse_kwargs["output_config"] = {"effort": effort}
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
     if tools is not None:
@@ -778,13 +885,21 @@ async def _structured_call_parse(
     for block in response.content:
         if isinstance(block, TextBlock):
             response_text += block.text
+    _enrich_langfuse_generation(
+        model=model,
+        messages=msg_list,
+        response=response,
+        elapsed_ms=elapsed_ms,
+        api_kwargs=parse_kwargs,
+    )
     if metadata and db:
-        if metadata.user_message is None and metadata.user_messages is None:
+        serialized: Sequence[dict] | None = None
+        if metadata.user_message is None:
             if len(msg_list) == 1:
                 content = msg_list[0].get("content", "")
                 metadata.user_message = content if isinstance(content, str) else None
             if len(msg_list) > 1 or metadata.user_message is None:
-                metadata.user_messages = _serialize_messages(msg_list)
+                serialized = _serialize_messages(msg_list)
         await _save_exchange(
             metadata,
             db=db,
@@ -798,6 +913,7 @@ async def _structured_call_parse(
             cache_creation_input_tokens=getattr(response.usage, "cache_creation_input_tokens", 0)
             or 0,
             cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+            user_messages=serialized,
         )
     if response.parsed_output is not None:
         log.debug(
@@ -839,6 +955,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -855,6 +973,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -871,6 +991,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[BaseModel]: ...
 
 
@@ -886,6 +1008,8 @@ async def structured_call(
     db: DB | None = None,
     cache: bool = False,
     model: str | None = None,
+    max_tokens: int | None = None,
+    disable_thinking: bool = False,
 ) -> StructuredCallResult[T] | StructuredCallResult[BaseModel]:
     """Run an LLM call that returns structured output matching response_model.
 
@@ -895,6 +1019,16 @@ async def structured_call(
 
     Pass `messages` for multi-turn conversations, or `user_message` for single-turn.
     Pass `tools` to share cache prefix with agent calls.
+
+    Pass ``max_tokens`` to override the default output budget. Long-form
+    artefact generation in particular can outgrow the default; bump this
+    when the expected output is known to be large.
+
+    Pass ``disable_thinking=True`` to skip the model's extended-thinking
+    config for tasks that don't benefit from reasoning. For mostly-mechanical
+    text generation (like writing prose from a complete spec) thinking just
+    eats the max_tokens budget without improving quality. Only takes effect
+    on the cache=False path.
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
@@ -910,6 +1044,15 @@ async def structured_call(
     )
 
     if cache and response_model is not None:
+        if max_tokens is not None:
+            raise ValueError(
+                "max_tokens is not supported on the cached (cache=True) path yet; "
+                "plumb it through call_api if you need it."
+            )
+        if disable_thinking:
+            raise ValueError(
+                "disable_thinking is not supported on the cached (cache=True) path yet."
+            )
         return await _structured_call_cached(
             system_prompt,
             response_model,
@@ -928,4 +1071,6 @@ async def structured_call(
         metadata=metadata,
         db=db,
         model=model,
+        max_tokens=max_tokens,
+        disable_thinking=disable_thinking,
     )

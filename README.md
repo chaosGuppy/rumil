@@ -86,6 +86,21 @@ uv run python main.py "Your question here" --budget 20 --summary
 # Generate a multi-section research report
 uv run python main.py --report QUESTION_ID
 
+# Scan a completed investigation for the most important and surprising
+# findings. Outputs a ranked list of memo candidates (title, content
+# sketch, relevant page IDs, epistemic signals) as JSON to
+# pages/memo-scans/, ready for a downstream memo drafter.
+uv run python main.py --scan-memos QUESTION_ID
+
+# Self-improvement: analyse how an investigation went and get rumil
+# code/prompt improvement suggestions. Read-only; inspects the run plus
+# rumil's own source via LLM tools, then writes a markdown analysis to
+# pages/self-improvement/.
+uv run python main.py --self-improve QUESTION_ID
+
+# Investigate and self-improve in one command (analyses the just-finished run)
+uv run python main.py "Your question here" --budget 20 --self-improve
+
 # Evaluate the judgement quality for a question
 uv run python main.py --evaluate QUESTION_ID
 
@@ -109,6 +124,15 @@ uv run python main.py --summary QUESTION_ID --max-depth 6 --summarize-after-dept
 # Batch mode: investigate multiple questions concurrently
 uv run python main.py --batch questions.json
 
+# Export workspace as an Obsidian vault
+uv run python main.py --obsidian ./vault --workspace my-project
+
+# Export a single question's subtree as an Obsidian vault
+uv run python main.py --obsidian ./vault QUESTION_ID
+
+# Investigate and export to Obsidian in one command
+uv run python main.py "Your question here" --budget 20 --obsidian ./vault
+
 # Use a named workspace to isolate investigations
 uv run python main.py "Your question here" --workspace my-project --budget 10
 
@@ -131,7 +155,13 @@ uv run python main.py --commit-run RUN_ID
 uv run python main.py "Your question here" --smoke-test
 
 # Any command can target the production database
-uv run python main.py --prod --list
+uv run python main.py --db prod --list
+
+# Run an orchestrator on Kubernetes (against the prod DB) instead of locally.
+# `--prod` is a shorthand for `--db prod --executor prod`; only orchestrator
+# runs (a question + budget) can be submitted as a Job. See "Run on Kubernetes"
+# below for prerequisites.
+uv run python main.py "Your question here" --budget 20 --prod
 
 # Select an available-moves preset (controls which tools are available per call type)
 uv run python main.py "Your question" --available-moves default --budget 10
@@ -244,7 +274,125 @@ Every run automatically captures its configuration (model, budget, call variants
 | Flag | Description |
 |------|-------------|
 | `--run-id-file PATH` | Write the run_id to a file after DB creation (for scripted capture) |
+| `--run-id UUID` | Use this run_id instead of generating a new one. Set by the API when launching an orchestrator Job so the trace URL is known at submit time |
 | `--env-file PATH` | Load settings from this env file in addition to `.env` |
+
+### Run on Kubernetes
+
+Long or expensive prod runs can be submitted as Kubernetes Jobs in the GKE
+cluster instead of running on your laptop. The CLI POSTs to the rumil API,
+which creates the Job using its in-cluster ServiceAccount and returns a
+Cloud Logging URL you can open to follow the pod's stdout. The CLI itself
+exits as soon as the Job is created — orchestrator runs are
+fire-and-forget from the laptop's perspective.
+
+| Flag | Meaning |
+|------|---------|
+| `--db {prod,local}` | Which Supabase to target. Default: local. |
+| `--executor {prod,local}` | Where the orchestrator runs. Default: local. |
+| `--prod` | Shorthand for `--db prod --executor prod`. |
+
+Constraints:
+
+- `--executor prod` is only supported for orchestrator runs — either a
+  question with `--budget`, or `--continue QUESTION_ID --budget`. For
+  `--list`, `--summary`, etc., use `--db prod` (or `--db prod --executor
+  local`).
+- `--db local --executor prod` is rejected — the cluster cannot reach a
+  local Supabase.
+
+One-time setup on your laptop:
+
+```bash
+./scripts/sync-prod-env.sh
+```
+
+This decrypts `deploy/chart/secrets.enc.yaml` via SOPS and merges the
+prod-only values (`SUPABASE_JWT_SECRET`, `SUPABASE_PROD_KEY`,
+`SUPABASE_PROD_URL`, `RUMIL_API_URL`) into your `.env` in place. The
+decrypted secrets are streamed in memory only — no plaintext file is
+written to disk. Re-run any time the upstream secrets rotate.
+
+Prerequisites are the SOPS onboarding steps in
+[deploy/README.md](deploy/README.md) (`brew install sops`,
+`gcloud auth application-default login`, KMS-key access).
+
+To attribute remote runs to your own Supabase user instead of the shared
+service account, also set in `.env`:
+
+```bash
+# DEFAULT_CLI_USER_ID=<your supabase user_id>
+```
+
+Then:
+
+```bash
+# Submit a smoke-test orchestrator run against prod — cheapest end-to-end check
+uv run python main.py "is the sky blue" --budget 1 --smoke-test \
+  --workspace k8s-smoke --prod
+
+# Equivalent explicit form
+uv run python main.py "..." --budget 20 --workspace my-project \
+  --db prod --executor prod
+```
+
+#### Experiments (run uncommitted code in the cluster)
+
+`scripts/remote_run.sh` builds the current source tree into a one-off API
+image, pushes it to the rumil Artifact Registry under a unique tag (e.g.
+`exp-20260425-cafebabe-dirty`), then submits an orchestrator run pinned
+to that tag — without touching the deployed `rumil-api`. Use this to
+test changes against the prod database before they're merged or
+deployed.
+
+```bash
+# One-time docker auth
+gcloud auth configure-docker us-central1-docker.pkg.dev
+
+# Run an experiment
+./scripts/remote_run.sh "your question" --budget 5 --workspace exp-foo
+```
+
+The submitted Job's pod uses the experiment image while inheriting prod
+secrets and env from the live `rumil-api` Deployment, so it sees the
+same prod Supabase that any other `--prod` run would. Override the
+target Artifact Registry repository with `RUMIL_IMAGE_REPOSITORY` if
+you're running against a different project.
+
+You can also pass `--container-tag TAG` to `main.py` directly if you've
+already built and pushed the image yourself.
+
+#### Forwarding local config into the cloud Job
+
+When you submit a run with `--executor prod` (or `--prod`), the CLI
+auto-forwards a curated subset of your locally-loaded `Settings` into
+the Job's container env. Any forwardable field whose value differs
+from its class default is sent in the request's `extra_env` and shadows
+the value the Job would otherwise inherit from the deployed `rumil-api`.
+
+This means experiment knobs you set locally — via `.env`,
+`.env.overrides`, or your shell — Just Work remotely:
+
+```bash
+# Run a remote orchestrator with an overridden model
+RUMIL_MODEL_OVERRIDE=claude-sonnet-4-6 \
+  uv run python main.py "is the sky blue?" --budget 2 --smoke-test \
+  --workspace cloud-config-scratch --prod
+```
+
+The forwarded set covers the per-run tuning surface (every
+`_capture_field`-marked Settings field) plus `RUMIL_MODEL_OVERRIDE`,
+`RUMIL_SMOKE_TEST`, `RUMIL_TEST_MODE`, and `FORCE_TWOPHASE_RECURSE`.
+
+Credentials, DB URLs, GCP identifiers, frontend/API URLs, and Langfuse
+keys are intentionally *not* forwarded — the Job inherits those from
+the deployed Pod's secrets and env, and a stray local override would
+point a cloud run at the wrong resources.
+
+The launcher endpoint (`POST /api/jobs/orchestrator-runs`) accepts an
+`extra_env` field for any Settings name; the curated CLI subset is just
+how `main.py` chooses what to send. Other clients (curl, scripts) can
+override anything they want.
 
 ### Testing individual calls
 

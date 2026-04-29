@@ -7,7 +7,7 @@ api:
   replicaCount: 1
 
   image:
-    repository: us-central1-docker.pkg.dev/varuna-400921/delphos/rumil-api
+    repository: us-central1-docker.pkg.dev/project-fe559f0f-d011-4af4-bf0/rumil/rumil-api
     pullPolicy: IfNotPresent
 
   service:
@@ -51,19 +51,24 @@ api:
   env:
     USE_PROD_DB: "1"
     SUPABASE_PROD_URL: https://aesjaehibxrzearctiqp.supabase.co
+    LANGFUSE_BASE_URL: https://us.cloud.langfuse.com
+    GCP_PROJECT_ID: project-fe559f0f-d011-4af4-bf0
+    GCP_CLUSTER_NAME: differential
+    FRONTEND_URL: https://rumil.ink
 
   httproute:
-    enabled: false
+    enabled: true
+    host: api.rumil.ink
 
 frontend:
   replicaCount: 1
 
   image:
-    repository: us-central1-docker.pkg.dev/varuna-400921/delphos/rumil-frontend
+    repository: us-central1-docker.pkg.dev/project-fe559f0f-d011-4af4-bf0/rumil/rumil-frontend
     pullPolicy: IfNotPresent
 
   service:
-    type: LoadBalancer
+    type: ClusterIP
     port: 3000
 
   resources:
@@ -98,29 +103,16 @@ frontend:
     failureThreshold: 30
     timeoutSeconds: 5
 
-  # NEXT_PUBLIC_API_URL is baked at build time (client-side fetch) — set when building the image.
-  # API_BASE_URL is read at runtime for server-side rendering.
+  # Build-time env vars (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  # are inlined by `next build` — see scripts/deploy.sh. API_BASE_URL is read
+  # at runtime; the Next.js middleware proxies /api/* to it same-origin so it
+  # can inject the Supabase JWT before the request reaches the backend.
   env:
     API_BASE_URL: http://rumil-api.rumil.svc.cluster.local:8000
 
   httproute:
-    enabled: false
+    enabled: true
+    host: rumil.ink
 
 secrets:
   enabled: true
-
-tolerations:
-  - key: "hyperdiskonly"
-    operator: "Equal"
-    value: "true"
-    effect: "NoSchedule"
-
-affinity:
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: hyperdiskonly
-              operator: In
-              values:
-                - "true"

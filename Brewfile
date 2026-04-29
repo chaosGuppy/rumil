@@ -18,3 +18,9 @@ brew "supabase/tap/supabase"
 
 # Task runner for the repo's justfile
 brew "just"
+
+# Deployment toolchain — needed to read/edit deploy/chart/secrets.enc.yaml
+# and to run ./scripts/deploy.sh against the GKE cluster.
+brew "sops"
+brew "helm"
+cask "google-cloud-sdk"

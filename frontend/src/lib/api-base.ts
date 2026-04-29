@@ -1,13 +1,24 @@
-export const API_BASE =
-  process.env.API_BASE_URL || "http://localhost:8000";
+import { createClient } from "@/lib/supabase/server";
 
-export function serverFetch(
+export const API_BASE = process.env.API_BASE_URL || "http://localhost:8000";
+
+const AUTH_DISABLED =
+  process.env.AUTH_ENABLED === "0" || process.env.AUTH_ENABLED === "false";
+
+export async function serverFetch(
   url: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const pw = process.env.AUTH_PASSWORD;
-  if (!pw) return fetch(url, init);
+  if (AUTH_DISABLED) return fetch(url, init);
+
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
   const headers = new Headers(init?.headers);
-  headers.set("Authorization", `Basic ${btoa(`user:${pw}`)}`);
+  if (session?.access_token) {
+    headers.set("Authorization", `Bearer ${session.access_token}`);
+  }
   return fetch(url, { ...init, headers });
 }

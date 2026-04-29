@@ -2,8 +2,8 @@
 
 import logging
 import re
+import uuid
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Literal
 
 import pydantic
@@ -20,7 +20,11 @@ from rumil.calls.stages import (
     WorkspaceUpdater,
 )
 from rumil.constants import DEFAULT_VIEW_SECTIONS
-from rumil.context import build_embedding_based_context, render_child_investigation_results
+from rumil.context import (
+    build_embedding_based_context,
+    render_child_investigation_results,
+    render_claim_investigation_findings,
+)
 from rumil.database import DB
 from rumil.embeddings import embed_and_store_page
 from rumil.llm import LLMExchangeMetadata, structured_call
@@ -36,6 +40,7 @@ from rumil.models import (
 )
 from rumil.moves.base import extract_and_link_citations
 from rumil.orchestrators.common import _split_into_batches
+from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import (
     PhaseSkippedEvent,
@@ -44,8 +49,6 @@ from rumil.tracing.trace_events import (
 )
 
 log = logging.getLogger(__name__)
-
-PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
 
 PHASE_MARKER_RE = re.compile(r"<!--\s*PHASE:(\w+)\b[^>]*-->")
 
@@ -119,10 +122,6 @@ class ProposedItem(BaseModel):
 
 class DeepReviewBatchResponse(BaseModel):
     item_reviews: list[ItemReview] = Field(description="One review per item in the batch")
-    proposed_items: list[ProposedItem] = Field(
-        default_factory=list,
-        description="New items to add to the View (zero or more)",
-    )
 
 
 class DemotionChoice(BaseModel):
@@ -135,6 +134,22 @@ class PruneDecision(BaseModel):
     item_id: str = Field(description="Short ID (first 8 chars) of the VIEW_ITEM page")
     action: Literal["keep", "remove"] = Field(description="Whether to keep or remove this item")
     reasoning: str = ""
+
+
+def _is_explicit_duplicate(page: Page) -> bool:
+    """True if the item's content is explicitly marked as a duplicate."""
+    return "[Duplicate of" in (page.content or "")
+
+
+def _prune_candidates(
+    items: Sequence[tuple[Page, PageLink]],
+) -> list[tuple[Page, PageLink]]:
+    """Items eligible for the prune phase: low-importance plus explicit duplicates."""
+    return [
+        (p, l)
+        for p, l in items
+        if l.importance is not None and (l.importance <= 2 or _is_explicit_duplicate(p))
+    ]
 
 
 def _parse_prompt_sections(text: str) -> dict[str, str]:
@@ -184,6 +199,7 @@ def _render_item_full(
     link: PageLink,
     cited_pages: dict[str, Page] | None = None,
     item_links: Sequence[PageLink] | None = None,
+    related_considerations: Sequence[Page] = (),
 ) -> str:
     """Full rendering with cited pages for deep review."""
     imp = f"I{link.importance}" if link.importance is not None else "I?"
@@ -193,11 +209,13 @@ def _render_item_full(
         page.content or "(no content)",
     ]
 
+    cited_ids: set[str] = set()
     if cited_pages and item_links:
         cite_ids = {
             l.to_page_id for l in item_links if l.link_type in (LinkType.CITES, LinkType.DEPENDS_ON)
         }
         cited = [cited_pages[cid] for cid in cite_ids if cid in cited_pages]
+        cited_ids = {cp.id for cp in cited}
         if cited:
             parts.append("")
             parts.append("**Cited evidence:**")
@@ -212,22 +230,48 @@ def _render_item_full(
                 if cp.abstract:
                     parts.append(f"  {cp.abstract[:200]}")
 
+    uncited = [c for c in related_considerations if c.id not in cited_ids and c.id != page.id]
+    if uncited:
+        parts.append("")
+        parts.append("**Related considerations on the parent question (not cited by this item):**")
+        for cp in uncited:
+            score_parts = []
+            if cp.credence is not None:
+                score_parts.append(f"C{cp.credence}")
+            if cp.robustness is not None:
+                score_parts.append(f"R{cp.robustness}")
+            score_str = f" {'/'.join(score_parts)}" if score_parts else ""
+            parts.append(f"- `{cp.id[:8]}`{score_str} — {cp.headline}")
+            if cp.abstract:
+                parts.append(f"  {cp.abstract[:200]}")
+
     return "\n".join(parts)
 
 
 class UpdateViewContext(ContextBuilder):
-    """Context for View update: embedding-based with raised similarity floors."""
+    """Context for View update: embedding-based with raised similarity floors.
 
-    def __init__(self, view_id: str, old_view_id: str | None = None) -> None:
-        self._view_id = view_id
-        self._old_view_id = old_view_id
+    The new view page doesn't exist yet at build_context time (it's created
+    at update_workspace time so ``--up-to-stage build_context`` stays
+    side-effect-free). We read items from the *old* view — the pending copy
+    preserves each item's target page, importance, section, and position, so
+    the context is byte-identical to what the new view would expose.
+    """
+
+    def __init__(self) -> None:
+        pass
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         question = await infra.db.get_page(infra.question_id)
         query = question.headline if question else infra.question_id
 
-        old_view = await infra.db.get_page(self._old_view_id) if self._old_view_id else None
-        last_view_created_at = old_view.created_at if old_view else None
+        old_view = await infra.db.get_view_for_question(infra.question_id)
+        if not old_view:
+            raise RuntimeError(
+                f"UpdateViewContext requires an existing View for question "
+                f"{infra.question_id[:8]}, but none was found."
+            )
+        last_view_created_at = old_view.created_at
 
         child_section, child_page_ids = await render_child_investigation_results(
             infra.db,
@@ -235,7 +279,13 @@ class UpdateViewContext(ContextBuilder):
             last_view_created_at,
         )
 
-        items = await infra.db.get_view_items(self._view_id)
+        claim_section, claim_page_ids = await render_claim_investigation_findings(
+            infra.db,
+            infra.question_id,
+            last_view_created_at,
+        )
+
+        items = await infra.db.get_view_items(old_view.id)
         item_ids = [page.id for page, _ in items]
         links_by_item = await infra.db.get_links_from_many(item_ids) if item_ids else {}
         cited_ids: set[str] = set()
@@ -244,13 +294,13 @@ class UpdateViewContext(ContextBuilder):
                 if link.link_type in (LinkType.CITES, LinkType.DEPENDS_ON):
                     cited_ids.add(link.to_page_id)
 
-        exclude_ids = cited_ids | set(item_ids) | set(child_page_ids)
+        exclude_ids = cited_ids | set(item_ids) | set(child_page_ids) | set(claim_page_ids)
 
         result = await build_embedding_based_context(
             query,
             infra.db,
             scope_question_id=infra.question_id,
-            require_judgement_for_questions=True,
+            require_take_for_questions=True,
             full_page_similarity_floor=0.6,
             abstract_page_similarity_floor=0.5,
             summary_page_similarity_floor=0.4,
@@ -258,35 +308,131 @@ class UpdateViewContext(ContextBuilder):
         )
 
         context_text = result.context_text
+        if claim_section:
+            context_text = claim_section + "\n\n" + context_text
         if child_section:
             context_text = child_section + "\n\n" + context_text
 
         preloaded_ids = list(infra.call.context_page_ids or [])
         return ContextResult(
             context_text=context_text,
-            working_page_ids=result.page_ids + child_page_ids,
+            working_page_ids=result.page_ids + child_page_ids + claim_page_ids,
             preloaded_ids=preloaded_ids,
         )
 
 
 class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
-    """Multi-phase workspace updater for incremental View updates."""
+    """Multi-phase workspace updater for incremental View updates.
+
+    Materializes the new view page + copies items from the old view at the
+    start of ``update_workspace``, then runs the multi-phase review. This
+    keeps view-creation inside the workspace_update stage rather than ahead
+    of build_context, so ``--up-to-stage build_context`` is a clean preview.
+    """
 
     def __init__(self, view_id: str, call_type: CallType) -> None:
         self._view_id = view_id
         self._call_type = call_type
+        self._phase_lines: list[str] = []
+
+    async def materialize(self, infra: CallInfra) -> tuple[str, str]:
+        """Create the new view page, supersede the old one, and copy
+        VIEW_ITEM links across. Returns ``(old_view_id, new_view_id)``.
+
+        Exposed as a public method so tests can exercise the materialization
+        step directly without running the full LLM-driven updater.
+        """
+        db = infra.db
+        question_id = infra.question_id
+        existing_view = await db.get_view_for_question(question_id)
+        if not existing_view:
+            raise RuntimeError(
+                f"UpdateViewCall requires an existing View for question "
+                f"{question_id[:8]}, but none was found."
+            )
+
+        question = await db.get_page(question_id)
+        q_headline = question.headline if question else question_id[:8]
+
+        new_view = Page(
+            id=self._view_id,
+            page_type=PageType.VIEW,
+            layer=PageLayer.WIKI,
+            workspace=Workspace.RESEARCH,
+            content="",
+            headline=f"View: {q_headline}",
+            sections=list(DEFAULT_VIEW_SECTIONS),
+            provenance_call_type=self._call_type.value,
+            provenance_call_id=infra.call.id,
+            provenance_model=get_settings().model,
+        )
+        await db.save_page(new_view)
+
+        await db.save_link(
+            PageLink(
+                from_page_id=new_view.id,
+                to_page_id=question_id,
+                link_type=LinkType.VIEW_OF,
+            )
+        )
+
+        await db.supersede_page(existing_view.id, new_view.id)
+
+        old_links = await db.get_links_from(existing_view.id)
+        copied = 0
+        for link in old_links:
+            if link.link_type == LinkType.VIEW_ITEM:
+                await db.save_link(
+                    PageLink(
+                        from_page_id=new_view.id,
+                        to_page_id=link.to_page_id,
+                        link_type=LinkType.VIEW_ITEM,
+                        importance=link.importance,
+                        section=link.section,
+                        position=link.position,
+                    )
+                )
+                copied += 1
+
+        log.info(
+            "Created new view %s (superseding %s) with %d copied items",
+            new_view.id[:8],
+            existing_view.id[:8],
+            copied,
+        )
+
+        await infra.trace.record_strict(
+            ViewCreatedEvent(
+                view_id=new_view.id,
+                view_headline=new_view.headline,
+                question_id=question_id,
+                superseded_view_id=existing_view.id,
+            )
+        )
+        return existing_view.id, new_view.id
 
     async def update_workspace(
         self,
         infra: CallInfra,
         context: ContextResult,
     ) -> UpdateResult:
+        await self.materialize(infra)
+
         sections = _load_prompt_sections()
         system_prompt = _build_update_view_system_prompt(sections.get("context", ""))
 
         messages: list[dict] = [
             {"role": "user", "content": context.context_text},
-            {"role": "assistant", "content": "Understood. Ready to review View items."},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Understood. Ready to review View items.",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
         ]
 
         created_page_ids: list[str] = []
@@ -296,10 +442,14 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         messages, flagged_ids = await self._phase_triage(infra, system_prompt, sections, messages)
 
         if flagged_ids:
-            messages, phase2b_created = await self._phase_deep_review(
+            messages = await self._phase_deep_review(
                 infra, system_prompt, sections, messages, flagged_ids
             )
-            created_page_ids.extend(phase2b_created)
+
+        messages, propose_created = await self._phase_propose_new(
+            infra, system_prompt, sections, messages
+        )
+        created_page_ids.extend(propose_created)
 
         messages = await self._phase_enforce_caps(infra, system_prompt, sections, messages)
 
@@ -310,6 +460,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             moves=[],
             all_loaded_ids=[],
             messages=messages,
+            phase_summary="\n".join(self._phase_lines),
         )
 
     async def _phase_score_unscored(
@@ -326,6 +477,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             await infra.trace.record(
                 PhaseSkippedEvent(phase="score_unscored", reason="No unscored items")
             )
+            self._phase_lines.append("score_unscored: skipped (no unscored items)")
             return messages
 
         link_by_target = {page.id: link for page, link in items}
@@ -378,7 +530,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 metadata=LLMExchangeMetadata(
                     call_id=infra.call.id,
                     phase=f"score_unscored_batch_{batch_idx}",
-                    user_messages=[{"role": "user", "content": user_content}],
                 ),
                 db=infra.db,
             )
@@ -414,6 +565,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 items_modified=modified_count,
             )
         )
+        self._phase_lines.append(
+            f"score_unscored: scored {len(unscored)} item(s), modified {modified_count}"
+        )
         return messages
 
     async def _phase_triage(
@@ -428,6 +582,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         if not scored:
             await infra.trace.record(PhaseSkippedEvent(phase="triage", reason="No scored items"))
+            self._phase_lines.append("triage: skipped (no scored items)")
             return messages, []
 
         batch_sizes = _split_into_batches(len(scored), TRIAGE_BATCH_SIZE)
@@ -468,7 +623,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 metadata=LLMExchangeMetadata(
                     call_id=infra.call.id,
                     phase=f"triage_batch_{batch_idx}",
-                    user_messages=[{"role": "user", "content": user_content}],
                 ),
                 db=infra.db,
             )
@@ -493,6 +647,9 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 items_modified=len(flagged_ids),
             )
         )
+        self._phase_lines.append(
+            f"triage: reviewed {len(scored)} item(s), flagged {len(flagged_ids)} for deep review"
+        )
         return messages, flagged_ids
 
     async def _phase_deep_review(
@@ -502,7 +659,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         sections: dict[str, str],
         messages: list[dict],
         flagged_ids: Sequence[str],
-    ) -> tuple[list[dict], list[str]]:
+    ) -> list[dict]:
         items = await infra.db.get_view_items(self._view_id)
         flagged_set = set(flagged_ids)
         flagged = [(page, link) for page, link in items if page.id in flagged_set]
@@ -511,7 +668,8 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             await infra.trace.record(
                 PhaseSkippedEvent(phase="deep_review", reason="No flagged items found")
             )
-            return messages, []
+            self._phase_lines.append("deep_review: skipped (no flagged items)")
+            return messages
 
         link_by_target = {page.id: link for page, link in items}
         page_by_id = {page.id: page for page, link in items}
@@ -526,9 +684,12 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             await infra.db.get_pages_by_ids(list(cited_page_ids)) if cited_page_ids else {}
         )
 
+        parent_considerations = await infra.db.get_considerations_for_question(infra.question_id)
+        related_considerations = [claim for claim, _ in parent_considerations]
+
         batch_sizes = _split_into_batches(len(flagged), DEEP_REVIEW_BATCH_SIZE)
-        created_page_ids: list[str] = []
-        modified_count = 0
+        adjust_count = 0
+        supersede_count = 0
         offset = 0
 
         for batch_idx, batch_size in enumerate(batch_sizes):
@@ -538,14 +699,22 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             item_blocks = []
             for page, link in batch:
                 item_links = links_by_item.get(page.id, [])
-                item_blocks.append(_render_item_full(page, link, cited_pages, item_links))
+                item_blocks.append(
+                    _render_item_full(
+                        page,
+                        link,
+                        cited_pages,
+                        item_links,
+                        related_considerations=related_considerations,
+                    )
+                )
 
             batch_text = (
                 f"## Batch {batch_idx + 1}/{len(batch_sizes)} "
                 f"({batch_size} items for deep review)\n\n"
                 + "\n\n---\n\n".join(item_blocks)
                 + "\n\nReview all items in this batch. "
-                "You may also propose new items if you notice gaps."
+                "(A separate Propose New Items phase follows — do not propose net-new items here.)"
             )
 
             if batch_idx == 0:
@@ -563,7 +732,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 metadata=LLMExchangeMetadata(
                     call_id=infra.call.id,
                     phase=f"deep_review_batch_{batch_idx}",
-                    user_messages=[{"role": "user", "content": user_content}],
                 ),
                 db=infra.db,
             )
@@ -589,23 +757,103 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                         continue
                     changed = await self._apply_item_review(infra, review, resolved, page, link)
                     if changed:
-                        modified_count += 1
+                        if review.action == "supersede":
+                            supersede_count += 1
+                        elif review.action == "adjust":
+                            adjust_count += 1
                     if review.action == "supersede" and resolved in link_by_target:
                         del link_by_target[resolved]
-
-                for proposal in result.parsed.proposed_items:
-                    new_id = await self._create_proposed_item(infra, proposal)
-                    if new_id:
-                        created_page_ids.append(new_id)
 
         await infra.trace.record(
             UpdateViewPhaseCompletedEvent(
                 phase="deep_review",
                 items_processed=len(flagged),
-                items_modified=modified_count,
+                items_modified=adjust_count + supersede_count,
+            )
+        )
+        self._phase_lines.append(
+            f"deep_review: reviewed {len(flagged)} item(s), "
+            f"superseded {supersede_count}, adjusted {adjust_count}"
+        )
+        return messages
+
+    async def _phase_propose_new(
+        self,
+        infra: CallInfra,
+        system_prompt: str,
+        sections: dict[str, str],
+        messages: list[dict],
+    ) -> tuple[list[dict], list[str]]:
+        items = await infra.db.get_view_items(self._view_id)
+
+        items_by_section: dict[str, list[tuple[Page, PageLink]]] = {}
+        for page, link in items:
+            items_by_section.setdefault(link.section or "other", []).append((page, link))
+
+        section_blocks: list[str] = []
+        for sec in DEFAULT_VIEW_SECTIONS:
+            bucket = items_by_section.get(sec, [])
+            header = f"### {sec} ({len(bucket)} item(s))"
+            if not bucket:
+                section_blocks.append(f"{header}\n(none)")
+                continue
+            bucket.sort(key=lambda pl: -(pl[1].importance or 0))
+            lines = [_render_item_compact(p, l) for p, l in bucket]
+            section_blocks.append(header + "\n" + "\n".join(lines))
+
+        state_text = "## Current View Items\n\n" + "\n\n".join(section_blocks)
+
+        user_content = (
+            sections.get("propose_new", "")
+            + "\n\n"
+            + state_text
+            + "\n\nPropose new items now. Return an empty list if the View "
+            "already captures the important picture."
+        )
+
+        propose_response_model = pydantic.create_model(
+            "ProposeNewBatch",
+            proposed_items=(
+                list[ProposedItem],
+                Field(
+                    default_factory=list,
+                    description="New items to add to the View (zero or more)",
+                ),
+            ),
+        )
+
+        messages.append({"role": "user", "content": user_content})
+
+        result = await structured_call(
+            system_prompt,
+            messages=list(messages),
+            response_model=propose_response_model,
+            cache=True,
+            metadata=LLMExchangeMetadata(
+                call_id=infra.call.id,
+                phase="propose_new",
+            ),
+            db=infra.db,
+        )
+
+        messages.append({"role": "assistant", "content": result.response_text or ""})
+
+        created_page_ids: list[str] = []
+        if result.parsed:
+            parsed_dict = result.parsed.model_dump()
+            proposals = [ProposedItem(**raw) for raw in parsed_dict.get("proposed_items", [])]
+            for proposal in proposals:
+                new_id = await self._create_proposed_item(infra, proposal)
+                if new_id:
+                    created_page_ids.append(new_id)
+
+        await infra.trace.record(
+            UpdateViewPhaseCompletedEvent(
+                phase="propose_new",
                 items_created=len(created_page_ids),
             )
         )
+        self._phase_lines.append(f"propose_new: created {len(created_page_ids)} new item(s)")
         return messages, created_page_ids
 
     async def _phase_enforce_caps(
@@ -625,6 +873,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
 
         any_enforced = False
         first_call = True
+        total_demotions = 0
         for level in [5, 4, 3, 2]:
             items = await infra.db.get_view_items(self._view_id)
             at_level = [
@@ -670,7 +919,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                 metadata=LLMExchangeMetadata(
                     call_id=infra.call.id,
                     phase=f"enforce_caps_i{level}",
-                    user_messages=[{"role": "user", "content": user_content}],
                 ),
                 db=infra.db,
             )
@@ -699,6 +947,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                         )
                         continue
                     await self._apply_demotion(infra.db, demotion, resolved, link)
+                    total_demotions += 1
 
         if not any_enforced:
             await infra.trace.record(
@@ -706,6 +955,11 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                     phase="enforce_caps",
                     reason="All importance levels within caps",
                 )
+            )
+            self._phase_lines.append("enforce_caps: skipped (all levels within caps)")
+        else:
+            self._phase_lines.append(
+                f"enforce_caps: demoted {total_demotions} item(s) to respect importance caps"
             )
 
         return messages
@@ -718,21 +972,31 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         messages: list[dict],
     ) -> list[dict]:
         items = await infra.db.get_view_items(self._view_id)
-        low = [(p, l) for p, l in items if l.importance is not None and l.importance <= 2]
+        candidates = _prune_candidates(items)
 
-        if not low:
-            await infra.trace.record(
-                PhaseSkippedEvent(phase="prune", reason="No I1/I2 items to prune")
-            )
+        if not candidates:
+            await infra.trace.record(PhaseSkippedEvent(phase="prune", reason="No prune candidates"))
+            self._phase_lines.append("prune: skipped (no prune candidates)")
             return messages
+
+        dup_count = sum(1 for p, _ in candidates if _is_explicit_duplicate(p))
 
         link_by_target = {page.id: link for page, link in items}
 
-        compact_lines = [_render_item_compact(page, link) for page, link in low]
+        compact_lines = [_render_item_compact(page, link) for page, link in candidates]
+        header = (
+            f"## Prune candidates ({len(candidates)} items — "
+            f"low-importance plus {dup_count} marked as duplicates)"
+            if dup_count
+            else f"## Prune candidates ({len(candidates)} items)"
+        )
         batch_text = (
-            f"## Low-importance items ({len(low)} items)\n\n"
+            header
+            + "\n\n"
             + "\n".join(compact_lines)
-            + "\n\nDecide which items to keep and which to remove."
+            + "\n\nDecide which items to keep and which to remove. "
+            "Items whose content explicitly marks them as duplicates "
+            "(e.g. '[Duplicate of ...]') should almost always be removed."
         )
 
         user_content = sections.get("prune", "") + "\n\n" + batch_text
@@ -755,7 +1019,6 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
             metadata=LLMExchangeMetadata(
                 call_id=infra.call.id,
                 phase="prune",
-                user_messages=[{"role": "user", "content": user_content}],
             ),
             db=infra.db,
         )
@@ -786,9 +1049,14 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
         await infra.trace.record(
             UpdateViewPhaseCompletedEvent(
                 phase="prune",
-                items_processed=len(low),
+                items_processed=len(candidates),
                 items_removed=removed,
             )
+        )
+        self._phase_lines.append(
+            f"prune: considered {len(candidates)} item(s)"
+            + (f" ({dup_count} marked duplicate)" if dup_count else "")
+            + f", removed {removed}"
         )
         return messages
 
@@ -999,87 +1267,15 @@ class UpdateViewCall(CallRunner):
     call_type = CallType.UPDATE_VIEW
 
     def __init__(self, question_id: str, call: Call, db: DB, **kwargs) -> None:
-        self._view_id: str = ""
-        self._old_view_id: str = ""
+        # Mint the new view UUID up front so factories can bind to it. The
+        # actual save_page + supersede + link-copy runs at update_workspace
+        # time (inside UpdateViewWorkspaceUpdater.materialize), so
+        # --up-to-stage build_context doesn't mutate the workspace.
+        self._view_id: str = str(uuid.uuid4())
         super().__init__(question_id, call, db, **kwargs)
 
-    async def _run_stages(self) -> None:
-        """Create new View page, copy items, then run phases."""
-        self._old_view_id, self._view_id = await self._create_new_view_and_copy_items()
-        self.context_builder = self._make_context_builder()
-        self.workspace_updater = self._make_workspace_updater()
-        self.closing_reviewer = self._make_closing_reviewer()
-        await super()._run_stages()
-
-    async def _create_new_view_and_copy_items(self) -> tuple[str, str]:
-        """Create a new View page, supersede the old one, copy all VIEW_ITEM links."""
-        existing_view = await self.infra.db.get_view_for_question(self.infra.question_id)
-        if not existing_view:
-            raise RuntimeError(
-                f"UpdateViewCall requires an existing View for question "
-                f"{self.infra.question_id[:8]}, but none was found."
-            )
-
-        question = await self.infra.db.get_page(self.infra.question_id)
-        q_headline = question.headline if question else self.infra.question_id[:8]
-
-        new_view = Page(
-            page_type=PageType.VIEW,
-            layer=PageLayer.WIKI,
-            workspace=Workspace.RESEARCH,
-            content="",
-            headline=f"View: {q_headline}",
-            sections=list(DEFAULT_VIEW_SECTIONS),
-            provenance_call_type=self.call_type.value,
-            provenance_call_id=self.infra.call.id,
-            provenance_model=get_settings().model,
-        )
-        await self.infra.db.save_page(new_view)
-
-        await self.infra.db.save_link(
-            PageLink(
-                from_page_id=new_view.id,
-                to_page_id=self.infra.question_id,
-                link_type=LinkType.VIEW_OF,
-            )
-        )
-
-        await self.infra.db.supersede_page(existing_view.id, new_view.id)
-
-        old_links = await self.infra.db.get_links_from(existing_view.id)
-        for link in old_links:
-            if link.link_type == LinkType.VIEW_ITEM:
-                await self.infra.db.save_link(
-                    PageLink(
-                        from_page_id=new_view.id,
-                        to_page_id=link.to_page_id,
-                        link_type=LinkType.VIEW_ITEM,
-                        importance=link.importance,
-                        section=link.section,
-                        position=link.position,
-                    )
-                )
-
-        log.info(
-            "Created new view %s (superseding %s) with %d copied items",
-            new_view.id[:8],
-            existing_view.id[:8],
-            sum(1 for l in old_links if l.link_type == LinkType.VIEW_ITEM),
-        )
-
-        await self.infra.trace.record_strict(
-            ViewCreatedEvent(
-                view_id=new_view.id,
-                view_headline=new_view.headline,
-                question_id=self.infra.question_id,
-                superseded_view_id=existing_view.id,
-            )
-        )
-
-        return existing_view.id, new_view.id
-
     def _make_context_builder(self) -> ContextBuilder:
-        return UpdateViewContext(self._view_id, old_view_id=self._old_view_id)
+        return UpdateViewContext()
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return UpdateViewWorkspaceUpdater(self._view_id, self.call_type)

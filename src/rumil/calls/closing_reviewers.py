@@ -24,6 +24,7 @@ from rumil.llm import (
     structured_call,
     text_call,
 )
+from rumil.memo_mode import is_memo_mode
 from rumil.models import CallType, MoveType, PageDetail, PageType
 from rumil.moves.load_page import LoadPagePayload
 from rumil.moves.registry import MOVES
@@ -38,13 +39,27 @@ class StandardClosingReview(ClosingReviewer):
     def __init__(self, call_type: CallType) -> None:
         self._call_type = call_type
 
+    def _review_context(self, creation: UpdateResult) -> str:
+        """Return the main_output string shown to the review LLM.
+
+        Default: render the call's moves. Subclasses override when the
+        call's real work is carried outside of moves (e.g. update_view,
+        whose phases mutate the View page directly).
+        """
+        return format_moves_for_review(creation.moves)
+
     async def closing_review(
         self,
         infra: CallInfra,
         context: ContextResult,
         creation: UpdateResult,
     ) -> None:
-        review_context = format_moves_for_review(creation.moves)
+        if is_memo_mode():
+            infra.call.review_json = {}
+            await mark_call_completed(infra.call, infra.db, self._result_summary(creation))
+            return
+
+        review_context = self._review_context(creation)
         review = await run_closing_review(
             infra.call,
             review_context,
@@ -84,6 +99,12 @@ class ViewClosingReview(StandardClosingReview):
     def __init__(self, call_type: CallType, view_id: str) -> None:
         super().__init__(call_type)
         self._view_id = view_id
+
+    def _review_context(self, creation: UpdateResult) -> str:
+        summary = (creation.phase_summary or "").strip()
+        if summary:
+            return "Per-phase summary of work done:\n" + summary
+        return format_moves_for_review(creation.moves)
 
     async def closing_review(
         self,

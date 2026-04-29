@@ -17,6 +17,7 @@ from rumil.models import Page, PageDetail, PageLink, PageType
 from rumil.settings import get_settings
 from rumil.tracing.page_load_tracking import get_page_track_tags
 from rumil.tracing.tracer import get_trace
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -53,8 +54,8 @@ async def render_page_and_immediate_children(
     """Render a page and its direct child questions (one level deep).
 
     For question pages: renders the root with its considerations and
-    judgements, then each direct child question with their considerations
-    and judgements. Non-question root pages are rendered standalone.
+    current take, then each direct child question with their considerations
+    and current take. Non-question root pages are rendered standalone.
 
     Pages whose IDs appear in *content_page_ids* are rendered at CONTENT
     detail regardless of the *detail* parameter.
@@ -79,10 +80,8 @@ async def render_page_and_immediate_children(
 
     children = await db.get_child_questions(root_id)
     all_question_ids = [root_id] + [c.id for c in children]
-    considerations_by_q, judgements_by_q = (
-        await db.get_considerations_for_questions(all_question_ids),
-        await db.get_judgements_for_questions(all_question_ids),
-    )
+    considerations_by_q = await db.get_considerations_for_questions(all_question_ids)
+    headline_by_q = await get_active_view().headline_pages_many(all_question_ids, db)
 
     parts: list[str] = []
     visited: set[str] = set()
@@ -129,24 +128,22 @@ async def render_page_and_immediate_children(
             con_items.sort(key=lambda x: x[0], reverse=True)
             parts.append("\n".join(line for _, line in con_items))
 
-        all_judgements = judgements_by_q.get(question.id, [])
-        judgements = [max(all_judgements, key=lambda j: j.created_at)] if all_judgements else []
-        if judgements:
+        headline = headline_by_q.get(question.id)
+        if headline is not None:
+            visited.add(headline.id)
             parts.append("")
-            parts.append(f"{indent}**Judgements:**")
-            for j in judgements:
-                visited.add(j.id)
-                parts.append(
-                    f"{indent}- "
-                    + await format_page(
-                        j,
-                        linked_detail or PageDetail.HEADLINE,
-                        linked_detail=None,
-                        db=db,
-                        track=True,
-                        track_tags={"source": "prioritization"},
-                    )
+            parts.append(f"{indent}**Current take:**")
+            parts.append(
+                f"{indent}- "
+                + await format_page(
+                    headline,
+                    linked_detail or PageDetail.HEADLINE,
+                    linked_detail=None,
+                    db=db,
+                    track=True,
+                    track_tags={"source": "prioritization"},
                 )
+            )
 
     await _render_question(root, 0)
 
@@ -247,9 +244,9 @@ async def format_page(
     - ABSTRACT: header block + abstract text.
     - CONTENT: header block + full content.
 
-    *linked_detail* controls how considerations, judgements, and sub-question
-    judgements are rendered for question pages. Set to None to omit them
-    entirely.
+    *linked_detail* controls how considerations, the current take on the
+    question, and the current take on sub-questions are rendered for
+    question pages. Set to None to omit them entirely.
 
     When *include_superseding* is True (the default) and the page is
     superseded, the output includes the superseded page annotated as such,
@@ -258,8 +255,12 @@ async def format_page(
     When *track* is True, the page load is recorded via the ambient
     ``CallTrace`` (if one exists).  Ambient tags from ``page_track_scope``
     are merged with any explicit *track_tags* (explicit wins on conflict).
-    Recursive calls (supersession, linked items) do NOT track — only the
-    caller's top-level invocation is recorded.
+    Supersession replacement renders are not tracked separately (they
+    represent the same logical page). Linked-item renders (considerations,
+    current take, child-question takes for QUESTION pages) DO track
+    when *track* is True, using source tags ``linked_consideration`` /
+    ``linked_take`` / ``linked_child_take`` — this is how
+    scope-question linked items become visible in ``page_format_events``.
     """
     if track:
         trace = get_trace()
@@ -366,6 +367,8 @@ async def format_page(
                 db=db,
                 linked_detail=None,
                 highlight_run_id=highlight_run_id,
+                track=track,
+                track_tags={"source": "linked_consideration"},
             )
             line = "- " + rendered + link_tag
             if link.reasoning:
@@ -379,54 +382,54 @@ async def format_page(
                 + "\n".join(line for _, _, line in con_items)
             )
 
-        j_items: list[tuple[datetime, str]] = []
-        judgements = await db.get_judgements_for_question(page.id)
-        for j in judgements:
-            if j.id in _exclude:
-                continue
+        view = get_active_view()
+        headline = await view.headline_page(page.id, db)
+        if headline is not None and headline.id not in _exclude:
             rendered = await format_page(
-                j,
+                headline,
                 linked_detail,
                 db=db,
                 linked_detail=None,
                 highlight_run_id=highlight_run_id,
+                track=track,
+                track_tags={"source": "linked_take"},
             )
-            j_items.append((j.created_at, "- " + rendered))
-        if j_items:
-            j_items.sort(key=lambda x: x[0])
             sections.append(
-                "#### Judgements on this question\n\n"
-                "_Standing answers the workspace has recorded for this question._\n\n"
-                + "\n".join(line for _, line in j_items)
+                "#### Current take on this question\n\n"
+                "_The standing answer the workspace has recorded for this question._\n\n"
+                + "- "
+                + rendered
             )
 
         children = await db.get_child_questions(page.id)
-        child_judgements = await db.get_judgements_for_questions(
-            [child.id for child in children if child.id not in _exclude]
+        child_headlines = await view.headline_pages_many(
+            [child.id for child in children if child.id not in _exclude],
+            db,
         )
         child_blocks: list[str] = []
         for child in children:
             if child.id in _exclude:
                 continue
-            child_js = [j for j in child_judgements.get(child.id, []) if j.id not in _exclude]
-            if not child_js:
+            child_headline = child_headlines.get(child.id)
+            if child_headline is None or child_headline.id in _exclude:
                 continue
-            sub_lines = [f"- On sub-question `{child.id[:8]}` — {child.headline}:"]
-            for j in sorted(child_js, key=lambda x: x.created_at):
-                rendered = await format_page(
-                    j,
-                    linked_detail,
-                    db=db,
-                    linked_detail=None,
-                    highlight_run_id=highlight_run_id,
-                )
-                sub_lines.append(f"  - {rendered}")
-            child_blocks.append("\n".join(sub_lines))
+            rendered = await format_page(
+                child_headline,
+                linked_detail,
+                db=db,
+                linked_detail=None,
+                highlight_run_id=highlight_run_id,
+                track=track,
+                track_tags={"source": "linked_child_take"},
+            )
+            child_blocks.append(
+                f"- On sub-question `{child.id[:8]}` — {child.headline}:\n  - {rendered}"
+            )
         if child_blocks:
             sections.append(
-                "#### Judgements on sub-questions\n\n"
+                "#### Current take on sub-questions\n\n"
                 "_Answers recorded on questions nested under this one "
-                "(not judgements of this question itself)._\n\n" + "\n".join(child_blocks)
+                "(not the take on this question itself)._\n\n" + "\n".join(child_blocks)
             )
 
         if sections:
@@ -517,7 +520,6 @@ async def render_child_investigation_results(
     - NEW Summary/Judgement: full content
     - Old Summary/Judgement: abstract only
     """
-    from rumil.views import get_active_view
 
     children = await db.get_child_questions(parent_question_id)
     if not children:
@@ -589,6 +591,74 @@ async def render_child_investigation_results(
         parts.append(text)
         parts.append("")
         all_page_ids.extend(pids)
+
+    return "\n".join(parts), all_page_ids
+
+
+async def render_claim_investigation_findings(
+    db: DB,
+    parent_question_id: str,
+    last_view_created_at: datetime | None,
+) -> tuple[str, list[str]]:
+    """Surface new findings from claim investigations rooted at the question's considerations.
+
+    A claim investigation's scouts link their findings back to the target
+    claim via CONSIDERATION. This walks the question's considerations and,
+    for each, surfaces that claim's own considerations whose creation time
+    is newer than *last_view_created_at*. Returns ("", []) if nothing new.
+    """
+    question_considerations = await db.get_considerations_for_question(parent_question_id)
+    if not question_considerations:
+        return "", []
+
+    claim_ids = [claim.id for claim, _ in question_considerations]
+    findings_by_claim = await db.get_considerations_for_questions(claim_ids)
+
+    def _is_new(page: Page) -> bool:
+        if last_view_created_at is None:
+            return True
+        return page.created_at > last_view_created_at
+
+    entries: list[str] = []
+    all_page_ids: list[str] = []
+    for claim, _ in question_considerations:
+        findings = findings_by_claim.get(claim.id, [])
+        new_findings = [(p, l) for p, l in findings if _is_new(p)]
+        if not new_findings:
+            continue
+
+        entry_lines = [
+            f"### Findings on consideration `{claim.id[:8]}` — {claim.headline}",
+            "",
+        ]
+        for page, _ in new_findings:
+            rendered = await format_page(
+                page,
+                PageDetail.ABSTRACT,
+                linked_detail=None,
+                db=db,
+                track=True,
+                track_tags={"source": "claim_investigation_findings"},
+            )
+            entry_lines.append(f"- [NEW] {rendered}")
+            all_page_ids.append(page.id)
+        entries.append("\n".join(entry_lines))
+
+    if not entries:
+        return "", []
+
+    parts = [
+        "## Recent findings from claim investigations",
+        "",
+        "The following claims were produced by claim investigations rooted at "
+        "considerations of this question, and have not yet been integrated into "
+        "the View. Consider whether any should update, complicate, or contradict "
+        "existing View items.",
+        "",
+    ]
+    for entry in entries:
+        parts.append(entry)
+        parts.append("")
 
     return "\n".join(parts), all_page_ids
 
@@ -803,7 +873,7 @@ async def build_embedding_based_context(
     full_page_similarity_floor: float | None = None,
     abstract_page_similarity_floor: float | None = None,
     summary_page_similarity_floor: float | None = None,
-    require_judgement_for_questions: bool = False,
+    require_take_for_questions: bool = False,
     exclude_page_ids: set[str] | None = None,
     input_type: str = "query",
 ) -> EmbeddingBasedContextResult:
@@ -881,13 +951,11 @@ async def build_embedding_based_context(
             scope_page_ids = [scope_question_id]
             ranked = [(p, s) for p, s in ranked if p.id != scope_question_id]
 
-    if require_judgement_for_questions:
+    if require_take_for_questions:
         question_ids = [p.id for p, _ in ranked if p.page_type == PageType.QUESTION]
-        judgements_by_qid = await db.get_judgements_for_questions(question_ids)
-        has_judgement = {qid for qid, js in judgements_by_qid.items() if js}
-        ranked = [
-            (p, s) for p, s in ranked if p.page_type != PageType.QUESTION or p.id in has_judgement
-        ]
+        headline_by_qid = await get_active_view().headline_pages_many(question_ids, db)
+        has_take = {qid for qid, headline in headline_by_qid.items() if headline is not None}
+        ranked = [(p, s) for p, s in ranked if p.page_type != PageType.QUESTION or p.id in has_take]
 
     distillation_budget = distillation_page_char_budget
     full_budget = full_page_char_budget

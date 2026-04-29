@@ -156,6 +156,19 @@ PRESETS: dict[str, AvailableMoves] = {
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
         ],
+        CallType.GENERATE_SPEC: [
+            MoveType.ADD_SPEC_ITEM,
+        ],
+        CallType.GENERATE_ARTEFACT: [],
+        CallType.CRITIQUE_ARTEFACT: [],
+        CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY: [],
+        CallType.REFINE_SPEC: [
+            MoveType.ADD_SPEC_ITEM,
+            MoveType.SUPERSEDE_SPEC_ITEM,
+            MoveType.DELETE_SPEC_ITEM,
+            MoveType.REGENERATE_AND_CRITIQUE,
+            MoveType.FINALIZE_ARTEFACT,
+        ],
     },
     "judge-on-assess": {
         CallType.ASSESS: [
@@ -304,6 +317,19 @@ PRESETS: dict[str, AvailableMoves] = {
         CallType.UPDATE_VIEW: [
             MoveType.LOAD_PAGE,
             MoveType.UPDATE_EPISTEMIC,
+        ],
+        CallType.GENERATE_SPEC: [
+            MoveType.ADD_SPEC_ITEM,
+        ],
+        CallType.GENERATE_ARTEFACT: [],
+        CallType.CRITIQUE_ARTEFACT: [],
+        CallType.CRITIQUE_ARTEFACT_REQUEST_ONLY: [],
+        CallType.REFINE_SPEC: [
+            MoveType.ADD_SPEC_ITEM,
+            MoveType.SUPERSEDE_SPEC_ITEM,
+            MoveType.DELETE_SPEC_ITEM,
+            MoveType.REGENERATE_AND_CRITIQUE,
+            MoveType.FINALIZE_ARTEFACT,
         ],
     },
 }

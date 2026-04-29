@@ -7,11 +7,28 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic.config import JsonDict
 from pydantic_settings import BaseSettings
 
 _CAPTURE: JsonDict = {"capture": True}
+
+RUMIL_MODEL_ALIASES: dict[str, str] = {
+    "opus": "claude-opus-4-7",
+    "sonnet": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5-20251001",
+}
+
+_MODEL_OVERRIDE_PREFIXES = ("claude-opus-", "claude-sonnet-", "claude-haiku-")
+
+
+def resolve_model_alias(name: str) -> str:
+    """Map a short model alias (opus/sonnet/haiku) to its full Anthropic id.
+
+    Returns ``name`` unchanged if it isn't a known alias — entry points that
+    accept either an alias or a full id can call this unconditionally.
+    """
+    return RUMIL_MODEL_ALIASES.get(name, name)
 
 
 def _get_git_commit() -> str:
@@ -31,13 +48,32 @@ def _capture_field(**kwargs: Any) -> Any:
     return Field(json_schema_extra=_CAPTURE, **kwargs)
 
 
+# Settings field names the CLI auto-forwards into the cloud Job's env when
+# their local value differs from the class default. Curated rather than
+# blanket: a developer's local `.env` setting (say) SUPABASE_PROD_URL or
+# ANTHROPIC_API_KEY would otherwise redirect the cloud Job at their laptop's
+# resources or burn local quota. The cloud Job already inherits those from
+# the rumil-api Deployment. The set covers experiment knobs the user actually
+# wants to vary per run: every `_capture_field`-marked field plus a small
+# handful of mode/override booleans/strings.
+_CLI_FORWARDABLE_EXTRAS: frozenset[str] = frozenset(
+    {
+        "rumil_model_override",
+        "rumil_smoke_test",
+        "rumil_test_mode",
+        "force_twophase_recurse",
+    }
+)
+
+
 class Settings(BaseSettings):
-    # ".env" is the shared (often symlinked) project env; ".env.local" is a
-    # worktree-local override file written by the workmux post_create hook
-    # (see /Users/chaos-guppy/differential/.workmux.yaml). Later files in the
-    # tuple override earlier ones, so .env.local wins.
+    # ".env" is the shared (often symlinked) project env; ".env.overrides"
+    # layers on top — typically written by the workmux post_create hook for
+    # per-worktree overrides (see /Users/chaos-guppy/differential/.workmux.yaml),
+    # but devs without a worktree setup can use it too. Later files in the
+    # tuple override earlier ones, so .env.overrides wins.
     model_config = {
-        "env_file": (".env", ".env.local"),
+        "env_file": (".env", ".env.overrides"),
         "extra": "ignore",
         "validate_assignment": True,
     }
@@ -45,6 +81,24 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     rumil_test_mode: str = ""
     rumil_smoke_test: str = ""
+    # Optional full model id ("claude-sonnet-4-6", etc.) that overrides
+    # the default derived by the `model` property. Set via
+    # RUMIL_MODEL_OVERRIDE env var. Intended for entry points (e.g.
+    # versus judging) that want to pick a model per invocation. Validated
+    # against known Anthropic model id prefixes so typos fail fast at
+    # construction instead of leaking into a downstream API error.
+    rumil_model_override: str = ""
+
+    @field_validator("rumil_model_override")
+    @classmethod
+    def _validate_model_override(cls, v: str) -> str:
+        if v and not v.startswith(_MODEL_OVERRIDE_PREFIXES):
+            raise ValueError(
+                f"rumil_model_override={v!r} must start with one of "
+                f"{_MODEL_OVERRIDE_PREFIXES} (or be empty/unset)"
+            )
+        return v
+
     force_twophase_recurse: bool = False
     use_prod_db: str = ""
     tracing_enabled: bool = True
@@ -57,8 +111,26 @@ class Settings(BaseSettings):
     )
     supabase_prod_url: str = ""
     supabase_prod_key: str = ""
+    supabase_jwt_secret: str = "super-secret-jwt-token-with-at-least-32-characters-long"
+    auth_enabled: bool = True
+    # Shared CLI service-account user in *prod* Supabase Auth
+    # (cli-service@rumil.local). Created by
+    # scripts/create_cli_service_account.py. Override via the
+    # DEFAULT_CLI_USER_ID env var to attribute remote jobs to a specific user.
+    # Only applied when targeting prod — see `effective_cli_user_id` below; the
+    # local Supabase has its own auth.users and would FK-fail this UUID.
+    default_cli_user_id: str = "c4179ddb-bf61-4ba3-acfa-6b5408c19874"
+    rumil_api_url: str = "https://api.rumil.ink"
+    # GKE cluster identity, used to build a Cloud Logging URL for the
+    # orchestrator-run pod. Only the API container needs these set; the laptop
+    # CLI just prints whatever URL the API returns.
+    gcp_project_id: str = ""
+    gcp_cluster_name: str = "differential"
     voyage_ai_api_key: str = ""
     jina_api_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
     frontend_url: str = "http://127.0.0.1:3000"
     db_max_concurrent_queries: int = 20
 
@@ -98,7 +170,7 @@ class Settings(BaseSettings):
     enable_red_team: bool = _capture_field(default=False)
 
     max_db_retries: int = _capture_field(default=10)
-    max_api_retries: int = _capture_field(default=10)
+    max_api_retries: int = _capture_field(default=60)
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)
     max_api_retries_529: int | None = _capture_field(default=None)
@@ -133,6 +205,8 @@ class Settings(BaseSettings):
 
     @property
     def model(self) -> str:
+        if self.rumil_model_override:
+            return self.rumil_model_override
         return (
             "claude-haiku-4-5-20251001"
             if self.is_test_mode or self.is_smoke_test
@@ -157,6 +231,17 @@ class Settings(BaseSettings):
     def is_prod_db(self) -> bool:
         return self.use_prod_db.lower() in ("1", "true")
 
+    @property
+    def effective_cli_user_id(self) -> str:
+        """The user_id to stamp on projects created by `main.py`.
+
+        The committed default for `default_cli_user_id` is the prod-Supabase
+        service-account UUID and would FK-fail the local Supabase's
+        `auth.users`. Only apply it when the run is actually targeting prod;
+        local runs default to no owner.
+        """
+        return self.default_cli_user_id if self.is_prod_db else ""
+
     def get_supabase_credentials(self, prod: bool = False) -> tuple[str, str]:
         if prod:
             if not self.supabase_prod_url or not self.supabase_prod_key:
@@ -174,6 +259,10 @@ class Settings(BaseSettings):
             )
         return self.anthropic_api_key
 
+    @property
+    def langfuse_enabled(self) -> bool:
+        return bool(self.langfuse_public_key and self.langfuse_secret_key)
+
     @classmethod
     def from_env_files(cls, *env_files: str | Path) -> "Settings":
         """Create a Settings instance loading from the given env files."""
@@ -189,6 +278,55 @@ class Settings(BaseSettings):
         result["model"] = self.model
         result["git_commit"] = _get_git_commit()
         return result
+
+    @classmethod
+    def all_env_keys(cls) -> frozenset[str]:
+        """Uppercased view of every Settings field name.
+
+        Used by the cloud-job launcher to validate caller-supplied
+        `extra_env` keys: anything not in this set is a typo or an
+        unrelated env var, and we 422 it at submission time rather than
+        let it silently fall on the floor (Settings is configured
+        extra="ignore", so unknown env vars don't surface anywhere).
+        """
+        return frozenset(name.upper() for name in cls.model_fields)
+
+    @classmethod
+    def _cli_forwardable_fields(cls) -> frozenset[str]:
+        """Snake_case Settings field names the CLI may auto-forward.
+
+        Every `_capture_field`-marked field (the existing per-run tuning
+        surface) plus a small set of mode/override knobs. Credentials,
+        DB URLs, GCP identifiers, etc. are intentionally excluded — the
+        cloud Job inherits those from the rumil-api Deployment and a
+        local override would point it at the wrong resources.
+        """
+        capture_marked = {
+            name
+            for name, field_info in cls.model_fields.items()
+            if isinstance(field_info.json_schema_extra, dict)
+            and field_info.json_schema_extra.get("capture")
+        }
+        return frozenset(capture_marked | _CLI_FORWARDABLE_EXTRAS)
+
+    def cli_forwardable_overrides(self) -> dict[str, str]:
+        """Forwardable Settings fields whose value differs from the default.
+
+        Returned as a dict of `{ENV_VAR_NAME: stringified_value}` ready
+        to drop into the cloud-job request's `extra_env`. Bools become
+        "true"/"false" so they round-trip through pydantic-settings'
+        env parsing; `None`-valued fields are omitted.
+        """
+        out: dict[str, str] = {}
+        for name in self._cli_forwardable_fields():
+            field_info = type(self).model_fields[name]
+            current = getattr(self, name)
+            if current is None or current == field_info.default:
+                continue
+            out[name.upper()] = (
+                "true" if current is True else "false" if current is False else str(current)
+            )
+        return out
 
 
 _settings_var: contextvars.ContextVar[Settings | None] = contextvars.ContextVar(

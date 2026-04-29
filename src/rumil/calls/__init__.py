@@ -3,10 +3,15 @@
 from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.create_view import CreateViewCall
+from rumil.calls.critique_artefact import CritiqueArtefactCall
+from rumil.calls.critique_artefact_request_only import RequestOnlyCritiqueArtefactCall
 from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.generate_artefact import GenerateArtefactCall
+from rumil.calls.generate_spec import GenerateSpecCall
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.red_team import RedTeamCall
+from rumil.calls.refine_spec import RefineSpecCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
 from rumil.calls.scout_c_cruxes import ScoutCCruxesCall
 from rumil.calls.scout_c_how_false import ScoutCHowFalseCall
@@ -32,10 +37,15 @@ __all__ = [
     "BigAssessCall",
     "CallRunner",
     "CreateViewCall",
+    "CritiqueArtefactCall",
     "FindConsiderationsCall",
+    "GenerateArtefactCall",
+    "GenerateSpecCall",
     "IngestCall",
     "LinkSubquestionsCall",
     "RedTeamCall",
+    "RefineSpecCall",
+    "RequestOnlyCritiqueArtefactCall",
     "ScoutAnalogiesCall",
     "ScoutCCruxesCall",
     "ScoutCHowFalseCall",

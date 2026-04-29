@@ -203,6 +203,24 @@ export type AgentStartedEventOut = {
 };
 
 /**
+ * AuthUserOut
+ */
+export type AuthUserOut = {
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Is Admin
+     */
+    is_admin: boolean;
+};
+
+/**
  * AutocompactEventOut
  */
 export type AutocompactEventOut = {
@@ -379,7 +397,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'red_team' | 'claude_code_direct';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'global_prioritization' | 'update_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'red_team' | 'claude_code_direct' | 'versus_judge';
 
 /**
  * CallTypeFruitScoreItem
@@ -433,6 +451,60 @@ export type CallsForQuestion = {
      * Judgements
      */
     judgements: number;
+};
+
+/**
+ * Cell
+ *
+ * One aggregated (gen, judge, condition[, criterion]) cell.
+ *
+ * ``pct`` treats ties as 0.5. ``wins`` / ``ties`` / ``losses`` are the raw
+ * counts that feed it (``n = wins + ties + losses``). ``tie_frac`` is the
+ * share of judgments that were explicit ties — so a 50% cell from all-ties
+ * visually contrasts with a 50/50 split. ``ci_lo`` / ``ci_hi`` is the
+ * Wilson 95% interval on ``pct`` (None when ``n == 0``).
+ */
+export type Cell = {
+    /**
+     * Pct
+     */
+    pct: number | null;
+    /**
+     * N
+     */
+    n: number;
+    /**
+     * Wins
+     */
+    wins: number;
+    /**
+     * Ties
+     */
+    ties: number;
+    /**
+     * Losses
+     */
+    losses: number;
+    /**
+     * Tie Frac
+     */
+    tie_frac: number | null;
+    /**
+     * Ci Lo
+     */
+    ci_lo: number | null;
+    /**
+     * Ci Hi
+     */
+    ci_hi: number | null;
+    /**
+     * Bg
+     */
+    bg: string;
+    /**
+     * Fg
+     */
+    fg: string;
 };
 
 /**
@@ -500,6 +572,28 @@ export type ClaimScoreItem = {
 };
 
 /**
+ * ConditionMeta
+ */
+export type ConditionMeta = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Pair
+     */
+    pair: string;
+    /**
+     * Cell Meaning
+     */
+    cell_meaning: string;
+    /**
+     * Value Picks
+     */
+    value_picks: string;
+};
+
+/**
  * ConsiderationDirection
  */
 export type ConsiderationDirection = 'supports' | 'opposes' | 'neutral';
@@ -536,6 +630,54 @@ export type ContextBuiltEventOut = {
      * Budget
      */
     budget: number | null;
+    /**
+     * Full Pages
+     */
+    full_pages: Array<PageRef>;
+    /**
+     * Abstract Pages
+     */
+    abstract_pages: Array<PageRef>;
+    /**
+     * Summary Pages
+     */
+    summary_pages: Array<PageRef>;
+    /**
+     * Distillation Pages
+     */
+    distillation_pages: Array<PageRef>;
+    /**
+     * Scope Linked Pages
+     */
+    scope_linked_pages: Array<PageRef>;
+    /**
+     * Budget Usage
+     */
+    budget_usage: {
+        [key: string]: number;
+    };
+    /**
+     * Context Text
+     */
+    context_text: string;
+    /**
+     * Context Text Chars
+     */
+    context_text_chars: number;
+};
+
+/**
+ * CriterionMatrix
+ */
+export type CriterionMatrix = {
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Cells
+     */
+    cells: Array<GenJudgeCell>;
 };
 
 /**
@@ -572,6 +714,33 @@ export type DegreeCell = {
      * Avg In
      */
     avg_in: number;
+};
+
+/**
+ * DiagnosticsBundle
+ *
+ * Summary counts + three sections for the Diagnostics pane.
+ *
+ * `biased_judge_count` uses a |A%-50| > 5pp threshold so the banner
+ * line matches the default color thresholds in the UI.
+ */
+export type DiagnosticsBundle = {
+    /**
+     * Judge Bias
+     */
+    judge_bias: Array<JudgeBiasRowOut>;
+    /**
+     * Biased Judge Count
+     */
+    biased_judge_count: number;
+    /**
+     * Small N Cells
+     */
+    small_n_cells: Array<SmallNCellOut>;
+    /**
+     * Essay Flags
+     */
+    essay_flags: Array<EssayFlagOut>;
 };
 
 /**
@@ -672,6 +841,225 @@ export type ErrorEventOut = {
 };
 
 /**
+ * EssayDetail
+ *
+ * Essay + the prompts shown to completion / judge / paraphrase models.
+ */
+export type EssayDetail = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Author
+     */
+    author: string;
+    /**
+     * Pub Date
+     */
+    pub_date: string;
+    /**
+     * Url
+     */
+    url: string;
+    /**
+     * Markdown
+     */
+    markdown: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Target Words
+     */
+    target_words: number;
+    /**
+     * Completion Prompt
+     */
+    completion_prompt: string;
+    /**
+     * Judge System Prompt Template
+     */
+    judge_system_prompt_template: string;
+    /**
+     * Judge User Prompt Template
+     */
+    judge_user_prompt_template: string;
+    /**
+     * Judge Prompt Hash
+     */
+    judge_prompt_hash: string;
+    /**
+     * Paraphrase Prompt Template
+     */
+    paraphrase_prompt_template: string;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+    /**
+     * Prefix Variants
+     */
+    prefix_variants: Array<PrefixVariantInfo>;
+    /**
+     * Active Prefix Label
+     */
+    active_prefix_label: string;
+};
+
+/**
+ * EssayFlagOut
+ */
+export type EssayFlagOut = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * N Judgments
+     */
+    n_judgments: number;
+    /**
+     * Tie Rate Pct
+     */
+    tie_rate_pct: number;
+    /**
+     * Tie Flag
+     */
+    tie_flag: boolean;
+    /**
+     * Sweep Source
+     */
+    sweep_source: string | null;
+    /**
+     * Sweep N
+     */
+    sweep_n: number;
+};
+
+/**
+ * EssayJudgmentsResponse
+ *
+ * Judgments for a single essay at one prefix variant.
+ *
+ * Rows whose ``prefix_config_hash`` doesn't match the selected variant
+ * are filtered out of ``judgments``. They split into two buckets:
+ *
+ * - ``other_variant_hidden``: hash matches a *different* active prefix
+ * variant for this essay (e.g. you're viewing ``no_headers`` and 227
+ * rows belong to ``default``). Not stale — just a different cohort.
+ * - ``stale_hidden``: hash matches no current variant. Genuinely stale
+ * from essay re-import drift or a prefix-config bump.
+ *
+ * ``orphaned`` flags a judgment whose source_a / source_b is not
+ * present in the current completions.jsonl at the same prefix_hash --
+ * the judgment survived the variant check but its sources did not.
+ */
+export type EssayJudgmentsResponse = {
+    /**
+     * Judgments
+     */
+    judgments: Array<Judgment>;
+    /**
+     * Stale Hidden
+     */
+    stale_hidden: number;
+    /**
+     * Other Variant Hidden
+     */
+    other_variant_hidden: number;
+};
+
+/**
+ * EssayMeta
+ *
+ * Headline metadata for one cached essay.
+ */
+export type EssayMeta = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Author
+     */
+    author: string;
+    /**
+     * Pub Date
+     */
+    pub_date: string;
+    /**
+     * Url
+     */
+    url: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
+};
+
+/**
+ * EssayStatus
+ *
+ * Per-essay state for the /results "essays" panel.
+ *
+ * Surfaces both validator output (clean? how many issues?) and the
+ * current ``prefix_config_hash`` so a reader can spot when essay text
+ * has drifted out from under cached judgments.
+ */
+export type EssayStatus = {
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Schema Version
+     */
+    schema_version: number;
+    /**
+     * Current Prefix Hash
+     */
+    current_prefix_hash: string;
+    /**
+     * Validator Clean
+     */
+    validator_clean: boolean | null;
+    /**
+     * Validator Issues
+     */
+    validator_issues: number;
+    /**
+     * Validator Model
+     */
+    validator_model: string | null;
+};
+
+/**
  * EvaluationCompleteEventOut
  */
 export type EvaluationCompleteEventOut = {
@@ -768,6 +1156,23 @@ export type ExplorePageEventOut = {
 };
 
 /**
+ * GenJudgeCell
+ *
+ * One (gen_model, judge_model) cell with its rendered colors.
+ */
+export type GenJudgeCell = {
+    /**
+     * Gen Model
+     */
+    gen_model: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    cell: Cell;
+};
+
+/**
  * GlobalPhaseCompletedEventOut
  */
 export type GlobalPhaseCompletedEventOut = {
@@ -832,6 +1237,463 @@ export type HttpValidationError = {
 };
 
 /**
+ * JobListItem
+ *
+ * One row in GET /api/jobs. Built from a V1Job's metadata only.
+ */
+export type JobListItem = {
+    /**
+     * Job Name
+     */
+    job_name: string;
+    /**
+     * Namespace
+     */
+    namespace: string;
+    /**
+     * Status
+     */
+    status: 'pending' | 'running' | 'failed' | 'completed';
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Completed At
+     */
+    completed_at?: string | null;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Workspace
+     */
+    workspace: string;
+    /**
+     * Question
+     */
+    question: string;
+    /**
+     * Trace Url
+     */
+    trace_url: string;
+    /**
+     * Owner User Id
+     */
+    owner_user_id?: string;
+    /**
+     * Logs Url
+     */
+    logs_url?: string;
+};
+
+/**
+ * JudgeBiasRowOut
+ *
+ * Per-judge A-preference breakdown.
+ *
+ * `all_*` covers every judged row; `cvc_*` covers only
+ * completion-vs-completion pairs (neither side is human), which is the
+ * pure-position-bias signal. `content_bias_pp` is the all - cvc gap in
+ * percentage points; null when cvc n<20.
+ */
+export type JudgeBiasRowOut = {
+    /**
+     * Judge Base
+     */
+    judge_base: string;
+    /**
+     * N Total
+     */
+    n_total: number;
+    /**
+     * All A Pct
+     */
+    all_a_pct: number;
+    /**
+     * All Ci Lo Pct
+     */
+    all_ci_lo_pct: number;
+    /**
+     * All Ci Hi Pct
+     */
+    all_ci_hi_pct: number;
+    /**
+     * N Cvc
+     */
+    n_cvc: number;
+    /**
+     * Cvc A Pct
+     */
+    cvc_a_pct: number | null;
+    /**
+     * Cvc Ci Lo Pct
+     */
+    cvc_ci_lo_pct: number | null;
+    /**
+     * Cvc Ci Hi Pct
+     */
+    cvc_ci_hi_pct: number | null;
+    /**
+     * Content Bias Pp
+     */
+    content_bias_pp: number | null;
+};
+
+/**
+ * JudgeLabel
+ *
+ * Stacked column-header parts for a judge model id.
+ */
+export type JudgeLabel = {
+    /**
+     * Variant
+     */
+    variant: string | null;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Task
+     */
+    task: string | null;
+    /**
+     * Phash
+     */
+    phash: string | null;
+};
+
+/**
+ * Judgment
+ *
+ * One pairwise judgment row, shaped for the inspect view.
+ *
+ * Includes the full ``reasoning_text`` / ``prompt`` / ``system_prompt``
+ * so the inspect UI can render them inline (matching the standalone
+ * self-vs-human HTML viewer). Older rows may not have ``system_prompt``
+ * or ``prompt`` populated; both are optional.
+ */
+export type Judgment = {
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Judge Model Id
+     */
+    judge_model_id: string;
+    /**
+     * Config Hash
+     */
+    config_hash: string;
+    /**
+     * Prompt Hash
+     */
+    prompt_hash: string;
+    /**
+     * Sampling
+     */
+    sampling: {
+        [key: string]: unknown;
+    };
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Display First
+     */
+    display_first: string;
+    /**
+     * Display Second
+     */
+    display_second: string;
+    /**
+     * Verdict
+     */
+    verdict: string | null;
+    /**
+     * Winner Source
+     */
+    winner_source: string | null;
+    /**
+     * Preference Label
+     */
+    preference_label: string | null;
+    /**
+     * Reasoning Preview
+     */
+    reasoning_preview: string;
+    /**
+     * Reasoning Text
+     */
+    reasoning_text: string | null;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * System Prompt
+     */
+    system_prompt: string | null;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Rumil Trace Url
+     */
+    rumil_trace_url: string | null;
+    /**
+     * Rumil Question Id
+     */
+    rumil_question_id: string | null;
+    /**
+     * Rumil Call Id
+     */
+    rumil_call_id: string | null;
+    /**
+     * Rumil Run Id
+     */
+    rumil_run_id: string | null;
+    /**
+     * Rumil Cost Usd
+     */
+    rumil_cost_usd: number | null;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
+    /**
+     * Orphaned
+     */
+    orphaned: boolean;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+};
+
+/**
+ * JudgmentDetail
+ *
+ * Full judgment row for the side-panel inspector on /versus/results.
+ *
+ * Includes the verbatim prompt + reasoning text + raw provider response,
+ * so a reader can audit what the judge actually saw and said. Most fields
+ * are optional because the shape varies across judge variants (OpenRouter
+ * vs anthropic vs rumil:text vs rumil:ws/orch).
+ */
+export type JudgmentDetail = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Display First
+     */
+    display_first: string;
+    /**
+     * Display Second
+     */
+    display_second: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Judge Model Id
+     */
+    judge_model_id: string;
+    /**
+     * Config Hash
+     */
+    config_hash: string;
+    /**
+     * Prompt Hash
+     */
+    prompt_hash: string;
+    /**
+     * Sampling
+     */
+    sampling: {
+        [key: string]: unknown;
+    };
+    /**
+     * Verdict
+     */
+    verdict: string | null;
+    /**
+     * Winner Source
+     */
+    winner_source: string | null;
+    /**
+     * Preference Label
+     */
+    preference_label: string | null;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * Reasoning Text
+     */
+    reasoning_text: string | null;
+    /**
+     * Raw Response
+     */
+    raw_response: {
+        [key: string]: unknown;
+    } | Array<unknown> | null;
+    /**
+     * Rumil Trace Url
+     */
+    rumil_trace_url: string | null;
+    /**
+     * Rumil Question Id
+     */
+    rumil_question_id: string | null;
+    /**
+     * Rumil Call Id
+     */
+    rumil_call_id: string | null;
+    /**
+     * Rumil Run Id
+     */
+    rumil_run_id: string | null;
+    /**
+     * Rumil Cost Usd
+     */
+    rumil_cost_usd: number | null;
+    /**
+     * Ts
+     */
+    ts: string | null;
+    /**
+     * Duration S
+     */
+    duration_s: number | null;
+};
+
+/**
+ * JudgmentRow
+ *
+ * One row in the raw-judgments explorer at the bottom of /results.
+ */
+export type JudgmentRow = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Source A
+     */
+    source_a: string;
+    /**
+     * Source B
+     */
+    source_b: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * Judge Model
+     */
+    judge_model: string;
+    /**
+     * Judge Model Id
+     */
+    judge_model_id: string;
+    /**
+     * Config Hash
+     */
+    config_hash: string;
+    /**
+     * Verdict
+     */
+    verdict: string;
+    /**
+     * Winner
+     */
+    winner: string;
+    /**
+     * Preference Label
+     */
+    preference_label: string | null;
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Is Rumil
+     */
+    is_rumil: boolean;
+    /**
+     * Contamination Note
+     */
+    contamination_note: string | null;
+    /**
+     * Stale
+     */
+    stale: boolean;
+    /**
+     * Orphaned
+     */
+    orphaned: boolean;
+};
+
+/**
  * LLMExchangeEventOut
  */
 export type LlmExchangeEventOut = {
@@ -893,6 +1755,10 @@ export type LlmExchangeEventOut = {
     tool_uses: Array<{
         [key: string]: unknown;
     }> | null;
+    /**
+     * Langfuse Trace Url
+     */
+    langfuse_trace_url: string | null;
 };
 
 /**
@@ -1029,7 +1895,7 @@ export type LinkSubquestionsCompleteEventOut = {
 /**
  * LinkType
  */
-export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for';
+export type LinkType = 'consideration' | 'child_question' | 'supersedes' | 'related' | 'answers' | 'variant' | 'summarizes' | 'cites' | 'depends_on' | 'view_item' | 'view_of' | 'meta_for' | 'spec_of' | 'artefact_of' | 'critique_of' | 'generated_from';
 
 /**
  * LinkedPageOut
@@ -1074,6 +1940,21 @@ export type LoadPageEventOut = {
 };
 
 /**
+ * Matrix
+ */
+export type Matrix = {
+    /**
+     * Condition
+     */
+    condition: string;
+    meta: ConditionMeta;
+    /**
+     * Cells
+     */
+    cells: Array<GenJudgeCell>;
+};
+
+/**
  * MoveTraceItem
  */
 export type MoveTraceItem = {
@@ -1112,6 +1993,119 @@ export type MovesExecutedEventOut = {
      * Moves
      */
     moves: Array<MoveTraceItem>;
+};
+
+/**
+ * OrchestratorRunRequest
+ *
+ * Inputs for a remote orchestrator run.
+ *
+ * Mirrors the subset of `main.py` flags that are forwarded into the
+ * in-pod CLI invocation. Flags that only make sense on the laptop
+ * (--db, --executor, --staged, --env-file, --run-id-file, --cli-user-id)
+ * are intentionally absent — the in-pod run is always `--db prod
+ * --executor local`.
+ *
+ * Exactly one of `question` (start a new investigation) or
+ * `continue_id` (resume an existing question by ID) must be set.
+ */
+export type OrchestratorRunRequest = {
+    /**
+     * Question
+     */
+    question?: string | null;
+    /**
+     * Continue Id
+     */
+    continue_id?: string | null;
+    /**
+     * Budget
+     */
+    budget: number;
+    /**
+     * Workspace
+     */
+    workspace: string;
+    /**
+     * Smoke Test
+     */
+    smoke_test?: boolean;
+    /**
+     * Quiet
+     */
+    quiet?: boolean;
+    /**
+     * Debug
+     */
+    debug?: boolean;
+    /**
+     * Force Twophase Recurse
+     */
+    force_twophase_recurse?: boolean;
+    /**
+     * No Trace
+     */
+    no_trace?: boolean;
+    /**
+     * Auto Summary
+     */
+    auto_summary?: boolean;
+    /**
+     * Auto Self Improve
+     */
+    auto_self_improve?: boolean;
+    /**
+     * Available Moves
+     */
+    available_moves?: string | null;
+    /**
+     * Available Calls
+     */
+    available_calls?: string | null;
+    /**
+     * View Variant
+     */
+    view_variant?: string | null;
+    /**
+     * Ingest Num Claims
+     */
+    ingest_num_claims?: number | null;
+    /**
+     * Run Name
+     */
+    run_name?: string | null;
+    /**
+     * Container Tag
+     */
+    container_tag?: string | null;
+    /**
+     * Extra Env
+     */
+    extra_env?: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * OrchestratorRunResponse
+ */
+export type OrchestratorRunResponse = {
+    /**
+     * Job Name
+     */
+    job_name: string;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Logs Url
+     */
+    logs_url?: string;
+    /**
+     * Trace Url
+     */
+    trace_url?: string;
 };
 
 /**
@@ -1211,6 +2205,10 @@ export type Page = {
      * Run Id
      */
     run_id: string;
+    /**
+     * Hidden
+     */
+    hidden: boolean;
 };
 
 /**
@@ -1361,7 +2359,7 @@ export type PageRef = {
 /**
  * PageType
  */
-export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta';
+export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta' | 'spec_item' | 'artefact';
 
 /**
  * PaginatedPagesOut
@@ -1412,6 +2410,31 @@ export type PhaseSkippedEventOut = {
 };
 
 /**
+ * PrefixVariantInfo
+ *
+ * One prefix variant available in the active config.
+ *
+ * Surfaced on ResultsBundle so the /versus/results UI can render a
+ * variant selector. ``id`` matches the yaml ``prefix.id`` /
+ * ``prefix_variants[].id`` and is the value the UI passes back as
+ * ``?prefix_label=<id>``.
+ */
+export type PrefixVariantInfo = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * N Paragraphs
+     */
+    n_paragraphs: number;
+    /**
+     * Include Headers
+     */
+    include_headers: boolean;
+};
+
+/**
  * Project
  */
 export type Project = {
@@ -1431,6 +2454,10 @@ export type Project = {
      * Hidden
      */
     hidden: boolean;
+    /**
+     * Owner User Id
+     */
+    owner_user_id: string | null;
 };
 
 /**
@@ -1499,6 +2526,65 @@ export type ProposedSubquestion = {
      * Headline
      */
     headline?: string;
+};
+
+/**
+ * ProvenanceAxis
+ *
+ * One axis of the provenance summary.
+ *
+ * ``description`` says what the value or hash is computed over, so
+ * the operator knows what would change it. ``counts`` is value ->
+ * row count over the surviving rows. ``current_values`` is the
+ * mainline set (UI flags anything not in this list as non-current).
+ * ``value_labels`` turns opaque hashes into readable strings where
+ * derivable (e.g. a ``prefix_config_hash`` maps back to its
+ * originating ``"essay_id / variant_id"``).
+ */
+export type ProvenanceAxis = {
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Counts
+     */
+    counts: {
+        [key: string]: number;
+    };
+    /**
+     * Current Values
+     */
+    current_values: Array<string>;
+    /**
+     * Value Labels
+     */
+    value_labels: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * ProvenanceSummary
+ *
+ * Per-axis breakdown of what slice the aggregate sits on top of.
+ *
+ * ``axes`` is keyed by axis name; ``axis_order`` declares the panel
+ * rendering order (set by the backend's ``versus.mainline.axis_order``)
+ * so the FE doesn't maintain a parallel list. New axes appear
+ * automatically in the right place.
+ */
+export type ProvenanceSummary = {
+    /**
+     * Axes
+     */
+    axes: {
+        [key: string]: ProvenanceAxis;
+    };
+    /**
+     * Axis Order
+     */
+    axis_order: Array<string>;
 };
 
 /**
@@ -1685,6 +2771,100 @@ export type RenderQuestionSubgraphEventOut = {
 };
 
 /**
+ * ResultsBundle
+ */
+export type ResultsBundle = {
+    /**
+     * Conditions
+     */
+    conditions: Array<string>;
+    /**
+     * Criteria
+     */
+    criteria: Array<string>;
+    /**
+     * Active Criterion
+     */
+    active_criterion: string | null;
+    /**
+     * Gen Models
+     */
+    gen_models: Array<string>;
+    /**
+     * Judge Models
+     */
+    judge_models: Array<string>;
+    /**
+     * Judge Labels
+     */
+    judge_labels: {
+        [key: string]: JudgeLabel;
+    };
+    /**
+     * Main Matrices
+     */
+    main_matrices: Array<Matrix>;
+    /**
+     * Completion Per Source
+     */
+    completion_per_source: Array<SourceMatrix>;
+    /**
+     * Small Grid
+     */
+    small_grid: Array<SmallGridRow>;
+    /**
+     * Rows
+     */
+    rows: Array<JudgmentRow>;
+    /**
+     * Total Judgments
+     */
+    total_judgments: number;
+    /**
+     * Total Completions
+     */
+    total_completions: number;
+    /**
+     * Sources Summary
+     */
+    sources_summary: Array<SourceSummary>;
+    /**
+     * Essays Status
+     */
+    essays_status: Array<EssayStatus>;
+    /**
+     * Stale Count
+     */
+    stale_count: number;
+    /**
+     * Current Count
+     */
+    current_count: number;
+    /**
+     * Include Stale
+     */
+    include_stale: boolean;
+    /**
+     * Include Contaminated
+     */
+    include_contaminated: boolean;
+    row_filter: RowFilter;
+    /**
+     * Rows Total Before Filter
+     */
+    rows_total_before_filter: number;
+    /**
+     * Prefix Variants
+     */
+    prefix_variants: Array<PrefixVariantInfo>;
+    /**
+     * Active Prefix Label
+     */
+    active_prefix_label: string;
+    provenance: ProvenanceSummary;
+};
+
+/**
  * ReviewCompleteEventOut
  */
 export type ReviewCompleteEventOut = {
@@ -1708,6 +2888,34 @@ export type ReviewCompleteEventOut = {
      * Confidence
      */
     confidence: number | null;
+};
+
+/**
+ * RowFilter
+ *
+ * Echoed back on ResultsBundle when the row list is filtered.
+ *
+ * Populated from ``?filter_gen=`` / ``?filter_judge=`` /
+ * ``?filter_condition=`` / ``?filter_criterion=`` — the cell-drill-in
+ * linkage from MatrixTable cells into the raw-judgments table below.
+ */
+export type RowFilter = {
+    /**
+     * Gen
+     */
+    gen: string | null;
+    /**
+     * Judge
+     */
+    judge: string | null;
+    /**
+     * Condition
+     */
+    condition: string | null;
+    /**
+     * Criterion
+     */
+    criterion: string | null;
 };
 
 /**
@@ -1829,6 +3037,132 @@ export type ScoringCompletedEventOut = {
      * Dispatch Guidance
      */
     dispatch_guidance: string;
+};
+
+/**
+ * SmallGridRow
+ */
+export type SmallGridRow = {
+    /**
+     * Condition
+     */
+    condition: string;
+    /**
+     * Per Crit
+     */
+    per_crit: Array<CriterionMatrix>;
+};
+
+/**
+ * SmallNCellOut
+ */
+export type SmallNCellOut = {
+    /**
+     * Gen Model
+     */
+    gen_model: string;
+    /**
+     * Judge Base
+     */
+    judge_base: string;
+    /**
+     * Condition
+     */
+    condition: string;
+    /**
+     * Criterion
+     */
+    criterion: string;
+    /**
+     * N
+     */
+    n: number;
+};
+
+/**
+ * Source
+ *
+ * One generated continuation (or the held-out human remainder).
+ *
+ * ``prompt`` is the verbatim completion prompt the model received,
+ * stored on the row (legacy rows and the human baseline have no
+ * prompt — the inspect UI falls back to the template in that case).
+ */
+export type Source = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Words
+     */
+    words: number;
+    /**
+     * Target
+     */
+    target: number;
+    /**
+     * Prompt
+     */
+    prompt: string | null;
+    /**
+     * Prefix Config Hash
+     */
+    prefix_config_hash: string;
+    /**
+     * Sampling Hash
+     */
+    sampling_hash: string | null;
+    /**
+     * Model Id
+     */
+    model_id: string | null;
+};
+
+/**
+ * SourceMatrix
+ *
+ * A main matrix restricted to one essay source (e.g. forethought / redwood / carlsmith).
+ *
+ * Wraps a regular :class:`Matrix` so the gen/judge axes match the all-source
+ * matrix above; ``source_id`` is the essay-source label rendered in the UI.
+ */
+export type SourceMatrix = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    matrix: Matrix;
+};
+
+/**
+ * SourceSummary
+ */
+export type SourceSummary = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * N
+     */
+    n: number;
+    /**
+     * Avg Words
+     */
+    avg_words: number;
+    /**
+     * Avg Delta Pct
+     */
+    avg_delta_pct: number;
 };
 
 /**
@@ -2250,6 +3584,381 @@ export type WebResearchCompleteEventOut = {
  */
 export type Workspace = 'research' | 'prioritization';
 
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostData = {
+    body: OrchestratorRunRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/jobs/orchestrator-runs';
+};
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostError = CreateOrchestratorRunApiJobsOrchestratorRunsPostErrors[keyof CreateOrchestratorRunApiJobsOrchestratorRunsPostErrors];
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: OrchestratorRunResponse;
+};
+
+export type CreateOrchestratorRunApiJobsOrchestratorRunsPostResponse = CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses[keyof CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses];
+
+export type ListJobsApiJobsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/jobs';
+};
+
+export type ListJobsApiJobsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListJobsApiJobsGetError = ListJobsApiJobsGetErrors[keyof ListJobsApiJobsGetErrors];
+
+export type ListJobsApiJobsGetResponses = {
+    /**
+     * Response List Jobs Api Jobs Get
+     *
+     * Successful Response
+     */
+    200: Array<JobListItem>;
+};
+
+export type ListJobsApiJobsGetResponse = ListJobsApiJobsGetResponses[keyof ListJobsApiJobsGetResponses];
+
+export type ListEssaysApiVersusEssaysGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Include Legacy
+         */
+        include_legacy?: boolean;
+    };
+    url: '/api/versus/essays';
+};
+
+export type ListEssaysApiVersusEssaysGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEssaysApiVersusEssaysGetError = ListEssaysApiVersusEssaysGetErrors[keyof ListEssaysApiVersusEssaysGetErrors];
+
+export type ListEssaysApiVersusEssaysGetResponses = {
+    /**
+     * Response List Essays Api Versus Essays Get
+     *
+     * Successful Response
+     */
+    200: Array<EssayMeta>;
+};
+
+export type ListEssaysApiVersusEssaysGetResponse = ListEssaysApiVersusEssaysGetResponses[keyof ListEssaysApiVersusEssaysGetResponses];
+
+export type GetEssayApiVersusEssaysEssayIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: {
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
+    };
+    url: '/api/versus/essays/{essay_id}';
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetError = GetEssayApiVersusEssaysEssayIdGetErrors[keyof GetEssayApiVersusEssaysEssayIdGetErrors];
+
+export type GetEssayApiVersusEssaysEssayIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EssayDetail;
+};
+
+export type GetEssayApiVersusEssaysEssayIdGetResponse = GetEssayApiVersusEssaysEssayIdGetResponses[keyof GetEssayApiVersusEssaysEssayIdGetResponses];
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: {
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
+    };
+    url: '/api/versus/essays/{essay_id}/sources';
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetError = GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors[keyof GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors];
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses = {
+    /**
+     * Response Get Essay Sources Api Versus Essays  Essay Id  Sources Get
+     *
+     * Successful Response
+     */
+    200: Array<Source>;
+};
+
+export type GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponse = GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses[keyof GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses];
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Essay Id
+         */
+        essay_id: string;
+    };
+    query?: {
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
+    };
+    url: '/api/versus/essays/{essay_id}/judgments';
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetError = GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors[keyof GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors];
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EssayJudgmentsResponse;
+};
+
+export type GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponse = GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses[keyof GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses];
+
+export type GetResultsApiVersusResultsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+        /**
+         * Include Contaminated
+         */
+        include_contaminated?: boolean;
+        /**
+         * Include Stale
+         */
+        include_stale?: boolean;
+        /**
+         * Filter Gen
+         */
+        filter_gen?: string | null;
+        /**
+         * Filter Judge
+         */
+        filter_judge?: string | null;
+        /**
+         * Filter Condition
+         */
+        filter_condition?: string | null;
+        /**
+         * Filter Criterion
+         */
+        filter_criterion?: string | null;
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
+    };
+    url: '/api/versus/results';
+};
+
+export type GetResultsApiVersusResultsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetResultsApiVersusResultsGetError = GetResultsApiVersusResultsGetErrors[keyof GetResultsApiVersusResultsGetErrors];
+
+export type GetResultsApiVersusResultsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ResultsBundle;
+};
+
+export type GetResultsApiVersusResultsGetResponse = GetResultsApiVersusResultsGetResponses[keyof GetResultsApiVersusResultsGetResponses];
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    url: '/api/versus/judgments/by-key';
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetError = GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors[keyof GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors];
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: JudgmentDetail;
+};
+
+export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponse = GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses[keyof GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses];
+
+export type GetDiagnosticsApiVersusDiagnosticsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Criterion
+         */
+        criterion?: string | null;
+        /**
+         * Include Contaminated
+         */
+        include_contaminated?: boolean;
+        /**
+         * Include Stale
+         */
+        include_stale?: boolean;
+        /**
+         * Prefix Label
+         */
+        prefix_label?: string | null;
+    };
+    url: '/api/versus/diagnostics';
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetError = GetDiagnosticsApiVersusDiagnosticsGetErrors[keyof GetDiagnosticsApiVersusDiagnosticsGetErrors];
+
+export type GetDiagnosticsApiVersusDiagnosticsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DiagnosticsBundle;
+};
+
+export type GetDiagnosticsApiVersusDiagnosticsGetResponse = GetDiagnosticsApiVersusDiagnosticsGetResponses[keyof GetDiagnosticsApiVersusDiagnosticsGetResponses];
+
 export type HealthzHealthzGetData = {
     body?: never;
     path?: never;
@@ -2270,8 +3979,45 @@ export type HealthzHealthzGetResponses = {
 
 export type HealthzHealthzGetResponse = HealthzHealthzGetResponses[keyof HealthzHealthzGetResponses];
 
+export type GetMeApiAuthMeGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/auth/me';
+};
+
+export type GetMeApiAuthMeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMeApiAuthMeGetError = GetMeApiAuthMeGetErrors[keyof GetMeApiAuthMeGetErrors];
+
+export type GetMeApiAuthMeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AuthUserOut;
+};
+
+export type GetMeApiAuthMeGetResponse = GetMeApiAuthMeGetResponses[keyof GetMeApiAuthMeGetResponses];
+
 export type ListProjectsApiProjectsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -2304,6 +4050,12 @@ export type ListProjectsApiProjectsGetResponse = ListProjectsApiProjectsGetRespo
 
 export type GetProjectApiProjectsProjectIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2334,6 +4086,12 @@ export type GetProjectApiProjectsProjectIdGetResponse = GetProjectApiProjectsPro
 
 export type ListProjectRunsApiProjectsProjectIdRunsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2366,6 +4124,12 @@ export type ListProjectRunsApiProjectsProjectIdRunsGetResponse = ListProjectRuns
 
 export type ListPagesApiProjectsProjectIdPagesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2398,6 +4162,10 @@ export type ListPagesApiProjectsProjectIdPagesGetData = {
          */
         limit?: number;
         /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
+        /**
          * Staged Run Id
          */
         staged_run_id?: string | null;
@@ -2425,6 +4193,12 @@ export type ListPagesApiProjectsProjectIdPagesGetResponse = ListPagesApiProjects
 
 export type GetPageByShortIdApiPagesShortShortIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Short Id
@@ -2464,6 +4238,12 @@ export type GetPageByShortIdApiPagesShortShortIdGetResponse = GetPageByShortIdAp
 
 export type GetPageApiPagesPageIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2503,6 +4283,12 @@ export type GetPageApiPagesPageIdGetResponse = GetPageApiPagesPageIdGetResponses
 
 export type GetLinksFromApiPagesPageIdLinksFromGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2540,6 +4326,12 @@ export type GetLinksFromApiPagesPageIdLinksFromGetResponse = GetLinksFromApiPage
 
 export type GetLinksToApiPagesPageIdLinksToGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2577,6 +4369,12 @@ export type GetLinksToApiPagesPageIdLinksToGetResponse = GetLinksToApiPagesPageI
 
 export type GetDependentsApiPagesPageIdDependentsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2584,6 +4382,10 @@ export type GetDependentsApiPagesPageIdDependentsGetData = {
         page_id: string;
     };
     query?: {
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
         /**
          * Project Id
          */
@@ -2614,6 +4416,12 @@ export type GetDependentsApiPagesPageIdDependentsGetResponse = GetDependentsApiP
 
 export type GetDependenciesApiPagesPageIdDependenciesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2621,6 +4429,10 @@ export type GetDependenciesApiPagesPageIdDependenciesGetData = {
         page_id: string;
     };
     query?: {
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
         /**
          * Project Id
          */
@@ -2651,6 +4463,12 @@ export type GetDependenciesApiPagesPageIdDependenciesGetResponse = GetDependenci
 
 export type GetPageDetailApiPagesPageIdDetailGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2690,6 +4508,12 @@ export type GetPageDetailApiPagesPageIdDetailGetResponse = GetPageDetailApiPages
 
 export type GetPageCountsApiPagesPageIdCountsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2725,6 +4549,12 @@ export type GetPageCountsApiPagesPageIdCountsGetResponse = GetPageCountsApiPages
 
 export type GetProjectStatsApiProjectsProjectIdStatsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2760,6 +4590,12 @@ export type GetProjectStatsApiProjectsProjectIdStatsGetResponse = GetProjectStat
 
 export type GetQuestionStatsApiPagesPageIdStatsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -2799,6 +4635,12 @@ export type GetQuestionStatsApiPagesPageIdStatsGetResponse = GetQuestionStatsApi
 
 export type ListRootQuestionsApiProjectsProjectIdQuestionsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2807,6 +4649,10 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetData = {
     };
     query?: {
         workspace?: Workspace;
+        /**
+         * Include Hidden
+         */
+        include_hidden?: boolean;
     };
     url: '/api/projects/{project_id}/questions';
 };
@@ -2833,6 +4679,12 @@ export type ListRootQuestionsApiProjectsProjectIdQuestionsGetResponse = ListRoot
 
 export type ListCallsApiProjectsProjectIdCallsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Project Id
@@ -2870,6 +4722,12 @@ export type ListCallsApiProjectsProjectIdCallsGetResponse = ListCallsApiProjects
 
 export type GetCallApiCallsCallIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
@@ -2905,6 +4763,12 @@ export type GetCallApiCallsCallIdGetResponse = GetCallApiCallsCallIdGetResponses
 
 export type GetChildCallsApiCallsCallIdChildrenGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
@@ -2942,6 +4806,12 @@ export type GetChildCallsApiCallsCallIdChildrenGetResponse = GetChildCallsApiCal
 
 export type GetRunTraceTreeApiRunsRunIdTraceTreeGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Run Id
@@ -2977,6 +4847,12 @@ export type GetRunTraceTreeApiRunsRunIdTraceTreeGetResponse = GetRunTraceTreeApi
 
 export type GetCallEventsApiCallsCallIdEventsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
@@ -3078,6 +4954,12 @@ export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCalls
 
 export type ListAbEvalsApiAbEvalsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: {
         /**
@@ -3110,6 +4992,12 @@ export type ListAbEvalsApiAbEvalsGetResponse = ListAbEvalsApiAbEvalsGetResponses
 
 export type GetAbEvalApiAbEvalsEvalIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Eval Id
@@ -3145,6 +5033,12 @@ export type GetAbEvalApiAbEvalsEvalIdGetResponse = GetAbEvalApiAbEvalsEvalIdGetR
 
 export type ListLlmExchangesApiCallsCallIdLlmExchangesGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Call Id
@@ -3182,6 +5076,12 @@ export type ListLlmExchangesApiCallsCallIdLlmExchangesGetResponse = ListLlmExcha
 
 export type GetLlmExchangeApiLlmExchangesExchangeIdGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Exchange Id
@@ -3217,10 +5117,25 @@ export type GetLlmExchangeApiLlmExchangesExchangeIdGetResponse = GetLlmExchangeA
 
 export type GetRealtimeConfigApiRealtimeConfigGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path?: never;
     query?: never;
     url: '/api/realtime/config';
 };
+
+export type GetRealtimeConfigApiRealtimeConfigGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRealtimeConfigApiRealtimeConfigGetError = GetRealtimeConfigApiRealtimeConfigGetErrors[keyof GetRealtimeConfigApiRealtimeConfigGetErrors];
 
 export type GetRealtimeConfigApiRealtimeConfigGetResponses = {
     /**
@@ -3233,6 +5148,12 @@ export type GetRealtimeConfigApiRealtimeConfigGetResponse = GetRealtimeConfigApi
 
 export type GetPageRunApiPagesPageIdRunGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Page Id
@@ -3274,6 +5195,12 @@ export type GetPageRunApiPagesPageIdRunGetResponse = GetPageRunApiPagesPageIdRun
 
 export type GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData = {
     body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
     path: {
         /**
          * Run Id

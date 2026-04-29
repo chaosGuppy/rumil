@@ -14,11 +14,11 @@ from pydantic import BaseModel
 
 from rumil.database import DB
 from rumil.llm import structured_call, text_call
+from rumil.prompts import PROMPTS_DIR
 from rumil.summary import build_research_tree
 
 log = logging.getLogger(__name__)
 
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 REPORTS_DIR = Path(__file__).parent.parent.parent / "pages" / "reports"
 
 

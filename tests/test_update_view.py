@@ -1,17 +1,22 @@
 """Tests for UpdateViewCall: incremental View updates."""
 
+from datetime import UTC
+
 import pytest
 import pytest_asyncio
 
-from rumil.calls.stages import CallInfra
+from rumil.calls.closing_reviewers import StandardClosingReview, ViewClosingReview
+from rumil.calls.common import format_moves_for_review
+from rumil.calls.stages import CallInfra, UpdateResult
 from rumil.calls.update_view import (
     DemotionChoice,
     ItemReview,
     ProposedItem,
     UnscoredItemScore,
-    UpdateViewCall,
     UpdateViewWorkspaceUpdater,
+    _is_explicit_duplicate,
     _parse_prompt_sections,
+    _prune_candidates,
     _render_item_compact,
     _render_item_full,
 )
@@ -204,22 +209,175 @@ def test_render_item_full_without_citations():
     assert "Cited evidence" not in rendered
 
 
-async def test_create_new_view_and_copy_items(tmp_db, view_setup):
-    """UpdateViewCall should create a new View, supersede the old one,
-    and copy all VIEW_ITEM links."""
-    q, old_view, items = view_setup
+def test_render_item_full_surfaces_uncited_parent_considerations():
+    page = _view_item("Equity is table-stakes")
+    link = _view_item_link("view-id", page.id)
+
+    cited_claim = _claim("40-60% giveback is normative")
+    cite_link = PageLink(
+        from_page_id=page.id,
+        to_page_id=cited_claim.id,
+        link_type=LinkType.DEPENDS_ON,
+    )
+    uncited_claim = _claim(
+        "Moskovitz departed Facebook with 0 percent giveback",
+        abstract="Paradigm counter-example to the giveback norm.",
+    )
+
+    rendered = _render_item_full(
+        page,
+        link,
+        cited_pages={cited_claim.id: cited_claim},
+        item_links=[cite_link],
+        related_considerations=[cited_claim, uncited_claim],
+    )
+
+    assert "Related considerations on the parent question" in rendered
+    assert uncited_claim.id[:8] in rendered
+    assert "Moskovitz" in rendered
+    related_section = rendered.split("Related considerations on the parent question")[1]
+    assert cited_claim.id[:8] not in related_section
+
+
+def test_render_item_full_omits_related_block_when_all_cited():
+    page = _view_item("Solo item")
+    link = _view_item_link("view-id", page.id)
+
+    cited = _claim("Already cited")
+    cite_link = PageLink(
+        from_page_id=page.id,
+        to_page_id=cited.id,
+        link_type=LinkType.DEPENDS_ON,
+    )
+    rendered = _render_item_full(
+        page,
+        link,
+        cited_pages={cited.id: cited},
+        item_links=[cite_link],
+        related_considerations=[cited],
+    )
+    assert "Related considerations on the parent question" not in rendered
+
+
+async def test_render_claim_investigation_findings_surfaces_new_findings(tmp_db):
+    """New considerations on a claim linked to the question should appear."""
+    from datetime import datetime, timedelta
+
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Scope question")
+    claim = _claim("Consideration on scope")
+    finding = _claim(
+        "Moskovitz paradigm case",
+        abstract="Departed Facebook with 0% giveback; undermines norm framing.",
+    )
+
+    await tmp_db.save_page(question)
+    await tmp_db.save_page(claim)
+    await tmp_db.save_page(finding)
+
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=claim.id,
+            to_page_id=question.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=finding.id,
+            to_page_id=claim.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+
+    cutoff = datetime.now(UTC) - timedelta(days=365)
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, cutoff)
+
+    assert finding.id in page_ids
+    assert "Moskovitz" in text
+    assert claim.id[:8] in text
+    assert "[NEW]" in text
+
+
+async def test_render_claim_investigation_findings_filters_old_findings(tmp_db):
+    """Findings older than last_view_created_at should be excluded."""
+    from datetime import datetime, timedelta
+
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Scope question")
+    claim = _claim("Consideration")
+    old_finding = _claim("Stale finding")
+
+    await tmp_db.save_page(question)
+    await tmp_db.save_page(claim)
+    await tmp_db.save_page(old_finding)
+
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=claim.id,
+            to_page_id=question.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+    await tmp_db.save_link(
+        PageLink(
+            from_page_id=old_finding.id,
+            to_page_id=claim.id,
+            link_type=LinkType.CONSIDERATION,
+        )
+    )
+
+    cutoff = datetime.now(UTC) + timedelta(days=1)
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, cutoff)
+
+    assert page_ids == []
+    assert text == ""
+
+
+async def test_render_claim_investigation_findings_no_considerations(tmp_db):
+    """Returns empty when the question has no considerations."""
+    from rumil.context import render_claim_investigation_findings
+
+    question = _question("Lonely question")
+    await tmp_db.save_page(question)
+
+    text, page_ids = await render_claim_investigation_findings(tmp_db, question.id, None)
+    assert text == ""
+    assert page_ids == []
+
+
+async def _materialize(tmp_db, question_id: str) -> tuple[str, str]:
+    """Drive UpdateViewWorkspaceUpdater.materialize directly using a real
+    CallInfra. Returns (old_view_id, new_view_id).
+    """
+    import uuid as _uuid
 
     call = Call(
         call_type=CallType.UPDATE_VIEW,
         workspace=Workspace.RESEARCH,
-        scope_page_id=q.id,
+        scope_page_id=question_id,
         status=CallStatus.PENDING,
     )
     await tmp_db.save_call(call)
+    infra = CallInfra(
+        question_id=question_id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    updater = UpdateViewWorkspaceUpdater(str(_uuid.uuid4()), CallType.UPDATE_VIEW)
+    return await updater.materialize(infra)
 
-    runner = UpdateViewCall(q.id, call, tmp_db)
 
-    old_id, new_id = await runner._create_new_view_and_copy_items()
+async def test_materialize_creates_new_view_and_copies_items(tmp_db, view_setup):
+    """UpdateViewWorkspaceUpdater.materialize should create a new View,
+    supersede the old one, and copy all VIEW_ITEM links."""
+    q, old_view, items = view_setup
+
+    old_id, new_id = await _materialize(tmp_db, q.id)
 
     assert old_id == old_view.id
     assert new_id != old_view.id
@@ -247,7 +405,7 @@ async def test_create_new_view_and_copy_items(tmp_db, view_setup):
     assert found_view.id == new_id
 
 
-async def test_create_new_view_preserves_link_metadata(tmp_db):
+async def test_materialize_preserves_link_metadata(tmp_db):
     """Link metadata (importance, section, position) should survive the copy."""
     q = _question()
     v = _view()
@@ -272,16 +430,7 @@ async def test_create_new_view_preserves_link_metadata(tmp_db):
         )
     )
 
-    call = Call(
-        call_type=CallType.UPDATE_VIEW,
-        workspace=Workspace.RESEARCH,
-        scope_page_id=q.id,
-        status=CallStatus.PENDING,
-    )
-    await tmp_db.save_call(call)
-    runner = UpdateViewCall(q.id, call, tmp_db)
-
-    _, new_id = await runner._create_new_view_and_copy_items()
+    _, new_id = await _materialize(tmp_db, q.id)
     new_items = await tmp_db.get_view_items(new_id)
     assert len(new_items) == 1
     _, link = new_items[0]
@@ -290,8 +439,22 @@ async def test_create_new_view_preserves_link_metadata(tmp_db):
     assert link.position == 7
 
 
-async def test_create_new_view_raises_without_existing_view(tmp_db):
-    """UpdateViewCall should raise if there's no existing View to update."""
+async def test_materialize_raises_without_existing_view(tmp_db):
+    """UpdateViewWorkspaceUpdater.materialize should raise if there's no
+    existing View to update."""
+    q = _question()
+    await tmp_db.save_page(q)
+    with pytest.raises(RuntimeError, match="requires an existing View"):
+        await _materialize(tmp_db, q.id)
+
+
+async def test_build_context_uses_stageable_guard_without_view(tmp_db):
+    """UpdateViewContext should refuse to build context when no View exists —
+    build_context runs before materialize, so it has to fetch the old view
+    directly and enforce the same precondition.
+    """
+    from rumil.calls.update_view import UpdateViewContext
+
     q = _question()
     await tmp_db.save_page(q)
     call = Call(
@@ -301,9 +464,43 @@ async def test_create_new_view_raises_without_existing_view(tmp_db):
         status=CallStatus.PENDING,
     )
     await tmp_db.save_call(call)
-    runner = UpdateViewCall(q.id, call, tmp_db)
+    infra = CallInfra(
+        question_id=q.id,
+        call=call,
+        db=tmp_db,
+        trace=CallTrace(call.id, tmp_db),
+        state=MoveState(call, tmp_db),
+    )
+    builder = UpdateViewContext()
     with pytest.raises(RuntimeError, match="requires an existing View"):
-        await runner._create_new_view_and_copy_items()
+        await builder.build_context(infra)
+
+
+async def test_create_view_updater_mints_view_id_but_defers_persist(tmp_db):
+    """CreateViewCall mints the view UUID in __init__ but doesn't persist the
+    view until update_workspace runs; verify the Page isn't present after
+    construction.
+    """
+    from rumil.calls.create_view import CreateViewCall
+
+    q = _question()
+    await tmp_db.save_page(q)
+    call = Call(
+        call_type=CallType.CREATE_VIEW,
+        workspace=Workspace.RESEARCH,
+        scope_page_id=q.id,
+        status=CallStatus.PENDING,
+    )
+    await tmp_db.save_call(call)
+
+    runner = CreateViewCall(q.id, call, tmp_db)
+    assert runner._view_id, "CreateViewCall should mint a view_id in __init__"
+
+    # Construction alone must not create any View page.
+    page_before = await tmp_db.get_page(runner._view_id)
+    assert page_before is None
+    found_view = await tmp_db.get_view_for_question(q.id)
+    assert found_view is None
 
 
 async def test_apply_item_score_updates_link(tmp_db, view_setup, call_infra):
@@ -709,6 +906,247 @@ async def test_phase_enforce_caps_skips_within_limits(
         messages,
     )
     assert len(result_messages) == len(messages)
+
+
+async def test_phase_propose_new_creates_items_from_proposals(
+    tmp_db,
+    view_setup,
+    call_infra,
+    monkeypatch,
+):
+    """propose_new should turn each LLM proposal into a linked VIEW_ITEM."""
+    from rumil.calls import update_view as uv
+    from rumil.llm import StructuredCallResult
+
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    proposals = [
+        ProposedItem(
+            headline="Bottom-line magnitude",
+            content="Central estimate -1.5% to -2% [abc12345].",
+            robustness=3,
+            robustness_reasoning="Synthesizes multiple R3+ claims",
+            importance=5,
+            section="confident_views",
+            reasoning="No existing item names the magnitude",
+        ),
+        ProposedItem(
+            headline="Sign-uncertainty compression",
+            content="Sign uncertainty compresses directed EV by 2-5x [def45678].",
+            robustness=4,
+            robustness_reasoning="Mechanism is structural, not empirical",
+            importance=5,
+            section="confident_views",
+            reasoning="Methodologically load-bearing",
+        ),
+    ]
+
+    from pydantic import BaseModel
+
+    class _Parsed(BaseModel):
+        proposed_items: list[dict]
+
+    parsed = _Parsed(proposed_items=[p.model_dump() for p in proposals])
+
+    async def fake_structured_call(*args, **kwargs):
+        return StructuredCallResult(parsed=parsed, response_text="{}")
+
+    monkeypatch.setattr(uv, "structured_call", fake_structured_call)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    n_before = len(messages)
+
+    result_messages, created_ids = await updater._phase_propose_new(
+        call_infra,
+        "system",
+        {"propose_new": "Propose new items."},
+        messages,
+    )
+
+    assert len(created_ids) == 2
+    assert len(result_messages) == n_before + 2
+
+    items_after = await tmp_db.get_view_items(v.id)
+    new_pages_by_id = {p.id: (p, l) for p, l in items_after if p.id in created_ids}
+    assert len(new_pages_by_id) == 2
+
+    for new_id in created_ids:
+        page, link = new_pages_by_id[new_id]
+        assert page.page_type == PageType.VIEW_ITEM
+        assert link.link_type == LinkType.VIEW_ITEM
+        assert link.section == "confident_views"
+        assert link.importance == 5
+
+    assert any("propose_new" in line and "created 2" in line for line in updater._phase_lines)
+
+
+async def test_phase_propose_new_no_proposals_records_phase_completed(
+    tmp_db,
+    view_setup,
+    call_infra,
+    monkeypatch,
+):
+    """propose_new should still record the phase event when the LLM proposes nothing."""
+    from rumil.calls import update_view as uv
+    from rumil.llm import StructuredCallResult
+
+    _, v, _items = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    from pydantic import BaseModel
+
+    class _Parsed(BaseModel):
+        proposed_items: list[dict]
+
+    parsed = _Parsed(proposed_items=[])
+
+    async def fake_structured_call(*args, **kwargs):
+        return StructuredCallResult(parsed=parsed, response_text="{}")
+
+    monkeypatch.setattr(uv, "structured_call", fake_structured_call)
+
+    items_before = await tmp_db.get_view_items(v.id)
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    n_before = len(messages)
+
+    result_messages, created_ids = await updater._phase_propose_new(
+        call_infra,
+        "system",
+        {"propose_new": "Propose new items."},
+        messages,
+    )
+
+    assert created_ids == []
+    items_after = await tmp_db.get_view_items(v.id)
+    assert {p.id for p, _ in items_after} == {p.id for p, _ in items_before}
+    assert any("propose_new" in line and "created 0" in line for line in updater._phase_lines)
+    assert len(result_messages) == n_before + 2
+
+
+def test_is_explicit_duplicate_detects_marker():
+    page_dup = _view_item("Dup", content="[Duplicate of abc123, created in error.]")
+    page_normal = _view_item("Normal", content="Some normal observation.")
+    assert _is_explicit_duplicate(page_dup)
+    assert not _is_explicit_duplicate(page_normal)
+
+
+def test_prune_candidates_includes_duplicates_at_any_importance():
+    """Duplicates should be routed through prune even if their importance is above I2."""
+    dup_high = _view_item("Dup at I5", content="[Duplicate of c9060eb4, created in error.]")
+    dup_link = _view_item_link("view-id", dup_high.id, importance=5, section="confident_views")
+    low = _view_item("Low I1", content="Minor note.")
+    low_link = _view_item_link("view-id", low.id, importance=1, section="other")
+    mid = _view_item("Mid I3", content="Useful background.")
+    mid_link = _view_item_link("view-id", mid.id, importance=3, section="key_evidence")
+    unscored = _view_item("Unscored", content="Not scored yet.")
+    unscored_link = _view_item_link("view-id", unscored.id, importance=None, section="other")
+
+    candidates = _prune_candidates(
+        [(dup_high, dup_link), (low, low_link), (mid, mid_link), (unscored, unscored_link)]
+    )
+    ids = {p.id for p, _ in candidates}
+    assert dup_high.id in ids, "duplicate-marked item must be a prune candidate at any importance"
+    assert low.id in ids, "low-importance item must be a prune candidate"
+    assert mid.id not in ids, "mid-importance non-duplicate must not be a prune candidate"
+    assert unscored.id not in ids, "unscored item must not be a prune candidate"
+
+
+async def test_phase_score_unscored_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    """Skipping phase 1 should append a phase_lines entry so closing review can see it."""
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_score_unscored(call_infra, "system", {}, messages)
+
+    assert len(updater._phase_lines) == 1
+    assert "score_unscored" in updater._phase_lines[0]
+    assert "skipped" in updater._phase_lines[0]
+
+
+async def test_phase_enforce_caps_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_enforce_caps(call_infra, "system", {}, messages)
+
+    assert any("enforce_caps" in line and "skipped" in line for line in updater._phase_lines)
+
+
+async def test_phase_prune_skip_populates_phase_summary(tmp_db, view_setup, call_infra):
+    _, v, _ = view_setup
+    updater = UpdateViewWorkspaceUpdater(v.id, CallType.UPDATE_VIEW)
+
+    messages = [
+        {"role": "user", "content": "context"},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    await updater._phase_prune(call_infra, "system", {}, messages)
+
+    assert any("prune" in line and "skipped" in line for line in updater._phase_lines)
+
+
+def _make_update_result(*, phase_summary: str = "") -> UpdateResult:
+    return UpdateResult(
+        created_page_ids=[],
+        moves=[],
+        all_loaded_ids=[],
+        phase_summary=phase_summary,
+    )
+
+
+def test_format_moves_for_review_empty_flags_out_of_band_work():
+    """Empty moves should not just say '(no moves)'.
+
+    The closing-review LLM previously mistook the literal '(no moves)' for
+    'the call did nothing' — even for update_view, whose real work lives
+    in phase edits rather than moves. The empty-moves message must warn
+    the LLM that absence-of-moves is not absence-of-work.
+    """
+    rendered = format_moves_for_review([])
+    assert "no moves" not in rendered.lower() or "not" in rendered.lower()
+    assert rendered != "(no moves)"
+    assert "phase" in rendered.lower() or "outside" in rendered.lower()
+
+
+def test_view_closing_review_prefers_phase_summary_over_moves():
+    """ViewClosingReview must render phase_summary (not '(no moves)') when moves is empty."""
+    reviewer = ViewClosingReview(CallType.UPDATE_VIEW, view_id="view-id")
+    creation = _make_update_result(
+        phase_summary=(
+            "score_unscored: scored 3 item(s), modified 3\n"
+            "triage: reviewed 5 item(s), flagged 2 for deep review\n"
+            "deep_review: reviewed 2 item(s), superseded 1, adjusted 1\n"
+            "propose_new: created 1 new item(s)"
+        )
+    )
+    rendered = reviewer._review_context(creation)
+    assert "score_unscored" in rendered
+    assert "superseded 1" in rendered
+    assert "(no moves)" not in rendered
+
+
+def test_view_closing_review_falls_back_to_moves_when_no_phase_summary():
+    """If phase_summary is empty, fall back to the default moves rendering."""
+    reviewer = ViewClosingReview(CallType.UPDATE_VIEW, view_id="view-id")
+    creation = _make_update_result(phase_summary="")
+    rendered = reviewer._review_context(creation)
+    default_rendered = StandardClosingReview(CallType.UPDATE_VIEW)._review_context(creation)
+    assert rendered == default_rendered
 
 
 async def test_view_setup_with_unscored_items(tmp_db):

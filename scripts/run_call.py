@@ -25,6 +25,11 @@ Usage:
 
 All runs are staged by default (use --no-stage to disable). Workspace defaults to
 'default' but is auto-detected from --question-id when possible.
+
+If --question-id points at a question staged under another run, that run's run_id
+is adopted automatically so the call continues inside the staged lineage (budget
+is added to rather than clobbered; no new `runs` row is created). Passing
+--no-stage against a staged question is rejected.
 """
 
 import argparse
@@ -33,6 +38,7 @@ import logging
 import uuid
 
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+from rumil.calls.create_view import CreateViewCall
 from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.red_team import RedTeamCall
@@ -45,12 +51,14 @@ from rumil.calls.scout_paradigm_cases import ScoutParadigmCasesCall
 from rumil.calls.scout_subquestions import ScoutSubquestionsCall
 from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
+from rumil.calls.update_view import UpdateViewCall
 from rumil.calls.web_research import WebResearchCall
 from rumil.database import DB
 from rumil.models import CallStage, CallType
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
 from rumil.settings import get_settings
+from rumil.tracing import get_langfuse
 
 _SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
     "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
@@ -151,6 +159,32 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         )
         await instance.run()
 
+    elif call_type == "create-view":
+        call = await db.create_call(
+            CallType.CREATE_VIEW,
+            scope_page_id=question_id,
+        )
+        create_view = CreateViewCall(
+            question_id,
+            call,
+            db,
+            up_to_stage=up_to_stage,
+        )
+        await create_view.run()
+
+    elif call_type == "update-view":
+        call = await db.create_call(
+            CallType.UPDATE_VIEW,
+            scope_page_id=question_id,
+        )
+        update_view = UpdateViewCall(
+            question_id,
+            call,
+            db,
+            up_to_stage=up_to_stage,
+        )
+        await update_view.run()
+
     elif call_type == "robustify":
         if up_to_stage:
             print("--up-to-stage is not supported for robustify.")
@@ -186,8 +220,27 @@ async def run(args: argparse.Namespace) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     workspace = args.workspace
-    staged = not args.no_stage
-    db = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod, staged=staged)
+    staged_flag = not args.no_stage
+
+    adopted_run_id: str | None = None
+    if args.question_id:
+        probe = await DB.create(run_id=str(uuid.uuid4()), prod=args.prod, staged=False)
+        info = await probe.get_page_staging_info(args.question_id)
+        if info is None:
+            print(f"Question {args.question_id} not found.")
+            return
+        is_staged, owning_run_id, _owning_project_id = info
+        if is_staged:
+            if not staged_flag:
+                print(
+                    f"Question {args.question_id[:8]} is staged under run {owning_run_id[:8]}; "
+                    "cannot run with --no-stage. Drop --no-stage to adopt the staged run."
+                )
+                return
+            adopted_run_id = owning_run_id
+
+    run_id = adopted_run_id or str(uuid.uuid4())
+    db = await DB.create(run_id=run_id, prod=args.prod, staged=staged_flag)
     project = await db.get_or_create_project(workspace)
     db.project_id = project.id
 
@@ -202,7 +255,10 @@ async def run(args: argparse.Namespace) -> None:
         if page.project_id and page.project_id != db.project_id:
             db.project_id = page.project_id
         question_text = page.headline
-        print(f"Using existing question: {question_text}")
+        if adopted_run_id:
+            print(f"Adopted staged run {adopted_run_id[:8]} for question: {question_text}")
+        else:
+            print(f"Using existing question: {question_text}")
     elif args.question_text:
         question_text = args.question_text
         question_id = await create_root_question(question_text, db)
@@ -211,16 +267,24 @@ async def run(args: argparse.Namespace) -> None:
         print("Provide a question text or --question-id.")
         return
 
-    print(f"Trace: {frontend}/traces/{db.run_id}\n")
-    await db.init_budget(args.budget)
+    print(f"Trace: {frontend}/traces/{db.run_id}")
+    if get_langfuse() is not None:
+        lf_base = settings.langfuse_base_url.rstrip("/")
+        print(f"Langfuse session: {lf_base}/sessions?sessionId={db.run_id}")
+    print()
+    if adopted_run_id:
+        await db.add_budget(args.budget)
+    else:
+        await db.init_budget(args.budget)
 
     name = args.name or question_text
     config = settings.capture_config()
-    await db.create_run(
-        name=name,
-        question_id=question_id,
-        config=config,
-    )
+    if not adopted_run_id:
+        await db.create_run(
+            name=name,
+            question_id=question_id,
+            config=config,
+        )
 
     print(f"Running {args.call_type} on {question_id[:8]}...")
     await run_call(args, db, question_id)
@@ -238,6 +302,8 @@ def main() -> None:
             "robustify",
             "web-research",
             "link-subquestions",
+            "create-view",
+            "update-view",
             *_SCOUT_CALL_TYPES,
         ],
         help="Type of call to run",

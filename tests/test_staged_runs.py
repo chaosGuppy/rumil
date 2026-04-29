@@ -770,3 +770,29 @@ async def test_retroactively_staged_update_page_content_visible_to_staged_reader
     await run_db.delete_run_data()
     await helper.delete_run_data()
     await observer.delete_run_data()
+
+
+async def test_view_as_staged_sees_staged_pages(baseline_db, staged_db, observer_db):
+    """A view built from a non-staged DB onto a staged run_id sees that run's pages.
+
+    This is the visibility property the trace-tree endpoint relies on when
+    rendering staged runs (e.g. versus judgments) without opening a fresh
+    Supabase client just to flip the staging flags.
+    """
+    baseline_page = await _make_page(baseline_db, "baseline claim")
+    staged_page = await _make_page(staged_db, "staged claim")
+
+    view = observer_db.view_as_staged(staged_db.run_id)
+
+    view_page = await view.get_page(staged_page.id)
+    assert view_page is not None
+    assert view_page.headline == "staged claim"
+
+    view_baseline = await view.get_page(baseline_page.id)
+    assert view_baseline is not None
+
+    observer_staged = await observer_db.get_page(staged_page.id)
+    assert observer_staged is None, (
+        "observer_db (non-staged) must not see staged pages; view_as_staged is "
+        "what makes them visible"
+    )

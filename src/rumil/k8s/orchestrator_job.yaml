@@ -1,0 +1,26 @@
+# Job-shape template for orchestrator runs submitted via the rumil API.
+# Loaded by src/rumil/k8s/submit.py at submit time. The API fills in
+# metadata.name, metadata.labels, the container image (read live from the
+# rumil-api Deployment), envFrom, env, and command. Static lifecycle and
+# resource policy lives here so it can be reviewed and changed in one place.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  namespace: rumil
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 0
+  activeDeadlineSeconds: 14400
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: rumil-orchestrator-job
+      containers:
+        - name: orchestrator
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi

@@ -54,6 +54,11 @@ class CallTrace:
         self.total_cost_usd: float = 0.0
         self._page_loads: list[dict] = []
 
+    @property
+    def broadcaster(self) -> Broadcaster | None:
+        """Public accessor for the broadcaster (used by moves that spawn sub-calls)."""
+        return self._broadcaster
+
     def record_page_load(self, page_id: str, detail: str, tags: dict[str, str]) -> None:
         """Accumulate a page-load event (flushed to DB at end of call)."""
         self._page_loads.append(
@@ -63,6 +68,29 @@ class CallTrace:
                 "tags": tags,
             }
         )
+
+    def page_ids_by_source_prefix(self, prefix: str) -> list[str]:
+        """Return unique page IDs whose tracked ``source`` tag starts with *prefix*.
+
+        Order follows first-load order. Useful at event-emit time to surface
+        pages that were rendered by ``format_page`` but aren't directly part
+        of the context-builder's returned ``page_ids`` list — most notably
+        the scope question's linked items (considerations, judgements,
+        sub-question judgements) which are emitted inline by
+        ``format_page(scope_page, linked_detail=...)``.
+        """
+        seen: set[str] = set()
+        result: list[str] = []
+        for load in self._page_loads:
+            src = (load.get("tags") or {}).get("source") or ""
+            if not src.startswith(prefix):
+                continue
+            pid = load["page_id"]
+            if pid in seen:
+                continue
+            seen.add(pid)
+            result.append(pid)
+        return result
 
     async def flush_page_loads(self) -> None:
         """Batch-insert accumulated page-load events into the DB."""

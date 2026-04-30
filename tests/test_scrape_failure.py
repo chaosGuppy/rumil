@@ -27,7 +27,7 @@ async def test_create_claim_errors_when_source_url_unscrapable(
         return_value=None,
     )
 
-    result = await execute_with_source_creation(
+    result, payload = await execute_with_source_creation(
         {
             "headline": "Some claim",
             "content": "Claim content",
@@ -38,6 +38,7 @@ async def test_create_claim_errors_when_source_url_unscrapable(
         source_cache={},
     )
 
+    assert payload is None
     assert "unreachable.example.com" in result.message
     assert "different" in result.message.lower()
     assert result.created_page_id == ""
@@ -55,7 +56,7 @@ async def test_create_claim_succeeds_when_no_source_urls(
     )
     await tmp_db.save_call(call)
 
-    result = await execute_with_source_creation(
+    result, payload = await execute_with_source_creation(
         {
             "headline": "Some claim",
             "content": "Claim content",
@@ -69,5 +70,6 @@ async def test_create_claim_succeeds_when_no_source_urls(
         source_cache={},
     )
 
+    assert payload is not None
     assert result.created_page_id != ""
     assert "ERROR" not in result.message

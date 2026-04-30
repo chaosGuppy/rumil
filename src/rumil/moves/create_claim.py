@@ -247,13 +247,22 @@ async def execute_with_source_creation(
     call: Call,
     db: DB,
     source_cache: dict[str, str],
-) -> MoveResult:
+) -> tuple[MoveResult, CreateClaimPayload | None]:
     """Like ``execute()``, but resolves HTTP URLs in ``source_urls`` first.
 
     For each ``source_urls`` entry starting with ``http``, scrapes the URL
     and creates a SOURCE page.  Also rewrites ``[url]`` inline citations
     in content to ``[shortid]``.
+
+    Returns ``(result, payload)``. ``payload`` is the validated
+    ``CreateClaimPayload`` actually executed (with URLs resolved to source
+    page IDs) — callers like the WebResearchLoop wrapper need it to record
+    a faithful ``Move``. ``payload`` is ``None`` when an error short-circuits
+    before payload construction. ``result.extra_created_ids`` lists the
+    SOURCE pages newly created on this call (already-cached sources are
+    not included).
     """
+    known_sources_before = set(source_cache.values())
     source_urls = inp.get("source_urls", [])
     if source_urls:
         resolved: list[str] = []
@@ -269,14 +278,17 @@ async def execute_with_source_creation(
                 resolved.append(sid)
         if failed_urls:
             urls = ", ".join(failed_urls)
-            return MoveResult(
-                message=(
-                    f"ERROR: Could not fetch the following source(s): {urls}. "
-                    "Find a different, accessible source that supports "
-                    "the same information, or modify the claim so it "
-                    "does not rely on the inaccessible source(s)."
+            return (
+                MoveResult(
+                    message=(
+                        f"ERROR: Could not fetch the following source(s): {urls}. "
+                        "Find a different, accessible source that supports "
+                        "the same information, or modify the claim so it "
+                        "does not rely on the inaccessible source(s)."
+                    ),
+                    created_page_id="",
                 ),
-                created_page_id="",
+                None,
             )
         inp = {**inp, "source_urls": resolved}
 
@@ -285,7 +297,13 @@ async def execute_with_source_creation(
         try:
             inp = {**inp, "content": rewrite_url_citations(content, source_cache)}
         except ValueError as exc:
-            return MoveResult(message=f"ERROR: {exc}", created_page_id="")
+            return MoveResult(message=f"ERROR: {exc}", created_page_id=""), None
 
     payload = CreateClaimPayload(**inp)
-    return await execute(payload, call, db)
+    result = await execute(payload, call, db)
+
+    new_source_ids = [sid for sid in source_cache.values() if sid not in known_sources_before]
+    if new_source_ids:
+        result.extra_created_ids = [*(result.extra_created_ids or []), *new_source_ids]
+
+    return result, payload

@@ -28,6 +28,7 @@ from rumil.llm import (
 )
 from rumil.models import (
     CallType,
+    Move,
     MoveType,
 )
 from rumil.moves.create_claim import (
@@ -436,15 +437,25 @@ class WebResearchLoop(WorkspaceUpdater):
                     inp: dict,
                     _infra=infra,
                 ) -> str:
-                    known_before = set(self.source_page_ids.values())
-                    result = await execute_with_source_creation(
+                    result, validated = await execute_with_source_creation(
                         inp, _infra.call, _infra.db, self.source_page_ids
                     )
-                    for sid in self.source_page_ids.values():
-                        if sid not in known_before:
-                            _infra.state.created_page_ids.append(sid)
+                    move_page_ids: list[str] = []
                     if result.created_page_id:
                         _infra.state.created_page_ids.append(result.created_page_id)
+                        _infra.state.last_created_id = result.created_page_id
+                        _infra.state.context_page_ids.add(result.created_page_id)
+                        move_page_ids.append(result.created_page_id)
+                    if result.extra_created_ids:
+                        for sid in result.extra_created_ids:
+                            _infra.state.created_page_ids.append(sid)
+                        move_page_ids.extend(result.extra_created_ids)
+                    if validated is not None:
+                        _infra.state.moves.append(
+                            Move(move_type=MoveType.CREATE_CLAIM, payload=validated)
+                        )
+                        _infra.state.move_created_ids.append(move_page_ids)
+                        _infra.state.move_trace_extras.append(result.trace_extra)
                     return result.message
 
                 wrapped.append(

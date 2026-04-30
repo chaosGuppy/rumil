@@ -243,6 +243,54 @@ export type AutocompactEventOut = {
 };
 
 /**
+ * BaseExchangeOut
+ *
+ * Reconstructed base exchange — what the fork editor pre-populates.
+ */
+export type BaseExchangeOut = {
+    /**
+     * Exchange Id
+     */
+    exchange_id: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string | null;
+    /**
+     * System Prompt
+     */
+    system_prompt: string;
+    /**
+     * User Messages
+     */
+    user_messages: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Tools
+     */
+    tools: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Temperature
+     */
+    temperature: number | null;
+    /**
+     * Max Tokens
+     */
+    max_tokens: number;
+};
+
+/**
  * Call
  */
 export type Call = {
@@ -1153,6 +1201,148 @@ export type ExplorePageEventOut = {
      * Response
      */
     response: string;
+};
+
+/**
+ * FireForkRequest
+ */
+export type FireForkRequest = {
+    /**
+     * Base Exchange Id
+     */
+    base_exchange_id: string;
+    overrides: ForkOverrides;
+    /**
+     * N Samples
+     */
+    n_samples?: number;
+};
+
+/**
+ * ForkOut
+ */
+export type ForkOut = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Base Exchange Id
+     */
+    base_exchange_id: string;
+    /**
+     * Overrides
+     */
+    overrides: {
+        [key: string]: unknown;
+    };
+    /**
+     * Overrides Hash
+     */
+    overrides_hash: string;
+    /**
+     * Sample Index
+     */
+    sample_index: number;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Temperature
+     */
+    temperature: number | null;
+    /**
+     * Response Text
+     */
+    response_text: string | null;
+    /**
+     * Tool Calls
+     */
+    tool_calls: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Stop Reason
+     */
+    stop_reason: string | null;
+    /**
+     * Input Tokens
+     */
+    input_tokens: number | null;
+    /**
+     * Output Tokens
+     */
+    output_tokens: number | null;
+    /**
+     * Cache Creation Input Tokens
+     */
+    cache_creation_input_tokens: number | null;
+    /**
+     * Cache Read Input Tokens
+     */
+    cache_read_input_tokens: number | null;
+    /**
+     * Duration Ms
+     */
+    duration_ms: number | null;
+    /**
+     * Cost Usd
+     */
+    cost_usd: number | null;
+    /**
+     * Error
+     */
+    error: string | null;
+    /**
+     * Created At
+     */
+    created_at: string | null;
+    /**
+     * Created By
+     */
+    created_by: string | null;
+};
+
+/**
+ * ForkOverrides
+ *
+ * Partial overrides for a base exchange.
+ *
+ * Fields left as ``None`` inherit from the base. ``tools`` is a full
+ * replacement — to remove a tool, omit it from the override; to add or
+ * edit one, include the desired full Anthropic tool dict
+ * (``{"name", "description", "input_schema"}``).
+ */
+export type ForkOverrides = {
+    /**
+     * System Prompt
+     */
+    system_prompt?: string | null;
+    /**
+     * User Messages
+     */
+    user_messages?: Array<{
+        [key: string]: unknown;
+    }> | null;
+    /**
+     * Tools
+     */
+    tools?: Array<{
+        [key: string]: unknown;
+    }> | null;
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * Temperature
+     */
+    temperature?: number | null;
+    /**
+     * Max Tokens
+     */
+    max_tokens?: number | null;
 };
 
 /**
@@ -4070,6 +4260,153 @@ export type GetDiagnosticsApiVersusDiagnosticsGetResponses = {
 };
 
 export type GetDiagnosticsApiVersusDiagnosticsGetResponse = GetDiagnosticsApiVersusDiagnosticsGetResponses[keyof GetDiagnosticsApiVersusDiagnosticsGetResponses];
+
+export type GetBaseApiExchangeForksBaseExchangeIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Exchange Id
+         */
+        exchange_id: string;
+    };
+    query?: never;
+    url: '/api/exchange-forks/base/{exchange_id}';
+};
+
+export type GetBaseApiExchangeForksBaseExchangeIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetBaseApiExchangeForksBaseExchangeIdGetError = GetBaseApiExchangeForksBaseExchangeIdGetErrors[keyof GetBaseApiExchangeForksBaseExchangeIdGetErrors];
+
+export type GetBaseApiExchangeForksBaseExchangeIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: BaseExchangeOut;
+};
+
+export type GetBaseApiExchangeForksBaseExchangeIdGetResponse = GetBaseApiExchangeForksBaseExchangeIdGetResponses[keyof GetBaseApiExchangeForksBaseExchangeIdGetResponses];
+
+export type ListForksApiExchangeForksGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Base Exchange Id
+         */
+        base_exchange_id: string;
+    };
+    url: '/api/exchange-forks';
+};
+
+export type ListForksApiExchangeForksGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListForksApiExchangeForksGetError = ListForksApiExchangeForksGetErrors[keyof ListForksApiExchangeForksGetErrors];
+
+export type ListForksApiExchangeForksGetResponses = {
+    /**
+     * Response List Forks Api Exchange Forks Get
+     *
+     * Successful Response
+     */
+    200: Array<ForkOut>;
+};
+
+export type ListForksApiExchangeForksGetResponse = ListForksApiExchangeForksGetResponses[keyof ListForksApiExchangeForksGetResponses];
+
+export type FireApiExchangeForksPostData = {
+    body: FireForkRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/exchange-forks';
+};
+
+export type FireApiExchangeForksPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FireApiExchangeForksPostError = FireApiExchangeForksPostErrors[keyof FireApiExchangeForksPostErrors];
+
+export type FireApiExchangeForksPostResponses = {
+    /**
+     * Response Fire Api Exchange Forks Post
+     *
+     * Successful Response
+     */
+    200: Array<ForkOut>;
+};
+
+export type FireApiExchangeForksPostResponse = FireApiExchangeForksPostResponses[keyof FireApiExchangeForksPostResponses];
+
+export type DeleteForkApiExchangeForksForkIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Fork Id
+         */
+        fork_id: string;
+    };
+    query?: never;
+    url: '/api/exchange-forks/{fork_id}';
+};
+
+export type DeleteForkApiExchangeForksForkIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteForkApiExchangeForksForkIdDeleteError = DeleteForkApiExchangeForksForkIdDeleteErrors[keyof DeleteForkApiExchangeForksForkIdDeleteErrors];
+
+export type DeleteForkApiExchangeForksForkIdDeleteResponses = {
+    /**
+     * Response Delete Fork Api Exchange Forks  Fork Id  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: boolean;
+    };
+};
+
+export type DeleteForkApiExchangeForksForkIdDeleteResponse = DeleteForkApiExchangeForksForkIdDeleteResponses[keyof DeleteForkApiExchangeForksForkIdDeleteResponses];
 
 export type HealthzHealthzGetData = {
     body?: never;

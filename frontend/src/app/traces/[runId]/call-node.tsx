@@ -18,6 +18,7 @@ import { useStagedRun } from "@/lib/staged-run-context";
 import { withStagedRun } from "@/lib/staged-run-href";
 import { traceKeys } from "@/lib/queries";
 import type { SequenceNode } from "./trace-viewer";
+import { ForkPanel, ForkTrigger } from "./fork-panel";
 
 type TraceEvent = GetCallEventsApiCallsCallIdEventsGetResponse[number];
 
@@ -865,6 +866,7 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
   const [exchangeDetail, setExchangeDetail] = useState<LlmExchangeOut | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [exchangeLoading, setExchangeLoading] = useState(false);
+  const [forkOpen, setForkOpen] = useState(false);
 
   async function toggleExchange() {
     if (!isExchange) return;
@@ -938,6 +940,22 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
 
       {isExchange && exchangeOpen && exchangeDetail && (
         <ExchangeDetail detail={exchangeDetail} />
+      )}
+
+      {isExchange && exchangeOpen && exchangeDetail && (
+        <ForkTrigger
+          exchangeId={event.exchange_id}
+          loadedDetail={exchangeDetail}
+          open={forkOpen}
+          onOpen={() => setForkOpen((v) => !v)}
+        />
+      )}
+      {isExchange && forkOpen && exchangeDetail && (
+        <ForkPanel
+          exchangeId={event.exchange_id}
+          exchangeDetail={exchangeDetail}
+          onClose={() => setForkOpen(false)}
+        />
       )}
 
       {event.event === "context_built" && <ContextBuiltBody event={event} />}

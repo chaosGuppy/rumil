@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from postgrest.exceptions import APIError
@@ -38,6 +38,9 @@ from rumil.models import (
 )
 from rumil.settings import get_settings
 from supabase import AsyncClient, acreate_client
+
+if TYPE_CHECKING:
+    from rumil.forks import ForkRow
 
 # Supabase SDK types APIResponse.data as JSON | None, but table queries
 # always return list[dict]. We cast to this alias for clarity.
@@ -2864,6 +2867,107 @@ class DB:
             )
         )
         return rows[0] if rows else None
+
+    async def save_fork(
+        self,
+        *,
+        base_exchange_id: str,
+        overrides: dict,
+        overrides_hash: str,
+        sample_index: int,
+        model: str,
+        temperature: float | None,
+        response_text: str | None,
+        tool_calls: Sequence[dict],
+        stop_reason: str | None,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        cache_creation_input_tokens: int | None,
+        cache_read_input_tokens: int | None,
+        duration_ms: int | None,
+        cost_usd: float | None,
+        error: str | None,
+        created_by: str | None,
+    ) -> "ForkRow":
+        from rumil.forks import ForkRow
+
+        row: dict[str, Any] = {
+            "id": str(uuid.uuid4()),
+            "base_exchange_id": base_exchange_id,
+            "overrides": overrides,
+            "overrides_hash": overrides_hash,
+            "sample_index": sample_index,
+            "model": model,
+            "temperature": temperature,
+            "response_text": response_text,
+            "tool_calls": list(tool_calls),
+            "stop_reason": stop_reason,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_creation_input_tokens": cache_creation_input_tokens,
+            "cache_read_input_tokens": cache_read_input_tokens,
+            "duration_ms": duration_ms,
+            "cost_usd": cost_usd,
+            "error": error,
+            "created_by": created_by,
+        }
+        result = await self._execute(self.client.table("exchange_forks").insert(row))
+        inserted = _rows(result)[0] if _rows(result) else row
+        return ForkRow(
+            id=inserted["id"],
+            base_exchange_id=inserted["base_exchange_id"],
+            overrides=inserted["overrides"],
+            overrides_hash=inserted["overrides_hash"],
+            sample_index=inserted["sample_index"],
+            model=inserted["model"],
+            temperature=inserted.get("temperature"),
+            response_text=inserted.get("response_text"),
+            tool_calls=inserted.get("tool_calls") or [],
+            stop_reason=inserted.get("stop_reason"),
+            input_tokens=inserted.get("input_tokens"),
+            output_tokens=inserted.get("output_tokens"),
+            cache_creation_input_tokens=inserted.get("cache_creation_input_tokens"),
+            cache_read_input_tokens=inserted.get("cache_read_input_tokens"),
+            duration_ms=inserted.get("duration_ms"),
+            cost_usd=inserted.get("cost_usd"),
+            error=inserted.get("error"),
+            created_at=inserted.get("created_at"),
+            created_by=inserted.get("created_by"),
+        )
+
+    async def get_max_fork_sample_index(
+        self, base_exchange_id: str, overrides_hash: str
+    ) -> int | None:
+        rows = _rows(
+            await self._execute(
+                self.client.table("exchange_forks")
+                .select("sample_index")
+                .eq("base_exchange_id", base_exchange_id)
+                .eq("overrides_hash", overrides_hash)
+                .order("sample_index", desc=True)
+                .limit(1)
+            )
+        )
+        return rows[0]["sample_index"] if rows else None
+
+    async def list_forks_for_exchange(self, base_exchange_id: str) -> list[dict[str, Any]]:
+        return _rows(
+            await self._execute(
+                self.client.table("exchange_forks")
+                .select("*")
+                .eq("base_exchange_id", base_exchange_id)
+                .order("created_at")
+            )
+        )
+
+    async def get_fork(self, fork_id: str) -> dict[str, Any] | None:
+        rows = _rows(
+            await self._execute(self.client.table("exchange_forks").select("*").eq("id", fork_id))
+        )
+        return rows[0] if rows else None
+
+    async def delete_fork(self, fork_id: str) -> None:
+        await self._execute(self.client.table("exchange_forks").delete().eq("id", fork_id))
 
     async def get_call_rows_for_run(self, run_id: str) -> list[dict]:
         return _rows(

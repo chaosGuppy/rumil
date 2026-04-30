@@ -149,17 +149,30 @@ default; the user must name one. For the `ws` / `orch` variants to do
 better than text-only judgment, that workspace should have material
 relevant to the essays' topics.
 
-By default `ws` / `orch` runs are **staged** (`staged=True` on
-rumil's DB). The agent still reads baseline workspace material
-normally, but any pages versus creates during the run (the per-pair
-Question, plus the orchestrator's research subtree for `orch`) are
-scoped to the run's staged view — invisible to other readers of the
-workspace. Pass `--persist` to disable staging and write pages to the
-baseline. Pages are also tagged `extra.source = "versus"` in both
-modes, so filtering after the fact is possible.
+**Prod has a dedicated `versus` workspace** (intentionally empty) for
+ws/orch runs from versus. Pass `--workspace versus --prod` to use it.
+Reusing one shared workspace keeps the staged subtrees from each run
+discoverable in one place. New workspaces must be created explicitly
+via rumil's main.py before a `--prod` ws/orch run — the resolver
+fails-loud on missing names (typo protection).
 
-Supabase must be running locally (`supabase start` in the rumil repo)
-for both `ws` and `orch` variants.
+By default `ws` / `orch` runs are **staged** (`staged=True` on
+rumil's DB) on both local and prod. The agent still reads baseline
+workspace material normally, but any pages versus creates during the
+run (the per-pair Question, plus the orchestrator's research subtree
+for `orch`) are scoped to the run's staged view — invisible to other
+readers of the workspace. Pass `--persist` to disable staging and
+write pages to the baseline. Pages are also tagged
+`extra.source = "versus"` in both modes, so filtering after the fact
+is possible.
+
+For local runs, Supabase must be running (`supabase start` in the
+rumil repo). For `--prod` runs, no local Supabase needed — the script
+writes to prod versus_db AND prod rumil DB. Note: with prod runs, the
+trace URL printed (`/traces/<run_id>`) points at the local frontend's
+configured `frontend_url` — you may need to point your local frontend
+at the prod API or visit `rumil.ink/traces/<run_id>` directly to see
+the trace.
 
 ## Invocation
 

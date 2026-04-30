@@ -137,12 +137,15 @@ config and re-running fills gaps without clobbering.
 
 ## Env
 
-- `OPENROUTER_API_KEY` — required for all three. Not in any `.env`
-  in the repo; must be in the shell environment. If the user hits
-  `RuntimeError: OPENROUTER_API_KEY not set`, point at their shell
-  profile — don't try to write it into `.env`.
-- `ANTHROPIC_API_KEY` — only needed by `rumil-versus-judge`, not this
-  skill.
+Both keys are needed depending on which models run:
+
+- `OPENROUTER_API_KEY` — required for any non-claude model
+  (gemini, gpt-5.4, etc.). Routed via OpenRouter.
+- `ANTHROPIC_API_KEY` — required for any `claude-*` / `anthropic/...`
+  model. Both `run_completions.py` and `run_paraphrases.py` apply
+  the env cascade (versus/.env, then rumil/.env, then process env),
+  matching what `run_rumil_judgments.py` does, so per-project `.env`
+  files take precedence over the shell env.
 
 ## Common gotchas
 

@@ -1,0 +1,366 @@
+"""Exchange forks: side-effect-free re-runs of a captured LLM exchange
+with edited overrides.
+
+Forks are admin-only operator state. They never write to pages, links, or
+mutation_events; they don't participate in the staged-runs visibility model;
+no trace events are recorded. The base exchange is the canonical starting
+point — overrides replace specific fields, samples are fired in parallel,
+and rows persist to ``exchange_forks`` for side-by-side viewing.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import logging
+import time
+from dataclasses import dataclass
+
+import anthropic
+from anthropic.types import (
+    ServerToolUseBlock,
+    TextBlock,
+    ToolUseBlock,
+    WebSearchToolResultBlock,
+)
+from pydantic import BaseModel
+from tenacity import retry, retry_if_exception, wait_exponential
+
+from rumil.available_moves import get_moves_for_call
+from rumil.database import DB
+from rumil.llm import (
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TEMPERATURE,
+    _effort_level,
+    _is_retryable,
+    _log_before_retry,
+    _stop_after_status_retries,
+    _supports_sampling_params,
+    _thinking_config,
+)
+from rumil.models import CallType
+from rumil.moves.registry import MOVES
+from rumil.pricing import compute_cost
+from rumil.settings import get_settings
+
+log = logging.getLogger(__name__)
+
+
+_fork_retry = retry(
+    retry=retry_if_exception(_is_retryable),
+    stop=_stop_after_status_retries,
+    wait=wait_exponential(multiplier=1, min=1, max=60),
+    before_sleep=_log_before_retry,
+    reraise=True,
+)
+
+
+class ForkOverrides(BaseModel):
+    """Partial overrides for a base exchange.
+
+    Fields left as ``None`` inherit from the base. ``tools`` is a full
+    replacement — to remove a tool, omit it from the override; to add or
+    edit one, include the desired full Anthropic tool dict
+    (``{"name", "description", "input_schema"}``).
+
+    ``thinking_off`` toggles adaptive thinking off for models that have it
+    enabled by default (Opus 4.7/4.6, Sonnet 4.6). Leaving as ``None``
+    inherits the model's default behavior; ``True`` disables thinking even
+    on models where it's normally always-on.
+    """
+
+    system_prompt: str | None = None
+    user_messages: list[dict] | None = None
+    tools: list[dict] | None = None
+    model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    thinking_off: bool | None = None
+
+
+@dataclass
+class BaseExchange:
+    """Reconstructed base exchange — what the original API call sent."""
+
+    exchange_id: str
+    call_id: str
+    call_type: CallType | None
+    system_prompt: str
+    user_messages: list[dict]
+    tools: list[dict]
+    model: str
+    temperature: float | None
+    max_tokens: int
+    has_thinking: bool
+    thinking_off: bool
+
+
+@dataclass
+class ForkRow:
+    """A single persisted fork sample row."""
+
+    id: str
+    base_exchange_id: str
+    overrides: dict
+    overrides_hash: str
+    sample_index: int
+    model: str
+    temperature: float | None
+    response_text: str | None
+    tool_calls: list[dict]
+    stop_reason: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cache_creation_input_tokens: int | None
+    cache_read_input_tokens: int | None
+    duration_ms: int | None
+    cost_usd: float | None
+    error: str | None
+    created_at: str | None = None
+    created_by: str | None = None
+
+
+def hash_overrides(overrides: dict) -> str:
+    """Stable 16-char hash of normalized overrides JSON. Drops null values."""
+    cleaned = {k: v for k, v in overrides.items() if v is not None}
+    payload = json.dumps(cleaned, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def move_type_to_tool_dict(move_type) -> dict:
+    """Build an Anthropic tool dict for a MoveType from the moves registry."""
+    move_def = MOVES[move_type]
+    return {
+        "name": move_def.name,
+        "description": move_def.description,
+        "input_schema": move_def.schema.model_json_schema(),
+    }
+
+
+async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
+    """Load the base exchange row and reconstruct its API inputs.
+
+    The exchange row carries the verbatim system prompt and user message(s).
+    The tool list is rebuilt from the parent call's call_type via the active
+    available_moves preset — exchange rows don't store tools directly, so
+    this is a best-effort reconstruction.
+
+    The model isn't stored on the exchange row either, so we fall back to
+    ``settings.model`` — operators can override explicitly if they want
+    something else.
+    """
+    row = await db.get_llm_exchange(base_exchange_id)
+    if row is None:
+        raise ValueError(f"No exchange found with id {base_exchange_id}")
+
+    user_messages = row.get("user_messages")
+    if not user_messages:
+        single = row.get("user_message")
+        user_messages = [{"role": "user", "content": single}] if single else []
+
+    call_type: CallType | None = None
+    tools: list[dict] = []
+    if row.get("call_id"):
+        call = await db.get_call(row["call_id"])
+        if call is not None:
+            call_type = call.call_type
+            try:
+                move_types = get_moves_for_call(call_type)
+                tools = [move_type_to_tool_dict(mt) for mt in move_types]
+            except (ValueError, KeyError) as exc:
+                log.warning(
+                    "Could not reconstruct tools for call_type=%s: %s",
+                    call_type,
+                    exc,
+                )
+
+    settings = get_settings()
+    return BaseExchange(
+        exchange_id=base_exchange_id,
+        call_id=row.get("call_id", ""),
+        call_type=call_type,
+        system_prompt=row.get("system_prompt") or "",
+        user_messages=list(user_messages),
+        tools=tools,
+        model=settings.model,
+        temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(settings.model) else None,
+        max_tokens=DEFAULT_MAX_TOKENS,
+        has_thinking=_thinking_config(settings.model) is not None,
+        thinking_off=False,
+    )
+
+
+def merge_overrides(base: BaseExchange, overrides: ForkOverrides) -> BaseExchange:
+    """Apply non-null override fields onto the base."""
+    merged_model = overrides.model if overrides.model is not None else base.model
+    return BaseExchange(
+        exchange_id=base.exchange_id,
+        call_id=base.call_id,
+        call_type=base.call_type,
+        system_prompt=overrides.system_prompt
+        if overrides.system_prompt is not None
+        else base.system_prompt,
+        user_messages=overrides.user_messages
+        if overrides.user_messages is not None
+        else base.user_messages,
+        tools=overrides.tools if overrides.tools is not None else base.tools,
+        model=merged_model,
+        temperature=overrides.temperature
+        if overrides.temperature is not None
+        else base.temperature,
+        max_tokens=overrides.max_tokens if overrides.max_tokens is not None else base.max_tokens,
+        has_thinking=_thinking_config(merged_model) is not None,
+        thinking_off=overrides.thinking_off
+        if overrides.thinking_off is not None
+        else base.thinking_off,
+    )
+
+
+def build_kwargs(merged: BaseExchange) -> dict:
+    """Build Anthropic messages.create kwargs from a merged base+overrides."""
+    kwargs: dict = {
+        "model": merged.model,
+        "max_tokens": merged.max_tokens,
+        "system": merged.system_prompt,
+        "messages": merged.user_messages,
+    }
+    if _supports_sampling_params(merged.model) and merged.temperature is not None:
+        kwargs["temperature"] = merged.temperature
+    if not merged.thinking_off and (thinking := _thinking_config(merged.model)) is not None:
+        kwargs["thinking"] = thinking
+    if (effort := _effort_level(merged.model)) is not None:
+        kwargs["output_config"] = {"effort": effort}
+    if merged.tools:
+        kwargs["tools"] = merged.tools
+    return kwargs
+
+
+def _extract_response(response: anthropic.types.Message) -> tuple[str | None, list[dict]]:
+    """Pull text and tool_use blocks out of a response message."""
+    text_parts: list[str] = []
+    tool_calls: list[dict] = []
+    for block in response.content:
+        if isinstance(block, TextBlock):
+            text_parts.append(block.text)
+        elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
+            tool_calls.append({"name": block.name, "input": block.input})
+        elif isinstance(block, WebSearchToolResultBlock):
+            tool_calls.append(
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": block.tool_use_id,
+                    "content": block.model_dump(mode="json")["content"],
+                }
+            )
+    return ("\n".join(text_parts) or None), tool_calls
+
+
+@_fork_retry
+async def _do_call(
+    client: anthropic.AsyncAnthropic, kwargs: dict
+) -> tuple[anthropic.types.Message, int]:
+    start = time.monotonic()
+    response = await client.messages.create(**kwargs)
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+    return response, elapsed_ms
+
+
+async def _fire_one_sample(client: anthropic.AsyncAnthropic, kwargs: dict, model: str) -> dict:
+    """Fire a single sample. Returns a partial row dict (no id/index yet)."""
+    try:
+        response, elapsed_ms = await _do_call(client, kwargs)
+    except Exception as exc:
+        log.error("Fork sample failed: %s", exc, exc_info=True)
+        return {
+            "model": model,
+            "error": f"{type(exc).__name__}: {exc}",
+            "duration_ms": None,
+            "response_text": None,
+            "tool_calls": [],
+            "stop_reason": None,
+            "input_tokens": None,
+            "output_tokens": None,
+            "cache_creation_input_tokens": None,
+            "cache_read_input_tokens": None,
+            "cost_usd": None,
+        }
+    response_text, tool_calls = _extract_response(response)
+    cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+    cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+    cost_usd = compute_cost(
+        model=model,
+        input_tokens=response.usage.input_tokens,
+        output_tokens=response.usage.output_tokens,
+        cache_creation_input_tokens=cache_creation,
+        cache_read_input_tokens=cache_read,
+    )
+    return {
+        "model": model,
+        "error": None,
+        "duration_ms": elapsed_ms,
+        "response_text": response_text,
+        "tool_calls": tool_calls,
+        "stop_reason": response.stop_reason,
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+        "cache_creation_input_tokens": cache_creation or None,
+        "cache_read_input_tokens": cache_read or None,
+        "cost_usd": cost_usd or None,
+    }
+
+
+async def fire_fork(
+    db: DB,
+    base_exchange_id: str,
+    overrides: ForkOverrides,
+    n_samples: int,
+    *,
+    created_by: str | None = None,
+) -> list[ForkRow]:
+    """Fire ``n_samples`` parallel forks of a base exchange.
+
+    Tools provided to the API are *not executed* — any ``tool_use`` blocks
+    in the response are returned as data only. No trace events, no workspace
+    mutation, no participation in staged runs.
+    """
+    if n_samples < 1:
+        raise ValueError(f"n_samples must be >= 1, got {n_samples}")
+
+    base = await resolve_base(db, base_exchange_id)
+    merged = merge_overrides(base, overrides)
+    kwargs = build_kwargs(merged)
+
+    overrides_dict = overrides.model_dump(exclude_none=True)
+    overrides_hash = hash_overrides(overrides_dict)
+
+    settings = get_settings()
+    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+
+    results = await asyncio.gather(
+        *(_fire_one_sample(client, kwargs, merged.model) for _ in range(n_samples)),
+        return_exceptions=False,
+    )
+
+    rows: list[ForkRow] = []
+    for result in results:
+        row = await db.save_fork(
+            base_exchange_id=base_exchange_id,
+            overrides=overrides_dict,
+            overrides_hash=overrides_hash,
+            model=result["model"],
+            temperature=merged.temperature,
+            response_text=result["response_text"],
+            tool_calls=result["tool_calls"],
+            stop_reason=result["stop_reason"],
+            input_tokens=result["input_tokens"],
+            output_tokens=result["output_tokens"],
+            cache_creation_input_tokens=result["cache_creation_input_tokens"],
+            cache_read_input_tokens=result["cache_read_input_tokens"],
+            duration_ms=result["duration_ms"],
+            cost_usd=result["cost_usd"],
+            error=result["error"],
+            created_by=created_by,
+        )
+        rows.append(row)
+    return rows

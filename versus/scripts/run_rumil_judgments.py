@@ -187,8 +187,12 @@ def main() -> None:
         action="store_true",
         help=(
             "Target the production Supabase database for versus_texts / "
-            "versus_judgments (default: local). Blind path only — ws/orch "
-            "still hit local rumil DB."
+            "versus_judgments AND, on ws/orch, the rumil workspace + run "
+            "tables (default: local for both). On ws/orch, the workspace "
+            "named via --workspace must already exist on the target DB "
+            "(typo protection — create via rumil main.py first). ws/orch "
+            "runs are still staged by default; pass --persist to write the "
+            "per-pair Question + research subtree to baseline."
         ),
     )
     ap.add_argument(
@@ -264,13 +268,6 @@ def main() -> None:
     if not args.workspace:
         ap.error(f"--workspace is required for --variant {args.variant}")
 
-    if args.prod:
-        ap.error(
-            f"--prod is not yet wired through --variant {args.variant}; "
-            "the blind path is the only prod-aware judge today. ws/orch "
-            "would need DB.create(prod=...) plumbing in rumil_judge.py too."
-        )
-
     if prefix_cfgs is not None and len(prefix_cfgs) > 1:
         ap.error(
             f"--variant {args.variant} takes at most one --prefix-label "
@@ -296,6 +293,7 @@ def main() -> None:
                 current_only=args.current_only,
                 prefix_cfg=prefix_cfg_one,
                 persist=args.persist,
+                prod=args.prod,
             )
         )
     elif args.variant == "orch":
@@ -315,6 +313,7 @@ def main() -> None:
                 current_only=args.current_only,
                 prefix_cfg=prefix_cfg_one,
                 persist=args.persist,
+                prod=args.prod,
             )
         )
 

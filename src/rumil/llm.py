@@ -203,10 +203,23 @@ _SCOUT_BUDGET_CALL_TYPES: frozenset[str] = frozenset(
 def build_system_prompt(
     call_type: str,
     *,
+    task: str | None = None,
     include_preamble: bool = True,
+    include_per_call: bool = True,
     include_citations: bool = True,
 ) -> str:
     """Combine preamble + call-type instructions + citations into one system prompt.
+
+    Pass ``task`` to substitute into the preamble's ``{{TASK}}`` placeholder — a
+    short natural-language summary of what this call is doing. The model "holds"
+    this while reading the rest of the methodology. If ``task`` is None, the
+    placeholder is replaced with a generic placeholder line.
+
+    Pass ``include_per_call=False`` for calls following the new architecture
+    where the per-call instructions live in the user message instead of the
+    system prompt. When False, only preamble + citations + grounding are
+    included; the caller is responsible for putting the per-call file's content
+    into the user message via ``build_user_message(call_type=...)``.
 
     Pass ``include_citations=False`` for calls that do not create any content-bearing
     pages (e.g. prioritization, scoring) — the inline-citation rules have nothing to
@@ -217,12 +230,15 @@ def build_system_prompt(
     a domain-neutral writer with only a spec for context). When preamble is off,
     citations and grounding are also skipped since they're workspace-specific.
     """
-    instructions = _load_file(f"{call_type}.md")
     if not include_preamble:
-        return instructions
+        return _load_file(f"{call_type}.md")
     preamble = _load_file("preamble.md")
+    task_text = task if task is not None else "(see the user message for the specific task)"
+    preamble = preamble.replace("{{TASK}}", task_text)
     grounding = _load_file("grounding.md")
-    parts = [preamble, instructions]
+    parts: list[str] = [preamble]
+    if include_per_call:
+        parts.append(_load_file(f"{call_type}.md"))
     if include_citations:
         parts.append(_load_file("citations.md"))
     parts.append(grounding)
@@ -235,11 +251,27 @@ def build_system_prompt(
     return "\n\n---\n\n".join(parts)
 
 
-def build_user_message(context_text: str, task_description: str) -> str:
-    """Combine context dump + specific task into one user message."""
+def build_user_message(
+    context_text: str,
+    task_description: str,
+    *,
+    call_type: str | None = None,
+) -> str:
+    """Combine context dump + (optional) per-call instructions + specific task.
+
+    Pass ``call_type`` to load the per-call instructions file
+    (``<call_type>.md``) and include it between the context and the task. This
+    is for the new architecture where per-call instructions live in the user
+    message rather than the system prompt; ``build_system_prompt`` should be
+    called with ``include_per_call=False`` in this case.
+    """
+    parts: list[str] = []
     if context_text:
-        return f"{context_text}\n\n---\n\n{task_description}"
-    return task_description
+        parts.append(context_text)
+    if call_type is not None:
+        parts.append(_load_file(f"{call_type}.md"))
+    parts.append(task_description)
+    return "\n\n---\n\n".join(parts)
 
 
 _CACHE_BREAKPOINT = {"type": "ephemeral"}

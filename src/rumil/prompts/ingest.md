@@ -1,46 +1,98 @@
-# Ingest Call Instructions
+## the task
 
-## Your Task
+you're doing an **ingest** call — reading a source document and
+extracting its research value into the workspace.
 
-You are performing an **Ingest** call — reading a source document and extracting its research value into the workspace.
+you have a **primary question** (given in your task), but your
+extraction scope is broader than that question alone. extract
+everything of genuine research value from this document, with the
+primary question as your main focus. content that bears strongly on
+other workspace questions should not be ignored just because it
+doesn't bear on the primary question.
 
-You have a **primary question** (given in your task), but your extraction scope is broader than that question alone. Your job is to extract everything of genuine research value from this document, with the primary question as your main focus. Content that bears strongly on other workspace questions should not be ignored just because it doesn't bear on the primary question.
+**you are evaluating the source, not accepting it.** treat its
+claims as evidence to be weighed, not truth to be transcribed. apply
+the same critical standards you would to any other consideration.
 
-**You are evaluating the source, not accepting it.** Treat its claims as evidence to be weighed, not truth to be transcribed. Apply the same critical standards you would to any other consideration.
+use `load_page` to pull in other source documents for comparison,
+or existing considerations and judgements that would help you
+calibrate what to extract.
 
-Use `load_page` to pull in other source documents for comparison, or existing considerations and judgements that would help you calibrate what to extract.
+## a few moves
 
-## Assessing the Source
+before extracting, name the cached take this source likely produces.
+sources arrive with their own framing — what's the obvious view a
+reader would absorb on autopilot? write it down. now ask: do the
+specific claims in this source actually support that framing, or is
+the framing doing more work than the evidence?
 
-Before extracting, consider:
-- **Source type:** academic paper, industry report, news article, opinion piece, internal analysis, blog post? Each carries different baseline confidence.
-- **Perspective and incentives:** Does the author or institution have a stake in the question? Does the framing suggest a particular agenda?
-- **Evidence quality:** Are claims supported by data, argument, or assertion? Primary evidence or secondary?
+attack each candidate consideration before staking it. is the
+underlying evidence strong (primary source, replicated, well-
+established), or is the source asserting more than it has shown? is
+the framing potentially shaped by author/institution incentives?
+the same finding from a peer-reviewed paper and from an
+industry-funded report should not get the same robustness.
 
-Calibrate your `credence` and `robustness` accordingly. A well-evidenced finding from a peer-reviewed paper might warrant credence 7 and robustness 3–4. A claim from an industry-funded report should have lower robustness, reflecting the potential for bias. Every score needs its paired `credence_reasoning` / `robustness_reasoning` per the preamble rubric — in robustness_reasoning, spell out the source-quality logic (peer-reviewed replication, single primary source, industry-funded write-up, etc.).
+## assessing the source
 
-## What to Produce
+before extracting, consider:
+- **source type:** academic paper, industry report, news article,
+  opinion piece, internal analysis, blog post? each carries
+  different baseline confidence.
+- **perspective and incentives:** does the author or institution
+  have a stake in the question? does the framing suggest a
+  particular agenda?
+- **evidence quality:** are claims supported by data, argument, or
+  assertion? primary evidence or secondary?
 
-### Primary extraction
+calibrate your `credence` and `robustness` accordingly. a
+well-evidenced finding from a peer-reviewed paper might warrant
+credence 7 and robustness 3-4. a claim from an industry-funded
+report should have lower robustness, reflecting the potential for
+bias. every score needs its paired reasoning field — in
+`robustness_reasoning`, spell out the source-quality logic
+(peer-reviewed replication, single primary source, industry-funded
+write-up, etc.).
 
-Quality over quantity — if only 2 genuinely matter, produce 2. The task description specifies an approximate target count; treat it as guidance, not a quota.
+## what to produce
 
-For each consideration, create the claim and link it to the primary question. Cite the source inline using its `[shortid]` so the link is auto-created.
+### primary extraction
 
-### Cross-question extraction
+quality over quantity — if only 2 genuinely matter, produce 2. the
+task description specifies an approximate target count; treat it as
+guidance, not a quota.
 
-If the source contains material that bears strongly on a *different* workspace question, extract it and link it to that question instead.
+for each consideration, create the claim and link it to the primary
+question. cite the source inline using its `[shortid]` so the link
+is auto-created.
 
-If the source raises an important question not yet in the workspace, create it.
+### cross-question extraction
 
-### Hypothesis questions
+if the source contains material that bears strongly on a *different*
+workspace question, extract it and link it to that question instead.
 
-If the source proposes or strongly implies a candidate answer to a workspace question — even one you think is probably wrong — register it as a hypothesis. This is worth doing because engaging with it seriously might yield useful insights, even if the hypothesis is ultimately rejected.
+if the source raises an important question not yet in the workspace,
+create it.
 
-## Quality Bar
+### hypothesis questions
 
-- **Attribution is required.** Every claim's content must begin with "According to [filename]:" so its provenance is always visible.
-- **Your epistemic assessment matters.** Don't just relay what the document says — tell the reader how much to trust it and why.
-- **Strength should reflect both content and reliability.** A finding that strongly bears on a question from a low-credibility source warrants lower strength than the same finding from a high-credibility one.
-- **Do not duplicate existing considerations** already in the workspace context.
-- **Cross-question and hypothesis extraction is secondary.** If the document is rich on the primary question, prioritise that. Don't let peripheral extraction crowd out the main job.
+if the source proposes or strongly implies a candidate answer to a
+workspace question — even one you think is probably wrong —
+register it as a hypothesis. engaging with it seriously might yield
+useful insights, even if it's ultimately rejected.
+
+## quality bar
+
+- **attribution is required.** every claim's content must begin with
+  "according to [filename]:" so its provenance is always visible.
+- **your epistemic assessment matters.** don't just relay what the
+  document says — tell the reader how much to trust it and why.
+- **strength should reflect both content and reliability.** a
+  finding that strongly bears on a question from a low-credibility
+  source warrants lower strength than the same finding from a
+  high-credibility one.
+- **don't duplicate existing considerations** already in the
+  workspace context.
+- **cross-question and hypothesis extraction is secondary.** if the
+  document is rich on the primary question, prioritise that. don't
+  let peripheral extraction crowd out the main job.

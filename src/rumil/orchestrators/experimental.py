@@ -426,6 +426,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             "Do not do anything else — just dispatch."
         )
 
+        question = await self.db.get_page(question_id)
+        embed_task = (
+            f'the question being investigated: "{question.headline}"\n\n'
+            "fan-out scouting prioritization."
+            if question
+            else "fan-out scouting prioritization."
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -437,8 +444,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             ),
             system_prompt=build_system_prompt(
                 "two_phase_initial_prioritization",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="two_phase_initial_prioritization",
         )
 
         dispatches = list(result.dispatches)
@@ -642,6 +652,13 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if dispatch_budget >= MIN_TWOPHASE_BUDGET:
             extra_defs.append(RECURSE_DISPATCH_DEF)
 
+        question = await self.db.get_page(question_id)
+        embed_task = (
+            f'the question being investigated: "{question.headline}"\n\n'
+            "main-phase prioritization (experimental) across open lines of research."
+            if question
+            else "main-phase prioritization (experimental)."
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -654,8 +671,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
                 "two_phase_main_phase_prioritization_experimental",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="two_phase_main_phase_prioritization_experimental",
             dispatch_budget=dispatch_budget,
         )
 

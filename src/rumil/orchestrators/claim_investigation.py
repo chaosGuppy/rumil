@@ -351,6 +351,13 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             "Do not do anything else — just dispatch."
         )
 
+        claim = await self.db.get_page(claim_id)
+        embed_task = (
+            f'the claim being investigated: "{claim.headline}"\n\n'
+            "fan-out scouting prioritization for claim investigation."
+            if claim
+            else "fan-out scouting prioritization for claim investigation."
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -360,8 +367,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             dispatch_types=list(get_available_calls_preset().claim_phase1_scouts),
             system_prompt=build_system_prompt(
                 "claim_investigation_p1",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="claim_investigation_p1",
         )
 
         dispatches = list(result.dispatches)
@@ -573,6 +583,13 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             extra_defs.append(RECURSE_CLAIM_DISPATCH_DEF)
             extra_defs.append(RECURSE_DISPATCH_DEF)
 
+        claim = await self.db.get_page(claim_id)
+        embed_task = (
+            f'the claim being investigated: "{claim.headline}"\n\n'
+            "main-phase prioritization across open lines of claim investigation."
+            if claim
+            else "main-phase prioritization for claim investigation."
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -583,8 +600,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
                 "claim_investigation_p2",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="claim_investigation_p2",
             dispatch_budget=budget,
         )
 

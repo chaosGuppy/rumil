@@ -4,7 +4,7 @@ import logging
 import re
 from collections.abc import Sequence
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from rumil.database import DB
 from rumil.models import (
@@ -314,6 +314,15 @@ async def execute_with_source_creation(
                 None,
             )
 
-    payload = CreateClaimPayload(**inp)
+    try:
+        payload = CreateClaimPayload(**inp)
+    except ValidationError as exc:
+        # Sources may already have been scraped above; surface them on the
+        # error path so they're tracked in state.created_page_ids instead of
+        # becoming invisible-but-persisted DB rows.
+        return (
+            _attach_new_sources(MoveResult(message=f"ERROR: {exc}", created_page_id="")),
+            None,
+        )
     result = await execute(payload, call, db)
     return _attach_new_sources(result), payload

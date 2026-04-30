@@ -22,7 +22,7 @@ async def test_investigate_creates_pages(tmp_db):
     )
     await tmp_db.save_page(question)
 
-    await tmp_db.init_budget(4)
+    await tmp_db.init_budget(8)
     orch = Orchestrator(tmp_db)
     await orch.run(question.id)
 

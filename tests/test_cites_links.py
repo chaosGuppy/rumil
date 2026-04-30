@@ -67,10 +67,10 @@ async def test_cites_link_created_for_source(tmp_db, scout_call, source_page):
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
     await tool.fn(
         {
-            "headline": "Blue sky from scattering",
-            "content": "Rayleigh scattering causes blue sky.",
+            "headline": "LLMs already automate ~5% of routine cognitive labour",
+            "content": "Frontier LLMs have already displaced a measurable share of routine white-collar tasks.",
             "credence": 6,
-            "credence_reasoning": "Rayleigh scattering is textbook physics.",
+            "credence_reasoning": "Headline figure from a recent Acemoglu/Restrepo estimate.",
             "robustness": 3,
             "robustness_reasoning": "Sourced from a single page; cross-check would firm it.",
             "source_urls": [source_page.id[:8]],
@@ -122,8 +122,8 @@ async def test_multiple_cites_links(
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
     await tool.fn(
         {
-            "headline": "Combined scattering evidence",
-            "content": "Multiple sources confirm scattering.",
+            "headline": "LLM speedups concentrate at junior-analyst tasks",
+            "content": "Independent estimates and firm-internal benchmarks both show LLM gains skewed toward routine junior work.",
             "credence": 6,
             "credence_reasoning": "Multiple converging sources.",
             "robustness": 3,

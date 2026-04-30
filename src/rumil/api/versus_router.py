@@ -187,7 +187,7 @@ def _per_essay_load(kind: str, essay_id: str) -> list[dict]:
     cached = _PER_ESSAY_CACHE.get(key)
     if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
         return cached[1]
-    client = versus_db.get_client()
+    client = _versus_client()
     if kind == "judgments":
         rows = list(versus_db.iter_judgments(client, essay_id=essay_id))
     elif kind == "texts":
@@ -209,7 +209,7 @@ def _load_essay_rows() -> list[dict]:
     cached = _LIGHT_CACHE.get("essays")
     if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
         return cached[1]
-    client = versus_db.get_client()
+    client = _versus_client()
     rows = list(versus_db.iter_essays(client))
     _LIGHT_CACHE["essays"] = (now, rows)
     return rows
@@ -221,7 +221,7 @@ def _light_load(kind: str) -> list[dict]:
     cached = _LIGHT_CACHE.get(kind)
     if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
         return cached[1]
-    client = versus_db.get_client()
+    client = _versus_client()
     if kind == "judgments":
         rows = list(versus_db.iter_judgments(client, light=True))
     elif kind == "texts":
@@ -230,6 +230,16 @@ def _light_load(kind: str) -> list[dict]:
         raise ValueError(f"unknown kind: {kind}")
     _LIGHT_CACHE[kind] = (now, rows)
     return rows
+
+
+def _versus_client():
+    """Versus DB client for the current API process.
+
+    Mirrors the pattern in ``app.get_db_dependency`` / ``get_realtime_config``:
+    targets prod when ``USE_PROD_DB`` is set, local otherwise. Centralized
+    here so endpoints don't each have to thread the flag through.
+    """
+    return versus_db.get_client(prod=get_settings().is_prod_db)
 
 
 def _config_path() -> pathlib.Path:
@@ -1325,7 +1335,7 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
     is the row's primary-key UUID, so this is a direct lookup — no scan.
     """
     _cfg_required()
-    client = versus_db.get_client()
+    client = _versus_client()
     resp = client.table("versus_judgments").select("*").eq("id", key).limit(1).execute()
     if not resp.data:
         raise HTTPException(404, f"judgment key not found: {key}")

@@ -12,6 +12,11 @@ RUN uv sync --frozen --no-dev --no-editable
 FROM python:3.13-slim
 
 ENV PATH="/app/.venv/bin:$PATH"
+# The /versus router resolves config via VERSUS_CONFIG_PATH, falling back
+# to a path relative to its source file. Inside the container the package
+# is installed under .venv/lib/, so the fallback misses; set the env var
+# explicitly to the runtime-copied config below.
+ENV VERSUS_CONFIG_PATH=/app/versus/config.yaml
 EXPOSE 8000
 CMD ["uvicorn", "rumil.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
@@ -20,3 +25,4 @@ COPY --from=build /app/.venv .venv
 # main.py is the entrypoint when this image is run as an orchestrator Job
 # (see src/rumil/k8s/submit.py). It is not used by the API container itself.
 COPY main.py ./
+COPY versus/config.yaml ./versus/config.yaml

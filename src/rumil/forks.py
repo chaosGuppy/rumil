@@ -63,6 +63,11 @@ class ForkOverrides(BaseModel):
     replacement — to remove a tool, omit it from the override; to add or
     edit one, include the desired full Anthropic tool dict
     (``{"name", "description", "input_schema"}``).
+
+    ``thinking_off`` toggles adaptive thinking off for models that have it
+    enabled by default (Opus 4.7/4.6, Sonnet 4.6). Leaving as ``None``
+    inherits the model's default behavior; ``True`` disables thinking even
+    on models where it's normally always-on.
     """
 
     system_prompt: str | None = None
@@ -71,6 +76,7 @@ class ForkOverrides(BaseModel):
     model: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    thinking_off: bool | None = None
 
 
 @dataclass
@@ -86,6 +92,8 @@ class BaseExchange:
     model: str
     temperature: float | None
     max_tokens: int
+    has_thinking: bool
+    thinking_off: bool
 
 
 @dataclass
@@ -178,11 +186,14 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
         model=settings.model,
         temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(settings.model) else None,
         max_tokens=DEFAULT_MAX_TOKENS,
+        has_thinking=_thinking_config(settings.model) is not None,
+        thinking_off=False,
     )
 
 
 def merge_overrides(base: BaseExchange, overrides: ForkOverrides) -> BaseExchange:
     """Apply non-null override fields onto the base."""
+    merged_model = overrides.model if overrides.model is not None else base.model
     return BaseExchange(
         exchange_id=base.exchange_id,
         call_id=base.call_id,
@@ -194,11 +205,15 @@ def merge_overrides(base: BaseExchange, overrides: ForkOverrides) -> BaseExchang
         if overrides.user_messages is not None
         else base.user_messages,
         tools=overrides.tools if overrides.tools is not None else base.tools,
-        model=overrides.model if overrides.model is not None else base.model,
+        model=merged_model,
         temperature=overrides.temperature
         if overrides.temperature is not None
         else base.temperature,
         max_tokens=overrides.max_tokens if overrides.max_tokens is not None else base.max_tokens,
+        has_thinking=_thinking_config(merged_model) is not None,
+        thinking_off=overrides.thinking_off
+        if overrides.thinking_off is not None
+        else base.thinking_off,
     )
 
 
@@ -212,7 +227,7 @@ def build_kwargs(merged: BaseExchange) -> dict:
     }
     if _supports_sampling_params(merged.model) and merged.temperature is not None:
         kwargs["temperature"] = merged.temperature
-    if (thinking := _thinking_config(merged.model)) is not None:
+    if not merged.thinking_off and (thinking := _thinking_config(merged.model)) is not None:
         kwargs["thinking"] = thinking
     if (effort := _effort_level(merged.model)) is not None:
         kwargs["output_config"] = {"effort": effort}

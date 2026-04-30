@@ -3534,6 +3534,14 @@
           "max_tokens": {
             "type": "integer",
             "title": "Max Tokens"
+          },
+          "has_thinking": {
+            "type": "boolean",
+            "title": "Has Thinking"
+          },
+          "thinking_off": {
+            "type": "boolean",
+            "title": "Thinking Off"
           }
         },
         "type": "object",
@@ -3546,7 +3554,9 @@
           "tools",
           "model",
           "temperature",
-          "max_tokens"
+          "max_tokens",
+          "has_thinking",
+          "thinking_off"
         ],
         "title": "BaseExchangeOut",
         "description": "Reconstructed base exchange \u2014 what the fork editor pre-populates."
@@ -5301,11 +5311,22 @@
               }
             ],
             "title": "Max Tokens"
+          },
+          "thinking_off": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Off"
           }
         },
         "type": "object",
         "title": "ForkOverrides",
-        "description": "Partial overrides for a base exchange.\n\nFields left as ``None`` inherit from the base. ``tools`` is a full\nreplacement \u2014 to remove a tool, omit it from the override; to add or\nedit one, include the desired full Anthropic tool dict\n(``{\"name\", \"description\", \"input_schema\"}``)."
+        "description": "Partial overrides for a base exchange.\n\nFields left as ``None`` inherit from the base. ``tools`` is a full\nreplacement \u2014 to remove a tool, omit it from the override; to add or\nedit one, include the desired full Anthropic tool dict\n(``{\"name\", \"description\", \"input_schema\"}``).\n\n``thinking_off`` toggles adaptive thinking off for models that have it\nenabled by default (Opus 4.7/4.6, Sonnet 4.6). Leaving as ``None``\ninherits the model's default behavior; ``True`` disables thinking even\non models where it's normally always-on."
       },
       "GenJudgeCell": {
         "properties": {

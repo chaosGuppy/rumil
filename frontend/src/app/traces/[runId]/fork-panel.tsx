@@ -1,19 +1,24 @@
 "use client";
 
 /**
- * Exchange Forks panel — admin-only inline UI for re-firing a captured
- * LLM exchange with edited overrides. Side-effect-free: any tool_use
- * blocks in responses are stored as data, never executed.
+ * Exchange Forks panel — admin-only modal for re-firing a captured LLM
+ * exchange with edited overrides. Side-effect-free: any tool_use blocks
+ * in responses are stored as data, never executed.
  *
- * Layout: column-per-config with samples stacked vertically inside each
- * column. Original column is read-only and reflects the captured response.
- * Variants are loaded from /api/exchange-forks and grouped by overrides_hash.
- * "+ New variant" creates an in-memory column whose form starts empty
- * (inherits everything from base) and only persists rows once the admin
- * clicks Sample.
+ * Layout: a portal-rendered modal with a column-per-config layout. The
+ * leftmost "Original" column is read-only and reflects the captured
+ * response. Variants are loaded from /api/exchange-forks and grouped by
+ * overrides_hash. "+ New variant" creates an in-memory column whose form
+ * starts empty (inherits everything from base) and only persists rows once
+ * the admin clicks Sample.
+ *
+ * In-progress edits survive close/reopen within a session via a
+ * module-level store keyed on exchange_id + path. The store is process
+ * memory only — a hard refresh wipes it.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   BaseExchangeOut,
@@ -52,6 +57,14 @@ function modelSupportsSampling(model: string): boolean {
   return true;
 }
 
+function modelHasAdaptiveThinking(model: string): boolean {
+  return (
+    model.startsWith("claude-opus-4-7") ||
+    model.startsWith("claude-opus-4-6") ||
+    model.startsWith("claude-sonnet-4-6")
+  );
+}
+
 type Tool = { name: string; description: string; input_schema: unknown };
 type Msg = { role: string; content: unknown };
 
@@ -62,6 +75,7 @@ type DraftOverrides = {
   model: string | null;
   temperature: number | null;
   maxTokens: number | null;
+  thinkingOff: boolean | null;
 };
 
 const EMPTY_DRAFT: DraftOverrides = {
@@ -71,6 +85,7 @@ const EMPTY_DRAFT: DraftOverrides = {
   model: null,
   temperature: null,
   maxTokens: null,
+  thinkingOff: null,
 };
 
 function draftToOverrides(d: DraftOverrides): ForkOverrides {
@@ -81,6 +96,7 @@ function draftToOverrides(d: DraftOverrides): ForkOverrides {
   if (d.model !== null) o.model = d.model;
   if (d.temperature !== null) o.temperature = d.temperature;
   if (d.maxTokens !== null) o.max_tokens = d.maxTokens;
+  if (d.thinkingOff !== null) o.thinking_off = d.thinkingOff;
   return o;
 }
 
@@ -92,6 +108,7 @@ function overridesToDraft(o: ForkOverrides): DraftOverrides {
     model: o.model ?? null,
     temperature: o.temperature ?? null,
     maxTokens: o.max_tokens ?? null,
+    thinkingOff: o.thinking_off ?? null,
   };
 }
 
@@ -148,6 +165,9 @@ function diffChips(d: DraftOverrides, base: BaseExchangeOut | null): string[] {
   if (d.maxTokens !== null && d.maxTokens !== base.max_tokens) {
     chips.push(`max_tok ${d.maxTokens}`);
   }
+  if (d.thinkingOff !== null && d.thinkingOff !== base.thinking_off) {
+    chips.push(d.thinkingOff ? "thinking off" : "thinking on");
+  }
   return chips;
 }
 
@@ -163,6 +183,37 @@ function estimateCost(
   const output = (expectedOutput * rates.output) / 1_000_000;
   return (input + output) * samples;
 }
+
+// --- Module-level draft store ---------------------------------------------
+//
+// Survives ForkPanel mount/unmount within a session. Keyed by composite
+// strings like `${exchangeId}:openDrafts` or `${exchangeId}:variant:${hash}:draft`.
+// Cleared on hard refresh.
+
+const PANEL_STORE: Map<string, unknown> = new Map();
+
+function useExchangeState<T>(
+  storeKey: string,
+  defaultFactory: () => T,
+): [T, (updater: T | ((prev: T) => T)) => void] {
+  const [value, setValueRaw] = useState<T>(() => {
+    if (PANEL_STORE.has(storeKey)) return PANEL_STORE.get(storeKey) as T;
+    const fresh = defaultFactory();
+    PANEL_STORE.set(storeKey, fresh);
+    return fresh;
+  });
+  const setValue = (updater: T | ((prev: T) => T)) => {
+    setValueRaw((prev) => {
+      const next =
+        typeof updater === "function" ? (updater as (p: T) => T)(prev) : updater;
+      PANEL_STORE.set(storeKey, next);
+      return next;
+    });
+  };
+  return [value, setValue];
+}
+
+// --- ForkTrigger -----------------------------------------------------------
 
 export function ForkTrigger({
   exchangeId,
@@ -208,7 +259,63 @@ export function ForkTrigger({
   );
 }
 
+// --- ForkPanel (modal entry) ----------------------------------------------
+
 export function ForkPanel({
+  exchangeId,
+  exchangeDetail,
+  onClose,
+}: {
+  exchangeId: string;
+  exchangeDetail: LlmExchangeOut;
+  onClose: () => void;
+}) {
+  // Body scroll lock while the modal is open
+  useLayoutEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  // Escape key closes
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  // Avoid SSR mismatch when rendering through portal
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      className="fork-modal-backdrop"
+      onMouseDown={(e) => {
+        // Close only on backdrop click, not when releasing inside modal
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="fork-modal" role="dialog" aria-label="Exchange forks">
+        <PanelContent
+          exchangeId={exchangeId}
+          exchangeDetail={exchangeDetail}
+          onClose={onClose}
+        />
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// --- Modal content --------------------------------------------------------
+
+function PanelContent({
   exchangeId,
   exchangeDetail,
   onClose,
@@ -241,8 +348,6 @@ export function ForkPanel({
     },
   });
 
-  // Group existing forks by overrides_hash, preserving creation order of
-  // first-seen hash to keep column order stable as samples arrive.
   const variants = useMemo(() => {
     const byHash = new Map<string, ForkOut[]>();
     const order: string[] = [];
@@ -260,24 +365,29 @@ export function ForkPanel({
     }));
   }, [forks]);
 
-  const [openDrafts, setOpenDrafts] = useState<Record<string, DraftOverrides>>({});
-  const [pendingByDraft, setPendingByDraft] = useState<Record<string, number>>({});
-
-  function newVariantKey(): string {
-    return `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  }
+  // Drafts for not-yet-fired variants (persisted in PANEL_STORE)
+  const [draftKeys, setDraftKeys] = useExchangeState<string[]>(
+    `${exchangeId}:draftKeys`,
+    () => [],
+  );
+  const [pendingByKey, setPendingByKey] = useExchangeState<Record<string, number>>(
+    `${exchangeId}:pending`,
+    () => ({}),
+  );
 
   function addNewVariant() {
-    const k = newVariantKey();
-    setOpenDrafts((d) => ({ ...d, [k]: { ...EMPTY_DRAFT } }));
+    const k = `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setDraftKeys((prev) => [...prev, k]);
   }
 
-  async function fireSamples(
-    key: string,
-    draft: DraftOverrides,
-    nSamples: number,
-  ) {
-    setPendingByDraft((p) => ({ ...p, [key]: (p[key] ?? 0) + nSamples }));
+  function dropDraftKey(k: string) {
+    setDraftKeys((prev) => prev.filter((x) => x !== k));
+    PANEL_STORE.delete(`${exchangeId}:draft:${k}`);
+    PANEL_STORE.delete(`${exchangeId}:open:${k}`);
+  }
+
+  async function fireSamples(key: string, draft: DraftOverrides, nSamples: number) {
+    setPendingByKey((p) => ({ ...p, [key]: (p[key] ?? 0) + nSamples }));
     try {
       await fireApiExchangeForksPost({
         baseUrl: CLIENT_API_BASE,
@@ -287,20 +397,19 @@ export function ForkPanel({
           n_samples: nSamples,
         },
       });
-      // Open-draft becomes a real variant after firing — drop it from drafts
-      // since the persisted column will pick up the response.
+      // For new drafts, the persisted variant column will now own this
+      // config. Drop the draft key but keep its draft state in store
+      // momentarily — react-query refetch picks up the new hash, and the
+      // VariantColumn re-uses the draft state under the hash key if a
+      // user re-edits.
       if (key.startsWith("new-")) {
-        setOpenDrafts((d) => {
-          const c = { ...d };
-          delete c[key];
-          return c;
-        });
+        dropDraftKey(key);
       }
       await queryClient.invalidateQueries({ queryKey: ["forks", exchangeId] });
     } catch (err) {
       console.error("fire fork failed", err);
     } finally {
-      setPendingByDraft((p) => {
+      setPendingByKey((p) => {
         const c = { ...p };
         c[key] = Math.max(0, (c[key] ?? 0) - nSamples);
         if (c[key] === 0) delete c[key];
@@ -324,75 +433,70 @@ export function ForkPanel({
     await queryClient.invalidateQueries({ queryKey: ["forks", exchangeId] });
   }
 
-  const draftKeys = Object.keys(openDrafts);
-
   return (
-    <div className="fork-panel">
-      <div className="fork-panel-bar">
+    <>
+      <div className="fork-modal-bar">
         <span className="fork-panel-title">forks</span>
         <span className="fork-panel-summary">
+          exchange <code>{exchangeId.slice(0, 8)}</code>
+          {" · "}
           {forks.length} sample{forks.length === 1 ? "" : "s"}
-          {variants.length > 0 ? ` · ${variants.length} config${variants.length === 1 ? "" : "s"}` : ""}
+          {variants.length > 0
+            ? ` · ${variants.length} config${variants.length === 1 ? "" : "s"}`
+            : ""}
           {!base ? " · loading base..." : ""}
         </span>
         <span className="fork-panel-spacer" />
-        <button type="button" className="fork-panel-close" onClick={onClose} title="close">
+        <button type="button" className="fork-panel-close" onClick={onClose} title="close (Esc)">
           ✕
         </button>
       </div>
-      <div className="fork-columns">
-        <OriginalColumn detail={exchangeDetail} base={base ?? null} />
+      <div className="fork-modal-body">
+        <div className="fork-columns">
+          <OriginalColumn detail={exchangeDetail} base={base ?? null} />
 
-        {variants.map((v) => (
-          <VariantColumn
-            key={v.hash}
-            base={base ?? null}
-            hash={v.hash}
-            samples={v.samples}
-            overrides={v.overrides as ForkOverrides}
-            pending={pendingByDraft[v.hash] ?? 0}
-            onFire={(draft, n) => fireSamples(v.hash, draft, n)}
-            onDelete={() => deleteVariantSamples(v.samples.map((s) => s.id))}
-          />
-        ))}
+          {variants.map((v) => (
+            <VariantColumn
+              key={v.hash}
+              exchangeId={exchangeId}
+              base={base ?? null}
+              hash={v.hash}
+              samples={v.samples}
+              overrides={v.overrides as ForkOverrides}
+              pending={pendingByKey[v.hash] ?? 0}
+              onFire={(draft, n) => fireSamples(v.hash, draft, n)}
+              onDelete={() => deleteVariantSamples(v.samples.map((s) => s.id))}
+            />
+          ))}
 
-        {draftKeys.map((k) => (
-          <NewDraftColumn
-            key={k}
-            draftKey={k}
-            base={base ?? null}
-            initialDraft={openDrafts[k]}
-            pending={pendingByDraft[k] ?? 0}
-            onFire={(draft, n) => fireSamples(k, draft, n)}
-            onCancel={() =>
-              setOpenDrafts((d) => {
-                const c = { ...d };
-                delete c[k];
-                return c;
-              })
-            }
-          />
-        ))}
+          {draftKeys.map((k) => (
+            <NewDraftColumn
+              key={k}
+              exchangeId={exchangeId}
+              draftKey={k}
+              base={base ?? null}
+              pending={pendingByKey[k] ?? 0}
+              onFire={(draft, n) => fireSamples(k, draft, n)}
+              onCancel={() => dropDraftKey(k)}
+            />
+          ))}
 
-        <NewVariantTile onClick={addNewVariant} />
-      </div>
-      {variants.length === 0 && draftKeys.length === 0 && (
-        <div className="fork-empty">
-          No forks yet. Click <span style={{ color: "#b88c2a" }}>+ new variant</span> to fork
-          this exchange and fire one or more samples under different conditions.
+          <NewVariantTile onClick={addNewVariant} />
         </div>
-      )}
-    </div>
+        {variants.length === 0 && draftKeys.length === 0 && (
+          <div className="fork-empty">
+            No forks yet. Click <span style={{ color: "#b88c2a" }}>+ new variant</span> to fork
+            this exchange and fire one or more samples under different conditions.
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
 function NewVariantTile({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      type="button"
-      className="fork-column fork-column--new"
-      onClick={onClick}
-    >
+    <button type="button" className="fork-column fork-column--new" onClick={onClick}>
       <span className="fork-column--new-content">
         <span className="fork-column--new-icon">+</span>
         <span>new variant</span>
@@ -400,6 +504,8 @@ function NewVariantTile({ onClick }: { onClick: () => void }) {
     </button>
   );
 }
+
+// --- OriginalColumn -------------------------------------------------------
 
 function OriginalColumn({
   detail,
@@ -442,14 +548,10 @@ function OriginalColumn({
           {detail.error ? (
             <div className="fork-sample-error">{detail.error}</div>
           ) : (
-            <>
-              {detail.response_text && (
-                <div className="fork-sample-text">{detail.response_text}</div>
-              )}
-              {detail.tool_calls && detail.tool_calls.length > 0 && (
-                <ToolUseList tools={detail.tool_calls} />
-              )}
-            </>
+            <ResponseBody
+              text={detail.response_text}
+              toolCalls={detail.tool_calls as Array<{ [k: string]: unknown }>}
+            />
           )}
         </div>
       </div>
@@ -457,7 +559,10 @@ function OriginalColumn({
   );
 }
 
+// --- VariantColumn (controlled via PANEL_STORE) ---------------------------
+
 function VariantColumn({
+  exchangeId,
   base,
   hash,
   samples,
@@ -466,6 +571,7 @@ function VariantColumn({
   onFire,
   onDelete,
 }: {
+  exchangeId: string;
   base: BaseExchangeOut | null;
   hash: string;
   samples: ForkOut[];
@@ -474,21 +580,22 @@ function VariantColumn({
   onFire: (draft: DraftOverrides, n: number) => void | Promise<void>;
   onDelete: () => void;
 }) {
-  const [draft, setDraft] = useState<DraftOverrides>(() => overridesToDraft(overrides));
-  // If overrides change underneath us (e.g. siblings reload), reset.
-  useEffect(() => {
-    setDraft(overridesToDraft(overrides));
-  }, [overrides]);
-
+  const [draft, setDraft] = useExchangeState<DraftOverrides>(
+    `${exchangeId}:draft:${hash}`,
+    () => overridesToDraft(overrides),
+  );
+  const [open, setOpen] = useExchangeState<boolean>(
+    `${exchangeId}:open:${hash}`,
+    () => false,
+  );
   const chips = useMemo(() => diffChips(draft, base), [draft, base]);
-  const shortHash = hash.slice(0, 8);
 
   return (
     <div className="fork-column">
       <div className="fork-col-header">
         <div className="fork-col-title-row">
           <span className="fork-col-label">variant</span>
-          <span className="fork-col-hash">{shortHash}</span>
+          <span className="fork-col-hash">{hash.slice(0, 8)}</span>
           <div className="fork-col-actions">
             <button
               type="button"
@@ -512,7 +619,7 @@ function VariantColumn({
           )}
         </div>
       </div>
-      <EditForm base={base} draft={draft} setDraft={setDraft} />
+      <EditForm base={base} draft={draft} setDraft={setDraft} open={open} setOpen={setOpen} />
       <FireRow
         base={base}
         draft={draft}
@@ -524,22 +631,31 @@ function VariantColumn({
   );
 }
 
+// --- NewDraftColumn (controlled via PANEL_STORE) --------------------------
+
 function NewDraftColumn({
-  draftKey: _draftKey,
+  exchangeId,
+  draftKey,
   base,
-  initialDraft,
   pending,
   onFire,
   onCancel,
 }: {
+  exchangeId: string;
   draftKey: string;
   base: BaseExchangeOut | null;
-  initialDraft: DraftOverrides;
   pending: number;
   onFire: (draft: DraftOverrides, n: number) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState<DraftOverrides>(initialDraft);
+  const [draft, setDraft] = useExchangeState<DraftOverrides>(
+    `${exchangeId}:draft:${draftKey}`,
+    () => ({ ...EMPTY_DRAFT }),
+  );
+  const [open, setOpen] = useExchangeState<boolean>(
+    `${exchangeId}:open:${draftKey}`,
+    () => true,
+  );
   const chips = useMemo(() => diffChips(draft, base), [draft, base]);
 
   return (
@@ -571,30 +687,38 @@ function NewDraftColumn({
           )}
         </div>
       </div>
-      <EditForm base={base} draft={draft} setDraft={setDraft} startOpen />
+      <EditForm base={base} draft={draft} setDraft={setDraft} open={open} setOpen={setOpen} />
       <FireRow
         base={base}
         draft={draft}
         pending={pending}
         onFire={(n) => onFire(draft, n)}
       />
-      <SamplesList samples={[]} pendingCount={pending} totalKnown={0} emptyHint="will appear after firing" />
+      <SamplesList
+        samples={[]}
+        pendingCount={pending}
+        totalKnown={0}
+        emptyHint="will appear after firing"
+      />
     </div>
   );
 }
+
+// --- EditForm (controlled) ------------------------------------------------
 
 function EditForm({
   base,
   draft,
   setDraft,
-  startOpen,
+  open,
+  setOpen,
 }: {
   base: BaseExchangeOut | null;
   draft: DraftOverrides;
-  setDraft: React.Dispatch<React.SetStateAction<DraftOverrides>>;
-  startOpen?: boolean;
+  setDraft: (updater: (prev: DraftOverrides) => DraftOverrides) => void;
+  open: boolean;
+  setOpen: (updater: (prev: boolean) => boolean) => void;
 }) {
-  const [open, setOpen] = useState(Boolean(startOpen));
   const editedFields = useMemo(() => {
     const fields: string[] = [];
     if (draft.systemPrompt !== null) fields.push("sys");
@@ -603,16 +727,13 @@ function EditForm({
     if (draft.model !== null) fields.push("model");
     if (draft.temperature !== null) fields.push("temp");
     if (draft.maxTokens !== null) fields.push("max_tok");
+    if (draft.thinkingOff !== null) fields.push("thinking");
     return fields;
   }, [draft]);
 
   return (
     <div className="fork-form">
-      <button
-        type="button"
-        className="fork-form-toggle"
-        onClick={() => setOpen((o) => !o)}
-      >
+      <button type="button" className="fork-form-toggle" onClick={() => setOpen((o) => !o)}>
         <span className="fork-form-toggle-icon">{open ? "▾" : "▸"}</span>
         edit overrides
         {editedFields.length > 0 ? (
@@ -662,7 +783,7 @@ function SystemPromptField({
 }: {
   base: BaseExchangeOut | null;
   draft: DraftOverrides;
-  setDraft: React.Dispatch<React.SetStateAction<DraftOverrides>>;
+  setDraft: (updater: (prev: DraftOverrides) => DraftOverrides) => void;
 }) {
   const value = draft.systemPrompt ?? base?.system_prompt ?? "";
   const modified = draft.systemPrompt !== null;
@@ -690,7 +811,7 @@ function MessageStackField({
 }: {
   base: BaseExchangeOut | null;
   draft: DraftOverrides;
-  setDraft: React.Dispatch<React.SetStateAction<DraftOverrides>>;
+  setDraft: (updater: (prev: DraftOverrides) => DraftOverrides) => void;
 }) {
   const baseMessages = (base?.user_messages ?? []) as Msg[];
   const value = draft.messages ?? baseMessages;
@@ -783,22 +904,12 @@ function MessageCard({
           )}
           <span style={{ flex: 1 }} />
           {onMoveUp && (
-            <button
-              type="button"
-              className="fork-tool-action-btn"
-              onClick={onMoveUp}
-              title="move up"
-            >
+            <button type="button" className="fork-tool-action-btn" onClick={onMoveUp} title="move up">
               ↑
             </button>
           )}
           {onMoveDown && (
-            <button
-              type="button"
-              className="fork-tool-action-btn"
-              onClick={onMoveDown}
-              title="move down"
-            >
+            <button type="button" className="fork-tool-action-btn" onClick={onMoveDown} title="move down">
               ↓
             </button>
           )}
@@ -867,7 +978,7 @@ function ToolsField({
 }: {
   base: BaseExchangeOut | null;
   draft: DraftOverrides;
-  setDraft: React.Dispatch<React.SetStateAction<DraftOverrides>>;
+  setDraft: (updater: (prev: DraftOverrides) => DraftOverrides) => void;
 }) {
   const baseTools = (base?.tools ?? []) as Tool[];
   const value = draft.tools ?? baseTools;
@@ -887,8 +998,6 @@ function ToolsField({
     }
   }
 
-  // Show the union of base tools + tools added by the draft, marking
-  // which are currently enabled and which were added (not in base).
   const allNames = useMemo(() => {
     const set = new Set<string>();
     baseTools.forEach((t) => set.add(t.name));
@@ -1019,9 +1128,7 @@ function ToolCard({
             }}
             rows={6}
           />
-          {schemaErr && (
-            <div style={{ fontSize: 10, color: "#c44", marginTop: 2 }}>{schemaErr}</div>
-          )}
+          {schemaErr && <div style={{ fontSize: 10, color: "#c44", marginTop: 2 }}>{schemaErr}</div>}
         </div>
       )}
     </div>
@@ -1115,7 +1222,7 @@ function ModelField({
 }: {
   base: BaseExchangeOut | null;
   draft: DraftOverrides;
-  setDraft: React.Dispatch<React.SetStateAction<DraftOverrides>>;
+  setDraft: (updater: (prev: DraftOverrides) => DraftOverrides) => void;
 }) {
   const value = draft.model ?? base?.model ?? MODELS[0];
   const modified = draft.model !== null;
@@ -1124,7 +1231,9 @@ function ModelField({
     <div>
       <FieldLabel
         modified={modified}
-        onReset={() => setDraft((d) => ({ ...d, model: null, temperature: null }))}
+        onReset={() =>
+          setDraft((d) => ({ ...d, model: null, temperature: null, thinkingOff: null }))
+        }
       >
         model
       </FieldLabel>
@@ -1135,8 +1244,8 @@ function ModelField({
           setDraft((d) => ({
             ...d,
             model: e.target.value,
-            // If switching to a model that doesn't support sampling, drop temp.
             temperature: modelSupportsSampling(e.target.value) ? d.temperature : null,
+            thinkingOff: modelHasAdaptiveThinking(e.target.value) ? d.thinkingOff : null,
           }))
         }
       >
@@ -1157,16 +1266,43 @@ function SamplingFields({
 }: {
   base: BaseExchangeOut | null;
   draft: DraftOverrides;
-  setDraft: React.Dispatch<React.SetStateAction<DraftOverrides>>;
+  setDraft: (updater: (prev: DraftOverrides) => DraftOverrides) => void;
 }) {
   const effectiveModel = draft.model ?? base?.model ?? MODELS[0];
   const supportsSampling = modelSupportsSampling(effectiveModel);
+  const hasThinking = modelHasAdaptiveThinking(effectiveModel);
   const tempValue = draft.temperature ?? base?.temperature ?? 0.15;
   const tempModified = draft.temperature !== null;
   const maxTok = draft.maxTokens ?? base?.max_tokens ?? 20000;
   const maxTokModified = draft.maxTokens !== null;
+  const thinkingOffValue = draft.thinkingOff ?? base?.thinking_off ?? false;
+  const thinkingModified = draft.thinkingOff !== null;
   return (
     <>
+      {hasThinking && (
+        <div>
+          <FieldLabel
+            modified={thinkingModified}
+            onReset={() => setDraft((d) => ({ ...d, thinkingOff: null }))}
+          >
+            adaptive thinking
+          </FieldLabel>
+          <label className="fork-toggle-row">
+            <input
+              type="checkbox"
+              checked={!thinkingOffValue}
+              onChange={(e) => setDraft((d) => ({ ...d, thinkingOff: !e.target.checked }))}
+              className="fork-tool-toggle"
+            />
+            <span className="fork-toggle-text">
+              {thinkingOffValue ? "off" : "on"}
+              {!thinkingModified && (
+                <span style={{ color: "#aaa", marginLeft: 6 }}>(model default: on)</span>
+              )}
+            </span>
+          </label>
+        </div>
+      )}
       <div>
         <FieldLabel
           modified={tempModified}
@@ -1183,15 +1319,14 @@ function SamplingFields({
               step={0.05}
               value={tempValue}
               className="fork-temp-slider"
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, temperature: parseFloat(e.target.value) }))
-              }
+              onChange={(e) => setDraft((d) => ({ ...d, temperature: parseFloat(e.target.value) }))}
             />
             <span className="fork-temp-display">{tempValue.toFixed(2)}</span>
           </div>
         ) : (
           <span className="fork-temp-disabled">
-            {effectiveModel} doesn&apos;t accept sampling params (adaptive thinking on)
+            {effectiveModel} doesn&apos;t accept sampling params
+            {hasThinking && !thinkingOffValue ? " (adaptive thinking on)" : ""}
           </span>
         )}
       </div>
@@ -1230,9 +1365,7 @@ function FireRow({
   const [confirming, setConfirming] = useState(false);
   const effectiveModel = draft.model ?? base?.model ?? MODELS[0];
 
-  // Rough cost estimate. Use the original exchange's input_tokens as the
-  // rough input size; assume 800 expected output tokens per sample.
-  const inputTokensRough = 0; // unknown until we have a baseline; conservative
+  const inputTokensRough = 0;
   const expectedOutput = 800;
   const est = useMemo(
     () => estimateCost(effectiveModel, Math.max(inputTokensRough, 4000), expectedOutput, n),
@@ -1264,12 +1397,7 @@ function FireRow({
           max={20}
           onChange={(e) => setN(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)))}
         />
-        <button
-          type="button"
-          className="fork-fire-btn"
-          onClick={fire}
-          disabled={fireBlocked}
-        >
+        <button type="button" className="fork-fire-btn" onClick={fire} disabled={fireBlocked}>
           {pending > 0 ? `firing ${pending}…` : "fire"}
         </button>
         <span className={`fork-fire-est${high ? " fork-fire-est--high" : ""}`}>
@@ -1347,30 +1475,94 @@ function SampleCard({ sample, indexLabel }: { sample: ForkOut; indexLabel: strin
       {sample.error ? (
         <div className="fork-sample-error">{sample.error}</div>
       ) : (
-        <>
-          {sample.response_text && <div className="fork-sample-text">{sample.response_text}</div>}
-          {sample.tool_calls && sample.tool_calls.length > 0 && (
-            <ToolUseList tools={sample.tool_calls} />
-          )}
-        </>
+        <ResponseBody
+          text={sample.response_text}
+          toolCalls={sample.tool_calls as Array<{ [k: string]: unknown }>}
+        />
       )}
     </div>
   );
 }
 
-function ToolUseList({ tools }: { tools: Array<{ [k: string]: unknown }> }) {
+// --- Response/tool-call rendering -----------------------------------------
+
+function ResponseBody({
+  text,
+  toolCalls,
+}: {
+  text: string | null | undefined;
+  toolCalls: Array<{ [k: string]: unknown }> | null | undefined;
+}) {
+  const hasText = Boolean(text && text.trim().length > 0);
+  const hasTools = Boolean(toolCalls && toolCalls.length > 0);
+  if (!hasText && !hasTools) {
+    return <div className="fork-response-empty">empty response</div>;
+  }
   return (
-    <div className="fork-tool-uses">
-      {tools.map((t, i) => {
-        const name = (t.name as string | undefined) ?? "(unknown)";
-        const input = t.input;
-        return (
-          <div className="fork-tool-use" key={i}>
-            <span className="fork-tool-use-name">{name}</span>
-            {input !== undefined && `: ${JSON.stringify(input)}`}
-          </div>
-        );
-      })}
+    <div className="fork-response">
+      {hasText && <ResponseText text={text!} />}
+      {hasTools && <ToolCallsBlock tools={toolCalls!} />}
+    </div>
+  );
+}
+
+function ResponseText({ text }: { text: string }) {
+  // Render text in a monospace block with proper wrapping. Keep it simple —
+  // markdown rendering is out of scope; just give the text room to breathe.
+  const lines = text.split("\n").length;
+  return (
+    <div className="fork-response-text">
+      <div className="fork-response-section-label">
+        text · {text.length.toLocaleString()} chars · {lines} line{lines === 1 ? "" : "s"}
+      </div>
+      <pre className="fork-response-text-pre">{text}</pre>
+    </div>
+  );
+}
+
+function ToolCallsBlock({ tools }: { tools: Array<{ [k: string]: unknown }> }) {
+  return (
+    <div className="fork-tool-calls">
+      <div className="fork-response-section-label">
+        tool call{tools.length === 1 ? "" : "s"} · {tools.length}
+      </div>
+      <div className="fork-tool-calls-list">
+        {tools.map((t, i) => (
+          <ToolCallEntry key={i} tool={t} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToolCallEntry({ tool }: { tool: { [k: string]: unknown } }) {
+  const name = (tool.name as string | undefined) ?? "(unnamed)";
+  const input = tool.input;
+  const inputJson = useMemo(() => {
+    try {
+      return JSON.stringify(input, null, 2);
+    } catch {
+      return String(input);
+    }
+  }, [input]);
+  const preview = useMemo(() => {
+    if (input === undefined) return "";
+    const s = JSON.stringify(input);
+    return s.length > 80 ? s.slice(0, 80) + "…" : s;
+  }, [input]);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="fork-tool-call">
+      <button
+        type="button"
+        className="fork-tool-call-summary"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="fork-tool-call-caret">{open ? "▾" : "▸"}</span>
+        <span className="fork-tool-call-name">{name}</span>
+        {!open && preview && <span className="fork-tool-call-preview">{preview}</span>}
+      </button>
+      {open && <pre className="fork-tool-call-json">{inputJson}</pre>}
     </div>
   );
 }

@@ -288,6 +288,14 @@ export type BaseExchangeOut = {
      * Max Tokens
      */
     max_tokens: number;
+    /**
+     * Has Thinking
+     */
+    has_thinking: boolean;
+    /**
+     * Thinking Off
+     */
+    thinking_off: boolean;
 };
 
 /**
@@ -1313,6 +1321,11 @@ export type ForkOut = {
  * replacement — to remove a tool, omit it from the override; to add or
  * edit one, include the desired full Anthropic tool dict
  * (``{"name", "description", "input_schema"}``).
+ *
+ * ``thinking_off`` toggles adaptive thinking off for models that have it
+ * enabled by default (Opus 4.7/4.6, Sonnet 4.6). Leaving as ``None``
+ * inherits the model's default behavior; ``True`` disables thinking even
+ * on models where it's normally always-on.
  */
 export type ForkOverrides = {
     /**
@@ -1343,6 +1356,10 @@ export type ForkOverrides = {
      * Max Tokens
      */
     max_tokens?: number | null;
+    /**
+     * Thinking Off
+     */
+    thinking_off?: boolean | null;
 };
 
 /**

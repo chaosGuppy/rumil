@@ -32,6 +32,8 @@ class BaseExchangeOut(BaseModel):
     model: str
     temperature: float | None
     max_tokens: int
+    has_thinking: bool
+    thinking_off: bool
 
 
 class ForkOut(BaseModel):
@@ -94,6 +96,8 @@ async def get_base(exchange_id: str, db: DB = Depends(_admin_db)) -> BaseExchang
         model=base.model,
         temperature=base.temperature,
         max_tokens=base.max_tokens,
+        has_thinking=base.has_thinking,
+        thinking_off=base.thinking_off,
     )
 
 

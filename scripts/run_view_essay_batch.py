@@ -224,10 +224,7 @@ async def run(args: argparse.Namespace) -> None:
         )
         rendered_system = preamble.replace("{{TASK}}", embed_task)
         rendered_user = (
-            "context for this question:\n\n"
-            f"{context_result.context_text}\n\n"
-            "---\n\n"
-            f"{moves}"
+            f"context for this question:\n\n{context_result.context_text}\n\n---\n\n{moves}"
         )
         prompt_source = "preamble.md (system) + view_essay.md (user)"
 

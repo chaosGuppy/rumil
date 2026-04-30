@@ -75,8 +75,10 @@ async def run(args: argparse.Namespace) -> None:
         from rumil.orchestrators import create_root_question
 
         question_id = await create_root_question(args.question_text, db)
-        print(f"Created question {question_id[:8]} in workspace '{args.workspace}'"
-              f"{' (staged under run ' + run_id[:8] + ')' if args.staged else ''}")
+        print(
+            f"Created question {question_id[:8]} in workspace '{args.workspace}'"
+            f"{' (staged under run ' + run_id[:8] + ')' if args.staged else ''}"
+        )
     else:
         question_id = args.question_id
 
@@ -127,12 +129,7 @@ async def run(args: argparse.Namespace) -> None:
             "produce a freeform essay-style view on the question."
         )
         system_msg = preamble.replace("{{TASK}}", embed_task)
-        user_msg = (
-            "context for this question:\n\n"
-            f"{context_result.context_text}\n\n"
-            "---\n\n"
-            f"{moves}"
-        )
+        user_msg = f"context for this question:\n\n{context_result.context_text}\n\n---\n\n{moves}"
 
     if args.show_prompt:
         print("=" * 80)
@@ -162,11 +159,7 @@ async def run(args: argparse.Namespace) -> None:
             out_path = out_dir / f"{ts}_{question_id[:8]}.md"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     label_line = f"- Label: {args.label}\n" if args.label else ""
-    prompt_source = (
-        args.prompt_file
-        if args.prompt_file
-        else "preamble.md + view_essay.md (split)"
-    )
+    prompt_source = args.prompt_file if args.prompt_file else "preamble.md + view_essay.md (split)"
     out_path.write_text(
         "# View essay\n\n"
         f"- Question: {question.headline}\n"

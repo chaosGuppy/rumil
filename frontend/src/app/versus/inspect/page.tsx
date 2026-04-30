@@ -600,14 +600,14 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
           const acc = new Map<string, Map<string, WinAccum>>();
           const judgesSet = new Set<string>();
           const gensSet = new Set<string>();
-          // Local config_hash -> judge_model_id map so column headers
-          // render the model name rather than the opaque hex hash.
-          const judgeModelIdByHash = new Map<string, string>();
           for (const j of v.judgments) {
-            judgeModelIdByHash.set(j.config_hash, j.judge_model_id);
             const r = genVsHumanAccum(j);
             if (!r) continue;
-            const judge = j.config_hash;
+            // Group columns by judge identity (judge_model_id), not the
+            // per-row judge_inputs_hash exposed as config_hash — otherwise
+            // every judgment gets its own column and identical-judge cells
+            // appear duplicated.
+            const judge = j.judge_model_id;
             judgesSet.add(judge);
             gensSet.add(r.gen);
             const row = acc.get(r.gen) ?? new Map<string, WinAccum>();
@@ -645,7 +645,7 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                       <th></th>
                       {judges.map((jb) => (
                         <th key={jb} title={jb}>
-                          {shortModel(judgeModelIdByHash.get(jb) ?? jb)}
+                          {shortModel(jb)}
                         </th>
                       ))}
                     </tr>
@@ -942,11 +942,14 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
   const byKey = new Map<string, Pair>();
   for (const v of variantBundles) {
     for (const j of v.judgments) {
-      const k = `${j.config_hash}|${j.criterion}|${j.source_a}|${j.source_b}`;
+      // Bucket by judge_model_id so the same (judge identity, pair, criterion)
+      // groups across variants — using per-row config_hash would never match
+      // across variants and the section would always report 0 comparable.
+      const k = `${j.judge_model_id}|${j.criterion}|${j.source_a}|${j.source_b}`;
       const slot = byKey.get(k) ?? {
         gen: [j.source_a, j.source_b].filter((s) => s !== "human").map(modelOf).join("+") ||
           "human",
-        judge: j.config_hash,
+        judge: j.judge_model_id,
         criterion: j.criterion,
         source_a: j.source_a,
         source_b: j.source_b,

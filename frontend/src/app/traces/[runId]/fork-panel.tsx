@@ -455,6 +455,15 @@ function PanelContent({
     `${exchangeId}:pending`,
     () => ({}),
   );
+  // After a draft fires successfully, record the hash it produced. The
+  // draft column then becomes the canonical view for that hash — the user
+  // sees their column transition from "draft / unsaved" to "variant /
+  // abc12345" with samples appearing in place. The matching variant from
+  // the API is suppressed so it doesn't render as a duplicate column.
+  const [draftPromoted, setDraftPromoted] = useExchangeState<Record<string, string>>(
+    `${exchangeId}:promoted`,
+    () => ({}),
+  );
 
   function addNewVariant() {
     const k = `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -463,6 +472,12 @@ function PanelContent({
 
   function dropDraftKey(k: string) {
     setDraftKeys((prev) => prev.filter((x) => x !== k));
+    setDraftPromoted((prev) => {
+      if (!(k in prev)) return prev;
+      const c = { ...prev };
+      delete c[k];
+      return c;
+    });
     PANEL_STORE.delete(`${exchangeId}:draft:${k}`);
     PANEL_STORE.delete(`${exchangeId}:open:${k}`);
   }
@@ -470,7 +485,7 @@ function PanelContent({
   async function fireSamples(key: string, draft: DraftOverrides, nSamples: number) {
     setPendingByKey((p) => ({ ...p, [key]: (p[key] ?? 0) + nSamples }));
     try {
-      await fireApiExchangeForksPost({
+      const res = await fireApiExchangeForksPost({
         baseUrl: CLIENT_API_BASE,
         body: {
           base_exchange_id: exchangeId,
@@ -478,13 +493,14 @@ function PanelContent({
           n_samples: nSamples,
         },
       });
-      // For new drafts, the persisted variant column will now own this
-      // config. Drop the draft key but keep its draft state in store
-      // momentarily — react-query refetch picks up the new hash, and the
-      // VariantColumn re-uses the draft state under the hash key if a
-      // user re-edits.
-      if (key.startsWith("new-")) {
-        dropDraftKey(key);
+      const rows = (res.data ?? []) as ForkOut[];
+      // First fire from a draft promotes it to the hash the backend
+      // returned. Subsequent fires don't re-claim — if the draft drifted
+      // and fires "as new", the new hash gets its own column elsewhere
+      // and this draft column stays anchored to its original promotion.
+      if (key.startsWith("new-") && rows.length > 0) {
+        const persistedHash = rows[0].overrides_hash;
+        setDraftPromoted((prev) => (prev[key] ? prev : { ...prev, [key]: persistedHash }));
       }
       await queryClient.invalidateQueries({ queryKey: ["forks", exchangeId] });
     } catch (err) {
@@ -514,6 +530,23 @@ function PanelContent({
     await queryClient.invalidateQueries({ queryKey: ["forks", exchangeId] });
   }
 
+  // Drafts that have been fired claim a hash; suppress the duplicate
+  // standalone variant for that hash so we don't render the same samples
+  // twice (the draft column itself shows them in place).
+  const variantsByHash = useMemo(() => {
+    const m = new Map<string, (typeof variants)[number]>();
+    for (const v of variants) m.set(v.hash, v);
+    return m;
+  }, [variants]);
+  const claimedHashes = useMemo(
+    () => new Set(Object.values(draftPromoted)),
+    [draftPromoted],
+  );
+  const standaloneVariants = useMemo(
+    () => variants.filter((v) => !claimedHashes.has(v.hash)),
+    [variants, claimedHashes],
+  );
+
   return (
     <>
       <div className="fork-modal-bar">
@@ -536,7 +569,7 @@ function PanelContent({
         <div className="fork-columns">
           <OriginalColumn detail={exchangeDetail} base={base ?? null} />
 
-          {variants.map((v) => (
+          {standaloneVariants.map((v) => (
             <VariantColumn
               key={v.hash}
               exchangeId={exchangeId}
@@ -550,17 +583,29 @@ function PanelContent({
             />
           ))}
 
-          {draftKeys.map((k) => (
-            <NewDraftColumn
-              key={k}
-              exchangeId={exchangeId}
-              draftKey={k}
-              base={base ?? null}
-              pending={pendingByKey[k] ?? 0}
-              onFire={(draft, n) => fireSamples(k, draft, n)}
-              onCancel={() => dropDraftKey(k)}
-            />
-          ))}
+          {draftKeys.map((k) => {
+            const promotedHash = draftPromoted[k];
+            const variant = promotedHash ? variantsByHash.get(promotedHash) : undefined;
+            const promoted = variant
+              ? {
+                  hash: promotedHash!,
+                  overrides: variant.overrides as ForkOverrides,
+                  samples: variant.samples,
+                }
+              : null;
+            return (
+              <NewDraftColumn
+                key={k}
+                exchangeId={exchangeId}
+                draftKey={k}
+                base={base ?? null}
+                promoted={promoted}
+                pending={pendingByKey[k] ?? 0}
+                onFire={(draft, n) => fireSamples(k, draft, n)}
+                onCancel={() => dropDraftKey(k)}
+              />
+            );
+          })}
 
           <NewVariantTile onClick={addNewVariant} />
         </div>
@@ -893,6 +938,7 @@ function NewDraftColumn({
   draftKey,
   base,
   pending,
+  promoted,
   onFire,
   onCancel,
 }: {
@@ -900,6 +946,7 @@ function NewDraftColumn({
   draftKey: string;
   base: BaseExchangeOut | null;
   pending: number;
+  promoted: { hash: string; overrides: ForkOverrides; samples: ForkOut[] } | null;
   onFire: (draft: DraftOverrides, n: number) => void | Promise<void>;
   onCancel: () => void;
 }) {
@@ -912,28 +959,69 @@ function NewDraftColumn({
     () => true,
   );
   const chips = useMemo(() => diffChips(draft, base), [draft, base]);
-  const accentStyle = useMemo(() => variantStyle(draftKey), [draftKey]);
+  // Stable accent: once promoted, color follows the hash so it matches a
+  // future "demoted" standalone variant column for the same hash.
+  const accentStyle = useMemo(
+    () => variantStyle(promoted?.hash ?? draftKey),
+    [promoted?.hash, draftKey],
+  );
+
+  // Drift only meaningful once promoted.
+  const drifted = useMemo(() => {
+    if (!promoted) return false;
+    return normalizeOverrides(draftToOverrides(draft)) !== normalizeOverrides(promoted.overrides);
+  }, [draft, promoted]);
+  const onRevert = promoted
+    ? () => setDraft(() => overridesToDraft(promoted.overrides))
+    : undefined;
+
+  const headerLabel = promoted ? "variant" : "draft";
+  const headerHash = promoted ? promoted.hash.slice(0, 8) : "unsaved";
+  const samples = promoted?.samples ?? [];
+  const cancelTitle = promoted
+    ? "remove from view (samples remain in DB)"
+    : "discard this draft";
 
   return (
     <div className="fork-column fork-column--variant" style={accentStyle}>
       <div className="fork-col-header">
         <div className="fork-col-title-row">
-          <span className="fork-col-label">draft</span>
-          <span className="fork-col-hash">unsaved</span>
+          <span className="fork-col-label">{headerLabel}</span>
+          <span className="fork-col-hash">{headerHash}</span>
           <div className="fork-col-actions">
+            {drifted && onRevert && (
+              <button
+                type="button"
+                className="fork-col-revert"
+                onClick={onRevert}
+                title="revert draft to this variant's config"
+              >
+                ↺
+              </button>
+            )}
             <button
               type="button"
               className="fork-col-delete"
               onClick={onCancel}
-              title="discard this draft"
+              title={cancelTitle}
             >
               ✕
             </button>
           </div>
         </div>
         <div className="fork-chips">
+          {drifted && (
+            <span
+              className="fork-chip fork-chip--drift"
+              title="next fire will create a new variant since draft differs from this one"
+            >
+              would fire as new
+            </span>
+          )}
           {chips.length === 0 ? (
-            <span className="fork-chip fork-chip--captured">inherits all</span>
+            <span className="fork-chip fork-chip--captured">
+              {promoted ? "no diff" : "inherits all"}
+            </span>
           ) : (
             chips.map((c, i) => (
               <span key={i} className="fork-chip">
@@ -946,15 +1034,16 @@ function NewDraftColumn({
       <div className="fork-col-scroll">
         <EditForm base={base} draft={draft} setDraft={setDraft} open={open} setOpen={setOpen} />
         <SamplesList
-          samples={[]}
+          samples={samples}
           pendingCount={pending}
-          totalKnown={0}
-          emptyHint="samples will appear here once you fire"
+          totalKnown={samples.length}
+          emptyHint={promoted ? undefined : "samples will appear here once you fire"}
         />
         <FireRow
           base={base}
           draft={draft}
           pending={pending}
+          fireLabel={drifted ? "fire as new" : "fire"}
           onFire={(n) => onFire(draft, n)}
         />
       </div>

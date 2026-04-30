@@ -15,8 +15,6 @@ from rumil.forks import (
 )
 from rumil.models import CallType
 
-# ---------- hash_overrides ----------
-
 
 def test_hash_overrides_drops_nulls():
     h1 = hash_overrides({"system_prompt": "x"})
@@ -38,9 +36,6 @@ def test_hash_overrides_returns_short_hex():
     h = hash_overrides({"x": "y"})
     assert len(h) == 16
     assert all(c in "0123456789abcdef" for c in h)
-
-
-# ---------- merge_overrides ----------
 
 
 def _base(**overrides: Any) -> BaseExchange:
@@ -103,9 +98,6 @@ def test_merge_overrides_thinking_off_propagates():
     assert merged.thinking_off is True
 
 
-# ---------- build_kwargs ----------
-
-
 def test_build_kwargs_includes_required_api_fields():
     base = _base()
     k = build_kwargs(base)
@@ -153,8 +145,6 @@ def test_build_kwargs_omits_tools_when_empty():
     assert "tools" not in k
 
 
-# ---------- DB helpers ----------
-
 _FORK_DEFAULTS = dict(
     overrides={},
     model="claude-haiku-4-5-20251001",
@@ -193,7 +183,6 @@ async def test_save_fork_then_get_returns_persisted_row(tmp_db, scout_call):
     row = await tmp_db.save_fork(
         base_exchange_id=exchange_id,
         overrides_hash="abc1234567890abc",
-        sample_index=0,
         **{
             **_FORK_DEFAULTS,
             "overrides": {"temperature": 0.7},
@@ -211,11 +200,10 @@ async def test_save_fork_then_get_returns_persisted_row(tmp_db, scout_call):
 
 async def test_list_forks_for_exchange_returns_all(tmp_db, scout_call):
     exchange_id = await _seed_exchange(tmp_db, scout_call.id)
-    for i in range(3):
+    for _ in range(3):
         await tmp_db.save_fork(
             base_exchange_id=exchange_id,
             overrides_hash="hash1",
-            sample_index=i,
             **_FORK_DEFAULTS,
         )
     rows = await tmp_db.list_forks_for_exchange(exchange_id)
@@ -225,12 +213,8 @@ async def test_list_forks_for_exchange_returns_all(tmp_db, scout_call):
 async def test_list_forks_for_exchange_isolates_by_base(tmp_db, scout_call):
     e1 = await _seed_exchange(tmp_db, scout_call.id, user_message="msg one")
     e2 = await _seed_exchange(tmp_db, scout_call.id, user_message="msg two")
-    await tmp_db.save_fork(
-        base_exchange_id=e1, overrides_hash="h", sample_index=0, **_FORK_DEFAULTS
-    )
-    await tmp_db.save_fork(
-        base_exchange_id=e2, overrides_hash="h", sample_index=0, **_FORK_DEFAULTS
-    )
+    await tmp_db.save_fork(base_exchange_id=e1, overrides_hash="h", **_FORK_DEFAULTS)
+    await tmp_db.save_fork(base_exchange_id=e2, overrides_hash="h", **_FORK_DEFAULTS)
     rows1 = await tmp_db.list_forks_for_exchange(e1)
     rows2 = await tmp_db.list_forks_for_exchange(e2)
     assert len(rows1) == 1
@@ -239,33 +223,36 @@ async def test_list_forks_for_exchange_isolates_by_base(tmp_db, scout_call):
     assert rows2[0]["base_exchange_id"] == e2
 
 
-async def test_get_max_fork_sample_index_returns_max_per_hash(tmp_db, scout_call):
+async def test_save_fork_allocates_sequential_sample_indices(tmp_db, scout_call):
     exchange_id = await _seed_exchange(tmp_db, scout_call.id)
     assert await tmp_db.get_max_fork_sample_index(exchange_id, "h1") is None
 
-    for i in range(3):
-        await tmp_db.save_fork(
+    indices = []
+    for _ in range(3):
+        row = await tmp_db.save_fork(
             base_exchange_id=exchange_id,
             overrides_hash="h1",
-            sample_index=i,
             **_FORK_DEFAULTS,
         )
+        indices.append(row.sample_index)
+    assert indices == [0, 1, 2]
     assert await tmp_db.get_max_fork_sample_index(exchange_id, "h1") == 2
-    # Different hash buckets are isolated
+    # Different hash buckets are isolated and start fresh at 0
     assert await tmp_db.get_max_fork_sample_index(exchange_id, "other") is None
+    other = await tmp_db.save_fork(
+        base_exchange_id=exchange_id,
+        overrides_hash="other",
+        **_FORK_DEFAULTS,
+    )
+    assert other.sample_index == 0
 
 
 async def test_delete_fork_removes_row(tmp_db, scout_call):
     exchange_id = await _seed_exchange(tmp_db, scout_call.id)
-    row = await tmp_db.save_fork(
-        base_exchange_id=exchange_id, overrides_hash="h", sample_index=0, **_FORK_DEFAULTS
-    )
+    row = await tmp_db.save_fork(base_exchange_id=exchange_id, overrides_hash="h", **_FORK_DEFAULTS)
     assert await tmp_db.get_fork(row.id) is not None
     await tmp_db.delete_fork(row.id)
     assert await tmp_db.get_fork(row.id) is None
-
-
-# ---------- resolve_base ----------
 
 
 async def test_resolve_base_reconstructs_inputs(tmp_db, scout_call):
@@ -288,9 +275,6 @@ async def test_resolve_base_reconstructs_inputs(tmp_db, scout_call):
 async def test_resolve_base_raises_on_missing_id(tmp_db):
     with pytest.raises(ValueError):
         await resolve_base(tmp_db, "00000000-0000-0000-0000-000000000000")
-
-
-# ---------- fire_fork (real LLM, end-to-end) ----------
 
 
 @pytest.mark.llm

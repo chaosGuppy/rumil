@@ -333,8 +333,6 @@ async def fire_fork(
 
     overrides_dict = overrides.model_dump(exclude_none=True)
     overrides_hash = hash_overrides(overrides_dict)
-    start_index = await db.get_max_fork_sample_index(base_exchange_id, overrides_hash)
-    next_index = (start_index + 1) if start_index is not None else 0
 
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
@@ -345,13 +343,11 @@ async def fire_fork(
     )
 
     rows: list[ForkRow] = []
-    for offset, result in enumerate(results):
-        sample_index = next_index + offset
+    for result in results:
         row = await db.save_fork(
             base_exchange_id=base_exchange_id,
             overrides=overrides_dict,
             overrides_hash=overrides_hash,
-            sample_index=sample_index,
             model=result["model"],
             temperature=merged.temperature,
             response_text=result["response_text"],

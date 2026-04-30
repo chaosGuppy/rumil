@@ -108,6 +108,8 @@ _DB_RETRYABLE_EXCEPTIONS = (
 
 
 _PG_QUERY_CANCELED_SQLSTATE = "57014"
+_PG_UNIQUE_VIOLATION_SQLSTATE = "23505"
+_FORK_SAMPLE_INDEX_MAX_ATTEMPTS = 10
 
 
 def _is_statement_timeout(exc: BaseException) -> bool:
@@ -2874,7 +2876,6 @@ class DB:
         base_exchange_id: str,
         overrides: dict,
         overrides_hash: str,
-        sample_index: int,
         model: str,
         temperature: float | None,
         response_text: str | None,
@@ -2891,12 +2892,10 @@ class DB:
     ) -> "ForkRow":
         from rumil.forks import ForkRow
 
-        row: dict[str, Any] = {
-            "id": str(uuid.uuid4()),
+        base_row: dict[str, Any] = {
             "base_exchange_id": base_exchange_id,
             "overrides": overrides,
             "overrides_hash": overrides_hash,
-            "sample_index": sample_index,
             "model": model,
             "temperature": temperature,
             "response_text": response_text,
@@ -2911,28 +2910,45 @@ class DB:
             "error": error,
             "created_by": created_by,
         }
-        result = await self._execute(self.client.table("exchange_forks").insert(row))
-        inserted = _rows(result)[0] if _rows(result) else row
-        return ForkRow(
-            id=inserted["id"],
-            base_exchange_id=inserted["base_exchange_id"],
-            overrides=inserted["overrides"],
-            overrides_hash=inserted["overrides_hash"],
-            sample_index=inserted["sample_index"],
-            model=inserted["model"],
-            temperature=inserted.get("temperature"),
-            response_text=inserted.get("response_text"),
-            tool_calls=inserted.get("tool_calls") or [],
-            stop_reason=inserted.get("stop_reason"),
-            input_tokens=inserted.get("input_tokens"),
-            output_tokens=inserted.get("output_tokens"),
-            cache_creation_input_tokens=inserted.get("cache_creation_input_tokens"),
-            cache_read_input_tokens=inserted.get("cache_read_input_tokens"),
-            duration_ms=inserted.get("duration_ms"),
-            cost_usd=inserted.get("cost_usd"),
-            error=inserted.get("error"),
-            created_at=inserted.get("created_at"),
-            created_by=inserted.get("created_by"),
+        # Allocate sample_index inside the function with retry on UNIQUE
+        # violation, so concurrent fire_fork callers can't race to the same
+        # (base_exchange_id, overrides_hash, sample_index) tuple.
+        for _ in range(_FORK_SAMPLE_INDEX_MAX_ATTEMPTS):
+            max_idx = await self.get_max_fork_sample_index(base_exchange_id, overrides_hash)
+            next_idx = (max_idx + 1) if max_idx is not None else 0
+            row = {**base_row, "id": str(uuid.uuid4()), "sample_index": next_idx}
+            try:
+                result = await self._execute(self.client.table("exchange_forks").insert(row))
+            except APIError as exc:
+                if exc.code == _PG_UNIQUE_VIOLATION_SQLSTATE:
+                    continue
+                raise
+            inserted = _rows(result)[0] if _rows(result) else row
+            return ForkRow(
+                id=inserted["id"],
+                base_exchange_id=inserted["base_exchange_id"],
+                overrides=inserted["overrides"],
+                overrides_hash=inserted["overrides_hash"],
+                sample_index=inserted["sample_index"],
+                model=inserted["model"],
+                temperature=inserted.get("temperature"),
+                response_text=inserted.get("response_text"),
+                tool_calls=inserted.get("tool_calls") or [],
+                stop_reason=inserted.get("stop_reason"),
+                input_tokens=inserted.get("input_tokens"),
+                output_tokens=inserted.get("output_tokens"),
+                cache_creation_input_tokens=inserted.get("cache_creation_input_tokens"),
+                cache_read_input_tokens=inserted.get("cache_read_input_tokens"),
+                duration_ms=inserted.get("duration_ms"),
+                cost_usd=inserted.get("cost_usd"),
+                error=inserted.get("error"),
+                created_at=inserted.get("created_at"),
+                created_by=inserted.get("created_by"),
+            )
+        raise RuntimeError(
+            f"save_fork: could not allocate sample_index for "
+            f"({base_exchange_id}, {overrides_hash}) after "
+            f"{_FORK_SAMPLE_INDEX_MAX_ATTEMPTS} attempts"
         )
 
     async def get_max_fork_sample_index(

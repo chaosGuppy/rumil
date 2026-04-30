@@ -8,16 +8,12 @@ the base exchange via its UUID and don't filter by project.
 
 from __future__ import annotations
 
-import uuid
-from collections.abc import AsyncIterator
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from rumil.api.auth import AuthUser, require_admin
+from rumil.api.auth import AuthUser, _get_admin_db, require_admin
 from rumil.database import DB
 from rumil.forks import ForkOverrides, fire_fork, resolve_base
-from rumil.settings import get_settings
 
 
 class BaseExchangeOut(BaseModel):
@@ -71,17 +67,8 @@ router = APIRouter(
 )
 
 
-async def _admin_db(_user: AuthUser = Depends(require_admin)) -> AsyncIterator[DB]:
-    prod = get_settings().is_prod_db
-    db = await DB.create(run_id=str(uuid.uuid4()), prod=prod)
-    try:
-        yield db
-    finally:
-        await db.close()
-
-
 @router.get("/base/{exchange_id}", response_model=BaseExchangeOut)
-async def get_base(exchange_id: str, db: DB = Depends(_admin_db)) -> BaseExchangeOut:
+async def get_base(exchange_id: str, db: DB = Depends(_get_admin_db)) -> BaseExchangeOut:
     try:
         base = await resolve_base(db, exchange_id)
     except ValueError as exc:
@@ -105,7 +92,7 @@ async def get_base(exchange_id: str, db: DB = Depends(_admin_db)) -> BaseExchang
 async def fire(
     body: FireForkRequest,
     user: AuthUser = Depends(require_admin),
-    db: DB = Depends(_admin_db),
+    db: DB = Depends(_get_admin_db),
 ) -> list[ForkOut]:
     if body.n_samples < 1 or body.n_samples > 20:
         raise HTTPException(status_code=400, detail="n_samples must be in [1, 20]")
@@ -146,7 +133,7 @@ async def fire(
 
 
 @router.get("", response_model=list[ForkOut])
-async def list_forks(base_exchange_id: str, db: DB = Depends(_admin_db)) -> list[ForkOut]:
+async def list_forks(base_exchange_id: str, db: DB = Depends(_get_admin_db)) -> list[ForkOut]:
     rows = await db.list_forks_for_exchange(base_exchange_id)
     return [
         ForkOut(
@@ -175,7 +162,7 @@ async def list_forks(base_exchange_id: str, db: DB = Depends(_admin_db)) -> list
 
 
 @router.delete("/{fork_id}")
-async def delete_fork(fork_id: str, db: DB = Depends(_admin_db)) -> dict[str, bool]:
+async def delete_fork(fork_id: str, db: DB = Depends(_get_admin_db)) -> dict[str, bool]:
     existing = await db.get_fork(fork_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Fork not found")

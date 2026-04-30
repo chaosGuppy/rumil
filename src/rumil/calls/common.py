@@ -333,11 +333,18 @@ async def run_agent_loop(
             elif isinstance(block, ToolUseBlock):
                 tool_uses.append(block)
 
-        if response.stop_reason == "end_turn" or not tool_uses:
-            log.debug(
-                "run_agent_loop ending: stop_reason=%s, tool_uses=%d, rounds_used=%d",
-                response.stop_reason,
+        if response.stop_reason == "end_turn" and tool_uses:
+            log.warning(
+                "Model returned stop_reason=end_turn with %d pending tool call(s); "
+                "executing them anyway (round %d).",
                 len(tool_uses),
+                round_num + 1,
+            )
+
+        if not tool_uses:
+            log.debug(
+                "run_agent_loop ending: stop_reason=%s, tool_uses=0, rounds_used=%d",
+                response.stop_reason,
                 round_num + 1,
             )
             rr = RoundRecord(

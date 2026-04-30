@@ -22,6 +22,7 @@ import pathlib
 import sys
 
 VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
+RUMIL_ROOT = VERSUS_ROOT.parent
 
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
@@ -34,12 +35,18 @@ except ModuleNotFoundError:
     sys.stderr.write(
         "[err] rumil isn't importable from this venv. Run from the rumil "
         "repo root, not versus/:\n"
-        f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/run_completions.py ...\n"
+        f"      cd {RUMIL_ROOT} && uv run python versus/scripts/run_completions.py ...\n"
     )
     raise SystemExit(1) from None
 
-from versus import complete, config, prepare, sources, versus_db  # noqa: E402
+from versus import complete, config, envcascade, prepare, sources, versus_db  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
+
+envcascade.apply(
+    ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"),
+    versus_root=VERSUS_ROOT,
+    rumil_root=RUMIL_ROOT,
+)
 
 
 def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_essay.Essay | None:

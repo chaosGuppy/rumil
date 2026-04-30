@@ -1,15 +1,17 @@
-"""Run completions for all cached essays.
+"""Run completions for the canonical active essay set.
+
+Default scope is the same gate ``/versus`` applies: current
+``schema_version`` and not in ``cfg.essays.exclude_ids``. Pass
+``--include-stale`` to instead run over every essay returned by the
+source fetchers (minus ``exclude_ids``) — useful for backfill or
+debugging old-schema rows.
 
 Filters mirror run_judgments.py so targeted runs are possible without
 editing config.yaml:
   --model <id>    (repeatable)  restrict to specific completion models
   --essay <id>    (repeatable)  restrict to specific essays
-  --active                      canonical eval set only (current schema, not excluded)
+  --include-stale               run over all fetched essays, not just the active set
   --prefix-label <id>           target a specific prefix variant (default: canonical)
-
-``cfg.essays.exclude_ids`` is always honored, so excluded essays never
-get completions even without ``--active``. Run from any cwd — paths
-resolve relative to versus/.
 """
 
 from __future__ import annotations
@@ -86,12 +88,14 @@ def main() -> None:
         help="Restrict to specified essay_id(s). Repeatable.",
     )
     ap.add_argument(
-        "--active",
+        "--include-stale",
         action="store_true",
         help=(
-            "Restrict to the canonical active set: current schema_version and "
-            "not in cfg.essays.exclude_ids. Same gate /versus applies. "
-            "Composes with --essay (both act as filters)."
+            "Default behavior is the canonical active set (current "
+            "schema_version, not in cfg.essays.exclude_ids — same gate "
+            "/versus applies). Pass this to run over every fetched essay "
+            "instead, including off-feed or old-schema rows. "
+            "exclude_ids is still honored."
         ),
     )
     ap.add_argument(
@@ -134,11 +138,11 @@ def main() -> None:
     exclude = set(cfg.essays.exclude_ids)
     essays = [e for e in essays if e.id not in exclude]
 
-    if args.active:
-        # --active is a hard list of the canonical eval set, not an
-        # intersection with fetch_all. Active essays that have rolled
-        # off the source's live feed but are still valid in cache should
-        # be loaded directly so the run honors --active in full.
+    if not args.include_stale:
+        # Default: restrict to the canonical eval set. This is a hard
+        # list, not an intersection with fetch_all — active essays that
+        # have rolled off the source's live feed but are still valid in
+        # cache get loaded directly so the run honors --active in full.
         active = prepare.active_essay_ids(
             cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
         )
@@ -146,7 +150,7 @@ def main() -> None:
         for missing_id in sorted(active - fetched_ids):
             cached = _load_essay_from_cache(cfg.essays.cache_dir, missing_id)
             if cached is None:
-                print(f"[warn] --active {missing_id}: not in cache or schema mismatch; skipping")
+                print(f"[warn] active {missing_id}: not in cache or schema mismatch; skipping")
                 continue
             print(f"[essay] {missing_id}: loaded from cache (off live feed)")
             essays.append(cached)

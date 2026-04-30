@@ -135,12 +135,14 @@ def main() -> None:
         help="Restrict planning to specified essay_id(s). Repeatable. Honored on blind, ws, and orch.",
     )
     ap.add_argument(
-        "--active",
+        "--include-stale",
         action="store_true",
         help=(
-            "Restrict to the canonical active set: current schema_version "
-            "and not in cfg.essays.exclude_ids. Same gate /versus applies. "
-            "Composes with --essay (intersected)."
+            "Default behavior is the canonical active set (current "
+            "schema_version, not in cfg.essays.exclude_ids — same gate "
+            "/versus applies). Pass this to plan against every essay "
+            "with rows in versus_texts instead, including off-feed or "
+            "old-schema rows. Composes with --essay (intersected)."
         ),
     )
     ap.add_argument(
@@ -212,13 +214,13 @@ def main() -> None:
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 
-    if args.active:
+    if args.include_stale:
+        essay_ids = args.essay
+    else:
         active = prepare.active_essay_ids(
             cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
         )
         essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
-    else:
-        essay_ids = args.essay
 
     prefix_cfgs = (
         [prepare.resolve_prefix_cfg(cfg, label) for label in args.prefix_label]

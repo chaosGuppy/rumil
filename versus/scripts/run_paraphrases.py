@@ -1,11 +1,12 @@
-"""Generate model paraphrases for all cached essays.
+"""Generate model paraphrases for the canonical active essay set.
+
+Default scope is the same gate ``/versus`` applies: current
+``schema_version`` and not in ``cfg.essays.exclude_ids``. Pass
+``--include-stale`` to instead run over every essay returned by the
+source fetchers (minus ``exclude_ids``).
 
   --essay <id>    (repeatable)  restrict to specific essays
-  --active                      canonical eval set only (current schema, not excluded)
-
-``cfg.essays.exclude_ids`` is always honored, so excluded essays never
-get paraphrases even without ``--active``. Run from any cwd — paths
-resolve relative to versus/.
+  --include-stale               run over all fetched essays, not just the active set
 """
 
 from __future__ import annotations
@@ -41,11 +42,14 @@ def main() -> None:
         help="Restrict to specified essay_id(s). Repeatable.",
     )
     ap.add_argument(
-        "--active",
+        "--include-stale",
         action="store_true",
         help=(
-            "Restrict to the canonical active set: current schema_version and "
-            "not in cfg.essays.exclude_ids. Same gate /versus applies."
+            "Default behavior is the canonical active set (current "
+            "schema_version, not in cfg.essays.exclude_ids — same gate "
+            "/versus applies). Pass this to run over every fetched essay "
+            "instead, including off-feed or old-schema rows. "
+            "exclude_ids is still honored."
         ),
     )
     args = ap.parse_args()
@@ -66,7 +70,7 @@ def main() -> None:
     exclude = set(cfg.essays.exclude_ids)
     essays = [e for e in essays if e.id not in exclude]
 
-    if args.active:
+    if not args.include_stale:
         active = prepare.active_essay_ids(cfg.essays.exclude_ids)
         essays = [e for e in essays if e.id in active]
     if args.essay:

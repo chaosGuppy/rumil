@@ -2,7 +2,7 @@
 name: rumil-versus-judge
 description: Run pairwise judgments on versus essay-continuation pairs. Default mode is the unified blind path (single-turn LLM call, no tools, no DB) — claude-* models route direct to Anthropic, others through OpenRouter. --variant ws adds a rumil SDK agent with workspace-exploration tools; --variant orch fires a full TwoPhaseOrchestrator run per pair. Use when the user wants to measure how rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare blind judges against workspace-aware ones, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "[--variant ws|orch] [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
+argument-hint: "[--variant ws|orch] [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -120,6 +120,12 @@ essay. For focused comparisons (especially expensive paths like orch)
 use these filters — all shared across ws and orch:
 
 - `--essay <id>` (repeatable) — restrict to specific essays.
+- `--include-stale` — opt out of the active-set default. By default
+  the planner restricts to the canonical active essay set (current
+  `schema_version`, not in `cfg.essays.exclude_ids` — same gate
+  `/versus` applies). Pass this to widen to every essay with rows in
+  `versus_texts`, including off-feed or older-schema rows. Composes
+  with `--essay` (intersected when not stale).
 - `--contestants <csv>` — only pairs where BOTH source_ids are in the
   list. Controls which contestants get compared against each other.
 - `--vs-human` — only pairs where one side is `human`.

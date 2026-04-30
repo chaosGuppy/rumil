@@ -2162,9 +2162,6 @@
   border-left-width: 3px;
   border-left-color: var(--variant-accent, #b88c2a);
 }
-.fork-column--variant .fork-col-header {
-  background: var(--variant-accent-bg-light, #fffcf2);
-}
 .fork-column--variant .fork-col-label {
   color: var(--variant-accent, #555);
 }

@@ -36,7 +36,7 @@ except ModuleNotFoundError:
     )
     raise SystemExit(1) from None
 
-from versus import complete, config, prepare, sources  # noqa: E402
+from versus import complete, config, prepare, sources, versus_db  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
 
 
@@ -96,17 +96,28 @@ def main() -> None:
     )
     ap.add_argument(
         "--prefix-label",
+        action="append",
         default=None,
         help=(
-            "Run completions under a specific prefix variant (default: "
-            "the canonical `prefix:` entry). Sibling variants are listed "
-            "under `prefix_variants:` in config.yaml; pass their `id` here."
+            "Run completions under a specific prefix variant. Repeatable: "
+            "pass once per variant to run multiple in one invocation. "
+            "Default: the canonical `prefix:` entry. Sibling variants are "
+            "listed under `prefix_variants:` in config.yaml; pass their `id`."
         ),
+    )
+    ap.add_argument(
+        "--prod",
+        action="store_true",
+        help="Target the production Supabase database (default: local).",
     )
     args = ap.parse_args()
 
     cfg = config.load(args.config)
-    prefix_cfg = prepare.resolve_prefix_cfg(cfg, args.prefix_label)
+    prefix_cfgs = (
+        [prepare.resolve_prefix_cfg(cfg, label) for label in args.prefix_label]
+        if args.prefix_label
+        else [prepare.resolve_prefix_cfg(cfg, None)]
+    )
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
     if not cfg.storage.paraphrases_log.is_absolute():
@@ -117,13 +128,28 @@ def main() -> None:
         source_cfgs=cfg.essays.sources,
         cache_dir=cfg.essays.cache_dir,
         raw_html_dir=raw_html_dir,
+        prod=args.prod,
     )
 
     exclude = set(cfg.essays.exclude_ids)
     essays = [e for e in essays if e.id not in exclude]
 
     if args.active:
-        active = prepare.active_essay_ids(cfg.essays.exclude_ids)
+        # --active is a hard list of the canonical eval set, not an
+        # intersection with fetch_all. Active essays that have rolled
+        # off the source's live feed but are still valid in cache should
+        # be loaded directly so the run honors --active in full.
+        active = prepare.active_essay_ids(
+            cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
+        )
+        fetched_ids = {e.id for e in essays}
+        for missing_id in sorted(active - fetched_ids):
+            cached = _load_essay_from_cache(cfg.essays.cache_dir, missing_id)
+            if cached is None:
+                print(f"[warn] --active {missing_id}: not in cache or schema mismatch; skipping")
+                continue
+            print(f"[essay] {missing_id}: loaded from cache (off live feed)")
+            essays.append(cached)
         essays = [e for e in essays if e.id in active]
     if args.essay:
         # --essay is a hard list, not an intersection with fetch_all.
@@ -147,8 +173,10 @@ def main() -> None:
             print(f"[err] no models matched --model {args.model}; check config.yaml")
             sys.exit(1)
 
-    print(f"[prefix] using variant {prefix_cfg.id!r}")
-    complete.run(cfg, essays, prefix_cfg=prefix_cfg)
+    target = "prod" if args.prod else "local"
+    for prefix_cfg in prefix_cfgs:
+        print(f"[prefix] using variant {prefix_cfg.id!r} (db={target})")
+        complete.run(cfg, essays, prefix_cfg=prefix_cfg, prod=args.prod)
 
 
 if __name__ == "__main__":

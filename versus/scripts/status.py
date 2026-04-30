@@ -40,9 +40,10 @@ from versus import config, judge, prepare, versus_db  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
 
 
-def _load_essays(cfg: config.Config) -> dict[str, versus_essay.Essay]:
+def _load_essays(cfg: config.Config, *, prod: bool = False) -> dict[str, versus_essay.Essay]:
     exclude = set(cfg.essays.exclude_ids)
-    return {e.id: e for e in prepare.load_essays() if e.id not in exclude}
+    client = versus_db.get_client(prod=prod)
+    return {e.id: e for e in prepare.load_essays(client) if e.id not in exclude}
 
 
 def _current_prefix_hashes(
@@ -63,13 +64,13 @@ def _current_prefix_hashes(
     return out
 
 
-def _scan_texts() -> list[dict]:
-    client = versus_db.get_client()
+def _scan_texts(*, prod: bool = False) -> list[dict]:
+    client = versus_db.get_client(prod=prod)
     return list(versus_db.iter_texts(client))
 
 
-def _scan_judgments() -> list[dict]:
-    client = versus_db.get_client()
+def _scan_judgments(*, prod: bool = False) -> list[dict]:
+    client = versus_db.get_client(prod=prod)
     return list(versus_db.iter_judgments(client))
 
 
@@ -146,20 +147,26 @@ def _judgments_per_variant(
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.add_argument(
+        "--prod",
+        action="store_true",
+        help="Inspect the production Supabase database (default: local).",
+    )
     args = p.parse_args()
 
     cfg = config.load(str(VERSUS_ROOT / "config.yaml"))
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
-    essays = _load_essays(cfg)
+    essays = _load_essays(cfg, prod=args.prod)
     if not essays:
-        print("no cached essays — run scripts/fetch_essays.py first")
+        target = "prod" if args.prod else "local"
+        print(f"no essays in {target} versus_essays — run backfill_db.py / fetch_essays.py first")
         sys.exit(1)
     variants = prepare.active_prefix_configs(cfg)
     variant_hashes = {v.id: _current_prefix_hashes(cfg, essays, prefix_cfg=v) for v in variants}
 
-    completions = _scan_texts()
-    judgments = _scan_judgments()
+    completions = _scan_texts(prod=args.prod)
+    judgments = _scan_judgments(prod=args.prod)
 
     comp_per_variant, comp_orphaned, comp_unknown = _completions_per_variant(
         completions, variant_hashes

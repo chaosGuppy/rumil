@@ -238,6 +238,7 @@ def fetch(
     cache_dir: pathlib.Path,
     raw_html_dir: pathlib.Path,
     client: httpx.Client,
+    prod: bool = False,
 ) -> list[Essay]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     raw_html_dir.mkdir(parents=True, exist_ok=True)
@@ -298,6 +299,6 @@ def fetch(
         )
         with open(json_path, "w") as f:
             json.dump(essay.to_json(), f, indent=2)
-        versus_db.mirror_essay(essay, raw_html=html)
+        versus_db.mirror_essay(essay, raw_html=html, prod=prod)
         essays.append(essay)
     return essays

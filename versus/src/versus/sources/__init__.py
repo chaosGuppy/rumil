@@ -29,6 +29,8 @@ def fetch_all(
     cache_dir: pathlib.Path,
     raw_html_dir: pathlib.Path,
     client: httpx.Client | None = None,
+    *,
+    prod: bool = False,
 ) -> list[Essay]:
     """Iterate configured sources in declaration order and concatenate results.
 
@@ -53,6 +55,7 @@ def fetch_all(
                     cache_dir=cache_dir,
                     raw_html_dir=raw_html_dir,
                     client=client,
+                    prod=prod,
                 )
             )
         return essays

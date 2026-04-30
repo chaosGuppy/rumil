@@ -54,7 +54,7 @@ envcascade.apply(
 )
 
 from rumil.settings import RUMIL_MODEL_ALIASES, resolve_model_alias  # noqa: E402
-from versus import config, judge, prepare, rumil_judge  # noqa: E402
+from versus import config, judge, prepare, rumil_judge, versus_db  # noqa: E402
 
 DEFAULT_DIMENSIONS = ("general_quality",)
 
@@ -167,14 +167,26 @@ def main() -> None:
     )
     ap.add_argument(
         "--prefix-label",
+        action="append",
         default=None,
         help=(
-            "Restrict planning to a specific prefix variant. When set, only "
-            "rows whose prefix_hash matches that variant's current hash are "
-            "enumerated — stale rows under that variant are excluded too. "
-            "Without this flag, every prefix_hash present in versus_texts "
-            "is eligible. Sibling variants live under `prefix_variants:` "
-            "in config.yaml; pass their `id`."
+            "Restrict planning to a specific prefix variant. Repeatable on "
+            "the blind path: pass once per variant to plan multiple in one "
+            "invocation. When set, only rows whose prefix_hash matches that "
+            "variant's current hash are enumerated — stale rows under that "
+            "variant are excluded too. Without this flag, every prefix_hash "
+            "present in versus_texts is eligible. Sibling variants live "
+            "under `prefix_variants:` in config.yaml; pass their `id`. "
+            "ws/orch variants currently take at most one --prefix-label."
+        ),
+    )
+    ap.add_argument(
+        "--prod",
+        action="store_true",
+        help=(
+            "Target the production Supabase database for versus_texts / "
+            "versus_judgments (default: local). Blind path only — ws/orch "
+            "still hit local rumil DB."
         ),
     )
     ap.add_argument(
@@ -201,18 +213,20 @@ def main() -> None:
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 
     if args.active:
-        active = prepare.active_essay_ids(cfg.essays.exclude_ids)
+        active = prepare.active_essay_ids(
+            cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
+        )
         essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
     else:
         essay_ids = args.essay
 
-    prefix_cfg = (
-        prepare.resolve_prefix_cfg(cfg, args.prefix_label)
-        if args.prefix_label is not None
+    prefix_cfgs = (
+        [prepare.resolve_prefix_cfg(cfg, label) for label in args.prefix_label]
+        if args.prefix_label
         else None
     )
-    if prefix_cfg is not None:
-        print(f"[prefix] restricting to variant {prefix_cfg.id!r}")
+    if prefix_cfgs is not None:
+        print(f"[prefix] restricting to variants {[p.id for p in prefix_cfgs]!r}")
 
     if args.variant is None:
         # Blind path: route claude-* direct to Anthropic, others via OpenRouter.
@@ -233,7 +247,8 @@ def main() -> None:
             contestants=contestants,
             vs_human=args.vs_human,
             current_only=args.current_only,
-            prefix_cfg=prefix_cfg,
+            prefix_cfgs=prefix_cfgs,
+            prod=args.prod,
         )
         return
 
@@ -246,6 +261,20 @@ def main() -> None:
 
     if not args.workspace:
         ap.error(f"--workspace is required for --variant {args.variant}")
+
+    if args.prod:
+        ap.error(
+            f"--prod is not yet wired through --variant {args.variant}; "
+            "the blind path is the only prod-aware judge today. ws/orch "
+            "would need DB.create(prod=...) plumbing in rumil_judge.py too."
+        )
+
+    if prefix_cfgs is not None and len(prefix_cfgs) > 1:
+        ap.error(
+            f"--variant {args.variant} takes at most one --prefix-label "
+            f"(got {len(prefix_cfgs)}). Run separately per prefix variant."
+        )
+    prefix_cfg_one = prefix_cfgs[0] if prefix_cfgs else None
 
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
 
@@ -263,7 +292,7 @@ def main() -> None:
                 contestants=contestants,
                 vs_human=args.vs_human,
                 current_only=args.current_only,
-                prefix_cfg=prefix_cfg,
+                prefix_cfg=prefix_cfg_one,
                 persist=args.persist,
             )
         )
@@ -282,7 +311,7 @@ def main() -> None:
                 contestants=contestants,
                 vs_human=args.vs_human,
                 current_only=args.current_only,
-                prefix_cfg=prefix_cfg,
+                prefix_cfg=prefix_cfg_one,
                 persist=args.persist,
             )
         )

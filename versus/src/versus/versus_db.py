@@ -72,7 +72,7 @@ def upsert_essay(
     client.table("versus_essays").upsert(row, on_conflict="id").execute()
 
 
-def mirror_essay(essay: Any, raw_html: str | None = None) -> None:
+def mirror_essay(essay: Any, raw_html: str | None = None, *, prod: bool = False) -> None:
     """Upsert a parsed Essay into versus_essays from a fresh-fetcher path.
 
     Shared helper for the per-source fetchers so they don't each
@@ -81,7 +81,7 @@ def mirror_essay(essay: Any, raw_html: str | None = None) -> None:
     essay.
     """
     try:
-        client = get_client()
+        client = get_client(prod=prod)
         upsert_essay(
             client,
             id=essay.id,

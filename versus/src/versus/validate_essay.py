@@ -165,6 +165,7 @@ def validate(
     cache_dir: pathlib.Path,
     *,
     force: bool = False,
+    prod: bool = False,
 ) -> dict:
     """Return the verdict dict, calling Sonnet only when the cache misses.
 
@@ -210,7 +211,7 @@ def validate(
     path.write_text(json.dumps(verdict, indent=2, ensure_ascii=False))
     try:
         versus_db.upsert_essay_verdict(
-            versus_db.get_client(),
+            versus_db.get_client(prod=prod),
             essay_id=essay_id,
             clean=verdict["clean"],
             issues=verdict["issues"],

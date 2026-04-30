@@ -310,6 +310,15 @@ def main() -> None:
     parser.add_argument(
         "--prod", action="store_true", help="Target prod (DO NOT use without intent)"
     )
+    parser.add_argument(
+        "--essays-only",
+        action="store_true",
+        help=(
+            "Import versus_essays only and exit; skip the legacy JSONL replay "
+            "into versus_texts / versus_judgments. Useful for seeding a fresh "
+            "DB (e.g. prod) without dragging archival completion/judgment data."
+        ),
+    )
     args = parser.parse_args()
 
     client = get_client(prod=args.prod)
@@ -319,6 +328,9 @@ def main() -> None:
     t_essays = time.time()
     import_essays(client)
     print(f"  essays: {time.time() - t_essays:.1f}s")
+
+    if args.essays_only:
+        return
 
     existing_texts = client.table("versus_texts").select("id", count="exact").limit(1).execute()
     existing_judgments = (

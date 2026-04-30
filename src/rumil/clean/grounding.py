@@ -115,7 +115,7 @@ def _make_create_claim_tool(call: Call, db: DB):
         _CreateClaimInput.model_json_schema(),
     )
     async def create_claim(args: dict) -> dict:
-        result = await execute_with_source_creation(args, call, db, source_cache)
+        result, _ = await execute_with_source_creation(args, call, db, source_cache)
         return {"content": [{"type": "text", "text": result.message}]}
 
     return create_claim

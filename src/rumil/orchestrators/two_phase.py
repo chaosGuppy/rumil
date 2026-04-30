@@ -7,7 +7,7 @@ import logging
 from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
-from rumil.calls.common import mark_call_completed
+from rumil.calls.common import embed_task_for_page, mark_call_completed
 from rumil.calls.dispatches import (
     DISPATCH_DEFS,
     RECURSE_CLAIM_DISPATCH_DEF,
@@ -377,12 +377,8 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             "Do not do anything else — just dispatch."
         )
 
-        question = await self.db.get_page(question_id)
-        embed_task = (
-            f'the question being investigated: "{question.headline}"\n\n'
-            "fan-out scouting prioritization."
-            if question
-            else "fan-out scouting prioritization."
+        embed_task = await embed_task_for_page(
+            self.db, question_id, "fan-out scouting prioritization."
         )
         result = await run_prioritization_call(
             task,
@@ -665,12 +661,10 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             extra_defs.append(RECURSE_DISPATCH_DEF)
             extra_defs.append(RECURSE_CLAIM_DISPATCH_DEF)
 
-        question = await self.db.get_page(question_id)
-        embed_task = (
-            f'the question being investigated: "{question.headline}"\n\n'
-            "main-phase prioritization across open lines of research."
-            if question
-            else "main-phase prioritization across open lines of research."
+        embed_task = await embed_task_for_page(
+            self.db,
+            question_id,
+            "main-phase prioritization across open lines of research.",
         )
         result = await run_prioritization_call(
             task,

@@ -46,6 +46,26 @@ from rumil.tracing.tracer import get_trace
 
 log = logging.getLogger(__name__)
 
+
+async def embed_task_for_page(
+    db: DB,
+    page_id: str,
+    framing: str,
+    *,
+    label: str = "question",
+) -> str:
+    """Build the natural-language task summary embedded into the preamble.
+
+    Names the page being investigated and follows with the call's procedural
+    framing. Falls back to ``framing`` alone when the page can't be loaded
+    (e.g. it has been superseded). DB errors propagate.
+    """
+    page = await db.get_page(page_id)
+    if page is None:
+        return framing
+    return f'the {label} being investigated: "{page.headline}"\n\n{framing}'
+
+
 PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.LOAD_PAGE: ["page_id"],
     MoveType.LINK_CONSIDERATION: ["claim_id", "question_id"],

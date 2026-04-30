@@ -7,7 +7,7 @@ import logging
 from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
-from rumil.calls.common import mark_call_completed
+from rumil.calls.common import embed_task_for_page, mark_call_completed
 from rumil.calls.dispatches import (
     DISPATCH_DEFS,
     RECURSE_CLAIM_DISPATCH_DEF,
@@ -351,12 +351,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             "Do not do anything else — just dispatch."
         )
 
-        claim = await self.db.get_page(claim_id)
-        embed_task = (
-            f'the claim being investigated: "{claim.headline}"\n\n'
-            "fan-out scouting prioritization for claim investigation."
-            if claim
-            else "fan-out scouting prioritization for claim investigation."
+        embed_task = await embed_task_for_page(
+            self.db,
+            claim_id,
+            "fan-out scouting prioritization for claim investigation.",
+            label="claim",
         )
         result = await run_prioritization_call(
             task,
@@ -583,12 +582,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             extra_defs.append(RECURSE_CLAIM_DISPATCH_DEF)
             extra_defs.append(RECURSE_DISPATCH_DEF)
 
-        claim = await self.db.get_page(claim_id)
-        embed_task = (
-            f'the claim being investigated: "{claim.headline}"\n\n'
-            "main-phase prioritization across open lines of claim investigation."
-            if claim
-            else "main-phase prioritization for claim investigation."
+        embed_task = await embed_task_for_page(
+            self.db,
+            claim_id,
+            "main-phase prioritization across open lines of claim investigation.",
+            label="claim",
         )
         result = await run_prioritization_call(
             task,

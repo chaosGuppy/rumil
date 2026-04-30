@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from rumil.budget import _consume_budget
 from rumil.calls.common import (
+    embed_task_for_page,
     execute_tool_uses,
     prepare_tools,
     record_round_moves,
@@ -39,23 +40,6 @@ from rumil.moves.registry import MOVES
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
-
-
-async def _build_embed_task(infra: CallInfra, task_description: str) -> str:
-    """Build the natural-language task summary embedded into the system prompt.
-
-    Combines the call's task_description (procedural framing) with the
-    question's headline (so the model knows what's actually being investigated).
-    Falls back gracefully if the question can't be loaded.
-    """
-    try:
-        question = await infra.db.get_page(infra.question_id)
-        headline = question.headline if question else None
-    except Exception:
-        headline = None
-    if headline:
-        return f'the question being investigated: "{headline}"\n\n{task_description}'
-    return task_description
 
 
 class SimpleAgentLoop(WorkspaceUpdater):
@@ -91,7 +75,7 @@ class SimpleAgentLoop(WorkspaceUpdater):
         )
         tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
         prompt_name = self._prompt_name or self._call_type.value
-        embed_task = await _build_embed_task(infra, self._task_description)
+        embed_task = await embed_task_for_page(infra.db, infra.question_id, self._task_description)
         system_prompt = build_system_prompt(
             prompt_name,
             task=embed_task,
@@ -208,7 +192,7 @@ class MultiRoundLoop(WorkspaceUpdater):
                 "Question ID (use this when linking considerations): "
                 f"`{infra.question_id}`"
             )
-        embed_task = await _build_embed_task(infra, task)
+        embed_task = await embed_task_for_page(infra.db, infra.question_id, task)
         system_prompt = build_system_prompt(
             self._call_type.value,
             task=embed_task,
@@ -362,7 +346,7 @@ class WebResearchLoop(WorkspaceUpdater):
             "Question ID (use this when linking considerations): "
             f"`{infra.question_id}`"
         )
-        embed_task = await _build_embed_task(infra, task)
+        embed_task = await embed_task_for_page(infra.db, infra.question_id, task)
         system_prompt = build_system_prompt(
             "web_research",
             task=embed_task,

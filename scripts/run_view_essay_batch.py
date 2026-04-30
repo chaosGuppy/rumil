@@ -161,7 +161,7 @@ async def run(args: argparse.Namespace) -> None:
         return
 
     if labels == [None]:
-        print(f"Labels:       (none — flat output)")
+        print("Labels:       (none — flat output)")
     else:
         print(f"Labels:       {len(labels)}")
     print(f"N per label:  {args.n_per_label}")

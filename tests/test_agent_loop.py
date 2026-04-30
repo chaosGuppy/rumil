@@ -127,9 +127,7 @@ async def test_max_rounds_limits_tool_calls(tmp_db, scout_call):
     assert len(call_count) <= 4
 
 
-async def test_end_turn_with_tool_uses_still_executes_them(
-    tmp_db, scout_call, mocker, caplog
-):
+async def test_end_turn_with_tool_uses_still_executes_them(tmp_db, scout_call, mocker, caplog):
     """If the API returns stop_reason=end_turn together with tool_use blocks
     (which extended-thinking Opus 4.7 has been observed to do), the agent loop
     must still execute the tool calls rather than dropping them on the floor."""

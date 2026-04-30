@@ -184,6 +184,74 @@ function estimateCost(
   return (input + output) * samples;
 }
 
+// Rough token estimate. ~3.5 chars/token is a reasonable heuristic for
+// Claude on prose; JSON / code is denser but this is for UI hinting only.
+const CHARS_PER_TOKEN = 3.5;
+
+function estTokens(s: string | null | undefined): number {
+  if (!s) return 0;
+  return Math.ceil(s.length / CHARS_PER_TOKEN);
+}
+
+function estTokensJson(o: unknown): number {
+  if (o === null || o === undefined) return 0;
+  try {
+    return Math.ceil(JSON.stringify(o).length / CHARS_PER_TOKEN);
+  } catch {
+    return 0;
+  }
+}
+
+function fmtTokens(n: number): string {
+  if (n < 1000) return `${n}`;
+  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${Math.round(n / 1000)}k`;
+}
+
+function estMessageTokens(m: Msg): number {
+  if (typeof m.content === "string") return estTokens(m.content);
+  return estTokensJson(m.content);
+}
+
+function estToolTokens(t: Tool): number {
+  return estTokens(t.name) + estTokens(t.description) + estTokensJson(t.input_schema);
+}
+
+// Palette for distinguishing variant columns and individual samples.
+// Each entry has light + dark surface tints so headers/backgrounds adapt.
+const VARIANT_PALETTE: Array<{ accent: string; bgLight: string; bgDark: string }> = [
+  { accent: "#b88c2a", bgLight: "#fcf5d8", bgDark: "#1f1907" }, // amber
+  { accent: "#2a8c8c", bgLight: "#dcefef", bgDark: "#0a1f1f" }, // teal
+  { accent: "#8a3a8a", bgLight: "#f1e0f1", bgDark: "#1f0a1f" }, // plum
+  { accent: "#b85c2a", bgLight: "#fbe7d8", bgDark: "#21120a" }, // rust
+  { accent: "#3a5cb8", bgLight: "#dde4f4", bgDark: "#0c1326" }, // indigo
+  { accent: "#5c8a3a", bgLight: "#e3edd6", bgDark: "#121f0a" }, // sage
+  { accent: "#a83a6c", bgLight: "#f4dde6", bgDark: "#22091a" }, // berry
+  { accent: "#5c6a8a", bgLight: "#dee2ea", bgDark: "#0e1018" }, // slate
+];
+
+function hashIndex(s: string, mod: number): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h) % mod;
+}
+
+function variantStyle(hash: string): React.CSSProperties {
+  const p = VARIANT_PALETTE[hashIndex(hash, VARIANT_PALETTE.length)];
+  return {
+    ["--variant-accent" as string]: p.accent,
+    ["--variant-accent-bg-light" as string]: p.bgLight,
+    ["--variant-accent-bg-dark" as string]: p.bgDark,
+  };
+}
+
+function sampleAccent(idx: number): string {
+  return VARIANT_PALETTE[idx % VARIANT_PALETTE.length].accent;
+}
+
 // --- Module-level draft store ---------------------------------------------
 //
 // Survives ForkPanel mount/unmount within a session. Keyed by composite
@@ -589,9 +657,10 @@ function VariantColumn({
     () => false,
   );
   const chips = useMemo(() => diffChips(draft, base), [draft, base]);
+  const accentStyle = useMemo(() => variantStyle(hash), [hash]);
 
   return (
-    <div className="fork-column">
+    <div className="fork-column fork-column--variant" style={accentStyle}>
       <div className="fork-col-header">
         <div className="fork-col-title-row">
           <span className="fork-col-label">variant</span>
@@ -619,14 +688,16 @@ function VariantColumn({
           )}
         </div>
       </div>
-      <EditForm base={base} draft={draft} setDraft={setDraft} open={open} setOpen={setOpen} />
-      <FireRow
-        base={base}
-        draft={draft}
-        pending={pending}
-        onFire={(n) => onFire(draft, n)}
-      />
-      <SamplesList samples={samples} pendingCount={pending} totalKnown={samples.length} />
+      <div className="fork-col-scroll">
+        <EditForm base={base} draft={draft} setDraft={setDraft} open={open} setOpen={setOpen} />
+        <SamplesList samples={samples} pendingCount={pending} totalKnown={samples.length} />
+        <FireRow
+          base={base}
+          draft={draft}
+          pending={pending}
+          onFire={(n) => onFire(draft, n)}
+        />
+      </div>
     </div>
   );
 }
@@ -657,9 +728,10 @@ function NewDraftColumn({
     () => true,
   );
   const chips = useMemo(() => diffChips(draft, base), [draft, base]);
+  const accentStyle = useMemo(() => variantStyle(draftKey), [draftKey]);
 
   return (
-    <div className="fork-column">
+    <div className="fork-column fork-column--variant" style={accentStyle}>
       <div className="fork-col-header">
         <div className="fork-col-title-row">
           <span className="fork-col-label">draft</span>
@@ -687,19 +759,21 @@ function NewDraftColumn({
           )}
         </div>
       </div>
-      <EditForm base={base} draft={draft} setDraft={setDraft} open={open} setOpen={setOpen} />
-      <FireRow
-        base={base}
-        draft={draft}
-        pending={pending}
-        onFire={(n) => onFire(draft, n)}
-      />
-      <SamplesList
-        samples={[]}
-        pendingCount={pending}
-        totalKnown={0}
-        emptyHint="will appear after firing"
-      />
+      <div className="fork-col-scroll">
+        <EditForm base={base} draft={draft} setDraft={setDraft} open={open} setOpen={setOpen} />
+        <SamplesList
+          samples={[]}
+          pendingCount={pending}
+          totalKnown={0}
+          emptyHint="will appear after firing"
+        />
+        <FireRow
+          base={base}
+          draft={draft}
+          pending={pending}
+          onFire={(n) => onFire(draft, n)}
+        />
+      </div>
     </div>
   );
 }
@@ -731,6 +805,20 @@ function EditForm({
     return fields;
   }, [draft]);
 
+  const totalTokens = useMemo(() => {
+    if (!base) return 0;
+    const sys = estTokens(draft.systemPrompt ?? base.system_prompt);
+    const msgs = (draft.messages ?? (base.user_messages as Msg[])).reduce(
+      (a, m) => a + estMessageTokens(m),
+      0,
+    );
+    const tools = (draft.tools ?? (base.tools as Tool[])).reduce(
+      (a, t) => a + estToolTokens(t),
+      0,
+    );
+    return sys + msgs + tools;
+  }, [base, draft]);
+
   return (
     <div className="fork-form">
       <button type="button" className="fork-form-toggle" onClick={() => setOpen((o) => !o)}>
@@ -740,6 +828,11 @@ function EditForm({
           <span style={{ marginLeft: 6, color: "#b88c2a" }}>· {editedFields.join(", ")}</span>
         ) : (
           <span style={{ marginLeft: 6, color: "#aaa" }}>· (none — inherits all)</span>
+        )}
+        {base && (
+          <span className="fork-token-est fork-token-est--total" title="rough total input tokens">
+            ~{fmtTokens(totalTokens)} tok
+          </span>
         )}
       </button>
       {open && (
@@ -787,6 +880,7 @@ function SystemPromptField({
 }) {
   const value = draft.systemPrompt ?? base?.system_prompt ?? "";
   const modified = draft.systemPrompt !== null;
+  const tokens = estTokens(value);
   return (
     <div>
       <FieldLabel
@@ -794,6 +888,7 @@ function SystemPromptField({
         onReset={() => setDraft((d) => ({ ...d, systemPrompt: null }))}
       >
         system prompt
+        <span className="fork-token-est">~{fmtTokens(tokens)} tok</span>
       </FieldLabel>
       <textarea
         className="fork-textarea fork-textarea--system"
@@ -816,6 +911,7 @@ function MessageStackField({
   const baseMessages = (base?.user_messages ?? []) as Msg[];
   const value = draft.messages ?? baseMessages;
   const modified = draft.messages !== null;
+  const totalTokens = value.reduce((a, m) => a + estMessageTokens(m), 0);
   function update(next: Msg[]) {
     setDraft((d) => ({ ...d, messages: next }));
   }
@@ -826,6 +922,7 @@ function MessageStackField({
         onReset={() => setDraft((d) => ({ ...d, messages: null }))}
       >
         message stack ({value.length})
+        <span className="fork-token-est">~{fmtTokens(totalTokens)} tok</span>
       </FieldLabel>
       <div className="fork-msg-stack">
         {value.map((m, i) => (
@@ -884,9 +981,9 @@ function MessageCard({
   onMoveDown?: () => void;
 }) {
   const isStringContent = typeof msg.content === "string";
+  const tokens = estMessageTokens(msg);
   return (
     <div className="fork-msg-card">
-      <span className="fork-msg-handle" title="move (up/down with arrow buttons)">⠿</span>
       <div className="fork-msg-card-body">
         <div className="fork-msg-card-meta">
           <select
@@ -903,6 +1000,7 @@ function MessageCard({
             </span>
           )}
           <span style={{ flex: 1 }} />
+          <span className="fork-token-est">~{fmtTokens(tokens)} tok</span>
           {onMoveUp && (
             <button type="button" className="fork-tool-action-btn" onClick={onMoveUp} title="move up">
               ↑
@@ -984,6 +1082,10 @@ function ToolsField({
   const value = draft.tools ?? baseTools;
   const modified = draft.tools !== null;
   const baseNames = useMemo(() => new Set(baseTools.map((t) => t.name)), [baseTools]);
+  const totalTokens = useMemo(
+    () => value.reduce((a, t) => a + estToolTokens(t), 0),
+    [value],
+  );
 
   function update(next: Tool[]) {
     setDraft((d) => ({ ...d, tools: next }));
@@ -1012,6 +1114,7 @@ function ToolsField({
         onReset={() => setDraft((d) => ({ ...d, tools: null }))}
       >
         tools ({value.length}{baseTools.length !== value.length ? ` / was ${baseTools.length}` : ""})
+        <span className="fork-token-est">~{fmtTokens(totalTokens)} tok</span>
       </FieldLabel>
       <div className="fork-tools-list">
         {allNames.map((name) => {
@@ -1081,6 +1184,9 @@ function ToolCard({
         <span className="fork-tool-name">{tool.name}</span>
         {isAdded && <span className="fork-tool-mark">added</span>}
         <span className="fork-tool-desc">{tool.description}</span>
+        <span className="fork-token-est" title="rough token estimate">
+          ~{fmtTokens(estToolTokens(tool))}
+        </span>
         <div className="fork-tool-actions">
           <button
             type="button"
@@ -1109,7 +1215,7 @@ function ToolCard({
             value={descDraft}
             onChange={(e) => setDescDraft(e.target.value)}
             onBlur={() => onEdit({ ...tool, description: descDraft })}
-            rows={2}
+            rows={4}
           />
           <div style={{ height: 6 }} />
           <FieldLabel modified={false}>input_schema (JSON)</FieldLabel>
@@ -1126,7 +1232,7 @@ function ToolCard({
                 setSchemaErr(e instanceof Error ? e.message : String(e));
               }
             }}
-            rows={6}
+            rows={8}
           />
           {schemaErr && <div style={{ fontSize: 10, color: "#c44", marginTop: 2 }}>{schemaErr}</div>}
         </div>
@@ -1458,9 +1564,11 @@ function SamplesList({
 }
 
 function SampleCard({ sample, indexLabel }: { sample: ForkOut; indexLabel: string }) {
+  const dotColor = sampleAccent(sample.sample_index);
   return (
     <div className="fork-sample">
       <div className="fork-sample-meta">
+        <span className="fork-sample-dot" style={{ background: dotColor }} aria-hidden />
         <span className="fork-sample-label">sample {indexLabel}</span>
         {sample.input_tokens != null && (
           <span className="fork-sample-tokens">

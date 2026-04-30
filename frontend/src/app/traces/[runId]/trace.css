@@ -2042,7 +2042,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: 12px;
   animation: fork-backdrop-in 160ms ease-out;
 }
 @keyframes fork-backdrop-in {
@@ -2074,40 +2074,40 @@
 .fork-modal-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px 20px;
+  gap: 10px;
+  padding: 6px 12px;
   border-bottom: 1px solid #ece4c8;
   background: linear-gradient(180deg, #fcf5d8 0%, #fdfaee 100%);
   flex: 0 0 auto;
 }
 .fork-panel-title {
   font-family: var(--font-geist-mono), monospace;
-  font-size: 12px;
-  letter-spacing: 0.16em;
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: #8a7a3a;
-  font-weight: 600;
+  font-weight: 700;
 }
 .fork-panel-summary {
-  font-size: 13px;
+  font-size: 11px;
   color: #777;
 }
 .fork-panel-summary code {
   font-family: var(--font-geist-mono), monospace;
   background: #ece2c0;
   color: #5a4a10;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 10px;
 }
 .fork-panel-spacer { flex: 1; }
 .fork-panel-close {
   border: 1px solid #d8cea8;
   background: #fff;
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
-  font-size: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  font-size: 12px;
   color: #6a5610;
   cursor: pointer;
   display: flex;
@@ -2143,8 +2143,8 @@
 .fork-columns::-webkit-scrollbar-thumb { background: #d8cea8; border-radius: 4px; }
 
 .fork-column {
-  flex: 0 0 440px;
-  min-width: 440px;
+  flex: 0 0 490px;
+  min-width: 490px;
   height: 100%;
   border: 1px solid #ece4c8;
   border-radius: 4px;
@@ -2153,13 +2153,48 @@
   flex-direction: column;
   overflow: hidden;
 }
+
+/* Per-variant accent — column reads --variant-accent / --variant-accent-bg-*
+   from inline styles set in fork-panel.tsx (palette of 8 colors picked by
+   hash so distinct variants get distinct colors). Falls back to amber
+   when the variables are absent. */
+.fork-column--variant {
+  border-left-width: 3px;
+  border-left-color: var(--variant-accent, #b88c2a);
+}
+.fork-column--variant .fork-col-header {
+  background: var(--variant-accent-bg-light, #fffcf2);
+}
+.fork-column--variant .fork-col-label {
+  color: var(--variant-accent, #555);
+}
+.fork-column--variant .fork-form-toggle {
+  color: var(--variant-accent, #6a5610);
+}
+.fork-column--variant .fork-form-toggle-icon {
+  color: var(--variant-accent, #b88c2a);
+}
+.fork-column--variant .fork-fire-btn {
+  background: var(--variant-accent, #b88c2a);
+  border-color: var(--variant-accent, #b88c2a);
+}
+.fork-column--variant .fork-tool-call {
+  border-left-color: var(--variant-accent, #b88c2a);
+}
+.fork-column--variant .fork-response-text-pre {
+  border-left-color: var(--variant-accent, #d4a847);
+}
+.fork-column--variant .fork-tool-call-name,
+.fork-column--variant .fork-tool-call-caret {
+  color: var(--variant-accent, #6a5610);
+}
 .fork-column--original {
   border-color: #dcdcdc;
   background: #fafafa;
 }
 .fork-column--new {
-  flex: 0 0 240px;
-  min-width: 240px;
+  flex: 0 0 280px;
+  min-width: 280px;
   border-style: dashed;
   border-color: #c8c0a0;
   background: transparent;
@@ -2261,10 +2296,22 @@
 .fork-form {
   border-bottom: 1px solid #f0e8c8;
   flex: 0 0 auto;
-  max-height: 50%;
+}
+
+/* Unified column scroll: form + fire row + samples scroll together so the
+   user can reach the samples below an open edit form without closing it.
+   The fire row sticks to the bottom of the viewport so firing is always
+   one click away regardless of scroll position. */
+.fork-col-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
+  scrollbar-width: thin;
 }
+.fork-col-scroll::-webkit-scrollbar { width: 8px; }
+.fork-col-scroll::-webkit-scrollbar-thumb { background: #e2d8b0; border-radius: 4px; }
 .fork-form-toggle {
   width: 100%;
   display: flex;
@@ -2292,8 +2339,6 @@
   gap: 12px;
   background: #fffcf2;
   border-top: 1px dashed #ece4c8;
-  overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .fork-field-label {
@@ -2348,10 +2393,23 @@
 }
 .fork-textarea {
   resize: vertical;
-  min-height: 56px;
+  min-height: 92px;
 }
-.fork-textarea--system { min-height: 100px; max-height: 280px; }
+.fork-textarea--system { min-height: 136px; max-height: 320px; }
 .fork-textarea--code { font-size: 11px; }
+
+.fork-token-est {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  color: #aaa;
+  letter-spacing: 0.02em;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.fork-token-est--total {
+  color: #8a7a3a;
+  margin-left: 8px;
+}
 
 .fork-field-row {
   display: flex;
@@ -2404,15 +2462,6 @@
   gap: 6px;
   align-items: flex-start;
 }
-.fork-msg-handle {
-  cursor: grab;
-  color: #ccc;
-  font-size: 14px;
-  line-height: 1;
-  user-select: none;
-  padding-top: 4px;
-}
-.fork-msg-handle:active { cursor: grabbing; color: #b88c2a; }
 .fork-msg-card-body { flex: 1; min-width: 0; }
 .fork-msg-card-meta {
   display: flex;
@@ -2564,6 +2613,10 @@
   border-top: 1px solid #ece4c8;
   border-bottom: 1px solid #f0e8c8;
   flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  box-shadow: 0 -2px 6px rgba(184, 140, 42, 0.08);
 }
 .fork-fire-input {
   width: 48px;
@@ -2629,15 +2682,10 @@
 /* ── Samples list ──────────────────────────────────────────────────── */
 
 .fork-samples {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  scrollbar-width: thin;
 }
-.fork-samples::-webkit-scrollbar { width: 8px; }
-.fork-samples::-webkit-scrollbar-thumb { background: #e2d8b0; border-radius: 4px; }
 
 .fork-empty {
   padding: 14px;
@@ -2659,12 +2707,20 @@
 
 .fork-sample-meta {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin-bottom: 6px;
   font-family: var(--font-geist-mono), monospace;
   font-size: 11px;
   color: #888;
+}
+.fork-sample-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 .fork-sample-label {
   color: #444;
@@ -2934,7 +2990,7 @@
     background: #181307;
     border-top-color: #2a230e;
   }
-  .fork-form-body::-webkit-scrollbar-thumb { background: #3a3018; }
+  .fork-col-scroll::-webkit-scrollbar-thumb { background: #3a3018; }
   .fork-field-label { color: #888; }
   .fork-field-label-mod { color: #d4a847; }
   .fork-field-reset { color: #666; }
@@ -2957,10 +3013,10 @@
   .fork-temp-display { color: #d4a847; }
   .fork-temp-disabled { color: #666; }
   .fork-toggle-text { color: #d4a847; }
+  .fork-token-est { color: #666; }
+  .fork-token-est--total { color: #c8a040; }
 
   .fork-msg-card { border-color: #2a230e; background: #131008; }
-  .fork-msg-handle { color: #444; }
-  .fork-msg-handle:active { color: #d4a847; }
   .fork-msg-role-select {
     background: #0e0c04;
     color: #d4a847;
@@ -3010,8 +3066,6 @@
   }
   .fork-fire-confirm-btn { background: #131008; color: #d4a847; border-color: #4a4020; }
   .fork-fire-confirm-btn--ok { background: #b88c2a; color: #1a1a1a; }
-
-  .fork-samples::-webkit-scrollbar-thumb { background: #3a3018; }
 
   .fork-empty { color: #555; }
   .fork-sample { border-bottom-color: #1f1a08; }

@@ -1,6 +1,6 @@
 ---
 name: rumil-forks
-description: Edit and re-fire a captured LLM exchange to see how the model would respond under different conditions — tweaked system prompt, edited message stack, different tool list, different model, different temperature. Side-effect-free (no tool execution, no workspace mutation, no trace recording). Use when the user wants to probe model behavior on an existing exchange — "what if the system prompt said X", "would the model still call that tool if Y was different", "is this exchange stable across samples", "try sampling at higher temp". Admin-only feature; results persist to exchange_forks for side-by-side comparison in the UI. Subcommands: show / fire / list. Pair with /rumil-trace to find exchange_ids.
+description: Edit and re-fire a captured LLM exchange to see how the model would respond under different conditions — tweaked system prompt, edited message stack, different tool list, different model, different temperature, adaptive thinking on/off (Opus 4.7/4.6, Sonnet 4.6). Side-effect-free (no tool execution, no workspace mutation, no trace recording). Use when the user wants to probe model behavior on an existing exchange — "what if the system prompt said X", "would the model still call that tool if Y was different", "is this exchange stable across samples", "try sampling at higher temp", "what if thinking was off". Admin-only feature; results persist to exchange_forks for side-by-side comparison in the UI. Subcommands: show / fire / list. Pair with /rumil-trace to find exchange_ids.
 allowed-tools: Bash, Read, Write
 argument-hint: "<show|fire|list> <exchange_id> [--overrides PATH] [--samples N] [--prod]"
 ---
@@ -9,9 +9,9 @@ argument-hint: "<show|fire|list> <exchange_id> [--overrides PATH] [--samples N] 
 
 Edit-and-rerun for a captured LLM exchange. The base exchange is the
 canonical starting point; overrides replace specific fields (`system_prompt`,
-`user_messages`, `tools`, `model`, `temperature`, `max_tokens`); N samples
-fire in parallel; results persist to `exchange_forks` and render alongside
-the original in the trace UI.
+`user_messages`, `tools`, `model`, `temperature`, `max_tokens`,
+`thinking_off`); N samples fire in parallel; results persist to
+`exchange_forks` and render alongside the original in the trace UI.
 
 **Side-effect-free.** Tool calls returned by the model are stored as data,
 not executed. No pages, links, or mutation events are written. No trace
@@ -26,6 +26,7 @@ the staged-runs visibility model.
 - "Try this exchange with Sonnet instead of Opus"
 - "Edit the user message to ask for X instead and see what changes"
 - "Did the model fixate on this framing? Try rephrasing"
+- "What if Opus had thinking turned off — does the answer change?"
 
 For "actually run the agent loop from this point" (multi-turn, with tool
 execution, in a staged run), this skill is **not** the right tool — that
@@ -55,12 +56,19 @@ response, no tool execution.
      "tools": [{"name": "...", "description": "...", "input_schema": {...}}],
      "model": "claude-sonnet-4-6",
      "temperature": 0.7,
-     "max_tokens": 4096
+     "max_tokens": 4096,
+     "thinking_off": true
    }
    ```
    `tools` is a **full replacement** — to remove a tool, omit it; to add or
    edit one, include the desired Anthropic tool dict. Prefer minimal diffs
    over full rewrites so the diff intent is legible in the UI later.
+
+   `thinking_off: true` disables adaptive thinking on models that have it
+   on by default (Opus 4.7/4.6, Sonnet 4.6). Useful for asking "would
+   the model arrive at the same answer without spending thinking tokens?"
+   On models that don't have adaptive thinking (Haiku, older Sonnet), the
+   flag is a no-op — leave it omitted.
 
 4. **Fire and report:**
    ```
@@ -90,6 +98,9 @@ response, no tool execution.
   different override files; the UI groups them as separate variant columns.
 - **"Compare models"** — same overrides but different `model`. Each model
   is its own column in the UI.
+- **"Does thinking change the answer?"** — `{"thinking_off": true}` on Opus
+  4.7/4.6 or Sonnet 4.6, 1–3 samples. Compare against the captured
+  thinking-on response to see whether deliberation changed anything.
 
 ## Don'ts
 

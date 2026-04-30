@@ -13,7 +13,6 @@ from rumil.llm import build_system_prompt, build_user_message
 from rumil.models import Page, PageLayer, PageType, Workspace
 from rumil.prompts import PROMPTS_DIR
 
-
 PER_CALL_PROBE = "find_considerations"
 
 

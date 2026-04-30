@@ -183,4 +183,4 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay], *, dry_run: bool =
                 print(f"[done] paraphrase {k}")
     finally:
         client.close()
-    summary.print("paraphrases")
+        summary.print("paraphrases")

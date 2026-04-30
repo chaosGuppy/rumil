@@ -504,8 +504,10 @@ async def run_ws(
                     f"label={result.preference_label!r} trace={result.trace_url}"
                 )
 
-    await asyncio.gather(*[_exec_one(pj) for pj in tasks])
-    summary.print("ws judgments")
+    try:
+        await asyncio.gather(*[_exec_one(pj) for pj in tasks])
+    finally:
+        summary.print("ws judgments")
 
 
 async def run_orch(
@@ -742,5 +744,7 @@ async def run_orch(
                     f"label={result.preference_label!r} trace={result.trace_url}"
                 )
 
-    await asyncio.gather(*[_exec_one(pj) for pj in tasks])
-    summary.print("orch judgments")
+    try:
+        await asyncio.gather(*[_exec_one(pj) for pj in tasks])
+    finally:
+        summary.print("orch judgments")

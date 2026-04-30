@@ -663,7 +663,7 @@ def run_blind(
                 )
     finally:
         http.close()
-    summary.print("blind judgments")
+        summary.print("blind judgments")
 
 
 def _call_with_semaphore(sem: threading.BoundedSemaphore, fn, *args, **kwargs):

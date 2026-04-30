@@ -305,4 +305,4 @@ def run(
                 print(f"[done] {row['essay_id']} | {m.id}")
     finally:
         http.close()
-    summary.print("completions")
+        summary.print("completions")

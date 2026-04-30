@@ -134,7 +134,19 @@ def main() -> None:
     essays = [e for e in essays if e.id not in exclude]
 
     if args.active:
+        # --active is a hard list of the canonical eval set, not an
+        # intersection with fetch_all. Active essays that have rolled
+        # off the source's live feed but are still valid in cache should
+        # be loaded directly so the run honors --active in full.
         active = prepare.active_essay_ids(cfg.essays.exclude_ids)
+        fetched_ids = {e.id for e in essays}
+        for missing_id in sorted(active - fetched_ids):
+            cached = _load_essay_from_cache(cfg.essays.cache_dir, missing_id)
+            if cached is None:
+                print(f"[warn] --active {missing_id}: not in cache or schema mismatch; skipping")
+                continue
+            print(f"[essay] {missing_id}: loaded from cache (off live feed)")
+            essays.append(cached)
         essays = [e for e in essays if e.id in active]
     if args.essay:
         # --essay is a hard list, not an intersection with fetch_all.

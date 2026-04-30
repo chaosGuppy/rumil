@@ -15,9 +15,9 @@ Usage:
         --render-variant default|expanded|view-only
 
 Writes a new VERSUS_JUDGE call into the same run so the trace UI
-shows it alongside the original closer. Does NOT write a judgment
-row to ``judgments.jsonl`` — this is just for inspecting the new
-closer's output.
+shows it alongside the original closer. Does NOT write a row to
+``versus_judgments`` — this is just for inspecting the new closer's
+output.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {RUMIL_ROOT} && uv run python versus/scripts/rerun_orch_closer.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from rumil.context import format_page, render_view  # noqa: E402
 from rumil.database import DB  # noqa: E402

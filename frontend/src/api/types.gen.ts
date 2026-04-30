@@ -847,7 +847,7 @@ export type ErrorEventOut = {
 /**
  * EssayDetail
  *
- * Essay + the prompts shown to completion / judge / paraphrase models.
+ * Essay + the prompts shown to completion / judge models.
  */
 export type EssayDetail = {
     /**
@@ -902,10 +902,6 @@ export type EssayDetail = {
      * Judge Prompt Hash
      */
     judge_prompt_hash: string;
-    /**
-     * Paraphrase Prompt Template
-     */
-    paraphrase_prompt_template: string;
     /**
      * Criteria
      */
@@ -969,8 +965,8 @@ export type EssayFlagOut = {
  * from essay re-import drift or a prefix-config bump.
  *
  * ``orphaned`` flags a judgment whose source_a / source_b is not
- * present in the current completions.jsonl at the same prefix_hash --
- * the judgment survived the variant check but its sources did not.
+ * present in versus_texts at the same prefix_hash -- the judgment
+ * survived the variant check but its sources did not.
  */
 export type EssayJudgmentsResponse = {
     /**
@@ -1683,6 +1679,14 @@ export type JudgmentDetail = {
  * JudgmentRow
  *
  * One row in the raw-judgments explorer at the bottom of /results.
+ *
+ * ``source_a``/``source_b`` are the alphabetical canonical ordering used
+ * for the dedup key — stable identity across rows. ``display_first``/
+ * ``display_second`` are what the judge actually saw as "Continuation A"
+ * and "B"; they diverge from canonical roughly half the time. The
+ * ``verdict`` letter (``A``/``B``/``tie``) refers to display order, not
+ * canonical, so the rows-table renders display order alongside the
+ * canonical pair to keep the mapping legible.
  */
 export type JudgmentRow = {
     /**
@@ -1705,6 +1709,14 @@ export type JudgmentRow = {
      * Source B
      */
     source_b: string;
+    /**
+     * Display First
+     */
+    display_first: string;
+    /**
+     * Display Second
+     */
+    display_second: string;
     /**
      * Criterion
      */

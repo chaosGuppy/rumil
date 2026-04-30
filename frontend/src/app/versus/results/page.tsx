@@ -259,6 +259,7 @@ export default async function VersusResultsPage({
                   judgeLabels={judge_labels}
                   includeStale={includeStale}
                   includeContaminated={includeContaminated}
+                  prefixLabel={prefix_variants.length > 1 ? active_prefix_label : undefined}
                 />
               ))}
             </div>
@@ -442,6 +443,7 @@ function VariantMatrices({
                   criterion={active_criterion}
                   includeStale={includeStale}
                   includeContaminated={includeContaminated}
+                  prefixLabel={prefix_variants.length > 1 ? active_prefix_label : undefined}
                 />
               </section>
               {mm.condition === "completion" && completion_per_source.length > 0 && (
@@ -462,6 +464,7 @@ function VariantMatrices({
                         criterion={active_criterion}
                         includeStale={includeStale}
                         includeContaminated={includeContaminated}
+                        prefixLabel={prefix_variants.length > 1 ? active_prefix_label : undefined}
                       />
                     </section>
                   ))}
@@ -483,6 +486,7 @@ function BlockRow({
   judgeLabels,
   includeStale,
   includeContaminated,
+  prefixLabel,
 }: {
   block: ResultsBundle["small_grid"][number];
   empty: boolean;
@@ -491,6 +495,7 @@ function BlockRow({
   judgeLabels: ResultsBundle["judge_labels"];
   includeStale: boolean;
   includeContaminated: boolean;
+  prefixLabel?: string;
 }) {
   return (
     <>
@@ -512,6 +517,7 @@ function BlockRow({
               criterion={cellBlock.criterion}
               includeStale={includeStale}
               includeContaminated={includeContaminated}
+              prefixLabel={prefixLabel}
             />
           )}
         </div>

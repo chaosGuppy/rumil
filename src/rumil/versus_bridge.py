@@ -285,9 +285,8 @@ async def ensure_versus_question(db: DB, pair: PairContext) -> str:
     """Create a fresh Question page for this pair. Returns the page id.
 
     No reuse: each judgment invocation gets its own question. Dedup
-    happens one layer up (at the versus judgments.jsonl level), so in
-    practice we only create a question when a judgment is actually
-    pending. Tagged ``extra.source="versus"`` for filterability; raw
+    happens one layer up (at the versus_judgments level), so in practice
+    we only create a question when a judgment is actually pending. Tagged ``extra.source="versus"`` for filterability; raw
     source ids stay in ``extra`` only and are NOT put in the headline
     or content (those render into the question's view / get loaded by
     the agent's tools, so any leak there defeats blind judging).

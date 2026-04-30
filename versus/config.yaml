@@ -96,8 +96,9 @@ judging:
   max_tokens: 64000           # reasoning judges (gpt-5.4) can chew through tokens
 
 storage:
-  completions_log: data/completions.jsonl
-  judgments_log: data/judgments.jsonl
+  # Completions and judgments live in versus_texts / versus_judgments
+  # (Postgres). Only paraphrase rows still use a file log; that code path
+  # is dormant for now.
   paraphrases_log: data/paraphrases.jsonl
 
 ui:

@@ -26,7 +26,7 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/run_paraphrases.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from versus import config, paraphrase, prepare, sources  # noqa: E402
 
@@ -53,10 +53,8 @@ def main() -> None:
     cfg = config.load(args.config)
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
-    for field in ("completions_log", "judgments_log", "paraphrases_log"):
-        p = getattr(cfg.storage, field)
-        if not p.is_absolute():
-            setattr(cfg.storage, field, VERSUS_ROOT / p)
+    if not cfg.storage.paraphrases_log.is_absolute():
+        cfg.storage.paraphrases_log = VERSUS_ROOT / cfg.storage.paraphrases_log
 
     raw_html_dir = cfg.essays.cache_dir.parent / "raw_html"
     essays = sources.fetch_all(
@@ -69,7 +67,7 @@ def main() -> None:
     essays = [e for e in essays if e.id not in exclude]
 
     if args.active:
-        active = prepare.active_essay_ids(cfg.essays.cache_dir, cfg.essays.exclude_ids)
+        active = prepare.active_essay_ids(cfg.essays.exclude_ids)
         essays = [e for e in essays if e.id in active]
     if args.essay:
         keep = set(args.essay)

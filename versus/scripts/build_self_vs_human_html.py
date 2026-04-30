@@ -32,12 +32,11 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/build_self_vs_human_html.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from versus.essay import Block, Essay  # noqa: E402
 
-from versus import config, prepare  # noqa: E402
-from versus import jsonl as versus_jsonl  # noqa: E402
+from versus import config, prepare, versus_db  # noqa: E402
 
 FORETHOUGHT_IDS = [
     "forethought__ai-for-ai-for-epistemics",
@@ -118,24 +117,25 @@ def main() -> None:
         hash_to_variant[h] = vid
         essay_variant_hash[(eid, vid)] = h
 
-    # Pull rows. Index completions by (essay, variant, source_id) →
-    # latest row; judgments by (essay, variant, judge_base, model) for the
+    # Pull rows from the DB. Index completions by (essay, variant, source_id)
+    # → latest row; judgments by (essay, variant, judge_base, model) for the
     # M-vs-human self-judgment.
+    client = versus_db.get_client()
     completions: dict[tuple[str, str, str], dict] = {}
-    for r in versus_jsonl.read(VERSUS_ROOT / "data" / "completions.jsonl"):
+    for r in versus_db.iter_texts(client):
         eid = r.get("essay_id")
-        h = r.get("prefix_config_hash")
+        h = r.get("prefix_hash")
         vid = hash_to_variant.get(h)
         if vid is None or eid not in essays:
             continue
         completions[(eid, vid, r["source_id"])] = r
 
     judgments: dict[tuple[str, str, str], dict] = {}
-    for r in versus_jsonl.read_dedup(VERSUS_ROOT / "data" / "judgments.jsonl"):
+    for r in versus_db.iter_judgments(client):
         if r.get("verdict") is None:
             continue
         eid = r.get("essay_id")
-        h = r.get("prefix_config_hash")
+        h = r.get("prefix_hash")
         vid = hash_to_variant.get(h)
         if vid is None or eid not in essays:
             continue
@@ -145,7 +145,7 @@ def main() -> None:
         other = (sources - {"human"}).pop()
         if other not in dict(MODEL_ORDER):
             continue
-        base = r["config"]["model"]
+        base = r["judge_inputs"]["model"]
         if base != other:
             continue  # only self-judgments
         judgments[(eid, vid, other)] = r
@@ -157,7 +157,7 @@ def main() -> None:
         for vid in VARIANT_ORDER
         for m, _ in MODEL_ORDER
     }
-    for (eid, vid, model_id), r in judgments.items():
+    for (_eid, vid, model_id), r in judgments.items():
         ws = r.get("winner_source")
         t = tallies[(vid, model_id)]
         t["n"] += 1
@@ -402,13 +402,19 @@ def _render_condition_cell(
     if comp is None:
         comp_html = '<p class="muted">(no continuation row — refused or never run)</p>'
     else:
-        text = comp.get("response_text") or ""
-        words = comp.get("response_words") or len(text.split())
-        target = comp.get("target_words") or 0
-        # Prefer the row's stored prompt — that's what the model actually
-        # received. Fall back to a freshly-rendered prompt only when the
-        # row has none (legacy rows or the human baseline).
-        stored_prompt = comp.get("prompt")
+        text = comp.get("text") or ""
+        words = len(text.split())
+        target = (comp.get("params") or {}).get("target_words") or 0
+        # Recover the prompt from the stored request body — that's what the
+        # model actually received. Fall back to a freshly-rendered prompt
+        # only when the row has no request (e.g. the human baseline).
+        request = comp.get("request") or {}
+        messages = request.get("messages") or [] if isinstance(request, dict) else []
+        stored_prompt = None
+        for m in messages:
+            if (m or {}).get("role") == "user":
+                stored_prompt = m.get("content")
+                break
         actual_prompt = stored_prompt or prompt
         prompt_label = (
             "continuation prompt (verbatim from row)"

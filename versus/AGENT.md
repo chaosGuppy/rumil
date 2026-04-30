@@ -1,51 +1,58 @@
 # versus
 
-Pairwise LLM eval harness on longform web essays: models continue essay openings ("from-scratch") or paraphrase whole essays (style-controlled baseline), then blind judges compare continuations across criteria. The artifact is a gen-model × judge-model matrix of how often each judge prefers the human continuation.
+Pairwise LLM eval harness on longform web essays: models continue essay openings, then blind / workspace-aware / orchestrated judges compare continuations across criteria. The artifact is a gen-model × judge-model matrix of how often each judge prefers the human continuation.
 
-Sources plug in as per-source fetchers under `versus/src/versus/sources/` (currently forethought, redwood, carlsmith). Each produces `Essay` objects with a namespaced id `<source>__<slug>` so dedup keys across all three jsonl stores stay unique. Config lists sources in `essays.sources` with per-source `max_recent` and optional `max_images` / `max_image_ratio` filters; `essays.exclude_ids` blocks specific essays from the pipeline.
+Sources plug in as per-source fetchers under `versus/src/versus/sources/` (currently forethought, redwood, carlsmith). Each produces `Essay` objects with a namespaced id `<source>__<slug>` so dedup keys stay unique across sources. Config lists sources in `essays.sources` with per-source `max_recent` and optional `max_images` / `max_image_ratio` filters; `essays.exclude_ids` blocks specific essays from the pipeline.
 
-Library lives at `versus/src/versus/`; CLI entry points at `versus/scripts/`; data in `versus/data/`. Bridge to rumil is `src/rumil/versus_bridge.py` — exposes `judge_pair_ws_aware` (single agent call with workspace tools) and `judge_pair_orch` (full `TwoPhaseOrchestrator` per pair + closing call). API routes under `/versus` live in `src/rumil/api/versus_router.py`. Skill for invoking versus from Claude Code: `.claude/skills/rumil-versus-judge/`.
+Library lives at `versus/src/versus/`; CLI entry points at `versus/scripts/`; cached essays in `versus/data/essays/`. Bridge to rumil is `src/rumil/versus_bridge.py` — exposes `judge_pair_ws_aware` (single agent call with workspace tools) and `judge_pair_orch` (full `TwoPhaseOrchestrator` per pair + closing call). API routes under `/versus` live in `src/rumil/api/versus_router.py`. Skill for invoking versus from Claude Code: `.claude/skills/rumil-versus-judge/`.
 
-## Core invariant: reruns are free
+## Storage
 
-Adding a model, judge, criterion, or prefix-config must **never** re-run existing matching rows. All three stores are keyed on deterministic dedup keys:
+Two Postgres tables, accessed through `versus.versus_db`:
 
-| Store | Key composition |
+- `versus_texts` — every essay-shaped contestant: human baselines and model continuations (paraphrase support is deferred, see below). Columns include `request` / `response` (raw provider-shaped JSONB for the API call that produced the text), `text` (extracted continuation), and a generated `request_hash` over the canonical request body.
+- `versus_judgments` — pairwise verdicts. `request` / `response` capture the blind judge's literal API call; `judge_inputs` is the canonical condition blob (model, sampling, prompt content, tool descriptions, pair surface, workspace state, code fingerprint, budget, closer config, plus `text_a_id` / `text_b_id` so re-judging different completion samples naturally forks). `judge_inputs_hash` is generated. `winner_source` is generated from `verdict` + `display_first` + `(source_a, source_b)`.
+
+JSONL archives still live under `versus/data/*.jsonl` as a frozen historical record; nothing in the current pipeline reads them. The `versus.jsonl` helper module is dormant — the deferred paraphrase code path imports it, nothing else.
+
+## Core invariant: reruns are content-addressed
+
+Adding a new model / judge / criterion / prefix-config doesn't re-run existing matching rows — same canonical inputs hash to the same `request_hash` (texts) or `judge_inputs_hash` (judgments).
+
+| Table | Dedup key (content-addressed) |
 |---|---|
-| `data/completions.jsonl` | `essay_id · prefix_config_hash · source_id · sampling_hash` |
-| `data/paraphrases.jsonl` | `essay_id · model_id · sampling_hash` |
-| `data/judgments.jsonl`   | `essay_id · prefix_hash · sorted(source_a, source_b) · criterion · config_hash · order` |
+| `versus_texts` | `(essay_id, kind, source_id, prefix_hash, request_hash)` |
+| `versus_judgments` | `(essay_id, prefix_hash, source_a, source_b, criterion, judge_inputs_hash)` |
 
-`prefix_config_hash` mixes in essay content + prefix params (n_paragraphs, include_headers, length_tolerance) + `prepare.COMPLETION_PROMPT_VERSION`. `sampling_hash` covers sampling params (temperature/max_tokens/top_p) plus — for paraphrases — `paraphrase.PARAPHRASE_PROMPT_VERSION`.
+The hash columns are generated server-side from the JSONB blob (sha256 over canonical-form JSON), so editing a prompt template, switching a sampling param, or changing any code that the `code_fingerprint` covers naturally forks the hash and produces a new row. **No manual `*_PROMPT_VERSION` constants** — that footgun is gone.
 
-**If you edit a completion/paraphrase prompt template, bump the relevant `*_PROMPT_VERSION` constant.** Editing without bumping leaves old rows keyed as if the prompt hadn't changed — they silently persist.
+There's no DB-level uniqueness on either table. "Skip if exists" semantics live in the runner via `versus_db.find_texts` / `find_judgments` queries — runners that want one sample per config skip when a match exists; runners that want N replicates at the same config (e.g. temperature>0 sampling) just insert. Set the policy in the runner, not the schema.
 
 ## Judge config + dedup
 
-Every judgment row carries a structured `config: dict` and `config_hash: str` produced by `versus.judge_config.make_judge_config(variant, ...)`. `config_hash` is the dedup primitive (`judgment_key` keys on it). `judge_model` is a short display string of the form `<path>:<model>:<dim>:c<hash8>` where `<path>` ∈ {`blind`, `rumil:ws`, `rumil:orch`} — purely cosmetic; it doesn't drive dedup.
+`versus.judge_config.make_judge_config(variant, ...)` builds the structured `judge_inputs` blob. The display `judge_model` string (`<path>:<model>:<dim>:c<hash8>` with `<path>` ∈ {`blind`, `rumil:ws`, `rumil:orch`}) is purely cosmetic — it doesn't drive dedup.
 
-The structured config covers, per variant:
+The blob covers, per variant:
 
 - **blind**: `model`, `dimension`, `sampling`, `prompts.shell_hash` (sha8 of the composed shell + dimension body). claude-* models route direct to Anthropic; everything else through OpenRouter.
-- **ws**: blind fields + `workspace_id`, `tool_descriptions_hash` (sha8 of the workspace-exploration tools' docstrings), `pair_surface_hash` (sha8 of the agent-visible Question page surface — headline / content shape / extra-keys), `code_fingerprint` (per-directory + per-file sha over `JUDGE_CODE_FINGERPRINT_DIRS` and `JUDGE_CODE_FINGERPRINT_FILES`), `workspace_state_hash` (cheap watermark over baseline pages + page_links).
-- **orch**: ws fields + `budget`, `closer_hash` (sha8 over the orch closer's invariant config — user prompt template, max_turns, disallowed_tools, render knobs).
+- **ws**: blind fields + `workspace_id`, `tool_descriptions_hash`, `pair_surface_hash`, `code_fingerprint`, `workspace_state_hash`.
+- **orch**: ws fields + `budget`, `closer_hash`.
 
-Adding a new "thing the LLM saw" is one place: extend `make_judge_config` (and the corresponding axis in `project_config_to_axes` so the provenance panel surfaces it). No flat-string parser to keep in sync.
+At write time, the runner adds `text_a_id` / `text_b_id` (and `order` for rumil rows) before computing the hash. Adding a new "thing the LLM saw" is one place: extend `make_judge_config` (and the corresponding axis in `project_config_to_axes` so the provenance panel surfaces it).
 
 ## Sources, unified
 
-Every "contestant" the judge sees is a row in `completions.jsonl`, with `source_kind ∈ {human, completion, paraphrase}` and a uniform `source_id`:
-- `human` — the held-out remainder (written once per essay × prefix_config)
+Every contestant is a row in `versus_texts` with `kind ∈ {human, completion}` and a uniform `source_id`:
+- `human` — the held-out remainder (one row per essay × prefix variant)
 - `<model_id>` — from-scratch continuation by a completion model
-- `paraphrase:<model_id>` — derived remainder of a model's full-essay paraphrase (synthesized from `paraphrases.jsonl` at completion-run time; no extra API call)
+
+**Paraphrase support is deferred.** Whole-essay paraphrasing + slicing was the previous strategy for a style-controlled baseline; we may bring it back asking models to paraphrase the *post-prefix* portion directly (in which case it's just another `kind='completion'`), or restore the whole-essay-then-slice path with a `kind='paraphrase'` + `derived_from_id` FK. The dormant code under `paraphrase.py` and the `versus.jsonl` helper survive for that reason. Existing paraphrase JSONL data is archived in `versus/data/paraphrases.jsonl`; 1304 historical paraphrase-touching judgments stay in `versus/data/judgments.jsonl` recoverable.
 
 ## Judging contract
 
-Judges reason freely; we parse the **last** 7-point preference label from the output. All three backends (OpenRouter, `anthropic:*`, and `rumil:*`) share this parser via `versus.judge.parse_verdict_from_label` → `rumil.versus_prompts.extract_preference`. Don't constrain the whole response to JSON — chain-of-thought materially improves judgment quality.
+Judges reason freely; we parse the **last** 7-point preference label from the output. All three backends (blind, `rumil:ws`, `rumil:orch`) share this parser via `versus.judge.parse_verdict_from_label` → `rumil.versus_prompts.extract_preference`. Don't constrain the whole response to JSON — chain-of-thought materially improves judgment quality.
 
-Display order (A vs B) is deterministic per `(essay_id, sorted_pair)` via `judge.order_pair()` so every judge — model or human — sees the same assignment for the same pair.
-
-Every row records an `order ∈ {"ab", "ba"}` field (`"ab"` iff the alphabetically-lower source was shown as Continuation A). `order` is also the last slot in `judgment_key`, so the key scheme supports a future mirror-mode that emits both orders per pair and collapses them on the read side to cancel position bias. Today enumeration still emits one task per pair — nothing is doubled by default. Legacy rows that predate the `order` field are handled via `judge.infer_order(row)`, which derives the orientation from the stored `display_first`; any downstream code that needs the per-row order should go through that helper so pre- and post-change rows coexist cleanly.
+Display order (A vs B) is deterministic per `(essay_id, sorted_pair)` via `judge.order_pair()` so every judge sees the same assignment for the same pair. The judgment row records `display_first` directly, and `judge_inputs.order` ∈ {`ab`, `ba`} encodes how display order maps onto canonical (alphabetical) `source_a`/`source_b` order. The order is folded into `judge_inputs`, so the same pair judged in both orientations forks the hash and lands as two rows.
 
 ## Blind judging
 
@@ -58,9 +65,17 @@ Source ids can literally be `"human"`, so any surface the judge sees (prompt, Qu
 **Canonical vs display order.** Two different A/B conventions coexist, easy to confuse:
 
 - `canonical_source_first` / `canonical_source_second` in `runs.config`, and `source_a` / `source_b` in the judgment row, are the **alphabetical** dedup-key order (`sorted([x, y])`). They don't tell you which side the judge saw as "Continuation A".
-- `display_first` / `display_second` on the judgment row is the actual display order — what the judge rendered as "A" and "B" on the Question page. The `order` field (`ab` or `ba`) encodes how display order maps onto canonical order; `judge.order_from_display_first` computes it.
+- `display_first` on the judgment row is the actual display order. The `judge_inputs.order` field (`ab` or `ba`) encodes how display order maps onto canonical order; `judge.order_from_display_first` computes it.
 
-`display_first` / `display_second` live only on the judgment row, not on `runs.config` or `page.extra`, to keep source identity out of run metadata that's easier to accidentally surface. For a specific pair's display order at audit time, go to `data/judgments.jsonl`.
+## Project / run linkage for ws/orch judgments
+
+Judgments produced inside a rumil orchestrator/ws call carry soft references back to rumil:
+
+- `project_id` (uuid, nullable) — set when the judgment is from a rumil project
+- `run_id` (text, nullable) — the rumil run that produced the verdict; backed by `runs.id`
+- `rumil_call_id` (text, nullable) — the specific call within the run that emitted the verdict
+
+These are all soft references (no FK) so versus stays standalone for blind work and survives if the rumil run gets pruned.
 
 ## Running
 
@@ -70,15 +85,17 @@ uv venv && uv pip install -e .
 export OPENROUTER_API_KEY=...   # required for OpenRouter-based runs
 export ANTHROPIC_API_KEY=...    # required for rumil-style judges
 
+# Local Supabase must be running for any storage path:
+supabase start                  # one-time
+
 uv run scripts/fetch_essays.py
-uv run scripts/run_paraphrases.py
-uv run scripts/run_completions.py        # also synthesizes paraphrase-remainder rows
+uv run scripts/run_completions.py
 uv run scripts/run_rumil_judgments.py    # blind judges (default); --variant ws|orch for tool-using paths
 ```
 
 Env resolution for `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` cascades: `versus/.env`, then `<rumil-root>/.env`, then process env. Files override process env.
 
-UI routes (`/versus` redirects to `/versus/results`; `/versus/inspect` and `/versus/results` are the real pages) mount in the rumil Next.js frontend; API endpoints in `src/rumil/api/versus_router.py` read the JSONL stores directly. No DB tables.
+UI routes (`/versus` redirects to `/versus/results`; `/versus/inspect` and `/versus/results` are the real pages) mount in the rumil Next.js frontend; API endpoints in `src/rumil/api/versus_router.py` read versus_texts / versus_judgments and translate to a legacy-shaped envelope so the frontend types didn't have to change.
 
 ## Judge variants
 
@@ -100,10 +117,11 @@ Model for ws/orch is passed explicitly through the bridge (`--model opus|sonnet|
 - `essay.SCHEMA_VERSION` invalidates the essay JSON cache. Raw HTML stays cached separately so we don't re-download.
 - Refused / content-filtered completions are excluded from pair enumeration (see `judge.is_refusal`).
 - Re-imports auto-run a Sonnet validator (`validate_essay.py`) that blocks the import on scraping artifacts (nested-list duplication, orphan footnote digits, caption leakage, etc.). Verdicts cache to `data/essays/<id>.verdict.json` keyed on essay content hash + `VALIDATOR_VERSION`. Pass `--no-validate` to bypass, `--revalidate` to re-run on cached essays.
+- Verdict can be `NULL` on judgment rows — refusals or unparsed responses produce a row with `reasoning_text` but no extractable A/B/tie. Aggregations filter on `verdict IS NOT NULL`; the inspector still surfaces the row.
 
 ## State staleness
 
-Essay re-imports change `prefix_config_hash` (because `_content_hash(essay)` is folded in via `prepare.py`). Existing rows in `completions.jsonl` / `paraphrases.jsonl` / `judgments.jsonl` keep their old hashes — they aren't deleted, but they no longer match what `prepare()` would produce today. Topup runs against stale rows judge OLD essay text, not the current one.
+Essay re-imports change `prefix_hash` (because `_content_hash(essay)` is folded in via `prepare.py`). Existing rows in `versus_texts` / `versus_judgments` keep their old hashes — they aren't deleted, but they no longer match what `prepare()` would produce today. Topup runs against stale rows judge OLD essay text, not the current one.
 
 Run before any topup or new judging work:
 
@@ -111,6 +129,6 @@ Run before any topup or new judging work:
 uv run python scripts/status.py
 ```
 
-Exits 2 with a `STALE` banner when cached rows don't match current essays. To regenerate against current essays, run `run_paraphrases.py` + `run_completions.py` + `run_rumil_judgments.py` in order — old rows stay in the jsonls as historical record; new rows write under the new keys.
+Exits 2 with a `STALE` banner when cached rows don't match current essays. To regenerate against current essays, run `run_completions.py` + `run_rumil_judgments.py` in order — old rows stay in the DB as historical record; new rows write under the new keys.
 
-Same logic applies when `PARAPHRASE_PROMPT_VERSION` is bumped — the status check picks up paraphrase staleness via `sampling_hash`. Edits to any judge-side prompt or covered-code path auto-fork `config_hash` (and therefore the dedup key); no manual version bump.
+Edits to any judge-side prompt or covered-code path auto-fork `judge_inputs_hash` (and therefore the dedup key); no manual version bump.

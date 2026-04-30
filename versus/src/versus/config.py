@@ -57,8 +57,9 @@ class JudgingCfg(pydantic.BaseModel):
 
 
 class StorageCfg(pydantic.BaseModel):
-    completions_log: pathlib.Path = pathlib.Path("data/completions.jsonl")
-    judgments_log: pathlib.Path = pathlib.Path("data/judgments.jsonl")
+    # Completions and judgments live in versus_texts / versus_judgments
+    # (Postgres) — see versus.versus_db. Only the dormant paraphrase code
+    # path still uses a file-backed log.
     paraphrases_log: pathlib.Path = pathlib.Path("data/paraphrases.jsonl")
 
 

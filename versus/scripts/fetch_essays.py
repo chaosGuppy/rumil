@@ -25,7 +25,7 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {RUMIL_ROOT} && uv run python versus/scripts/fetch_essays.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from versus import config, envcascade, sources, validate_essay  # noqa: E402
 

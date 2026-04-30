@@ -24,6 +24,7 @@ import xml.etree.ElementTree as ET
 import bs4
 import httpx
 
+from versus import versus_db
 from versus.essay import (
     SCHEMA_VERSION,
     Block,
@@ -251,5 +252,6 @@ def fetch(
         )
         with open(json_path, "w") as f:
             json.dump(essay.to_json(), f, indent=2)
+        versus_db.mirror_essay(essay, raw_html=html)
         essays.append(essay)
     return essays

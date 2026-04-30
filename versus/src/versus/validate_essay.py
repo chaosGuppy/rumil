@@ -15,7 +15,7 @@ import json
 import pathlib
 import re
 
-from versus import anthropic_client
+from versus import anthropic_client, versus_db
 
 VALIDATOR_MODEL = "claude-sonnet-4-6"
 VALIDATOR_MAX_TOKENS = 4000
@@ -138,6 +138,27 @@ def _parse_response(text: str) -> dict:
     raise ValueError(f"validator response is not JSON: {text[:500]!r}")
 
 
+def _build_validator_request(essay_id: str, markdown: str) -> dict:
+    """Canonical Anthropic request body for the validator call.
+
+    Captured on the row so future audits can replay or compare without
+    needing to re-render the prompt.
+    """
+    user_msg = (
+        f"Essay id: {essay_id}\n\n"
+        "Normalized markdown follows between <markdown> tags. "
+        "Inspect for issues per the system prompt rules.\n\n"
+        f"<markdown>\n{markdown}\n</markdown>"
+    )
+    return {
+        "model": VALIDATOR_MODEL,
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_msg}],
+        "temperature": VALIDATOR_TEMPERATURE,
+        "max_tokens": VALIDATOR_MAX_TOKENS,
+    }
+
+
 def validate(
     essay_id: str,
     markdown: str,
@@ -150,6 +171,13 @@ def validate(
     Verdict shape:
         {"clean": bool, "issues": [...], "content_hash": str,
          "validator_version": int, "model": str}
+
+    Verdict is persisted to versus_essays (verdict_clean / verdict_issues
+    / verdict_model / verdict_version / verdict_request / verdict_response
+    columns); the on-disk verdict.json continues to be written too as a
+    parallel cache that doesn't require DB access for offline tooling.
+    The sibling versus_essays row must already exist (the fetcher upserts
+    the body before the validator runs); we don't conjure it here.
     """
     md_hash = content_hash(markdown)
     path = verdict_path(cache_dir, essay_id)
@@ -158,16 +186,11 @@ def validate(
         if cached is not None:
             return cached
 
-    user_msg = (
-        f"Essay id: {essay_id}\n\n"
-        "Normalized markdown follows between <markdown> tags. "
-        "Inspect for issues per the system prompt rules.\n\n"
-        f"<markdown>\n{markdown}\n</markdown>"
-    )
+    request_body = _build_validator_request(essay_id, markdown)
     resp = anthropic_client.chat(
         model=VALIDATOR_MODEL,
         system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_msg}],
+        messages=request_body["messages"],
         temperature=VALIDATOR_TEMPERATURE,
         max_tokens=VALIDATOR_MAX_TOKENS,
     )
@@ -185,6 +208,21 @@ def validate(
         "model": VALIDATOR_MODEL,
     }
     path.write_text(json.dumps(verdict, indent=2, ensure_ascii=False))
+    try:
+        versus_db.upsert_essay_verdict(
+            versus_db.get_client(),
+            essay_id=essay_id,
+            clean=verdict["clean"],
+            issues=verdict["issues"],
+            model=VALIDATOR_MODEL,
+            validator_version=VALIDATOR_VERSION,
+            request=request_body,
+            response=resp,
+        )
+    except Exception as e:
+        # The disk verdict already landed; failing to mirror to DB
+        # shouldn't block the fetcher. Log loudly so operators notice.
+        print(f"[warn] verdict DB upsert failed for {essay_id}: {e}")
     return verdict
 
 

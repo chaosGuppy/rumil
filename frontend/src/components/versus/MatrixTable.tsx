@@ -45,6 +45,7 @@ function buildFilterHref(params: {
   criterion?: string | null;
   includeStale: boolean;
   includeContaminated: boolean;
+  prefixLabel?: string;
 }): string {
   const qs = new URLSearchParams();
   qs.set("filter_gen", params.gen);
@@ -58,6 +59,10 @@ function buildFilterHref(params: {
   // Passed through to the main criterion picker — keeps the matrix's own
   // criterion setting intact after the cell click.
   if (params.criterion) qs.set("criterion", params.criterion);
+  // Without this the matrix axis (computed under the active variant's
+  // current_prefix_hashes) and the rows table fall out of sync — the cell
+  // shows but the rows query reverts to canonical and finds nothing.
+  if (params.prefixLabel) qs.set("prefix_label", params.prefixLabel);
   return `/versus/results?${qs.toString()}#judgments`;
 }
 
@@ -72,6 +77,7 @@ export function MatrixTable({
   criterion,
   includeStale,
   includeContaminated,
+  prefixLabel,
 }: {
   cells: GenJudgeCell[];
   genModels: string[];
@@ -83,6 +89,7 @@ export function MatrixTable({
   criterion?: string | null;
   includeStale?: boolean;
   includeContaminated?: boolean;
+  prefixLabel?: string;
 }) {
   const map = buildCellMap(cells);
   const canLink = Boolean(condition);
@@ -148,6 +155,7 @@ export function MatrixTable({
                         criterion: criterion ?? null,
                         includeStale: includeStale ?? true,
                         includeContaminated: includeContaminated ?? false,
+                        prefixLabel,
                       })}
                       className="matrix-cell-link"
                       aria-label={`Filter rows to ${g} × ${j}, condition ${condition}${criterion ? `, criterion ${criterion}` : ""}`}

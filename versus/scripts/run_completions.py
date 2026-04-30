@@ -34,11 +34,10 @@ except ModuleNotFoundError:
         "repo root, not versus/:\n"
         f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/run_completions.py ...\n"
     )
-    raise SystemExit(1)
+    raise SystemExit(1) from None
 
 from versus import complete, config, prepare, sources  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
-from versus import mainline as versus_mainline  # noqa: E402
 
 
 def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_essay.Essay | None:
@@ -110,10 +109,8 @@ def main() -> None:
     prefix_cfg = prepare.resolve_prefix_cfg(cfg, args.prefix_label)
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
-    for field in ("completions_log", "judgments_log", "paraphrases_log"):
-        p = getattr(cfg.storage, field)
-        if not p.is_absolute():
-            setattr(cfg.storage, field, VERSUS_ROOT / p)
+    if not cfg.storage.paraphrases_log.is_absolute():
+        cfg.storage.paraphrases_log = VERSUS_ROOT / cfg.storage.paraphrases_log
 
     raw_html_dir = cfg.essays.cache_dir.parent / "raw_html"
     essays = sources.fetch_all(
@@ -126,7 +123,7 @@ def main() -> None:
     essays = [e for e in essays if e.id not in exclude]
 
     if args.active:
-        active = prepare.active_essay_ids(cfg.essays.cache_dir, cfg.essays.exclude_ids)
+        active = prepare.active_essay_ids(cfg.essays.exclude_ids)
         essays = [e for e in essays if e.id in active]
     if args.essay:
         # --essay is a hard list, not an intersection with fetch_all.

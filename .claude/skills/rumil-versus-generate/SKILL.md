@@ -7,13 +7,12 @@ argument-hint: "--op completions|paraphrases [--model <id>...] [--essay <id>...]
 
 # rumil-versus-generate
 
-Wraps the two versus generation scripts that write into
-`versus/data/*.jsonl`:
+Wraps the two versus generation scripts:
 
 | `--op` | Script | What it writes |
 |---|---|---|
-| `completions` | `run_completions.py` | `completions.jsonl` — model continuations + a human baseline row per essay |
-| `paraphrases` | `run_paraphrases.py` | `paraphrases.jsonl` — same-model rewrites of each essay's remainder |
+| `completions` | `run_completions.py` | rows in `versus_texts` — model continuations + a human baseline row per essay |
+| `paraphrases` | `run_paraphrases.py` | rows in `data/paraphrases.jsonl` (paraphrase pipeline is currently dormant — kept for legacy invocation) |
 
 For judgments, use **`rumil-versus-judge`**. Its default (no `--variant`)
 runs the unified blind path that routes claude-* direct to Anthropic
@@ -157,8 +156,8 @@ config and re-running fills gaps without clobbering.
   as archaeology but don't show up in `/versus`.
 - **`[skip-refusal]` for several pairs at startup** — that's the judge
   loader filtering out pairs built from earlier refusal rows in
-  `completions.jsonl`. Not an error. Those pairs stay pending until
-  the refusing model produces a non-refusal completion.
+  `versus_texts`. Not an error. Those pairs stay pending until the
+  refusing model produces a non-refusal completion.
 
 ## After a run
 

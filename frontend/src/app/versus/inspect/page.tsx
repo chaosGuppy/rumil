@@ -383,12 +383,6 @@ export default async function VersusInspectPage({
                   {head.detail.judge_user_prompt_template}
                 </CollapsibleBlock>
               </div>
-              <div className="inspect-prompts-col" id="prompts-paraphrase">
-                <h3 className="inspect-prompts-coltitle">paraphrase</h3>
-                <CollapsibleBlock summary="prompt template">
-                  {head.detail.paraphrase_prompt_template}
-                </CollapsibleBlock>
-              </div>
             </section>
 
             {variantBundles.some((v) => v.otherVariantHidden + v.staleHidden > 0) && (
@@ -1290,7 +1284,6 @@ function InspectToc({
             <li><a href="#prompts-original">original</a></li>
             <li><a href="#prompts-completions">completions</a></li>
             <li><a href="#prompts-judging">judging</a></li>
-            <li><a href="#prompts-paraphrase">paraphrase</a></li>
           </ul>
         </li>
         {sourceOrder.length > 0 && (

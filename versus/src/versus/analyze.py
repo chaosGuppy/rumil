@@ -1,11 +1,18 @@
-"""Analysis: gen-model × judge-model matrix of %-picks-human per condition."""
+"""Analysis: gen-model × judge-model matrix of %-picks-human per condition.
+
+Reads from versus_judgments (Postgres) via versus_db. Aggregations stream
+through ``versus_db.iter_judgments``; for ~3k rows that's fast enough to
+do per-request without caching. If we outgrow that, push the aggregation
+into SQL.
+"""
 
 from __future__ import annotations
 
 import collections
-import pathlib
+from collections.abc import Iterable
+from typing import Any
 
-from versus import jsonl, judge
+from versus import versus_db
 
 HUMAN = "human"
 
@@ -15,11 +22,10 @@ def _content_test_baseline(row: dict) -> str:
 
     Paraphrases are authored via OpenRouter and keyed as
     ``paraphrase:<openrouter_model_id>``. Reads the model directly
-    from ``row["config"]["model"]``; raises if the row has no config
-    (post-backfill that's a corrupt-data scenario, not a graceful
-    case).
+    from ``row["judge_inputs"]["model"]``; raises if the row has no
+    judge_inputs (a corrupt-data scenario, not a graceful case).
     """
-    return f"paraphrase:{row['config']['model']}"
+    return f"paraphrase:{row['judge_inputs']['model']}"
 
 
 def model_sort_key(judge: str) -> tuple:
@@ -91,7 +97,7 @@ def model_sort_key(judge: str) -> tuple:
 
 
 def label_from_config(cfg: dict) -> dict:
-    """Derive the stacked column-header dict from a structured judge config.
+    """Derive the stacked column-header dict from a judge_inputs blob.
 
     Returns ``{variant, model, task, phash}``. Drives the FE
     column-header layout. Orch carries its budget tag.
@@ -136,30 +142,59 @@ def _strip_prefix(source_id: str) -> tuple[str, str]:
 
 
 def _prefix_hash_is_stale(row: dict, current_prefix_hashes: dict[str, str] | None) -> bool:
-    """True iff the row's ``prefix_config_hash`` doesn't match the
-    currently-active hash for its essay.
+    """True iff the row's prefix hash doesn't match the currently-active hash for its essay.
 
     Two ways to be stale: (a) the essay isn't in the current cache at
-    all (was removed or renamed — e.g. forethought essays moved to
-    the ``forethought__`` namespace); (b) the essay is current but
-    its prefix_config_hash drifted (essay text or prefix params
-    changed).
+    all (was removed or renamed); (b) the essay is current but its
+    prefix hash drifted (essay text or prefix params changed).
 
-    Returns False when ``current_prefix_hashes`` is None — caller
-    doesn't want staleness filtering. Note: this checks *prefix-hash
-    drift*, which is orthogonal to schema-version drift (see
-    ``versus.essay.is_current_schema``).
+    Accepts either ``prefix_hash`` (DB row) or ``prefix_config_hash``
+    (legacy-translated dict from the API router). Returns False when
+    ``current_prefix_hashes`` is None — caller doesn't want staleness filtering.
     """
     if current_prefix_hashes is None:
         return False
     eid = row.get("essay_id")
     if eid not in current_prefix_hashes:
         return True
-    return row.get("prefix_config_hash") != current_prefix_hashes[eid]
+    h = row.get("prefix_hash") or row.get("prefix_config_hash")
+    return h != current_prefix_hashes[eid]
+
+
+def _iter_filtered(
+    client_or_rows,
+    *,
+    include_contaminated: bool,
+    current_prefix_hashes: dict[str, str] | None,
+    include_stale: bool,
+    criterion: str | None = None,
+):
+    """Yield judgment rows that pass the standard filters used across matrices.
+
+    ``client_or_rows`` is either a supabase client (loads from DB) or an
+    iterable of pre-loaded rows. The router pre-loads once and passes the
+    list to all three matrix builders to avoid round-tripping per call.
+    """
+    if isinstance(client_or_rows, Iterable) and not hasattr(client_or_rows, "table"):
+        source = client_or_rows
+    else:
+        source = versus_db.iter_judgments(client_or_rows)
+    for row in source:
+        if row.get("verdict") is None:
+            continue
+        if not include_contaminated and row.get("contamination_note"):
+            continue
+        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
+            continue
+        if criterion is not None and row.get("criterion") != criterion:
+            continue
+        yield row
 
 
 def content_test_matrix(
-    judgments_log: pathlib.Path,
+    rows: Iterable[dict] | None = None,
+    *,
+    client: Any | None = None,
     include_contaminated: bool = False,
     current_prefix_hashes: dict[str, str] | None = None,
     include_stale: bool = True,
@@ -173,23 +208,19 @@ def content_test_matrix(
 
     Cell value is fraction of J-picks-paraphrase:J (ties = 0.5).
 
-    ``include_contaminated`` mirrors ``matrix()``: rows tagged with a
-    ``contamination_note`` are excluded by default; pass True to see the
-    pre-fix distribution.
+    Returns ``{key: (pct, n, wins, ties, losses)}``.
 
-    Returns ``{key: (pct, n, wins, ties, losses)}`` where ``wins`` counts the
-    judge picking the paraphrase-baseline, ``losses`` counts it picking the
-    other side, and ``ties`` counts explicit ties. ``pct`` treats ties as 0.5.
+    Pass ``rows`` to reuse pre-loaded judgments; ``client`` is a fallback
+    that issues its own DB scan.
     """
-    # counts[key] = [wins, ties, losses]
+    source = rows if rows is not None else (client or versus_db.get_client())
     counts: dict[tuple[str, str, str], list[int]] = collections.defaultdict(lambda: [0, 0, 0])
-    for row in jsonl.read_dedup(judgments_log):
-        if row.get("verdict") is None:
-            continue
-        if not include_contaminated and row.get("contamination_note"):
-            continue
-        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
-            continue
+    for row in _iter_filtered(
+        source,
+        include_contaminated=include_contaminated,
+        current_prefix_hashes=current_prefix_hashes,
+        include_stale=include_stale,
+    ):
         j = row["judge_model"]
         baseline = _content_test_baseline(row)
         a, b = row["source_a"], row["source_b"]
@@ -210,7 +241,9 @@ def content_test_matrix(
 
 
 def matrix(
-    judgments_log: pathlib.Path,
+    rows: Iterable[dict] | None = None,
+    *,
+    client: Any | None = None,
     criterion: str | None = None,
     include_contaminated: bool = False,
     current_prefix_hashes: dict[str, str] | None = None,
@@ -220,27 +253,18 @@ def matrix(
 
     Only counts pairs where one side is human. Ties count as 0.5 for human.
 
-    ``include_contaminated``: by default, rows tagged with a
-    ``contamination_note`` field are excluded from the aggregate
-    (produced before a blind-judge leak fix; the verdict doesn't
-    measure what the matrix claims to measure). Pass True to include
-    them and see the pre-fix distribution.
-
-    Returns ``{key: (pct, n, wins, ties, losses)}`` where ``wins`` counts the
-    judge picking human, ``losses`` counts it picking the generator, and
-    ``ties`` counts explicit ties. ``pct`` treats ties as 0.5.
+    Pass ``rows`` to reuse pre-loaded judgments; ``client`` is a fallback
+    that issues its own DB scan.
     """
-    # counts[(gen_model, judge_model, condition, criterion)] = [wins, ties, losses]
+    source = rows if rows is not None else (client or versus_db.get_client())
     counts: dict[tuple[str, str, str, str], list[int]] = collections.defaultdict(lambda: [0, 0, 0])
-    for row in jsonl.read_dedup(judgments_log):
-        if row.get("verdict") is None:
-            continue
-        if not include_contaminated and row.get("contamination_note"):
-            continue
-        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
-            continue
-        if criterion is not None and row.get("criterion") != criterion:
-            continue
+    for row in _iter_filtered(
+        source,
+        include_contaminated=include_contaminated,
+        current_prefix_hashes=current_prefix_hashes,
+        include_stale=include_stale,
+        criterion=criterion,
+    ):
         a, b = row["source_a"], row["source_b"]
         if a != HUMAN and b != HUMAN:
             continue
@@ -259,26 +283,28 @@ def matrix(
 
 
 def matrix_by_source(
-    judgments_log: pathlib.Path,
+    rows: Iterable[dict] | None = None,
+    *,
+    client: Any | None = None,
     include_contaminated: bool = False,
     current_prefix_hashes: dict[str, str] | None = None,
     include_stale: bool = True,
 ) -> dict[str, dict]:
     """Same as ``matrix()``, binned by essay source (essay_id prefix before ``__``).
 
-    Returns ``{source_id: matrix_dict}`` where each ``matrix_dict`` has the same
-    shape as :func:`matrix`. Single pass over the judgments log.
+    Pass ``rows`` to reuse pre-loaded judgments; ``client`` is a fallback
+    that issues its own DB scan.
     """
+    source = rows if rows is not None else (client or versus_db.get_client())
     counts: dict[str, dict[tuple[str, str, str, str], list[int]]] = collections.defaultdict(
         lambda: collections.defaultdict(lambda: [0, 0, 0])
     )
-    for row in jsonl.read_dedup(judgments_log):
-        if row.get("verdict") is None:
-            continue
-        if not include_contaminated and row.get("contamination_note"):
-            continue
-        if not include_stale and _prefix_hash_is_stale(row, current_prefix_hashes):
-            continue
+    for row in _iter_filtered(
+        source,
+        include_contaminated=include_contaminated,
+        current_prefix_hashes=current_prefix_hashes,
+        include_stale=include_stale,
+    ):
         a, b = row["source_a"], row["source_b"]
         if a != HUMAN and b != HUMAN:
             continue

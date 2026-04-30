@@ -13,28 +13,223 @@ without config; everything else returns 503 if config is missing.
 from __future__ import annotations
 
 import functools
-import json
 import os
 import pathlib
+import time
 
 import pydantic
 from fastapi import APIRouter, Depends, HTTPException
 
 from rumil.api.auth import require_admin
+from rumil.settings import get_settings
 from versus import analyze as versus_analyze
 from versus import config as versus_config
 from versus import diagnostics as versus_diagnostics
 from versus import essay as versus_essay
-from versus import jsonl as versus_jsonl
 from versus import judge as versus_judge
 from versus import mainline as versus_mainline
-from versus import paraphrase as versus_paraphrase
 from versus import prepare as versus_prepare
+from versus import versus_db
 from versus import view as versus_view
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _DEFAULT_CONFIG = _REPO_ROOT / "versus" / "config.yaml"
 _DEFAULT_DATA = _REPO_ROOT / "versus" / "data"
+
+
+def _legacy_judgment_dict(row: dict) -> dict:
+    """Translate a versus_judgments DB row into the legacy JSONL shape.
+
+    The router and its downstream consumers (versus.diagnostics, the FE
+    schemas) were written against the JSONL field names. Rather than
+    rewriting all of that to the new column names, we translate at the
+    boundary: the rest of the router can keep saying ``row["raw_response"]``,
+    ``row["config"]``, ``row["prefix_config_hash"]``, etc.
+    """
+    judge_inputs = row.get("judge_inputs") or {}
+    request = row.get("request") or None
+    sys_prompt: str | None = None
+    user_prompt: str | None = None
+    if isinstance(request, dict):
+        if "system" in request:
+            sys_prompt = request.get("system")
+            messages = request.get("messages") or []
+            if messages:
+                user_prompt = (messages[0] or {}).get("content")
+        else:
+            messages = request.get("messages") or []
+            if len(messages) >= 1 and (messages[0] or {}).get("role") == "system":
+                sys_prompt = (messages[0] or {}).get("content")
+                if len(messages) >= 2:
+                    user_prompt = (messages[1] or {}).get("content")
+            elif messages:
+                user_prompt = (messages[0] or {}).get("content")
+    return {
+        "key": row["id"],
+        "essay_id": row.get("essay_id"),
+        "prefix_config_hash": row.get("prefix_hash"),
+        "source_a": row.get("source_a"),
+        "source_b": row.get("source_b"),
+        "display_first": row.get("display_first"),
+        "display_second": _other_source(row),
+        "criterion": row.get("criterion"),
+        "judge_model": row.get("judge_model"),
+        "verdict": row.get("verdict"),
+        "winner_source": row.get("winner_source"),
+        "preference_label": row.get("preference_label"),
+        "reasoning_text": row.get("reasoning_text"),
+        "prompt": user_prompt,
+        "system_prompt": sys_prompt,
+        "raw_response": row.get("response"),
+        "ts": row.get("created_at"),
+        "duration_s": row.get("duration_s"),
+        "config": judge_inputs,
+        "config_hash": row.get("judge_inputs_hash"),
+        "sampling": judge_inputs.get("sampling"),
+        "rumil_call_id": row.get("rumil_call_id"),
+        "rumil_run_id": row.get("run_id"),
+        "rumil_question_id": row.get("rumil_question_id"),
+        "rumil_trace_url": _trace_url(row.get("run_id"), row.get("rumil_call_id")),
+        "rumil_cost_usd": row.get("rumil_cost_usd"),
+        "contamination_note": row.get("contamination_note"),
+    }
+
+
+def _trace_url(run_id: str | None, call_id: str | None) -> str | None:
+    """Compose a frontend trace URL from run + call ids; None if no run."""
+    if not run_id:
+        return None
+    base = get_settings().frontend_url.rstrip("/")
+    anchor = f"#call-{call_id[:8]}" if call_id else ""
+    return f"{base}/traces/{run_id}{anchor}"
+
+
+def _other_source(row: dict) -> str | None:
+    """Resolve display_second from display_first + (source_a, source_b)."""
+    df = row.get("display_first")
+    sa = row.get("source_a")
+    sb = row.get("source_b")
+    if df == sa:
+        return sb
+    if df == sb:
+        return sa
+    return None
+
+
+def _legacy_text_dict(row: dict) -> dict:
+    """Translate a versus_texts DB row into the legacy completion JSONL shape."""
+    params = row.get("params") or {}
+    text = row.get("text") or ""
+    return {
+        "key": row["id"],
+        "essay_id": row.get("essay_id"),
+        "prefix_config_hash": row.get("prefix_hash"),
+        "source_id": row.get("source_id"),
+        "source_kind": row.get("kind"),
+        "model_id": row.get("model_id"),
+        "params": {
+            k: v
+            for k, v in params.items()
+            if k not in {"raw_response_text", "ts", "duration_s", "provider", "target_words"}
+        },
+        "prompt": _user_prompt_from_request(row.get("request")),
+        "response_text": text,
+        # Prefer the generated response_words column when present (light
+        # projection); fall back to a Python split on the full text for
+        # callers that fetched the heavy projection.
+        "response_words": row["response_words"] if "response_words" in row else len(text.split()),
+        "target_words": params.get("target_words", 0),
+        "ts": params.get("ts") or row.get("created_at"),
+        "duration_s": params.get("duration_s"),
+        "raw_response": row.get("response"),
+        "provider": params.get("provider"),
+        # sampling_hash is no longer stored — recompute from the params for
+        # legacy callers that still display it; falls back to "-".
+        "sampling_hash": "-",
+    }
+
+
+def _user_prompt_from_request(request: dict | None) -> str | None:
+    if not isinstance(request, dict):
+        return None
+    messages = request.get("messages") or []
+    for m in messages:
+        if (m or {}).get("role") == "user":
+            return m.get("content")
+    if messages:
+        return (messages[0] or {}).get("content")
+    return None
+
+
+# Process-local cache for the "light" projections of versus_judgments and
+# versus_texts. The aggregator endpoints (/results, /diagnostics) refetch
+# every page load; without caching, clicking around the UI hits the DB
+# repeatedly. The previous JSONL store had near-instant reads via an
+# in-memory cache keyed on (path, mtime, size); we approximate that here
+# with a small TTL. Stale-by-up-to-N-seconds is fine for an interactive
+# eval-results view — fresh data costs a hard refresh.
+_LIGHT_CACHE_TTL_S = 10.0
+_LIGHT_CACHE: dict[str, tuple[float, list[dict]]] = {}
+# Per-essay cache for the inspect view's per-variant fetches. Server-side
+# essay_id filter cuts the payload to ~5-30 rows; the cache makes switching
+# back to a recently-viewed essay instant.
+_PER_ESSAY_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
+
+
+def _per_essay_load(kind: str, essay_id: str) -> list[dict]:
+    """Cached fetch of judgments/texts scoped to one essay.
+
+    Returns the full (heavy) projection because the per-essay inspect
+    view renders prompts, reasoning_text, and the source-text content.
+    """
+    key = (kind, essay_id)
+    now = time.time()
+    cached = _PER_ESSAY_CACHE.get(key)
+    if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
+        return cached[1]
+    client = versus_db.get_client()
+    if kind == "judgments":
+        rows = list(versus_db.iter_judgments(client, essay_id=essay_id))
+    elif kind == "texts":
+        rows = list(versus_db.iter_texts(client, essay_id=essay_id))
+    else:
+        raise ValueError(f"unknown kind: {kind}")
+    _PER_ESSAY_CACHE[key] = (now, rows)
+    return rows
+
+
+def _load_essay_rows() -> list[dict]:
+    """Cached fetch of all versus_essays rows.
+
+    Reuses the LIGHT cache slot under key "essays" — the table is small
+    (~30 rows) and the row payload includes markdown / blocks which we
+    do read per request to compute prefix_hash and render content.
+    """
+    now = time.time()
+    cached = _LIGHT_CACHE.get("essays")
+    if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
+        return cached[1]
+    client = versus_db.get_client()
+    rows = list(versus_db.iter_essays(client))
+    _LIGHT_CACHE["essays"] = (now, rows)
+    return rows
+
+
+def _light_load(kind: str) -> list[dict]:
+    """Cached fetch of judgments/texts via the light projection."""
+    now = time.time()
+    cached = _LIGHT_CACHE.get(kind)
+    if cached is not None and now - cached[0] < _LIGHT_CACHE_TTL_S:
+        return cached[1]
+    client = versus_db.get_client()
+    if kind == "judgments":
+        rows = list(versus_db.iter_judgments(client, light=True))
+    elif kind == "texts":
+        rows = list(versus_db.iter_texts(client, light=True))
+    else:
+        raise ValueError(f"unknown kind: {kind}")
+    _LIGHT_CACHE[kind] = (now, rows)
+    return rows
 
 
 def _config_path() -> pathlib.Path:
@@ -71,46 +266,24 @@ def _resolve_path(p: pathlib.Path) -> pathlib.Path:
     return _REPO_ROOT / "versus" / p
 
 
-def _essays_dir() -> pathlib.Path:
-    cfg = _cfg_cached()
-    if cfg:
-        return _resolve_path(cfg.essays.cache_dir)
-    return _data_dir() / "essays"
-
-
-def _iter_essay_paths() -> list[pathlib.Path]:
-    """Essay JSONs only — skips ``<id>.verdict.json`` and other companions."""
-    d = _essays_dir()
-    if not d.exists():
-        return []
-    return sorted(p for p in d.glob("*.json") if not p.name.endswith(".verdict.json"))
-
-
-def _load_verdict(essay_id: str) -> dict | None:
-    p = _essays_dir() / f"{essay_id}.verdict.json"
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except json.JSONDecodeError:
-        return None
-
-
-def _build_completion_source_index(
-    cfg: versus_config.Config,
+def _build_completion_source_index_from_rows(
+    text_rows: list[dict],
 ) -> dict[tuple[str, str], set[str]]:
-    """Index ``(essay_id, prefix_config_hash) -> {source_id, ...}`` over completions.
+    """Index ``(essay_id, prefix_hash) -> {source_id, ...}`` over pre-loaded texts.
 
-    Used to flag judgment rows as ``orphaned``: a row whose
-    ``prefix_config_hash`` IS current but whose ``source_a`` / ``source_b``
-    has no matching completion row (e.g. the completion was manually
-    removed, or judgment ran against a partially-generated set). Distinct
-    from staleness, which fires when the prefix_config_hash itself is old.
+    Used to flag judgment rows as ``orphaned``: a row whose ``prefix_hash``
+    IS current but whose ``source_a`` / ``source_b`` has no matching text
+    row (e.g. the text was manually removed, or judgment ran against a
+    partially-generated set). Distinct from staleness, which fires when
+    the prefix_hash itself is old.
+
+    Reads DB-shaped rows (versus_texts.prefix_hash). Callers passing
+    legacy-shaped rows should rename ``prefix_hash`` before calling.
     """
     index: dict[tuple[str, str], set[str]] = {}
-    for row in versus_jsonl.read(_resolve_path(cfg.storage.completions_log)):
+    for row in text_rows:
         eid = row.get("essay_id")
-        ph = row.get("prefix_config_hash")
+        ph = row.get("prefix_hash")
         sid = row.get("source_id")
         if not (eid and ph and sid):
             continue
@@ -146,35 +319,20 @@ def _build_essays_status(
     ``cfg.prefix_variants`` to compute the map under that variant — this
     is how the UI scopes staleness to a selected variant.
 
-    Reads cached essay JSONs + their adjacent ``.verdict.json`` files. If
-    no essays are cached, returns empty containers (matrix filtering is a
-    no-op when ``current_prefix_hashes`` is empty).
+    Reads from versus_essays. If the table is empty, returns empty
+    containers (matrix filtering is a no-op when ``current_prefix_hashes``
+    is empty).
     """
     pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
     statuses: list[EssayStatus] = []
     current: dict[str, str] = {}
     exclude = set(cfg.essays.exclude_ids)
-    for path in _iter_essay_paths():
-        with open(path) as f:
-            d = json.load(f)
-        if "source_id" not in d:
+    for row in _load_essay_rows():
+        if row["id"] in exclude:
             continue
-        if not versus_essay.is_current_schema(d):
+        if not versus_essay.is_current_schema(row):
             continue
-        if d["id"] in exclude:
-            continue
-        essay = versus_essay.Essay(
-            id=d["id"],
-            source_id=d["source_id"],
-            url=d["url"],
-            title=d["title"],
-            author=d["author"],
-            pub_date=d["pub_date"],
-            blocks=[versus_essay.Block(**b) for b in d["blocks"]],
-            markdown=d.get("markdown", ""),
-            image_count=d.get("image_count", 0),
-            schema_version=d.get("schema_version", 0),
-        )
+        essay = versus_prepare.essay_from_db_row(row)
         task = versus_prepare.prepare(
             essay,
             n_paragraphs=pcfg.n_paragraphs,
@@ -182,16 +340,15 @@ def _build_essays_status(
             length_tolerance=cfg.completion.length_tolerance,
         )
         current[essay.id] = task.prefix_config_hash
-        verdict = _load_verdict(essay.id)
         statuses.append(
             EssayStatus(
                 essay_id=essay.id,
                 title=essay.title,
                 schema_version=essay.schema_version,
                 current_prefix_hash=task.prefix_config_hash,
-                validator_clean=verdict["clean"] if verdict else None,
-                validator_issues=len(verdict["issues"]) if verdict else 0,
-                validator_model=verdict.get("model") if verdict else None,
+                validator_clean=row.get("verdict_clean"),
+                validator_issues=len(row.get("verdict_issues") or []),
+                validator_model=row.get("verdict_model"),
             )
         )
     return statuses, current
@@ -210,7 +367,7 @@ class EssayMeta(pydantic.BaseModel):
 
 
 class EssayDetail(pydantic.BaseModel):
-    """Essay + the prompts shown to completion / judge / paraphrase models."""
+    """Essay + the prompts shown to completion / judge models."""
 
     id: str
     title: str
@@ -229,7 +386,6 @@ class EssayDetail(pydantic.BaseModel):
     # on judgment rows — lets the UI correlate "this template" with
     # "rows that used it".
     judge_prompt_hash: str
-    paraphrase_prompt_template: str
     criteria: list[str]
     # Available prefix variants and the one this response was rendered
     # for. Used by the /versus/inspect dropdown so users can flip the
@@ -417,13 +573,24 @@ class SourceSummary(pydantic.BaseModel):
 
 
 class JudgmentRow(pydantic.BaseModel):
-    """One row in the raw-judgments explorer at the bottom of /results."""
+    """One row in the raw-judgments explorer at the bottom of /results.
+
+    ``source_a``/``source_b`` are the alphabetical canonical ordering used
+    for the dedup key — stable identity across rows. ``display_first``/
+    ``display_second`` are what the judge actually saw as "Continuation A"
+    and "B"; they diverge from canonical roughly half the time. The
+    ``verdict`` letter (``A``/``B``/``tie``) refers to display order, not
+    canonical, so the rows-table renders display order alongside the
+    canonical pair to keep the mapping legible.
+    """
 
     key: str
     essay_id: str
     prefix_config_hash: str
     source_a: str
     source_b: str
+    display_first: str
+    display_second: str
     criterion: str
     judge_model: str
     judge_model_id: str
@@ -548,24 +715,15 @@ router = APIRouter(
 
 
 def _load_essay(essay_id: str) -> versus_essay.Essay | None:
-    p = _essays_dir() / f"{essay_id}.json"
-    if not p.exists():
-        return None
-    with open(p) as f:
-        d = json.load(f)
-    if "source_id" not in d:
-        return None
-    return versus_essay.Essay(
-        id=d["id"],
-        source_id=d["source_id"],
-        url=d["url"],
-        title=d["title"],
-        author=d["author"],
-        pub_date=d["pub_date"],
-        blocks=[versus_essay.Block(**b) for b in d["blocks"]],
-        markdown=d.get("markdown", ""),
-        schema_version=d.get("schema_version", 0),
-    )
+    """Load one essay row from versus_essays as an Essay object.
+
+    Reads from the ``_load_essay_rows()`` TTL cache so the typical
+    list-then-detail navigation doesn't pay a DB round-trip per click.
+    """
+    for row in _load_essay_rows():
+        if row.get("id") == essay_id:
+            return versus_prepare.essay_from_db_row(row)
+    return None
 
 
 @router.get("/essays", response_model=list[EssayMeta])
@@ -578,15 +736,10 @@ def list_essays(include_legacy: bool = False) -> list[EssayMeta]:
     confusing the inspect dropdown. Pass ``include_legacy=true`` to
     include them anyway (no UI surfaces this yet; it's a debug escape).
     """
-    paths = _iter_essay_paths()
-    if not paths and not _essays_dir().exists():
-        raise HTTPException(503, f"versus essays dir not found: {_essays_dir()}")
     cfg = _cfg_cached()
     exclude = set(cfg.essays.exclude_ids) if cfg else set()
     out: list[EssayMeta] = []
-    for p in paths:
-        with open(p) as f:
-            d = json.load(f)
+    for d in _load_essay_rows():
         if d.get("id") in exclude:
             continue
         if not include_legacy and not versus_essay.is_current_schema(d):
@@ -632,9 +785,6 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         source_a_text="{{ CONTINUATION A }}",
         source_b_text="{{ CONTINUATION B }}",
     )
-    paraphrase_prompt_template = versus_paraphrase.PARAPHRASE_INSTRUCTIONS.replace(
-        "{markdown}", "{{ FULL ESSAY MARKDOWN }}"
-    )
     judge_prompt_hash = versus_judge.compute_judge_prompt_hash(primary_criterion, with_tools=False)
     return EssayDetail(
         id=essay.id,
@@ -650,7 +800,6 @@ def get_essay(essay_id: str, prefix_label: str | None = None) -> EssayDetail:
         judge_system_prompt_template=judge_system,
         judge_user_prompt_template=judge_user,
         judge_prompt_hash=judge_prompt_hash,
-        paraphrase_prompt_template=paraphrase_prompt_template,
         criteria=list(cfg.judging.criteria),
         prefix_variants=[
             PrefixVariantInfo(
@@ -679,10 +828,12 @@ def get_essay_sources(essay_id: str, prefix_label: str | None = None) -> list[So
     )
     # Multiple completion rows can share the same source_id (different
     # sampling_hash); collapse to one per source_id, last-row-wins, to match
-    # versus_judge.load_sources_by_essay.
+    # versus_judge.load_sources_by_essay. Server-side essay_id filter scopes
+    # to ~5-10 rows instead of ~430.
     by_source: dict[str, Source] = {}
-    for row in versus_jsonl.read(_resolve_path(cfg.storage.completions_log)):
-        if row["essay_id"] != essay.id or row["prefix_config_hash"] != task.prefix_config_hash:
+    for db_row in _per_essay_load("texts", essay.id):
+        row = _legacy_text_dict(db_row)
+        if row["prefix_config_hash"] != task.prefix_config_hash:
             continue
         by_source[row["source_id"]] = Source(
             source_id=row["source_id"],
@@ -711,8 +862,8 @@ class EssayJudgmentsResponse(pydantic.BaseModel):
       from essay re-import drift or a prefix-config bump.
 
     ``orphaned`` flags a judgment whose source_a / source_b is not
-    present in the current completions.jsonl at the same prefix_hash --
-    the judgment survived the variant check but its sources did not.
+    present in versus_texts at the same prefix_hash -- the judgment
+    survived the variant check but its sources did not.
     """
 
     judgments: list[Judgment]
@@ -746,13 +897,13 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
         for p in versus_prepare.active_prefix_configs(cfg)
         if p.id != active_prefix_cfg.id
     }
-    source_index = _build_completion_source_index(cfg)
+    text_rows = _per_essay_load("texts", essay.id)
+    source_index = _build_completion_source_index_from_rows(text_rows)
     judgments: list[Judgment] = []
     stale_hidden = 0
     other_variant_hidden = 0
-    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
-        if row.get("essay_id") != essay.id:
-            continue
+    for db_row in _per_essay_load("judgments", essay.id):
+        row = _legacy_judgment_dict(db_row)
         if row.get("prefix_config_hash") != task.prefix_config_hash:
             if row.get("verdict") is not None:
                 if row.get("prefix_config_hash") in other_variant_hashes:
@@ -901,33 +1052,34 @@ def get_results(
     prefix_label: str | None = None,
 ) -> ResultsBundle:
     cfg = _cfg_required()
-    judgments_log = _resolve_path(cfg.storage.judgments_log)
-    completions_log = _resolve_path(cfg.storage.completions_log)
 
     active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     essays_status, current_prefix_hashes = _build_essays_status(cfg, prefix_cfg=active_prefix_cfg)
 
+    # Single fetch per request: every downstream consumer (matrix,
+    # matrix_by_source, the row loop, the source-stats loop, and the
+    # orphan check) re-iterates this same data. Light projection skips
+    # the multi-MB request/response JSONB blobs that no aggregation here
+    # actually reads. Cached briefly so click-arounds don't re-fetch.
+    all_judgments_db = _light_load("judgments")
+    all_texts_db = _light_load("texts")
+
     data = versus_analyze.matrix(
-        judgments_log,
-        include_contaminated=include_contaminated,
-        current_prefix_hashes=current_prefix_hashes,
-        include_stale=include_stale,
-    )
-    content_data = versus_analyze.content_test_matrix(
-        judgments_log,
+        rows=all_judgments_db,
         include_contaminated=include_contaminated,
         current_prefix_hashes=current_prefix_hashes,
         include_stale=include_stale,
     )
 
+    # Conditions are limited to "completion" while paraphrase generation is
+    # deferred. When paraphrase comes back, restore "paraphrase" alongside
+    # and re-emit the content-test matrix from analyze.content_test_matrix.
     conditions_present = sorted({k[2] for k in data}) if data else []
-    conditions = [c for c in ("completion", "paraphrase") if c in conditions_present] or (
-        conditions_present
-    )
+    conditions = [c for c in ("completion",) if c in conditions_present] or conditions_present
     criteria = cfg.judging.criteria
 
-    present_gens = {k[0] for k in data if k[2] in conditions} | {k[0] for k in content_data}
-    present_judges = {k[1] for k in data if k[2] in conditions} | {k[1] for k in content_data}
+    present_gens = {k[0] for k in data if k[2] in conditions}
+    present_judges = {k[1] for k in data if k[2] in conditions}
     gen_models = sorted(present_gens, key=versus_analyze.model_sort_key)
     judge_models = sorted(present_judges, key=versus_analyze.model_sort_key)
 
@@ -944,25 +1096,9 @@ def get_results(
                 ),
             )
         )
-    main_matrices.append(
-        Matrix(
-            condition="content-test",
-            meta=_cond_meta("content-test"),
-            cells=_cells_out(
-                versus_view.matrix_cells(
-                    content_data,
-                    gen_models,
-                    judge_models,
-                    "content-test",
-                    criterion,
-                    keyed_by_condition=False,
-                )
-            ),
-        )
-    )
 
     data_by_source = versus_analyze.matrix_by_source(
-        judgments_log,
+        rows=all_judgments_db,
         include_contaminated=include_contaminated,
         current_prefix_hashes=current_prefix_hashes,
         include_stale=include_stale,
@@ -1010,34 +1146,13 @@ def get_results(
                 ],
             )
         )
-    small_grid.append(
-        SmallGridRow(
-            condition="content-test",
-            per_crit=[
-                CriterionMatrix(
-                    criterion=crit,
-                    cells=_cells_out(
-                        versus_view.matrix_cells(
-                            content_data,
-                            gen_models,
-                            judge_models,
-                            "content-test",
-                            crit,
-                            keyed_by_condition=False,
-                        )
-                    ),
-                )
-                for crit in criteria
-            ],
-        )
-    )
 
     # `total_judgments` is the deduped count of rows with a verdict -- this
     # is what the "N judgments" header in the UI means and what every
     # aggregate downstream (matrices, content-test, rows list) sees.
     # Counting raw rows here would over-report by every dupe + every
     # null-verdict placeholder and drift from the rendered totals.
-    source_index = _build_completion_source_index(cfg)
+    source_index = _build_completion_source_index_from_rows(all_texts_db)
     rows: list[JudgmentRow] = []
     matrix_input_rows: list[dict] = []
     # ``judge_model -> structured config``. Every row carries one
@@ -1049,7 +1164,8 @@ def get_results(
     stale_count = 0
     current_count = 0
     any_filter = bool(filter_gen or filter_judge or filter_condition or filter_criterion)
-    for row in versus_jsonl.read_dedup(judgments_log):
+    for db_row in all_judgments_db:
+        row = _legacy_judgment_dict(db_row)
         if row.get("verdict") is None:
             continue
         total_judgments += 1
@@ -1082,6 +1198,8 @@ def get_results(
                 prefix_config_hash=row.get("prefix_config_hash", ""),
                 source_a=row["source_a"],
                 source_b=row["source_b"],
+                display_first=row.get("display_first") or "",
+                display_second=row.get("display_second") or "",
                 criterion=row["criterion"],
                 judge_model=row["judge_model"],
                 judge_model_id=row["config"]["model"],
@@ -1099,7 +1217,8 @@ def get_results(
 
     total_completions = 0
     source_stats: dict[str, dict] = {}
-    for row in versus_jsonl.read(completions_log):
+    for db_row in all_texts_db:
+        row = _legacy_text_dict(db_row)
         total_completions += 1
         if not include_stale and versus_analyze._prefix_hash_is_stale(row, current_prefix_hashes):
             continue
@@ -1203,48 +1322,49 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
 
     Used by the side-panel inspector on /versus/results so a reader can see
     the prompt + reasoning + raw response that produced a verdict. The key
-    contains `|` and `:` so callers must pass it as a query param.
+    is the row's primary-key UUID, so this is a direct lookup — no scan.
     """
-    cfg = _cfg_required()
-    # read_dedup so the inspector shows the same (newest) row that the
-    # matrix and /rows tables see; plain read() would return the oldest
-    # duplicate when a --force resubmit produces two rows with the same key.
-    for row in versus_jsonl.read_dedup(_resolve_path(cfg.storage.judgments_log)):
-        if row.get("key") != key:
-            continue
-        jm = str(row.get("judge_model", ""))
-        row_cfg = row["config"]
-        return JudgmentDetail(
-            key=row["key"],
-            essay_id=row.get("essay_id", ""),
-            prefix_config_hash=row.get("prefix_config_hash", ""),
-            source_a=row.get("source_a", ""),
-            source_b=row.get("source_b", ""),
-            display_first=row.get("display_first", ""),
-            display_second=row.get("display_second", ""),
-            criterion=row.get("criterion", ""),
-            judge_model=jm,
-            judge_model_id=row_cfg["model"],
-            config_hash=row["config_hash"],
-            prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
-            sampling=row_cfg["sampling"] or row.get("sampling") or {},
-            verdict=row.get("verdict"),
-            winner_source=row.get("winner_source"),
-            preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
-            is_rumil=jm.startswith("rumil:"),
-            contamination_note=row.get("contamination_note"),
-            prompt=row.get("prompt"),
-            reasoning_text=row.get("reasoning_text"),
-            raw_response=row.get("raw_response"),
-            rumil_trace_url=row.get("rumil_trace_url"),
-            rumil_question_id=row.get("rumil_question_id"),
-            rumil_call_id=row.get("rumil_call_id"),
-            rumil_run_id=row.get("rumil_run_id"),
-            rumil_cost_usd=row.get("rumil_cost_usd"),
-            ts=row.get("ts"),
-            duration_s=row.get("duration_s"),
-        )
-    raise HTTPException(404, f"judgment key not found: {key}")
+    _cfg_required()
+    client = versus_db.get_client()
+    resp = client.table("versus_judgments").select("*").eq("id", key).limit(1).execute()
+    if not resp.data:
+        raise HTTPException(404, f"judgment key not found: {key}")
+    db_row = resp.data[0]
+    if not isinstance(db_row, dict):
+        raise HTTPException(500, "unexpected row shape from versus_judgments")
+    row = _legacy_judgment_dict(db_row)
+    jm = str(row.get("judge_model", ""))
+    row_cfg = row["config"]
+    return JudgmentDetail(
+        key=row["key"],
+        essay_id=row.get("essay_id", ""),
+        prefix_config_hash=row.get("prefix_config_hash", ""),
+        source_a=row.get("source_a", ""),
+        source_b=row.get("source_b", ""),
+        display_first=row.get("display_first", ""),
+        display_second=row.get("display_second", ""),
+        criterion=row.get("criterion", ""),
+        judge_model=jm,
+        judge_model_id=row_cfg["model"],
+        config_hash=row["config_hash"],
+        prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
+        sampling=row_cfg["sampling"] or row.get("sampling") or {},
+        verdict=row.get("verdict"),
+        winner_source=row.get("winner_source"),
+        preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
+        is_rumil=jm.startswith("rumil:"),
+        contamination_note=row.get("contamination_note"),
+        prompt=row.get("prompt"),
+        reasoning_text=row.get("reasoning_text"),
+        raw_response=row.get("raw_response"),
+        rumil_trace_url=row.get("rumil_trace_url"),
+        rumil_question_id=row.get("rumil_question_id"),
+        rumil_call_id=row.get("rumil_call_id"),
+        rumil_run_id=row.get("rumil_run_id"),
+        rumil_cost_usd=row.get("rumil_cost_usd"),
+        ts=row.get("ts"),
+        duration_s=row.get("duration_s"),
+    )
 
 
 class JudgeBiasRowOut(pydantic.BaseModel):
@@ -1312,19 +1432,15 @@ def get_diagnostics(
     matrix the operator is currently looking at.
     """
     cfg = _cfg_required()
-    judgments_log = _resolve_path(cfg.storage.judgments_log)
 
     active_prefix_cfg = _resolve_prefix_label(cfg, prefix_label)
     _, current_prefix_hashes = _build_essays_status(cfg, prefix_cfg=active_prefix_cfg)
 
-    titles: dict[str, str] = {}
-    for p in _iter_essay_paths():
-        with open(p) as f:
-            d = json.load(f)
-        titles[d["id"]] = d.get("title", d["id"])
+    titles: dict[str, str] = {d["id"]: d.get("title", d["id"]) for d in _load_essay_rows()}
 
     filtered_rows: list[dict] = []
-    for row in versus_jsonl.read_dedup(judgments_log):
+    for db_row in _light_load("judgments"):
+        row = _legacy_judgment_dict(db_row)
         if row.get("verdict") is None:
             continue
         if not include_contaminated and row.get("contamination_note"):

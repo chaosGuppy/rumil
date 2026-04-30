@@ -252,6 +252,19 @@ function sampleAccent(idx: number): string {
   return VARIANT_PALETTE[idx % VARIANT_PALETTE.length].accent;
 }
 
+// Stable normalization matching the backend's hash_overrides logic:
+// drops null/undefined, sorts keys, then JSON-stringifies. Used to detect
+// when a variant column's draft has drifted off the column's persisted
+// config (and would therefore fire into a new variant).
+function normalizeOverrides(o: ForkOverrides): string {
+  const cleaned: Record<string, unknown> = {};
+  for (const k of Object.keys(o).sort()) {
+    const v = (o as Record<string, unknown>)[k];
+    if (v !== null && v !== undefined) cleaned[k] = v;
+  }
+  return JSON.stringify(cleaned);
+}
+
 // --- Module-level draft store ---------------------------------------------
 //
 // Survives ForkPanel mount/unmount within a session. Keyed by composite
@@ -603,26 +616,173 @@ function OriginalColumn({
           )}
         </div>
       </div>
-      <div className="fork-samples">
-        <div className="fork-sample fork-sample--original">
-          <div className="fork-sample-meta">
-            <span className="fork-sample-label">captured</span>
-            {detail.input_tokens != null && (
-              <span className="fork-sample-tokens">
-                in/out {detail.input_tokens}/{detail.output_tokens ?? 0}
-              </span>
+      <div className="fork-col-scroll">
+        <RequestView base={base} />
+        <div className="fork-samples">
+          <div className="fork-samples-header">
+            <span className="fork-samples-header-label">captured response</span>
+          </div>
+          <div className="fork-sample fork-sample--original">
+            <div className="fork-sample-meta">
+              <span className="fork-sample-label">captured</span>
+              {detail.input_tokens != null && (
+                <span className="fork-sample-tokens">
+                  in/out {detail.input_tokens}/{detail.output_tokens ?? 0}
+                </span>
+              )}
+              {detail.duration_ms != null && (
+                <span className="fork-sample-tokens">
+                  {(detail.duration_ms / 1000).toFixed(1)}s
+                </span>
+              )}
+            </div>
+            {detail.error ? (
+              <div className="fork-sample-error">{detail.error}</div>
+            ) : (
+              <ResponseBody
+                text={detail.response_text}
+                toolCalls={detail.tool_calls as Array<{ [k: string]: unknown }>}
+              />
             )}
           </div>
-          {detail.error ? (
-            <div className="fork-sample-error">{detail.error}</div>
-          ) : (
-            <ResponseBody
-              text={detail.response_text}
-              toolCalls={detail.tool_calls as Array<{ [k: string]: unknown }>}
-            />
-          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- RequestView (read-only captured request) ----------------------------
+
+function RequestView({ base }: { base: BaseExchangeOut | null }) {
+  const [open, setOpen] = useState(false);
+  if (!base) {
+    return (
+      <div className="fork-form">
+        <div className="fork-form-toggle" style={{ cursor: "default", color: "#aaa" }}>
+          <span className="fork-form-toggle-icon">▸</span>
+          request — loading...
+        </div>
+      </div>
+    );
+  }
+  const messages = (base.user_messages ?? []) as Msg[];
+  const tools = (base.tools ?? []) as Tool[];
+  const sysTokens = estTokens(base.system_prompt);
+  const msgsTokens = messages.reduce((a, m) => a + estMessageTokens(m), 0);
+  const toolsTokens = tools.reduce((a, t) => a + estToolTokens(t), 0);
+  const total = sysTokens + msgsTokens + toolsTokens;
+  return (
+    <div className="fork-form">
+      <button type="button" className="fork-form-toggle" onClick={() => setOpen((o) => !o)}>
+        <span className="fork-form-toggle-icon">{open ? "▾" : "▸"}</span>
+        request
+        <span style={{ marginLeft: 6, color: "#aaa", textTransform: "none", letterSpacing: 0 }}>
+          · read-only
+        </span>
+        <span className="fork-token-est fork-token-est--total" title="rough total input tokens">
+          ~{fmtTokens(total)} tok
+        </span>
+      </button>
+      {open && (
+        <div className="fork-form-body">
+          <div>
+            <div className="fork-field-label">
+              <span>system prompt</span>
+              <span className="fork-token-est">~{fmtTokens(sysTokens)} tok</span>
+            </div>
+            <pre className="fork-readonly-pre">{base.system_prompt || "(empty)"}</pre>
+          </div>
+          <div>
+            <div className="fork-field-label">
+              <span>message stack ({messages.length})</span>
+              <span className="fork-token-est">~{fmtTokens(msgsTokens)} tok</span>
+            </div>
+            <div className="fork-msg-stack">
+              {messages.map((m, i) => (
+                <ReadOnlyMessageCard key={i} msg={m} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="fork-field-label">
+              <span>tools ({tools.length})</span>
+              <span className="fork-token-est">~{fmtTokens(toolsTokens)} tok</span>
+            </div>
+            <div className="fork-tools-list">
+              {tools.map((t) => (
+                <ReadOnlyToolCard key={t.name} tool={t} />
+              ))}
+            </div>
+          </div>
+          <div className="fork-readonly-meta">
+            <span className="fork-readonly-meta-label">model</span>
+            <span className="fork-readonly-meta-value">{base.model}</span>
+            <span className="fork-readonly-meta-label">temperature</span>
+            <span className="fork-readonly-meta-value">
+              {base.temperature ?? <em>—</em>}
+            </span>
+            <span className="fork-readonly-meta-label">max_tokens</span>
+            <span className="fork-readonly-meta-value">{base.max_tokens}</span>
+            {base.has_thinking && (
+              <>
+                <span className="fork-readonly-meta-label">adaptive thinking</span>
+                <span className="fork-readonly-meta-value">
+                  {base.thinking_off ? "off" : "on"}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReadOnlyMessageCard({ msg }: { msg: Msg }) {
+  const isString = typeof msg.content === "string";
+  const tokens = estMessageTokens(msg);
+  const body = isString ? String(msg.content ?? "") : JSON.stringify(msg.content, null, 2);
+  return (
+    <div className="fork-msg-card fork-msg-card--readonly">
+      <div className="fork-msg-card-body">
+        <div className="fork-msg-card-meta">
+          <span className="fork-msg-role-readonly">{msg.role}</span>
+          {!isString && (
+            <span className="fork-msg-card-blocks-note">
+              ({Array.isArray(msg.content) ? msg.content.length : 0} block(s))
+            </span>
+          )}
+          <span style={{ flex: 1 }} />
+          <span className="fork-token-est">~{fmtTokens(tokens)} tok</span>
+        </div>
+        <pre className="fork-readonly-pre">{body}</pre>
+      </div>
+    </div>
+  );
+}
+
+function ReadOnlyToolCard({ tool }: { tool: Tool }) {
+  const [open, setOpen] = useState(false);
+  const tokens = estToolTokens(tool);
+  return (
+    <div className="fork-tool-card">
+      <button
+        type="button"
+        className="fork-tool-row fork-tool-row--readonly"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="fork-tool-readonly-caret">{open ? "▾" : "▸"}</span>
+        <span className="fork-tool-name">{tool.name}</span>
+        <span className="fork-tool-desc">{tool.description}</span>
+        <span className="fork-token-est" title="rough token estimate">
+          ~{fmtTokens(tokens)}
+        </span>
+      </button>
+      {open && (
+        <div className="fork-tool-edit-body">
+          <pre className="fork-readonly-pre">{JSON.stringify(tool.input_schema, null, 2)}</pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -658,6 +818,11 @@ function VariantColumn({
   );
   const chips = useMemo(() => diffChips(draft, base), [draft, base]);
   const accentStyle = useMemo(() => variantStyle(hash), [hash]);
+  const drifted = useMemo(
+    () => normalizeOverrides(draftToOverrides(draft)) !== normalizeOverrides(overrides),
+    [draft, overrides],
+  );
+  const onRevert = () => setDraft(() => overridesToDraft(overrides));
 
   return (
     <div className="fork-column fork-column--variant" style={accentStyle}>
@@ -666,6 +831,16 @@ function VariantColumn({
           <span className="fork-col-label">variant</span>
           <span className="fork-col-hash">{hash.slice(0, 8)}</span>
           <div className="fork-col-actions">
+            {drifted && (
+              <button
+                type="button"
+                className="fork-col-revert"
+                onClick={onRevert}
+                title="revert draft to this variant's config"
+              >
+                ↺
+              </button>
+            )}
             <button
               type="button"
               className="fork-col-delete"
@@ -677,6 +852,14 @@ function VariantColumn({
           </div>
         </div>
         <div className="fork-chips">
+          {drifted && (
+            <span
+              className="fork-chip fork-chip--drift"
+              title="next fire will create a new variant since draft differs from this one"
+            >
+              would fire as new
+            </span>
+          )}
           {chips.length === 0 ? (
             <span className="fork-chip fork-chip--captured">no diff</span>
           ) : (
@@ -695,6 +878,7 @@ function VariantColumn({
           base={base}
           draft={draft}
           pending={pending}
+          fireLabel={drifted ? "fire as new" : "fire"}
           onFire={(n) => onFire(draft, n)}
         />
       </div>
@@ -765,7 +949,7 @@ function NewDraftColumn({
           samples={[]}
           pendingCount={pending}
           totalKnown={0}
-          emptyHint="will appear after firing"
+          emptyHint="samples will appear here once you fire"
         />
         <FireRow
           base={base}
@@ -1461,11 +1645,13 @@ function FireRow({
   draft,
   pending,
   onFire,
+  fireLabel,
 }: {
   base: BaseExchangeOut | null;
   draft: DraftOverrides;
   pending: number;
   onFire: (n: number) => void | Promise<void>;
+  fireLabel?: string;
 }) {
   const [n, setN] = useState(1);
   const [confirming, setConfirming] = useState(false);
@@ -1504,7 +1690,7 @@ function FireRow({
           onChange={(e) => setN(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)))}
         />
         <button type="button" className="fork-fire-btn" onClick={fire} disabled={fireBlocked}>
-          {pending > 0 ? `firing ${pending}…` : "fire"}
+          {pending > 0 ? `firing ${pending}…` : (fireLabel ?? "fire")}
         </button>
         <span className={`fork-fire-est${high ? " fork-fire-est--high" : ""}`}>
           ~${est.toFixed(3)}
@@ -1548,8 +1734,15 @@ function SamplesList({
   emptyHint?: string;
 }) {
   const total = totalKnown + pendingCount;
+  const count = samples.length + pendingCount;
   return (
     <div className="fork-samples">
+      <div className="fork-samples-header">
+        <span className="fork-samples-header-label">samples</span>
+        <span className="fork-samples-header-count">
+          {count > 0 ? `${count}` : "none yet"}
+        </span>
+      </div>
       {samples.map((s, i) => (
         <SampleCard key={s.id} sample={s} indexLabel={`${i + 1}/${total}`} />
       ))}
@@ -1557,7 +1750,9 @@ function SamplesList({
         <div className="fork-skeleton" key={`pending-${i}`} />
       ))}
       {samples.length === 0 && pendingCount === 0 && (
-        <div className="fork-empty">{emptyHint ?? "no samples yet"}</div>
+        <div className="fork-empty">
+          {emptyHint ?? "no samples yet — fire to populate"}
+        </div>
       )}
     </div>
   );

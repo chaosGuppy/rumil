@@ -13,7 +13,7 @@ import pytest_asyncio
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 
 from rumil.calls.page_creators import WebResearchLoop
-from rumil.calls.stages import ContextResult
+from rumil.calls.stages import CallInfra, ContextResult
 from rumil.llm import APIResponse
 from rumil.models import (
     Call,
@@ -25,7 +25,9 @@ from rumil.models import (
     PageType,
     Workspace,
 )
+from rumil.moves.base import MoveState
 from rumil.scraper import ScrapedPage
+from rumil.tracing.tracer import CallTrace
 
 
 @pytest_asyncio.fixture
@@ -130,10 +132,6 @@ async def test_create_claim_tool_use_records_a_move(
             _end_turn_response(),
         ],
     )
-
-    from rumil.calls.stages import CallInfra
-    from rumil.moves.base import MoveState
-    from rumil.tracing.tracer import CallTrace
 
     state = MoveState(web_research_call, tmp_db)
     trace = CallTrace(web_research_call.id, tmp_db)

@@ -263,6 +263,16 @@ async def execute_with_source_creation(
     not included).
     """
     known_sources_before = set(source_cache.values())
+
+    def _attach_new_sources(result: MoveResult) -> MoveResult:
+        # Surface SOURCE pages scraped during this call even on error returns,
+        # so the wrapper can register them in state.created_page_ids and they
+        # don't become invisible-but-persisted DB rows.
+        new_source_ids = [sid for sid in source_cache.values() if sid not in known_sources_before]
+        if new_source_ids:
+            result.extra_created_ids = [*(result.extra_created_ids or []), *new_source_ids]
+        return result
+
     source_urls = inp.get("source_urls", [])
     if source_urls:
         resolved: list[str] = []
@@ -279,14 +289,16 @@ async def execute_with_source_creation(
         if failed_urls:
             urls = ", ".join(failed_urls)
             return (
-                MoveResult(
-                    message=(
-                        f"ERROR: Could not fetch the following source(s): {urls}. "
-                        "Find a different, accessible source that supports "
-                        "the same information, or modify the claim so it "
-                        "does not rely on the inaccessible source(s)."
-                    ),
-                    created_page_id="",
+                _attach_new_sources(
+                    MoveResult(
+                        message=(
+                            f"ERROR: Could not fetch the following source(s): {urls}. "
+                            "Find a different, accessible source that supports "
+                            "the same information, or modify the claim so it "
+                            "does not rely on the inaccessible source(s)."
+                        ),
+                        created_page_id="",
+                    )
                 ),
                 None,
             )
@@ -297,13 +309,11 @@ async def execute_with_source_creation(
         try:
             inp = {**inp, "content": rewrite_url_citations(content, source_cache)}
         except ValueError as exc:
-            return MoveResult(message=f"ERROR: {exc}", created_page_id=""), None
+            return (
+                _attach_new_sources(MoveResult(message=f"ERROR: {exc}", created_page_id="")),
+                None,
+            )
 
     payload = CreateClaimPayload(**inp)
     result = await execute(payload, call, db)
-
-    new_source_ids = [sid for sid in source_cache.values() if sid not in known_sources_before]
-    if new_source_ids:
-        result.extra_created_ids = [*(result.extra_created_ids or []), *new_source_ids]
-
-    return result, payload
+    return _attach_new_sources(result), payload

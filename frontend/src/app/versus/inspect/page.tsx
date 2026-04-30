@@ -451,24 +451,23 @@ export default async function VersusInspectPage({
 }
 
 type WinAccum = {
-  wins: number;
+  humanWins: number;
   ties: number;
-  losses: number;
+  genWins: number;
   n: number;
   score7Sum: number;
   score7N: number;
 };
 
 function emptyAccum(): WinAccum {
-  return { wins: 0, ties: 0, losses: 0, n: 0, score7Sum: 0, score7N: 0 };
+  return { humanWins: 0, ties: 0, genWins: 0, n: 0, score7Sum: 0, score7N: 0 };
 }
 
 /** Aggregate one judgment into a (gen, judge) accum where gen is the
- *  non-human side and the verdict is reframed as: gen wins iff
- *  winner_source == gen, gen loses iff winner_source == "human", tie
- *  otherwise. Returns null when neither side is human (block 1 only
- *  cares about gen-vs-human pairings). */
-function genVsHumanAccum(j: Judgment): { gen: string; outcome: "win" | "tie" | "loss" } | null {
+ *  non-human side. Outcome is human-centric ("human" wins, "gen" wins,
+ *  or tie) so downstream cell formulas can compute pick-human rate
+ *  without re-inverting. Returns null when neither side is human. */
+function genVsHumanAccum(j: Judgment): { gen: string; outcome: "human" | "tie" | "gen" } | null {
   const aHuman = j.source_a === "human";
   const bHuman = j.source_b === "human";
   if (aHuman === bHuman) return null;
@@ -476,8 +475,8 @@ function genVsHumanAccum(j: Judgment): { gen: string; outcome: "win" | "tie" | "
   if (j.verdict === "tie" || j.winner_source === "tie" || !j.winner_source) {
     return { gen, outcome: "tie" };
   }
-  if (j.winner_source === "human") return { gen, outcome: "loss" };
-  return { gen, outcome: "win" };
+  if (j.winner_source === "human") return { gen, outcome: "human" };
+  return { gen, outcome: "gen" };
 }
 
 /** Mirrors versus.analyze.cell_color so inspect win-matrix cells use
@@ -614,9 +613,9 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
             const row = acc.get(r.gen) ?? new Map<string, WinAccum>();
             const cell = row.get(judge) ?? emptyAccum();
             cell.n += 1;
-            if (r.outcome === "win") cell.wins += 1;
+            if (r.outcome === "human") cell.humanWins += 1;
             else if (r.outcome === "tie") cell.ties += 1;
-            else cell.losses += 1;
+            else cell.genWins += 1;
             const s7 = humanScore7pt(j);
             if (s7 !== null) {
               cell.score7Sum += s7;
@@ -664,13 +663,13 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                           if (!cell || cell.n === 0) {
                             return <td key={jb} className="matrix-cell-empty"></td>;
                           }
-                          const pct = (cell.wins + 0.5 * cell.ties) / cell.n;
+                          const pct = (cell.humanWins + 0.5 * cell.ties) / cell.n;
                           const colors = pctColor(pct, cell.n);
                           const lowN = cell.n < 5;
                           const pct7 = cell.score7N > 0 ? cell.score7Sum / cell.score7N : null;
                           const tooltip =
                             `pick-human ${Math.round(pct * 100)}% (binary, ties=½) · n=${cell.n}` +
-                            ` (${cell.wins}H / ${cell.ties}T / ${cell.losses}M)` +
+                            ` (${cell.humanWins}H / ${cell.ties}T / ${cell.genWins}M)` +
                             (pct7 !== null
                               ? ` · 7pt-avg ${(pct7 * 100).toFixed(1)}% (n=${cell.score7N})`
                               : "");
@@ -842,15 +841,15 @@ function ResultsOutlier({
       if (!r) continue;
       const slot = perGen.get(r.gen) ?? emptyAccum();
       slot.n += 1;
-      if (r.outcome === "win") slot.wins += 1;
-      else if (r.outcome === "loss") slot.losses += 1;
+      if (r.outcome === "human") slot.humanWins += 1;
+      else if (r.outcome === "gen") slot.genWins += 1;
       else slot.ties += 1;
       perGen.set(r.gen, slot);
     }
     const corpus = corpusByVariant.get(v.id);
     for (const [gen, acc] of perGen) {
       if (acc.n === 0) continue;
-      const essayPct = (acc.wins + 0.5 * acc.ties) / acc.n;
+      const essayPct = (acc.humanWins + 0.5 * acc.ties) / acc.n;
       const corpusPct = corpus?.get(gen) ?? null;
       const deltaPp = corpusPct === null ? null : (essayPct - corpusPct) * 100;
       rows.push({ variantId: v.id, gen, essayPct, corpusPct, deltaPp, n: acc.n });

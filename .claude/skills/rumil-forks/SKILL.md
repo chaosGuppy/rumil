@@ -45,8 +45,20 @@ response, no tool execution.
    ```
    uv run python scripts/exchange_forks.py show <exchange_id>
    ```
+   Pay attention to `user_messages (N)` — for round-1+ exchanges in an
+   agent loop (web_research, ingest, multi-round scout), the stack
+   contains the full prior-round assistant turns and can be very large
+   (~80k tokens isn't unusual). The `show` output truncates per-message
+   previews, but the total drives cost on the fire path.
 
-3. **Build a minimal overrides file.** Only include fields that change —
+3. **Check `list` if iterating.** Before firing, see what configs you've
+   already tried for this exchange so you don't re-fire identical
+   overrides by accident:
+   ```
+   uv run python scripts/exchange_forks.py list <exchange_id>
+   ```
+
+4. **Build a minimal overrides file.** Only include fields that change —
    anything omitted inherits from the base. Write to a temp path under
    `.scratch/`. JSON shape:
    ```json
@@ -70,7 +82,7 @@ response, no tool execution.
    On models that don't have adaptive thinking (Haiku, older Sonnet), the
    flag is a no-op — leave it omitted.
 
-4. **Fire and report:**
+5. **Fire and report:**
    ```
    uv run python scripts/exchange_forks.py fire <exchange_id> \
        --overrides .scratch/forks/foo.json --samples 3
@@ -79,13 +91,6 @@ response, no tool execution.
    fork ids. Surface the fork ids and cost to the user. If they want to
    view the side-by-side comparison, point them at the trace URL — the
    admin fork panel for the base exchange shows all variants.
-
-5. **List prior attempts** when iterating:
-   ```
-   uv run python scripts/exchange_forks.py list <exchange_id>
-   ```
-   Groups by `overrides_hash` so each unique config shows up as a row with
-   its sample count and which fields differ.
 
 ## Common patterns
 
@@ -112,6 +117,19 @@ response, no tool execution.
 - **Don't run on prod without explicit user direction.** Default to local;
   pass `--prod` only if the user said so.
 
+## Caveats
+
+- **Tool reconstruction is best-effort.** Exchange rows don't store the
+  tool list that was sent to the API; `show` and the fire path rebuild it
+  from `call_type` + the *currently active* `available_moves` preset. If
+  the preset has been edited since the call ran, the tools list won't
+  match what was originally sent. Check `available_moves.py` if a
+  reconstructed tool feels off.
+- **Model defaults to current settings.** The base exchange row doesn't
+  store the model either, so `show` reports `settings.model` as the
+  inherited default. The original call may have used a different model.
+  When in doubt, set `model` explicitly in the override.
+
 ## Invocation
 
 ```!
@@ -121,6 +139,18 @@ setopt no_glob 2>/dev/null; set -f; uv run python scripts/exchange_forks.py $ARG
 ## Cost
 
 Each sample is a fresh API call with no prompt-cache hit (overrides bust
-the cache). For long system prompts × many samples × Opus, this adds up
-fast. If sampling >3 times on a long-context exchange, mention the
-estimated cost to the user before firing.
+the cache, and forks don't share a cache prefix with the original run).
+For long system prompts × many samples × Opus, this adds up fast.
+
+**Budget reality check:** in a normal agent loop, round-N exchanges run
+on a hot prompt cache — input cost is near zero. Forks pay full freight
+on the entire input every time, including the multi-block assistant
+turns from prior rounds. A round-3 web_research exchange that originally
+billed ~$0 (cache hit) can fork at ~$0.50 per Opus sample. A rough way
+to spot this: in `show` output, count `user_messages` — anything > 1
+means you're carrying prior-round content.
+
+Always surface estimated cost before firing if samples > 1 OR if the
+exchange has multiple user_messages. The unified blind path makes
+estimation simple: `(input_tokens / 1M) * input_rate * n_samples + small_output_term`
+gives a usable number.

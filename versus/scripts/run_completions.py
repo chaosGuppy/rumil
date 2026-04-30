@@ -121,6 +121,11 @@ def main() -> None:
         action="store_true",
         help="Target the production Supabase database (default: local).",
     )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the planned completion calls and exit without firing API requests.",
+    )
     args = ap.parse_args()
 
     cfg = config.load(args.config)
@@ -187,7 +192,7 @@ def main() -> None:
     target = "prod" if args.prod else "local"
     for prefix_cfg in prefix_cfgs:
         print(f"[prefix] using variant {prefix_cfg.id!r} (db={target})")
-        complete.run(cfg, essays, prefix_cfg=prefix_cfg, prod=args.prod)
+        complete.run(cfg, essays, prefix_cfg=prefix_cfg, prod=args.prod, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

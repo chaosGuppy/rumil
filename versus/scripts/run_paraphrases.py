@@ -59,6 +59,11 @@ def main() -> None:
             "exclude_ids is still honored."
         ),
     )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the planned paraphrase calls and exit without firing API requests.",
+    )
     args = ap.parse_args()
 
     cfg = config.load(args.config)
@@ -84,7 +89,7 @@ def main() -> None:
         keep = set(args.essay)
         essays = [e for e in essays if e.id in keep]
 
-    paraphrase.run(cfg, essays)
+    paraphrase.run(cfg, essays, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

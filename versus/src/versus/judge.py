@@ -33,6 +33,7 @@ from rumil.versus_prompts import (
     label_to_verdict,
 )
 from versus import anthropic_client, config, openrouter, versus_db
+from versus.run_summary import RunSummary
 
 Provider = Literal["anthropic", "openrouter"]
 
@@ -614,6 +615,7 @@ def run_blind(
             print(f"  ... and {len(tasks) - 20} more")
         return
 
+    summary = RunSummary()
     http = httpx.Client(timeout=600.0)
     try:
         with ThreadPoolExecutor(max_workers=total_workers) as pool:
@@ -631,6 +633,7 @@ def run_blind(
                     row = fut.result()
                 except Exception as e:
                     print(f"[err ] {t.essay_id} {t.a_id} vs {t.b_id} [{t.dimension}]: {e}")
+                    summary.record_error()
                     continue
                 versus_db.insert_judgment(
                     db,
@@ -653,12 +656,14 @@ def run_blind(
                     duration_s=row["duration_s"],
                 )
                 done += 1
+                summary.record_success(row.get("response"))
                 print(
                     f"[done {done}/{total}] {t.essay_id} {t.a_id} vs {t.b_id} "
                     f"[{t.dimension}] verdict={row['verdict']}"
                 )
     finally:
         http.close()
+    summary.print("blind judgments")
 
 
 def _call_with_semaphore(sem: threading.BoundedSemaphore, fn, *args, **kwargs):

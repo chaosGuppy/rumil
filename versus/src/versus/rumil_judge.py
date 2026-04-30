@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from versus import config, judge, versus_db
+from versus.run_summary import RunSummary
 
 
 def _anthropic_sampling(model: str, max_tokens: int) -> dict:
@@ -394,6 +395,7 @@ async def run_ws(
     done = 0
     total = len(tasks)
     lock = asyncio.Lock()
+    summary = RunSummary()
 
     versus_client = versus_db.get_client()
 
@@ -458,6 +460,7 @@ async def run_ws(
                 result = await judge_pair_ws_aware(db, pair_ctx, task_body=task_body, model=model)
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
+                summary.record_error()
                 return
             criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
             row = _mirror_row(
@@ -494,6 +497,7 @@ async def run_ws(
                     rumil_cost_usd=row["rumil_cost_usd"],
                 )
                 done += 1
+                summary.record_success(cost_usd=result.cost_usd or 0.0)
                 print(
                     f"[done {done}/{total}] {pair.essay_id} {pair.source_a_id} vs "
                     f"{pair.source_b_id} [{criterion_value}] "
@@ -501,6 +505,7 @@ async def run_ws(
                 )
 
     await asyncio.gather(*[_exec_one(pj) for pj in tasks])
+    summary.print("ws judgments")
 
 
 async def run_orch(
@@ -629,6 +634,7 @@ async def run_orch(
     total = len(tasks)
     sem = asyncio.Semaphore(effective_concurrency)
     lock = asyncio.Lock()
+    summary = RunSummary()
 
     versus_client = versus_db.get_client()
 
@@ -692,6 +698,7 @@ async def run_orch(
                 )
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
+                summary.record_error()
                 return
             criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
             row = _mirror_row(
@@ -728,6 +735,7 @@ async def run_orch(
                     rumil_cost_usd=row["rumil_cost_usd"],
                 )
                 done += 1
+                summary.record_success(cost_usd=result.cost_usd or 0.0)
                 print(
                     f"[done {done}/{total}] {pair.essay_id} {pair.source_a_id} vs "
                     f"{pair.source_b_id} [{criterion_value}] "
@@ -735,3 +743,4 @@ async def run_orch(
                 )
 
     await asyncio.gather(*[_exec_one(pj) for pj in tasks])
+    summary.print("orch judgments")

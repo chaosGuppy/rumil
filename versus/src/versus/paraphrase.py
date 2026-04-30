@@ -21,6 +21,7 @@ import httpx
 from versus import anthropic_client, config, jsonl, openrouter
 from versus import essay as versus_essay
 from versus.judge import route_judge_model
+from versus.run_summary import RunSummary
 from versus.versions import PARAPHRASE_PROMPT_VERSION
 
 PARAPHRASE_INSTRUCTIONS = (
@@ -133,7 +134,7 @@ def paraphrase_models(cfg: config.Config) -> list[config.ModelCfg]:
     return [m for m in cfg.completion.models if m.paraphrase]
 
 
-def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
+def run(cfg: config.Config, essays: list[versus_essay.Essay], *, dry_run: bool = False) -> None:
     models = paraphrase_models(cfg)
     if not cfg.paraphrasing.enabled or not models:
         print("[paraphrase] disabled or no models flagged paraphrase=true; skipping")
@@ -155,7 +156,13 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
 
     if not tasks_to_run:
         return
+    if dry_run:
+        print(f"[plan] {len(tasks_to_run)} paraphrase calls (concurrency={cfg.concurrency})")
+        for e, m, _sh, k, _p in tasks_to_run:
+            print(f"  * {e.id} | {m.id} | {k}")
+        return
     print(f"[run ] {len(tasks_to_run)} paraphrase calls (concurrency={cfg.concurrency})")
+    summary = RunSummary()
     client = httpx.Client(timeout=600.0)
     try:
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
@@ -169,8 +176,11 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
                     row = fut.result()
                 except Exception as ex:
                     print(f"[err ] paraphrase {k}: {ex}")
+                    summary.record_error()
                     continue
                 jsonl.append(log, row)
+                summary.record_success(row.get("raw_response"))
                 print(f"[done] paraphrase {k}")
     finally:
         client.close()
+    summary.print("paraphrases")

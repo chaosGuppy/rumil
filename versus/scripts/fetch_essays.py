@@ -48,6 +48,14 @@ def main() -> None:
         default=None,
         help="only fetch from these source ids (repeatable). Default: all configured.",
     )
+    p.add_argument(
+        "--prod",
+        action="store_true",
+        help=(
+            "Mirror parsed essays + verdicts to the production Supabase "
+            "database (default: local). Filesystem cache is written either way."
+        ),
+    )
     args = p.parse_args()
 
     cfg = config.load("config.yaml")
@@ -65,6 +73,7 @@ def main() -> None:
         source_cfgs=source_cfgs,
         cache_dir=cfg.essays.cache_dir,
         raw_html_dir=raw_html_dir,
+        prod=args.prod,
     )
 
     thresholds = {s.id: s for s in source_cfgs}
@@ -120,6 +129,7 @@ def main() -> None:
                 markdown=e.markdown,
                 cache_dir=cfg.essays.cache_dir,
                 force=args.revalidate,
+                prod=args.prod,
             )
         except Exception as exc:
             print(f"  [err]  {e.id}: validator response unparseable — {exc}")

@@ -473,9 +473,10 @@ def run_blind(
     contestants: Sequence[str] | None = None,
     vs_human: bool = False,
     current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
+    prefix_cfgs: Sequence[config.PrefixCfg] | None = None,
     limit: int | None = None,
     dry_run: bool = False,
+    prod: bool = False,
 ) -> None:
     """Run pairwise blind judgments across a mixed list of models.
 
@@ -492,7 +493,7 @@ def run_blind(
         print("[info] no models passed to run_blind; nothing to do")
         return
 
-    db = versus_db.get_client()
+    db = versus_db.get_client(prod=prod)
     groups, prefix_texts = load_sources_by_essay(db)
     existing = _existing_judgment_keys(db)
 
@@ -501,17 +502,26 @@ def run_blind(
     )
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
-    current_hashes = (
-        prepare.current_prefix_hashes(cfg, prefix_cfg=prefix_cfg)
-        if (current_only or prefix_cfg is not None)
-        else None
-    )
+    # Build the union of allowed (essay_id, prefix_hash) pairs across the
+    # selected prefix variants. None means "any prefix in versus_texts".
+    # current_only=True with no explicit prefix_cfgs falls back to the
+    # canonical cfg.prefix variant.
+    allowed_prefix_pairs: set[tuple[str, str]] | None
+    if prefix_cfgs:
+        allowed_prefix_pairs = set()
+        for pc in prefix_cfgs:
+            for eid, ph in prepare.current_prefix_hashes(cfg, prefix_cfg=pc).items():
+                allowed_prefix_pairs.add((eid, ph))
+    elif current_only:
+        allowed_prefix_pairs = {(eid, ph) for eid, ph in prepare.current_prefix_hashes(cfg).items()}
+    else:
+        allowed_prefix_pairs = None
 
     tasks: list[_BlindTask] = []
     for (essay_id, prefix_hash), sources in groups.items():
         if essay_id_set is not None and essay_id not in essay_id_set:
             continue
-        if current_hashes is not None and current_hashes.get(essay_id) != prefix_hash:
+        if allowed_prefix_pairs is not None and (essay_id, prefix_hash) not in allowed_prefix_pairs:
             continue
         source_ids = list(sources.keys())
         if not cfg.judging.include_human_as_contestant:

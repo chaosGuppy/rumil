@@ -171,9 +171,10 @@ def run(
     essays: list[versus_essay.Essay],
     *,
     prefix_cfg: config.PrefixCfg | None = None,
+    prod: bool = False,
 ) -> None:
     pcfg = prefix_cfg if prefix_cfg is not None else cfg.prefix
-    db = versus_db.get_client()
+    db = versus_db.get_client(prod=prod)
     existing = _existing_lookup(db)
 
     tasks_to_run: list = []

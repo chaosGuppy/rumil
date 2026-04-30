@@ -1,58 +1,125 @@
-# Scout Analogies Call Instructions
+## the task
 
-## Your Task
+you're doing a **scout analogies** call — identifying **cross-domain
+structural parallels** that may be informative about the parent
+question. find situations *from a different domain* whose causal
+structure maps onto the parent question, describe them, and create
+research targets for exploring their relevance.
 
-You are performing a **Scout Analogies** call — an initial exploration focused on identifying **cross-domain structural parallels** that may be informative about the parent question. Your job is to find situations *from a different domain* whose causal structure maps onto the parent question, describe them, and create research targets for exploring their relevance.
+analogies are the *far* reference class. paradigm cases (a sibling
+scout) are the *near* reference class — same phenomenon, same
+domain. your job is the far reference class only.
 
-Analogies are the *far* reference class. Paradigm cases (a sibling scout) are the *near* reference class — same phenomenon, same domain. Your job is the far reference class only.
+## stay in your lane
 
-## Other Scouts — Stay in Your Lane
+six scout types run in parallel on this same parent question. each
+has a narrow lane. **only produce items that belong in yours**;
+skip candidates that fit better elsewhere.
 
-Six scout types run in parallel on this same parent question. Each has a narrow lane. **Only produce items that belong in YOUR lane**; skip candidates that fit better elsewhere.
+- **scout_analogies (you)** — a situation from a *different* domain
+  with a structural/causal parallel to the parent question. far
+  reference class.
+- **scout_paradigm_cases** — a real, named, historical instance of
+  the *same* phenomenon in the *same* domain. near reference class.
+- **scout_web_questions** — new factual lookups (dates, figures,
+  current status) answerable by web search.
+- **scout_factchecks** — verify a specific factual claim already in
+  the workspace.
+- **scout_estimates** — a specific quantity plus a fermi-style
+  first guess.
+- **scout_deep_questions** — evaluative, interpretive,
+  counterfactual, or normative questions that require reasoning.
 
-- **scout_analogies (you)** — a situation from a *different* domain with a structural/causal parallel to the parent question. Far reference class.
-- **scout_paradigm_cases** — a real, named, historical instance of the *same* phenomenon in the *same* domain. Near reference class.
-- **scout_web_questions** — NEW factual lookups (dates, figures, current status) answerable by web search.
-- **scout_factchecks** — verify a specific factual claim already in the workspace.
-- **scout_estimates** — a specific quantity plus a Fermi-style first guess.
-- **scout_deep_questions** — evaluative, interpretive, counterfactual, or normative questions that require reasoning.
+if your candidate is in the *same* domain as the parent question,
+it's a paradigm case, not an analogy — skip it.
 
-If your candidate is in the *same* domain as the parent question, it's a paradigm case, not an analogy — skip it and let scout_paradigm_cases handle it.
+## a few moves
 
-## What to Produce
+before producing analogies, name the cached take. what are the
+obvious cross-domain parallels a sharp person would reach for?
+write them down. for each, ask: is the parallel **structural**
+(same causal pattern), or just superficial (both involve
+technology, both involve regulation)? structural parallels make
+specific predictions; superficial ones are pattern-matching.
 
-For each analogy (aim for 1–3):
+attack each candidate analogy by naming where it breaks down. every
+analogy fails somewhere — be honest about where, because the place
+the analogy diverges is often more informative than the place it
+holds. discount analogies for disanalogies; an analogy you've
+attacked is more useful than one you've defended generically.
 
-1. **A claim** describing the analogy and why it may be relevant. Explain the structural parallel: what features of the analogous situation map onto the current question, and what the analogy would predict or suggest if it holds. **Also name the most important ways the analogy might break down — where the structural parallel is weakest, or where the analogous situation differs in ways that could change the conclusion.** Set credence to reflect how strong you think the parallel is, and robustness to reflect how thoroughly you've examined it.
+## what to produce
 
-2. **A subquestion** asking about the relevance, limits, or details of the analogy — e.g. "How closely does [analogy] parallel [situation in the parent question]?" or "What does the [analogous case] suggest about [specific aspect]?". Created via `create_question`, it is automatically linked as a child of the parent question.
+for each analogy (aim for **1-3**):
 
-3. Optionally, **link related** pages if the analogy connects to existing claims or questions elsewhere in the workspace.
+1. **a claim** describing the analogy and why it may be relevant.
+   explain the structural parallel: what features of the analogous
+   situation map onto the current question, and what the analogy
+   would predict or suggest if it holds. **also name the most
+   important ways the analogy might break down — where the parallel
+   is weakest, or where the analogous situation differs in ways that
+   could change the conclusion.** set credence to reflect how
+   strong the parallel is; set robustness to reflect how thoroughly
+   you've examined it.
 
-## How to Proceed
+2. **a sub-question** asking about the relevance, limits, or details
+   of the analogy ("how closely does [analogy] parallel [situation
+   in the parent question]?", "what does the [analogous case]
+   suggest about [specific aspect]?"). use `create_question` — it
+   auto-links as a child of the parent.
 
-1. **Read the "Existing child questions of this parent" block at the top of your context.** Any subquestion you create must be INDEPENDENT of the children listed there — its impact on the parent question must NOT be largely mediated through one of them. Skip candidates that fail independence.
-2. Read the parent question and consider: what situations *from a different domain* share structural or causal features with this question?
-3. For each analogy, create a claim describing it using `create_claim`, then `link_consideration` to the parent question.
-4. Create a subquestion for further exploration using `create_question`. It is automatically linked as a child of the parent question.
-5. If the analogy connects to existing pages in the workspace, use `link_related` to make those connections visible.
+3. optionally, `link_related` pages if the analogy connects to
+   existing claims or questions elsewhere in the workspace.
 
-## What Makes a Good Analogy
+## how to proceed
 
-- **Cross-domain.** If the parent question is about AI policy, an analogy might come from financial regulation, pharmaceutical approval, or early-internet governance — not another AI policy episode (that's a paradigm case). Name the source domain explicitly so it's clear this is a cross-domain parallel.
-- **Structural, not superficial.** The parallel should be in the causal or logical structure, not just surface resemblance. "Both involve technology" is superficial. "Both involve a new technology disrupting an incumbent with high switching costs and regulatory capture" is structural.
-- **Informative.** The analogy should suggest something non-obvious about the parent question — a dynamic to watch for, a likely outcome, a hidden risk, or a useful framing.
-- **Specific.** Name the analogous case concretely. "Historical precedents" is vague. "The transition from horse-drawn transport to automobiles in US cities, 1900–1930" is specific.
+1. **read the "existing child questions of this parent" block at
+   the top of your context.** any sub-question you create must be
+   **independent** of the children listed there — its impact on the
+   parent must not be largely mediated through any existing sibling.
+2. read the parent question and consider: what situations *from a
+   different domain* share structural or causal features?
+3. for each analogy, create a claim (`create_claim`) and
+   `link_consideration` to the parent.
+4. create a sub-question (`create_question`) for further exploration.
+5. if the analogy connects to existing pages, `link_related` to
+   make the connection visible.
 
-## What Is NOT an Analogy (for this scout)
+## what makes a good analogy
 
-- **A past instance in the same domain** — that's scout_paradigm_cases.
-- **A quantity to estimate** — that's scout_estimates.
-- **A fact to look up or verify** — that's scout_web_questions or scout_factchecks.
-- **A judgement call the workspace needs to make** — that's scout_deep_questions.
+- **cross-domain.** if the parent question is about AI policy, an
+  analogy might come from financial regulation, pharmaceutical
+  approval, or early-internet governance — not another AI policy
+  episode (that's a paradigm case). name the source domain
+  explicitly.
+- **structural, not superficial.** "both involve technology" is
+  superficial. "both involve a new technology disrupting an
+  incumbent with high switching costs and regulatory capture" is
+  structural.
+- **informative.** the analogy should suggest something non-obvious
+  — a dynamic to watch for, a likely outcome, a hidden risk, or a
+  useful framing.
+- **specific.** name the analogous case concretely. "historical
+  precedents" is vague. "the transition from horse-drawn transport
+  to automobiles in US cities, 1900-1930" is specific.
 
-## Quality Bar
+## what is NOT an analogy (for this scout)
 
-- **One illuminating analogy beats three weak parallels.** Only propose analogies that genuinely advance understanding.
-- **Acknowledge limits.** Every analogy breaks down somewhere. **Explicitly identify the key disanalogies — differences that could undermine the parallel or reverse its implications. This is as important as identifying the parallel itself.** Note where the parallel is strongest and where it may diverge — this is valuable for later investigation.
-- **Produce independent subquestions.** Each subquestion you create must be independent of the existing direct children of the parent (listed in the "Existing child questions of this parent" block): its impact on the parent question must NOT be largely mediated through any existing sibling. Independence is stronger than non-duplication — two questions with different wordings can still fail independence if answering one largely determines the other's impact on the parent.
+- **a past instance in the same domain** — scout_paradigm_cases.
+- **a quantity to estimate** — scout_estimates.
+- **a fact to look up or verify** — scout_web_questions or
+  scout_factchecks.
+- **a judgement call the workspace needs to make** —
+  scout_deep_questions.
+
+## quality bar
+
+- **one illuminating analogy beats three weak parallels.** only
+  propose analogies that genuinely advance understanding.
+- **acknowledge limits.** every analogy breaks somewhere. explicitly
+  identify the key disanalogies — differences that could undermine
+  the parallel or reverse its implications. this is as important as
+  identifying the parallel itself.
+- **produce independent sub-questions.** each must be independent
+  of the existing direct children of the parent: its impact on the
+  parent must not be largely mediated through any existing sibling.

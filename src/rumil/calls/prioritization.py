@@ -29,6 +29,7 @@ async def run_prioritization_call(
     db: DB,
     *,
     system_prompt: str,
+    prompt_name: str | None = None,
     available_moves: list[MoveType] | None = None,
     short_id_map: dict[str, str] | None = None,
     dispatch_types: Sequence[CallType] | None = None,
@@ -38,6 +39,10 @@ async def run_prioritization_call(
     """Run a prioritization call with tool use (single LLM round).
 
     Binds dispatch tools and available moves.
+
+    Pass ``prompt_name`` when the caller built the ``system_prompt`` with
+    ``include_per_call=False`` — the per-call instructions file will be loaded
+    into the user message via ``build_user_message(call_type=prompt_name)``.
     """
     log.info(
         "run_prioritization_call: call=%s, scope=%s",
@@ -69,7 +74,11 @@ async def run_prioritization_call(
         )
         tools.append(tool)
 
-    user_message = build_user_message(context_text, task_description)
+    user_message = build_user_message(
+        context_text,
+        task_description,
+        call_type=prompt_name,
+    )
 
     agent_result = await run_single_call(
         system_prompt,

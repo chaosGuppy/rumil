@@ -54,7 +54,7 @@ envcascade.apply(
 )
 
 from rumil.settings import RUMIL_MODEL_ALIASES, resolve_model_alias  # noqa: E402
-from versus import config, judge, prepare, rumil_judge  # noqa: E402
+from versus import config, judge, prepare, rumil_judge, versus_db  # noqa: E402
 
 DEFAULT_DIMENSIONS = ("general_quality",)
 
@@ -213,7 +213,9 @@ def main() -> None:
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 
     if args.active:
-        active = prepare.active_essay_ids(cfg.essays.exclude_ids)
+        active = prepare.active_essay_ids(
+            cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
+        )
         essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
     else:
         essay_ids = args.essay

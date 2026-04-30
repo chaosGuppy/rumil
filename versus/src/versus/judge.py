@@ -510,10 +510,12 @@ def run_blind(
     if prefix_cfgs:
         allowed_prefix_pairs = set()
         for pc in prefix_cfgs:
-            for eid, ph in prepare.current_prefix_hashes(cfg, prefix_cfg=pc).items():
+            for eid, ph in prepare.current_prefix_hashes(cfg, prefix_cfg=pc, client=db).items():
                 allowed_prefix_pairs.add((eid, ph))
     elif current_only:
-        allowed_prefix_pairs = {(eid, ph) for eid, ph in prepare.current_prefix_hashes(cfg).items()}
+        allowed_prefix_pairs = {
+            (eid, ph) for eid, ph in prepare.current_prefix_hashes(cfg, client=db).items()
+        }
     else:
         allowed_prefix_pairs = None
 

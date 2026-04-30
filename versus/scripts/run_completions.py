@@ -36,7 +36,7 @@ except ModuleNotFoundError:
     )
     raise SystemExit(1) from None
 
-from versus import complete, config, prepare, sources  # noqa: E402
+from versus import complete, config, prepare, sources, versus_db  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
 
 
@@ -128,6 +128,7 @@ def main() -> None:
         source_cfgs=cfg.essays.sources,
         cache_dir=cfg.essays.cache_dir,
         raw_html_dir=raw_html_dir,
+        prod=args.prod,
     )
 
     exclude = set(cfg.essays.exclude_ids)
@@ -138,7 +139,9 @@ def main() -> None:
         # intersection with fetch_all. Active essays that have rolled
         # off the source's live feed but are still valid in cache should
         # be loaded directly so the run honors --active in full.
-        active = prepare.active_essay_ids(cfg.essays.exclude_ids)
+        active = prepare.active_essay_ids(
+            cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
+        )
         fetched_ids = {e.id for e in essays}
         for missing_id in sorted(active - fetched_ids):
             cached = _load_essay_from_cache(cfg.essays.cache_dir, missing_id)

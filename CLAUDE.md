@@ -57,7 +57,7 @@ uv run python main.py "Your question here" --workspace test-scratch --smoke-test
 
 Tests: `uv run pytest`.
 
-**Database:** Runs against local Supabase by default (`supabase start`). Pass `--prod` to any command to target production. Migrations live in `supabase/migrations/` and are pushed to prod with `supabase db push`.
+**Database:** Runs against local Supabase by default (`supabase start`). Pass `--prod` to any command to target production. Migrations live in `supabase/migrations/`; CI runs `supabase db push` against prod on merge to `main` (see `.github/workflows/ci.yml`), so it's not necessary to push manually.
 Always use the supabase cli to create new migrations: `supabase migration new`.
 
 **Row-Level Security:** RLS is enabled on all tables with **no policies**. This means:

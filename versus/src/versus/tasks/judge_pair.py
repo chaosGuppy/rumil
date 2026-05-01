@@ -115,6 +115,32 @@ def _format_pair_content(pair: PairContext) -> str:
     )
 
 
+def _build_abstract(pair: PairContext) -> str:
+    """Compose the Versus Question's ``abstract``.
+
+    Read by parent-context renderers (notably
+    :func:`rumil.orchestrators.common.score_items_sequentially`) when
+    the orch's prioritization scoring step needs to know what its
+    parent question is about. Intentionally fixed-shape and
+    dimension-aware: NO essay text. The synthetic Question
+    headline ("Versus judgment: ...") is misleading on its own —
+    "general_quality" reads like a topic when it's a dimension —
+    so this abstract clarifies the framing for meta-evaluation
+    agents without leaking essay content.
+
+    Essay content is intentionally NOT spliced in here: substring-
+    truncation of source text (``prefix_text[:N]``) is the kind of
+    silent-mid-clause cut that misleads agents. Research-phase
+    calls that genuinely need the essay get it via the Question's
+    ``content`` field; meta-evaluation calls only need the framing.
+    """
+    return (
+        f"Versus pairwise judging task on dimension '{pair.task_name}'. "
+        "Score considerations by their relevance to comparing two "
+        "essay continuations on this dimension."
+    )
+
+
 def _versus_extra(pair: PairContext) -> dict:
     # IMPORTANT: every key in page.extra is rendered verbatim by
     # rumil.context.format_page() (as "key: value" lines inline with
@@ -148,11 +174,13 @@ def compute_pair_surface_hash() -> str:
     agent-visible page surface auto-fork the dedup key without a
     manual version bump.
 
-    Covers three surfaces together:
+    Covers four surfaces together:
 
     - :func:`_build_headline` — the Question headline template.
     - :func:`_format_pair_content` — the Question body shape (section
       ordering, header text, etc.).
+    - :func:`_build_abstract` — the Question abstract template
+      (read by parent-scoring; surfaces in agent context).
     - :func:`_versus_extra` — the set of keys stored on ``page.extra``
       (values are pair-dependent and live in the content body instead;
       only the key schema is hashed).
@@ -166,6 +194,7 @@ def compute_pair_surface_hash() -> str:
         {
             "headline": _build_headline(sentinel),
             "content": _format_pair_content(sentinel),
+            "abstract": _build_abstract(sentinel),
             "extra_keys": sorted(_versus_extra(sentinel).keys()),
         },
         sort_keys=True,
@@ -293,6 +322,7 @@ class JudgePairTask:
             workspace=Workspace.RESEARCH,
             content=_format_pair_content(inputs),
             headline=_build_headline(inputs),
+            abstract=_build_abstract(inputs),
             project_id=db.project_id,
             provenance_model="versus-bridge",
             provenance_call_type=CallType.VERSUS_JUDGE.value,

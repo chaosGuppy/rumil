@@ -10,8 +10,11 @@ Pipeline:
 3. BFS d <= ``max_distance`` from the question across research-graph edges to
    gather candidate evidence pages (claims, judgements, summaries) not already
    in the (post-pared) context.
-4. Score each candidate concurrently with Sonnet (configurable) for marginal
-   impact on top of the standard context. Output is a 1-100 percentile.
+4. Score each candidate concurrently with Sonnet (configurable) for where it
+   would rank, by impact on the final answer, within the distribution of
+   pages already in the standard context. Output is a 1-100 percentile
+   (50 = comparable to the median context page, 100 = beyond the most
+   impactful, 1 = below the least impactful).
 5. Sort by percentile descending; greedily fill until total chars (context +
    accepted) approach ``token_budget`` or the next page's percentile drops
    below ``floor_percentile``. Floor is hard (never include below 25 by
@@ -36,6 +39,7 @@ from rumil.calls.stages import CallInfra, ContextBuilder, ContextResult
 from rumil.context import format_page
 from rumil.llm import structured_call
 from rumil.models import Page, PageDetail
+from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
 from rumil.tracing.trace_events import ImpactFilterEvent
 from rumil.workspace_exploration.explore import bfs_evidence_pages_within_distance
@@ -47,57 +51,47 @@ class ImpactVerdict(BaseModel):
     new_information: str = Field(
         description=(
             "1-3 sentences listing what — if anything — this candidate page "
-            "would add that is NOT already in the context. Be specific. If "
-            "the page just restates or provides additional support for "
-            "claims already in the context, say so."
+            "would add that is NOT already in the standard context. Be "
+            "specific. If the page just restates or provides additional "
+            "support for claims already in the context, say so."
         )
     )
     impact_reasoning: str = Field(
         description=(
-            "Step-by-step reasoning about marginal impact. Address: (a) does "
-            "the page surface a finding, frame, mechanism, quantitative "
-            "anchor, or argument that is genuinely absent from the context; "
-            "(b) does it RESOLVE an uncertainty visible in the context; "
-            "(c) is the page logically on the question (cf. conditional / "
-            "counterfactual structure) — orthogonal pages get low percentiles "
-            "regardless of internal quality; (d) would an analyst writing "
-            "the final answer notably revise their take if they read this "
-            "page after reading the context?"
+            "Step-by-step reasoning about where this candidate ranks against "
+            "the pages already in the standard context, by impact on the "
+            "final answer. Address: (a) which specific pages in the standard "
+            "context are most/least impactful, and how the candidate "
+            "compares to each end; (b) does the candidate surface a finding, "
+            "frame, mechanism, or uncertainty resolution genuinely absent "
+            "from the standard context; (c) is the candidate logically on "
+            "the question (cf. conditional / counterfactual structure) — "
+            "orthogonal pages get low percentiles regardless of internal "
+            "quality."
         )
     )
     impact_percentile: int = Field(
         ge=1,
         le=100,
         description=(
-            "Where this candidate falls in the distribution of MARGINAL "
-            "impacts of pages-on-top-of-this-context. ANCHORS:\n"
-            "- 90-100: would substantively change how the analyst writes "
-            "the final answer — surfaces a load-bearing fact, frame, or "
-            "uncertainty resolution that meaningfully shifts the headline "
-            "conclusion or its key probabilities.\n"
-            "- 70-89: surfaces specific empirical content, a mechanism, a "
-            "quantitative anchor, or a frame that is genuinely absent from "
-            "the context. The analyst would CITE it and would MENTION it as "
-            "load-bearing for a sub-conclusion, even if the headline "
-            "conclusion doesn't change.\n"
-            "- 50-69: has some new content but is largely supporting / "
-            "elaborative on points already in the context. Useful as a "
-            "citation, not as a structural input.\n"
-            "- 25-49: substantially redundant with context.\n"
-            "- 1-24: redundant, off-topic given the question's logical "
-            "structure, on a tangent (e.g. estimates P(X) when the question "
-            "conditions on X), or actively misleading.\n"
+            "The candidate's rank, by impact on the final answer, within "
+            "the distribution of pages already in the standard context. "
+            "ANCHORS:\n"
+            "- 100: MORE impactful than the MOST impactful page in the "
+            "standard context.\n"
+            "- 75: as impactful as a page near the top quartile of the "
+            "standard context.\n"
+            "- 50: as impactful as the MEDIAN page in the standard "
+            "context.\n"
+            "- 25: as impactful as a page near the bottom quartile of the "
+            "standard context.\n"
+            "- 1: LESS impactful than the LEAST impactful page in the "
+            "standard context.\n"
             "\n"
-            "CALIBRATION CHECK before locking in:\n"
-            "1. If `new_information` lists at least one specific empirical "
-            "claim/mechanism/frame NOT in the context, score should be >= 50; "
-            "if multiple distinct items or one item load-bearing for a named "
-            "sub-question, score should be >= 70.\n"
-            "2. If reasoning concludes 'on a tangent' or 'estimates P(X) when "
-            "the question conditions on X', score should be <= 24 regardless "
-            "of internal quality.\n"
-            "3. Across many candidates expect a roughly uniform distribution "
-            "with median around 50."
+            "Pin the percentile down by directly comparing the candidate to "
+            "specific pages in the standard context. Don't bunch at 60-80: "
+            "if the candidate is genuinely typical of the context, that's "
+            "50; below typical is below 50."
         ),
     )
 
@@ -129,71 +123,8 @@ class ParingVerdict(BaseModel):
     )
 
 
-IMPACT_SYSTEM = (
-    "You are a senior research analyst evaluating whether a single candidate "
-    "page would add MARGINAL value to a final answer that has already been "
-    "informed by the standard context shown.\n\n"
-    "Your task is NOT 'is this page relevant to the question'. The question "
-    "of relevance is largely already settled: the standard context already "
-    "captures the main shape of the answer. Your task is the harder one: "
-    "given that an analyst is going to write the final answer using AT LEAST "
-    "the standard context, how much would also reading this candidate page "
-    "change what they would write?\n\n"
-    "FRAMING — read the top-level question literally:\n"
-    "- If the question is CONDITIONAL on X, pages whose primary contribution "
-    "is to estimate P(X) are not load-bearing — they should be low-percentile "
-    "regardless of internal quality.\n"
-    "- If the question is COUNTERFACTUAL, comparisons across the counter"
-    "factual axis are load-bearing; one-sided base rates are not.\n"
-    "- Pages that drift onto tangents that don't propagate to the top-level "
-    "question are low-percentile.\n\n"
-    "MARGINAL-VALUE PRINCIPLES — what makes a page HIGH-impact ON TOP OF "
-    "this specific context:\n"
-    "- It surfaces a *new finding* (specific empirical claim, mechanism, "
-    "quantitative estimate, historical analogue) that is not already present "
-    "in the context.\n"
-    "- It introduces a *new frame* — a way of decomposing the problem, an "
-    "axis the context doesn't recognise, a reframing that materially changes "
-    "the answer's structure.\n"
-    "- It RESOLVES an uncertainty visible in the context — the context "
-    "hedges, this page tightens; the context offers a range, this page "
-    "narrows it; the context flags a missing input, this page provides it.\n\n"
-    "What makes a page LOW-impact even when on-topic:\n"
-    "- It restates or merely *bolsters* a claim already in the context.\n"
-    "- It elaborates a sub-mechanism whose top-line conclusion is already "
-    "in the context.\n"
-    "- It is on a tangent.\n"
-    "- It contains rough Fermi estimates of quantities the context already "
-    "estimates.\n\n"
-    "CALIBRATION — aim for a roughly uniform distribution of percentile "
-    "scores. Median candidate should land around 50. Persistent bunching "
-    "at 60-80 is a calibration failure: be willing to assign 10s, 20s, "
-    "and 90s when warranted."
-)
-
-
-PARING_SYSTEM = (
-    "You are a senior research analyst rating how IMPORTANT a single page "
-    "is for answering the top-level research question, on its own merits.\n\n"
-    "This is not a marginal-value judgement against another context — there "
-    "is no 'context' here, just the question and the page. Think: if you "
-    "had to drop this page from the analyst's source material, would the "
-    "final answer be materially worse?\n\n"
-    "FRAMING — read the top-level question literally:\n"
-    "- If the question is CONDITIONAL on X, pages whose primary contribution "
-    "is to estimate P(X) are not load-bearing.\n"
-    "- If the question is COUNTERFACTUAL, comparisons across the counter"
-    "factual axis are load-bearing; one-sided base rates are not.\n"
-    "- Pages on tangents that don't propagate to the top-level question are "
-    "low-importance regardless of internal quality.\n\n"
-    "Reward pages that carry distinctive, load-bearing information: a "
-    "specific empirical finding, a key mechanism, a historical analogue with "
-    "real explanatory power, a sharp epistemic update, a quantitative "
-    "estimate, or a sound argument that materially shapes the answer.\n\n"
-    "Penalise pages that are vague, generic, redundant with what any "
-    "reasonable analyst would already know, or that restate the sub-question "
-    "without adding evidence."
-)
+IMPACT_SYSTEM = (PROMPTS_DIR / "impact_filter_score.md").read_text(encoding="utf-8")
+PARING_SYSTEM = (PROMPTS_DIR / "impact_filter_pare.md").read_text(encoding="utf-8")
 
 
 def _render_candidate_user_msg(top_question: str, context_text: str, sample: Page) -> str:
@@ -333,11 +264,16 @@ class ImpactFilteredContext(ContextBuilder):
             )
             paring_kept_chars = len(pared_result.context_text)
 
-        excluded_ids: set[str] = set()
+        # Every page that hit `format_page(track=True)` during the inner
+        # build (or paring) is recorded on the trace. Use that as the source
+        # of truth for "what's in the base context sonnet will see" — some
+        # inner builders render pages they don't surface in working_page_ids
+        # / tier IDs (e.g. CreateViewContext's existing view items), and
+        # paring renders dropped pages too. Re-scoring any of these wastes
+        # an LLM call.
+        excluded_ids: set[str] = set(infra.trace.page_ids_by_source_prefix(""))
         excluded_ids.update(pared_result.working_page_ids)
         excluded_ids.update(pared_result.preloaded_ids)
-        # Belt-and-braces: build_context tracks page IDs across tiers, but if a
-        # builder mutates `working_page_ids` we still want all the tier IDs out.
         excluded_ids.update(pared_result.full_page_ids)
         excluded_ids.update(pared_result.abstract_page_ids)
         excluded_ids.update(pared_result.summary_page_ids)

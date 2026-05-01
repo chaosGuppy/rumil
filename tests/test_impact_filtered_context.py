@@ -197,6 +197,63 @@ async def test_excludes_excluded_page_ids(mocker, tmp_db, question_page, view_ca
     assert cited_page.id not in seen_ids
 
 
+async def test_excludes_pages_tracked_via_trace(mocker, tmp_db, question_page, view_call):
+    """Pages rendered by the inner builder via format_page(track=True) are
+    excluded even when the builder doesn't surface their IDs in
+    working_page_ids / tier IDs / excluded_page_ids.
+
+    CreateViewContext renders existing view items into the context but
+    doesn't track their page IDs in any returned list. The wrapper must
+    still exclude them via the trace's page-load record so sonnet doesn't
+    waste a call re-scoring a page that's already in the prompt.
+    """
+    untracked_page = _make_evidence("Rendered but untracked", "U" * 200)
+    candidate = _make_evidence("Fresh candidate", "Y" * 200)
+
+    class _TraceRecordingInnerBuilder(ContextBuilder):
+        async def build_context(self, infra: CallInfra) -> ContextResult:
+            infra.trace.record_page_load(
+                untracked_page.id,
+                "content",
+                {"source": "embedding_full"},
+            )
+            return ContextResult(
+                context_text="STANDARD CONTEXT (incl. untracked page)",
+                working_page_ids=[],
+            )
+
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.bfs_evidence_pages_within_distance",
+        new_callable=mocker.AsyncMock,
+        return_value=[untracked_page, candidate],
+    )
+
+    seen_ids: list[str] = []
+
+    async def fake_structured_call(**kwargs):
+        msg = kwargs["user_message"]
+        if untracked_page.headline in msg:
+            seen_ids.append(untracked_page.id)
+        if candidate.headline in msg:
+            seen_ids.append(candidate.id)
+        return _FakeStructuredCallResult(
+            ImpactVerdict(new_information="x", impact_reasoning="y", impact_percentile=50)
+        )
+
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.structured_call",
+        side_effect=fake_structured_call,
+    )
+
+    wrapper = ImpactFilteredContext(inner_builder=_TraceRecordingInnerBuilder())
+    infra = _make_infra(tmp_db, view_call, question_page)
+    with override_settings(rumil_smoke_test=""):
+        await wrapper.build_context(infra)
+
+    assert candidate.id in seen_ids
+    assert untracked_page.id not in seen_ids
+
+
 async def test_floor_percentile_drops_low_scores(mocker, tmp_db, question_page, view_call):
     """Pages scored below floor_percentile are not included even if budget allows."""
     inner = ContextResult(context_text="ctx", working_page_ids=[])

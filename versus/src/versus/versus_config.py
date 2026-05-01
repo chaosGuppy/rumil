@@ -70,8 +70,13 @@ def _dir_content_sha(rel_dir: str, pattern: str) -> str:
     if not root.is_dir():
         return ""
     h = hashlib.sha256()
-    for p in sorted(root.glob(pattern)):
-        h.update(p.name.encode())
+    # Filter to files: recursive globs (``**/*``) match directories too,
+    # and read_bytes() on a directory raises. Sort by relative posix
+    # path so the result is reproducible across runs and across patterns
+    # that may surface nested files.
+    files = sorted(p for p in root.glob(pattern) if p.is_file())
+    for p in files:
+        h.update(p.relative_to(root).as_posix().encode())
         h.update(b":")
         h.update(p.read_bytes())
         h.update(b"\n")
@@ -120,21 +125,64 @@ async def compute_workspace_state_hash(db: Any) -> str:
     return h.hexdigest()[:16]
 
 
-def compute_judge_code_fingerprint() -> dict[str, str]:
-    """Bridge + orchestrator + calls + prompts content fingerprint,
-    used identically by ws and orch judgments.
+def compute_shared_code_fingerprint() -> dict[str, str]:
+    """Cross-cutting harness fingerprint — files every versus run
+    touches regardless of which Workflow / Task is composed in.
 
-    One entry per fingerprint directory (collapsed to a single sha over
-    its files) plus one entry per individual file in
-    :data:`versus.versions.JUDGE_CODE_FINGERPRINT_FILES`. Read once at
-    plan time; stable for a single ``run_orch`` invocation.
+    One entry per directory in
+    :data:`versus.versions.SHARED_CODE_FINGERPRINT_DIRS` (collapsed to
+    a single sha over its files) plus one entry per individual file in
+    :data:`versus.versions.SHARED_CODE_FINGERPRINT_FILES`. Read once
+    at plan time; stable for a single run.
+
+    Pre-#425 this was ``compute_judge_code_fingerprint`` and covered
+    every orchestrator + call + per-call prompt under one fat hash.
+    Post-#425 those moved to per-Workflow ``code_paths`` and this
+    fingerprint shrunk to the harness layer.
     """
-    from versus.versions import JUDGE_CODE_FINGERPRINT_DIRS, JUDGE_CODE_FINGERPRINT_FILES
+    from versus.versions import SHARED_CODE_FINGERPRINT_DIRS, SHARED_CODE_FINGERPRINT_FILES
 
     out: dict[str, str] = {}
-    for rel_dir, pattern in JUDGE_CODE_FINGERPRINT_DIRS:
+    for rel_dir, pattern in SHARED_CODE_FINGERPRINT_DIRS:
         out[rel_dir] = _dir_content_sha(rel_dir, pattern)
-    out.update(compute_file_fingerprint(JUDGE_CODE_FINGERPRINT_FILES))
+    out.update(compute_file_fingerprint(SHARED_CODE_FINGERPRINT_FILES))
+    return out
+
+
+# Back-compat alias for callers / tests still on the pre-#425 name.
+# Removable once nothing imports it.
+compute_judge_code_fingerprint = compute_shared_code_fingerprint
+
+
+def compute_workflow_code_fingerprint(workflow: Any) -> dict[str, str]:
+    """Hash each path in ``workflow.code_paths`` (relative to repo root).
+
+    Returns ``{path: sha256[:8]}``. Individual files are hashed
+    directly via :func:`compute_file_fingerprint` semantics; directory
+    paths (keys ending with ``/``, or any path that resolves to a
+    directory on disk) get a recursive ``*`` glob folded into a single
+    sha via ``_dir_content_sha`` so a directory is one entry instead
+    of N.
+
+    Missing paths are recorded as empty strings — same treatment as
+    :func:`compute_file_fingerprint`, so absence shows up in config
+    diffs rather than silently dropping.
+    """
+    root = _repo_root()
+    out: dict[str, str] = {}
+    for rel in workflow.code_paths:
+        target = root / rel
+        if target.is_dir():
+            # Recursive glob folded into one sha. Pattern ``**/*`` walks
+            # nested files; ``_dir_content_sha`` already filters to the
+            # given pattern and skips the directory entries themselves
+            # (only ``read_bytes()`` succeeds on files, but we sort and
+            # iterate paths and the glob matches files only).
+            out[rel] = _dir_content_sha(rel, "**/*")
+        elif target.is_file():
+            out[rel] = _file_content_sha(target)
+        else:
+            out[rel] = ""
     return out
 
 
@@ -164,11 +212,20 @@ def make_versus_config(
 
     ``workflow.fingerprint()`` and ``task.fingerprint(inputs)`` carry
     the component-specific knobs. Cross-cutting fields
-    (``workspace_id``, ``workspace_state_hash``, ``code_fingerprint``,
-    ``model_config``) are merged in by the caller. Any of them being
-    None means "this row doesn't carry that key" — the dict shape stays
-    minimal so blind-style runs without a workspace look consistently
-    blind.
+    (``workspace_id``, ``workspace_state_hash``, ``model_config``)
+    are passed through; the code fingerprint is computed here from
+    :func:`compute_shared_code_fingerprint` (harness layer) plus
+    :func:`compute_workflow_code_fingerprint` (workflow's declared
+    ``code_paths``) so callers don't have to assemble it.
+
+    The two are stored as separate top-level fields
+    (``shared_code_fingerprint`` / ``workflow_code_fingerprint``) for
+    legibility — the projection layer folds both into the existing
+    ``judge_code_fingerprint`` axis. ``code_fingerprint`` (legacy
+    flat dict) is still accepted for shim callers that want to pin a
+    specific value; when supplied it overrides both auto-computed
+    fields and lands as a single ``code_fingerprint`` key for
+    backward dict-shape compatibility.
 
     Returns ``(config, config_hash, judge_model)``. Callers write all
     three on each new judgment / completion row; ``config_hash`` is
@@ -185,8 +242,20 @@ def make_versus_config(
         config["workspace_id"] = workspace_id
     if workspace_state_hash:
         config["workspace_state_hash"] = workspace_state_hash
-    if code_fingerprint:
+    if code_fingerprint is not None:
+        # Caller supplied a pre-built fingerprint (shim path / tests
+        # that want a frozen value). Preserve the legacy flat shape so
+        # historical hash invariants keep holding.
         config["code_fingerprint"] = dict(code_fingerprint)
+    else:
+        # Auto-compute. Skip both fields entirely for synthetic
+        # workflows that opt out via ``code_paths == ()`` (e.g. the
+        # blind shim) — keeps blind configs minimal and matches the
+        # pre-#425 shape where blind rows didn't carry a code
+        # fingerprint at all.
+        if getattr(workflow, "code_paths", ()):
+            config["shared_code_fingerprint"] = compute_shared_code_fingerprint()
+            config["workflow_code_fingerprint"] = compute_workflow_code_fingerprint(workflow)
     config_hash = compute_config_hash(config)
     judge_model = _derive_judge_model_new(workflow=workflow, task=task, model=model, ch=config_hash)
     return config, config_hash, judge_model
@@ -337,15 +406,13 @@ def make_judge_config(
             workspace_id is None
             or tool_prompt_hash is None
             or pair_surface_hash is None
-            or code_fingerprint is None
             or workspace_state_hash is None
             or budget is None
             or closer_hash is None
         ):
             raise ValueError(
                 "variant='orch' requires workspace_id, tool_prompt_hash, "
-                "pair_surface_hash, code_fingerprint, workspace_state_hash, "
-                "budget, closer_hash"
+                "pair_surface_hash, workspace_state_hash, budget, closer_hash"
             )
         # Local import to avoid a circular import: versus_workflow imports
         # the orchestrator, which transitively pulls in everything it touches.
@@ -359,6 +426,10 @@ def make_judge_config(
             pair_surface_hash=pair_surface_hash,
             closer_hash=closer_hash,
         )
+        # code_fingerprint defaults to auto-compute (post-#425). Tests
+        # / callers that want to pin a frozen value can still pass it
+        # explicitly; that lands under the legacy flat
+        # ``code_fingerprint`` key for hash compat.
         return make_versus_config(
             workflow=orch_workflow,
             task=orch_task,
@@ -488,9 +559,20 @@ def _project_new_config_to_axes(
         out["judge_pair_hash"] = f"q{qh}"
     if ws_state := config.get("workspace_state_hash"):
         out["judge_workspace_state_hash"] = f"w{ws_state[:8]}"
-    fp = config.get("code_fingerprint")
-    if isinstance(fp, dict) and fp:
-        fp_blob = json.dumps(fp, sort_keys=True, default=str)
+    # Fold both shapes into one axis: legacy flat ``code_fingerprint``
+    # (shim path / pre-#425) and post-#425 split
+    # ``shared_code_fingerprint`` + ``workflow_code_fingerprint`` both
+    # render under ``judge_code_fingerprint``. The merge preserves
+    # forking — any change to either component shows up in the hash.
+    fp_components: dict[str, Any] = {}
+    if isinstance(legacy_fp := config.get("code_fingerprint"), dict) and legacy_fp:
+        fp_components["legacy"] = legacy_fp
+    if isinstance(shared_fp := config.get("shared_code_fingerprint"), dict) and shared_fp:
+        fp_components["shared"] = shared_fp
+    if isinstance(workflow_fp := config.get("workflow_code_fingerprint"), dict) and workflow_fp:
+        fp_components["workflow"] = workflow_fp
+    if fp_components:
+        fp_blob = json.dumps(fp_components, sort_keys=True, default=str)
         fp_hash = hashlib.sha256(fp_blob.encode()).hexdigest()[:8]
         out["judge_code_fingerprint"] = f"f{fp_hash}"
     if (budget := workflow.get("budget")) is not None:

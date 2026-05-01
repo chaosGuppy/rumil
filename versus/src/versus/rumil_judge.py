@@ -313,11 +313,7 @@ async def run_orch(
         compute_prompt_hash,
         compute_tool_prompt_hash,
     )
-    from versus.versus_config import (
-        compute_judge_code_fingerprint,
-        compute_workspace_state_hash,
-        make_judge_config,
-    )
+    from versus.versus_config import compute_workspace_state_hash, make_judge_config
 
     prompt_hash_cache = {
         k: compute_prompt_hash(b, with_tools=True) for k, b in task_body_cache.items()
@@ -325,7 +321,9 @@ async def run_orch(
     thash = compute_tool_prompt_hash()
     qhash = compute_pair_surface_hash()
     chash = compute_orch_closer_hash()
-    code_fingerprint = compute_judge_code_fingerprint()
+    # code_fingerprint is computed inside make_versus_config from
+    # workflow.code_paths + the cross-cutting harness layer; callers no
+    # longer assemble it.
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
     # Versus model registry is the source of truth for what versus sends
@@ -350,7 +348,6 @@ async def run_orch(
             workspace_id=ws_short,
             budget=budget,
             closer_hash=chash,
-            code_fingerprint=code_fingerprint,
             workspace_state_hash=workspace_state_hash,
         )
 

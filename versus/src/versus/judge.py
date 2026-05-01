@@ -179,10 +179,45 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
         return False
     if is_tools:
         # circular: rumil.versus_bridge -> versus.versus_config -> versus.judge
-        from versus.versus_config import compute_judge_code_fingerprint
+        from versus.versus_config import (
+            compute_shared_code_fingerprint,
+            compute_workflow_code_fingerprint,
+        )
 
-        if inputs.get("code_fingerprint") != compute_judge_code_fingerprint():
-            return False
+        # Three row shapes are in the wild:
+        # - legacy flat: top-level ``code_fingerprint`` covering the
+        #   pre-#425 fat scope (orchestrators + calls + prompts +
+        #   workspace_exploration + harness files)
+        # - new-shape with frozen fingerprint: ``code_fingerprint`` at
+        #   top level (shim path or test that passed it explicitly)
+        # - post-#425 split: ``shared_code_fingerprint`` +
+        #   ``workflow_code_fingerprint`` at top level
+        if "shared_code_fingerprint" in inputs or "workflow_code_fingerprint" in inputs:
+            # circular: rumil.versus_workflow imports orchestrators
+            from rumil.versus_workflow import TwoPhaseWorkflow
+
+            if inputs.get("shared_code_fingerprint") != compute_shared_code_fingerprint():
+                return False
+            # Reconstruct the workflow from its kind to know which
+            # ``code_paths`` to fingerprint. Today only ``two_phase`` is
+            # in the wild; extend when more workflows ship judgment rows.
+            workflow_kind = (inputs.get("workflow") or {}).get("kind")
+            if workflow_kind == "two_phase":
+                # budget doesn't affect code_paths so any value works.
+                wf = TwoPhaseWorkflow(budget=int((inputs.get("workflow") or {}).get("budget") or 1))
+                if inputs.get("workflow_code_fingerprint") != compute_workflow_code_fingerprint(wf):
+                    return False
+            else:
+                # Unknown workflow kind — can't reproduce its
+                # fingerprint. Treat as stale rather than guessing.
+                return False
+        else:
+            # Legacy flat fingerprint or shim-frozen fingerprint. Pre-#425
+            # rows used the fat scope; today's ``compute_shared_code_fingerprint``
+            # returns the shrunk scope, so legacy rows mark stale (correct
+            # — they reference code state that no longer reproduces).
+            if inputs.get("code_fingerprint") != compute_shared_code_fingerprint():
+                return False
     try:
         expected_mc = get_judge_model_config(inputs["model"], cfg=cfg)
     except KeyError:

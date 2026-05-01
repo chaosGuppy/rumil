@@ -116,7 +116,16 @@ class _BudgetedOrchWorkflow:
 
 
 class TwoPhaseWorkflow(_BudgetedOrchWorkflow):
-    """Versus workflow wrapping :class:`TwoPhaseOrchestrator`."""
+    """Versus workflow wrapping :class:`TwoPhaseOrchestrator`.
+
+    ``code_paths`` covers everything an in-flight TwoPhase run can
+    touch — the orchestrator modules it directly composes, plus the
+    full ``calls/`` and ``prompts/`` directories since the orch
+    dispatches across many call types and any of their prompts can
+    affect output. Bias is per-workflow over-inclusion (issue #425):
+    a stale prompt edit forking only TwoPhase rows is cheap; missing
+    it would silently let a content-changing edit slip past dedup.
+    """
 
     name = "two_phase"
     code_paths: Sequence[str] = (
@@ -124,6 +133,14 @@ class TwoPhaseWorkflow(_BudgetedOrchWorkflow):
         "src/rumil/orchestrators/base.py",
         "src/rumil/orchestrators/common.py",
         "src/rumil/orchestrators/dispatch_handlers.py",
+        # Calls dispatched during research (assess, find_considerations,
+        # the scout family, web_research, view, etc.). Per-workflow over-
+        # inclusion is cheap; per-call cherry-picking is fragile.
+        "src/rumil/calls/",
+        # Per-call prompts. ``preamble.md`` is shared (lives on the
+        # cross-cutting fingerprint) but every other prompt under this
+        # directory is call-specific and forks if edited.
+        "src/rumil/prompts/",
     )
     produces_artifact = False
     orch_cls = TwoPhaseOrchestrator

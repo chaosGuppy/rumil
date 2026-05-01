@@ -120,7 +120,6 @@ def test_orch_config_hash_changes_when_code_fingerprint_changes():
         "tool_prompt_hash",
         "pair_surface_hash",
         "workspace_id",
-        "code_fingerprint",
         "workspace_state_hash",
         "budget",
         "closer_hash",
@@ -131,6 +130,21 @@ def test_missing_required_arg_raises_value_error(missing):
     kw[missing] = None
     with pytest.raises(ValueError):
         make_judge_config("orch", **kw)
+
+
+def test_orch_missing_code_fingerprint_auto_computes():
+    """Post-#425: ``code_fingerprint`` is no longer required on the orch
+    shim path. Omitting it auto-computes ``shared_code_fingerprint`` +
+    ``workflow_code_fingerprint`` from the workflow's ``code_paths``;
+    explicitly passing it lands the legacy flat dict for hash compat.
+    """
+    kw = dict(_ORCH_KW)
+    del kw["code_fingerprint"]
+    cfg, _, _ = make_judge_config("orch", **kw)
+    assert "shared_code_fingerprint" in cfg
+    assert "workflow_code_fingerprint" in cfg
+    # workflow_code_fingerprint covers TwoPhaseWorkflow.code_paths.
+    assert "src/rumil/orchestrators/two_phase.py" in cfg["workflow_code_fingerprint"]
 
 
 def test_blind_judge_model_display_shape():
@@ -208,7 +222,13 @@ def test_label_from_config_shape(variant, kw, expected_keys):
 _TOP_FIELD_TO_AXIS = {
     "model": "judge_base_model",
     "workspace_id": "judge_workspace_id",
+    # Pre-#425 shim path stores a single flat ``code_fingerprint``;
+    # post-#425 auto-compute splits it into ``shared_code_fingerprint``
+    # + ``workflow_code_fingerprint``. Both shapes fold into the same
+    # ``judge_code_fingerprint`` axis at projection time.
     "code_fingerprint": "judge_code_fingerprint",
+    "shared_code_fingerprint": "judge_code_fingerprint",
+    "workflow_code_fingerprint": "judge_code_fingerprint",
     "workspace_state_hash": "judge_workspace_state_hash",
 }
 _TASK_FIELD_TO_AXIS = {

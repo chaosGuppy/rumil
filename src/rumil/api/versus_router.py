@@ -29,6 +29,7 @@ from versus import essay as versus_essay
 from versus import judge as versus_judge
 from versus import mainline as versus_mainline
 from versus import prepare as versus_prepare
+from versus import versus_config as versus_config_mod
 from versus import versus_db
 from versus import view as versus_view
 
@@ -948,7 +949,7 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 judge_model=jm,
                 judge_model_id=row_cfg["model"],
                 config_hash=row["config_hash"],
-                prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
+                prompt_hash=f"p{versus_config_mod.row_prompt_hash(row_cfg) or 'unknown'}",
                 sampling=row.get("sampling") or {},
                 model_config_snapshot=row_cfg.get("model_config"),
                 criterion=row.get("criterion", ""),
@@ -963,7 +964,7 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 reasoning_text=row.get("reasoning_text"),
                 prompt=row.get("prompt"),
                 system_prompt=row.get("system_prompt"),
-                is_rumil=jm.startswith("rumil:"),
+                is_rumil=versus_config_mod.is_rumil_row(row_cfg, jm),
                 rumil_trace_url=row.get("rumil_trace_url"),
                 rumil_question_id=row.get("rumil_question_id"),
                 rumil_call_id=row.get("rumil_call_id"),
@@ -1237,7 +1238,9 @@ def get_results(
                 winner=row.get("winner_source") or "-",
                 preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
                 ts=row["ts"][:16],
-                is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
+                is_rumil=versus_config_mod.is_rumil_row(
+                    row["config"], str(row.get("judge_model", ""))
+                ),
                 contamination_note=row.get("contamination_note"),
                 stale=is_stale,
                 orphaned=(not is_stale) and _is_orphaned(row, source_index),
@@ -1376,13 +1379,13 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
         judge_model=jm,
         judge_model_id=row_cfg["model"],
         config_hash=row["config_hash"],
-        prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
+        prompt_hash=f"p{versus_config_mod.row_prompt_hash(row_cfg) or 'unknown'}",
         sampling=row.get("sampling") or {},
         model_config_snapshot=row_cfg.get("model_config"),
         verdict=row.get("verdict"),
         winner_source=row.get("winner_source"),
         preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
-        is_rumil=jm.startswith("rumil:"),
+        is_rumil=versus_config_mod.is_rumil_row(row_cfg, jm),
         contamination_note=row.get("contamination_note"),
         prompt=row.get("prompt"),
         reasoning_text=row.get("reasoning_text"),

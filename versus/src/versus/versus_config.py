@@ -453,6 +453,34 @@ def _flat_variant(config: Mapping[str, Any]) -> str | None:
     return config.get("variant") if "variant" in config else None
 
 
+def row_prompt_hash(config: Mapping[str, Any]) -> str | None:
+    """Extract the rendered judge prompt hash from either dict shape.
+
+    New-shape rows carry it on ``task.prompt_hash``; legacy rows on
+    ``prompts.shell_hash``. Returns ``None`` when the field is missing
+    (e.g. partially-built configs); callers should render that case
+    gracefully rather than KeyError.
+    """
+    if "task" in config:
+        return (config.get("task") or {}).get("prompt_hash")
+    return (config.get("prompts") or {}).get("shell_hash")
+
+
+def is_rumil_row(config: Mapping[str, Any], judge_model: str) -> bool:
+    """True iff the judgment was produced by a rumil workflow (not single-turn blind).
+
+    For new-shape rows this is read from ``workflow.kind`` (anything
+    other than ``"blind"`` is a rumil workflow). Legacy rows pre-#424
+    encoded variant in the ``judge_model`` display string —
+    ``rumil:ws:...`` / ``rumil:orch:...`` for rumil-produced rows,
+    ``blind:...`` / ``<provider>/<model>`` for blind — so we fall back
+    to the prefix check there.
+    """
+    if "workflow" in config:
+        return (config.get("workflow") or {}).get("kind") != "blind"
+    return judge_model.startswith("rumil:")
+
+
 def _new_variant_path(config: Mapping[str, Any]) -> str:
     """Display-axis 'judge_path' for a new-shape config.
 

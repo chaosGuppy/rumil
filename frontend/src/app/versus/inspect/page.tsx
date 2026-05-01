@@ -635,11 +635,14 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
           for (const j of v.judgments) {
             const r = genVsHumanAccum(j);
             if (!r) continue;
-            // Group columns by judge identity (judge_model_id), not the
-            // per-row judge_inputs_hash exposed as config_hash — otherwise
-            // every judgment gets its own column and identical-judge cells
-            // appear duplicated.
-            const judge = j.judge_model_id;
+            // Group columns by the compound judge_model (full display
+            // string), not the bare judge_model_id — under the new
+            // ``<task>/<workflow>:<model>:c<hash8>`` shape, multiple
+            // workflows (blind / two_phase / draft_and_edit) at the same
+            // model would otherwise silently collapse into one cell.
+            // Using config_hash would over-fragment in the other
+            // direction; judge_model is the right granularity.
+            const judge = j.judge_model;
             judgesSet.add(judge);
             gensSet.add(r.gen);
             const row = acc.get(r.gen) ?? new Map<string, WinAccum>();
@@ -977,14 +980,17 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
   const byKey = new Map<string, Pair>();
   for (const v of variantBundles) {
     for (const j of v.judgments) {
-      // Bucket by judge_model_id so the same (judge identity, pair, criterion)
-      // groups across variants — using per-row config_hash would never match
+      // Bucket by the compound judge_model (full display string) so the
+      // same (judge identity, pair, criterion) groups across variants.
+      // Using bare judge_model_id would silently merge new-shape rows
+      // that share a base model but differ in workflow (blind vs
+      // two_phase vs …); using per-row config_hash would never match
       // across variants and the section would always report 0 comparable.
-      const k = `${j.judge_model_id}|${j.criterion}|${j.source_a}|${j.source_b}`;
+      const k = `${j.judge_model}|${j.criterion}|${j.source_a}|${j.source_b}`;
       const slot = byKey.get(k) ?? {
         gen: [j.source_a, j.source_b].filter((s) => s !== "human").map(modelOf).join("+") ||
           "human",
-        judge: j.judge_model_id,
+        judge: j.judge_model,
         criterion: j.criterion,
         source_a: j.source_a,
         source_b: j.source_b,

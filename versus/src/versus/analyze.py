@@ -37,10 +37,19 @@ def model_sort_key(judge: str) -> tuple:
     blind < rumil:ws < rumil:orch. ``rumil:ws`` is historical-only — no
     new rows produced — but the slot is kept so old rows sort sensibly.
 
-    Accepts both source-id strings ("human", "google/gemini-3-flash",
-    "paraphrase:openai/gpt-5") and the post-cleanup judge_model shape
-    (``<path>:<model>:<dim>:c<hash8>`` with path ∈ {blind, rumil:ws,
-    rumil:orch}).
+    Accepts:
+
+    - Source-id strings: ``"human"``, ``"google/gemini-3-flash"``,
+      ``"paraphrase:openai/gpt-5"``.
+    - Legacy judge_model shape: ``<path>:<model>:<dim>:c<hash8>`` with
+      path ∈ {blind, rumil:ws, rumil:orch}.
+    - New judge_model shape (post-#424):
+      ``<task>/<workflow>:<model>:c<hash8>``, e.g.
+      ``judge_pair/blind:claude-opus-4-7:c2937f03b`` or
+      ``judge_pair/two_phase:claude-opus-4-7:c2937f03b``. Blind workflows
+      sort with the legacy ``blind:`` priority; non-blind workflows
+      (two_phase, draft_and_edit, …) sort with the legacy ``rumil:orch``
+      priority since they're all rumil-produced.
     """
     low = judge.lower()
     parts = judge.split(":")
@@ -54,6 +63,16 @@ def model_sort_key(judge: str) -> tuple:
     elif low.startswith("blind:"):
         variant = 1
         base = parts[1] if len(parts) >= 2 else judge
+    elif "/" in parts[0] and len(parts) >= 2:
+        # New shape: ``<task>/<workflow>:<model>:c<hash8>``. The first
+        # colon-separated segment carries the ``task/workflow`` pair, so
+        # only the first ``parts[0]`` is checked for ``/`` — a provider
+        # model like ``openai/gpt-5`` falls through to the catch-all
+        # ``"/" in judge`` branch below since it has no leading colon.
+        head = parts[0]
+        workflow = head.split("/", 1)[1].lower()
+        variant = 1 if workflow == "blind" else 3
+        base = parts[1]
     elif "/" in judge:
         variant = 0
         base = judge.split("/", 1)[1]

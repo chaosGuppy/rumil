@@ -35,6 +35,7 @@ _BLIND_KW: dict[str, Any] = {
     "dimension": "general_quality",
     "sampling": {"temperature": None, "max_tokens": 1024},
     "prompt_hash": "deadbeef",
+    "thinking": None,
 }
 
 _WS_KW: dict[str, Any] = {
@@ -67,6 +68,7 @@ def test_config_hash_is_deterministic_for_identical_inputs():
         ("dimension", "grounding"),
         ("sampling", {"temperature": 0.2, "max_tokens": 1024}),
         ("prompt_hash", "abcd1234"),
+        ("thinking", {"type": "adaptive"}),
     ),
 )
 def test_config_hash_changes_when_any_input_changes(override_key, override_value):
@@ -74,6 +76,18 @@ def test_config_hash_changes_when_any_input_changes(override_key, override_value
     bumped_kw = {**_BLIND_KW, override_key: override_value}
     _, bumped_hash, _ = make_judge_config("blind", **bumped_kw)
     assert base_hash != bumped_hash
+
+
+def test_thinking_field_recorded_when_non_none():
+    kw = {**_BLIND_KW, "thinking": {"type": "adaptive", "display": "summarized"}}
+    cfg, _, _ = make_judge_config("blind", **kw)
+    assert cfg["thinking"] == {"type": "adaptive", "display": "summarized"}
+
+
+def test_thinking_field_present_as_none_when_omitted():
+    cfg, _, _ = make_judge_config("blind", **_BLIND_KW)
+    assert "thinking" in cfg
+    assert cfg["thinking"] is None
 
 
 def test_orch_config_hash_changes_when_code_fingerprint_changes():
@@ -192,8 +206,10 @@ _CONFIG_FIELD_TO_AXIS = {
     "closer_hash": "judge_closer_hash",
 }
 # Top-level keys deliberately not exposed as their own axis (covered
-# by other axes implicitly).
-_CONFIG_FIELDS_OPAQUE = {"variant", "sampling", "prompts"}
+# by other axes implicitly). ``thinking`` projects only when non-None,
+# matching ``sampling`` — both are folded into config_hash but only
+# surface as a separate axis when set.
+_CONFIG_FIELDS_OPAQUE = {"variant", "sampling", "prompts", "thinking"}
 
 
 @pytest.mark.parametrize(

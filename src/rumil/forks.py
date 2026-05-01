@@ -37,7 +37,7 @@ from rumil.llm import (
     _log_before_retry,
     _stop_after_status_retries,
     _supports_sampling_params,
-    _thinking_config,
+    thinking_config,
 )
 from rumil.models import CallType
 from rumil.moves.registry import MOVES
@@ -200,7 +200,7 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
         model=model,
         temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(model) else None,
         max_tokens=DEFAULT_MAX_TOKENS,
-        has_thinking=_thinking_config(model) is not None,
+        has_thinking=thinking_config(model) is not None,
         thinking_off=False,
     )
 
@@ -224,7 +224,7 @@ def merge_overrides(base: BaseExchange, overrides: ForkOverrides) -> BaseExchang
         if overrides.temperature is not None
         else base.temperature,
         max_tokens=overrides.max_tokens if overrides.max_tokens is not None else base.max_tokens,
-        has_thinking=_thinking_config(merged_model) is not None,
+        has_thinking=thinking_config(merged_model) is not None,
         thinking_off=overrides.thinking_off
         if overrides.thinking_off is not None
         else base.thinking_off,
@@ -241,7 +241,7 @@ def build_kwargs(merged: BaseExchange) -> dict:
     }
     if _supports_sampling_params(merged.model) and merged.temperature is not None:
         kwargs["temperature"] = merged.temperature
-    if not merged.thinking_off and (thinking := _thinking_config(merged.model)) is not None:
+    if not merged.thinking_off and (thinking := thinking_config(merged.model)) is not None:
         kwargs["thinking"] = thinking
     if (effort := _effort_level(merged.model)) is not None:
         kwargs["output_config"] = {"effort": effort}

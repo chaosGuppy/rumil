@@ -168,6 +168,7 @@ def make_judge_config(
     dimension: str,
     sampling: dict[str, Any] | None,
     prompt_hash: str,
+    thinking: dict[str, Any] | None,
     tool_prompt_hash: str | None = None,
     pair_surface_hash: str | None = None,
     workspace_id: str | None = None,
@@ -183,6 +184,14 @@ def make_judge_config(
     primitive, ``judge_model`` is a short human-readable display
     string.
 
+    ``thinking`` is the Anthropic thinking-block dict (e.g. ``{"type":
+    "adaptive"}``) or ``None``. Direct anthropic_client paths (blind)
+    pass ``None`` because they don't send a thinking block. Bridge
+    paths (ws/orch) pass the dict that ``rumil.llm.thinking_config``
+    returns for the model — the same dict that lands on the wire.
+    Recorded so changes to thinking rules naturally fork the dedup
+    hash; see CLAUDE.local.md "Records" principle.
+
     Per-variant required args (asserted):
     - blind: ``sampling``, ``prompt_hash``
     - ws: blind + ``workspace_id``, ``tool_prompt_hash``, ``pair_surface_hash``,
@@ -194,6 +203,7 @@ def make_judge_config(
         "model": model,
         "dimension": dimension,
         "sampling": dict(sampling) if sampling is not None else None,
+        "thinking": dict(thinking) if thinking is not None else None,
         "prompts": {"shell_hash": prompt_hash},
     }
     if variant in ("ws", "orch"):
@@ -258,6 +268,13 @@ def project_config_to_axes(
     }
     if (sh := compute_sampling_hash(config.get("sampling"))) is not None:
         out["judge_sampling_hash"] = f"s{sh}"
+    if (thinking := config.get("thinking")) is not None:
+        # Same shape as sampling: short content hash so changing thinking rules
+        # surfaces as a fresh axis bucket in mainline rollups.
+        th_hash = hashlib.sha256(
+            json.dumps(thinking, sort_keys=True, default=str).encode()
+        ).hexdigest()[:8]
+        out["judge_thinking_hash"] = f"t{th_hash}"
     if variant in ("ws", "orch"):
         out["judge_workspace_id"] = config["workspace_id"]
         out["judge_tool_hash"] = f"t{config['tool_descriptions_hash']}"

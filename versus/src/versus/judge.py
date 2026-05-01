@@ -129,12 +129,16 @@ def build_blind_judge_config(
     """
     from versus.judge_config import make_judge_config
 
+    # Blind path uses versus.anthropic_client directly, which never sends a
+    # thinking block. Recording None explicitly so the dedup hash forks if
+    # blind ever starts sending one.
     return make_judge_config(
         "blind",
         model=canonical_model,
         dimension=dimension,
         sampling=sampling,
         prompt_hash=compute_judge_prompt_hash(dimension, with_tools=False),
+        thinking=None,
     )
 
 
@@ -147,10 +151,14 @@ def judge_config_is_current(row: dict, criterion: str) -> bool:
 
     Checks the prompt shell hash for all variants, plus the
     ``code_fingerprint`` for ws/orch — that fingerprint catches semantic
-    non-prompt edits (parser changes, SDK migrations, etc.). Doesn't
+    non-prompt edits (parser changes, SDK migrations, etc.) — and the
+    ``thinking`` block (None for blind, ``rumil.llm.thinking_config`` for
+    ws/orch) so changes to thinking rules surface as stale rows. Doesn't
     check ``workspace_state_hash``: that's a per-row baseline watermark,
     not a staleness signal — every row would flap.
     """
+    from rumil.llm import thinking_config
+
     cfg = row["judge_inputs"]
     is_tools = cfg["variant"] in ("ws", "orch")
     try:
@@ -165,6 +173,9 @@ def judge_config_is_current(row: dict, criterion: str) -> bool:
 
         if cfg.get("code_fingerprint") != compute_judge_code_fingerprint():
             return False
+    expected_thinking = None if cfg["variant"] == "blind" else thinking_config(cfg["model"])
+    if cfg.get("thinking") != expected_thinking:
+        return False
     return True
 
 

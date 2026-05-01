@@ -67,10 +67,10 @@ def _supports_sampling_params(model: str) -> bool:
     # 1.0 — we'd rather skip it than set 1.0, so gate on thinking being off.
     if model.startswith("claude-opus-4-7"):
         return False
-    return _thinking_config(model) is None
+    return thinking_config(model) is None
 
 
-def _thinking_config(model: str) -> dict | None:
+def thinking_config(model: str) -> dict | None:
     # Adaptive thinking: Opus 4.7/4.6 and Sonnet 4.6. Haiku and older Sonnet
     # don't support adaptive. On 4.7, thinking text is omitted by default —
     # ask for summarized so sdk_agent can still capture it.
@@ -563,7 +563,7 @@ async def call_anthropic_api(
     }
     if _supports_sampling_params(model):
         kwargs["temperature"] = DEFAULT_TEMPERATURE
-    if (thinking := _thinking_config(model)) is not None:
+    if (thinking := thinking_config(model)) is not None:
         kwargs["thinking"] = thinking
     base_effort = _effort_level(model)
     # Caller can override only when the model actually supports `effort`;
@@ -1258,7 +1258,7 @@ async def _structured_call_parse(
     if _supports_sampling_params(model):
         parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
     if not disable_thinking:
-        if (thinking := _thinking_config(model)) is not None:
+        if (thinking := thinking_config(model)) is not None:
             parse_kwargs["thinking"] = thinking
         if (effort := _effort_level(model)) is not None:
             parse_kwargs["output_config"] = {"effort": effort}

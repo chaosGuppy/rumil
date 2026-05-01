@@ -205,6 +205,10 @@ def _call_one_completion_inner(task, prompt, m, request_body, client):
             "duration_s": round(time.time() - t0, 2),
             "ts": dt.datetime.utcnow().isoformat() + "Z",
             "provider": provider,
+            # Direct anthropic_client doesn't send a thinking block; record
+            # explicitly so future callers can tell. See rumil.llm.thinking_config
+            # for the rules that apply on bridge paths.
+            "thinking": None,
         },
     }
 

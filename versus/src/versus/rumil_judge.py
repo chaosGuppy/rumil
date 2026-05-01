@@ -343,6 +343,12 @@ async def run_ws(
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
     sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
+    # rumil's call_anthropic_api applies thinking_config() to the model
+    # automatically; record the same dict here so judge_inputs reflects the
+    # actual condition and the dedup hash forks if rules change.
+    from rumil.llm import thinking_config
+
+    thinking = thinking_config(model)
 
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name
@@ -353,6 +359,7 @@ async def run_ws(
             dimension=dim,
             sampling=sampling,
             prompt_hash=ph,
+            thinking=thinking,
             tool_prompt_hash=thash,
             pair_surface_hash=qhash,
             workspace_id=ws_short,
@@ -583,6 +590,11 @@ async def run_orch(
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
     sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
+    # rumil applies thinking_config() to the orchestrator's research calls AND
+    # the closer; mirror it here so judge_inputs reflects the actual condition.
+    from rumil.llm import thinking_config
+
+    thinking = thinking_config(model)
 
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name
@@ -593,6 +605,7 @@ async def run_orch(
             dimension=dim,
             sampling=sampling,
             prompt_hash=ph,
+            thinking=thinking,
             tool_prompt_hash=thash,
             pair_surface_hash=qhash,
             workspace_id=ws_short,

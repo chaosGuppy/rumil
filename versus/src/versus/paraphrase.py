@@ -118,7 +118,10 @@ def _call_one_paraphrase(essay, m, sh, k, prompt, client):
         "essay_id": essay.id,
         "model_id": m.id,
         "sampling_hash": sh,
-        "params": m.model_dump(exclude={"id"}),
+        # thinking=None: paraphrase routes through anthropic_client/openrouter
+        # directly, neither of which sends a thinking block today. Record
+        # explicitly so a future change is visible from the row.
+        "params": {**m.model_dump(exclude={"id"}), "thinking": None},
         "prompt": prompt,
         "response_text": text,
         "response_words": len(text.split()),

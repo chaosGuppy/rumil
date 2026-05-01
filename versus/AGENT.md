@@ -11,7 +11,7 @@ Library lives at `versus/src/versus/`; CLI entry points at `versus/scripts/`; ca
 Two Postgres tables, accessed through `versus.versus_db`:
 
 - `versus_texts` — every essay-shaped contestant: human baselines and model continuations (paraphrase support is deferred, see below). Columns include `request` / `response` (raw provider-shaped JSONB for the API call that produced the text), `text` (extracted continuation), and a generated `request_hash` over the canonical request body.
-- `versus_judgments` — pairwise verdicts. `request` / `response` capture the blind judge's literal API call; `judge_inputs` is the canonical condition blob (model, dimension, nested `model_config` from the per-model registry, prompt content, tool descriptions, pair surface, workspace state, code fingerprint, budget, closer config, plus `text_a_id` / `text_b_id` so re-judging different completion samples naturally forks). `judge_inputs_hash` is generated. `winner_source` is generated from `verdict` + `display_first` + `(source_a, source_b)`.
+- `versus_judgments` — pairwise verdicts. `request` / `response` capture the blind judge's literal API call; `judge_inputs` is the canonical condition blob built by `make_versus_config` (see `## Judge config + dedup` below for the structured shape: `workflow.*` / `task.*` subdicts plus cross-cutting top-level fields). `text_a_id` / `text_b_id` are folded in at write time so re-judging different completion samples forks naturally. `judge_inputs_hash` is generated. `winner_source` is generated from `verdict` + `display_first` + `(source_a, source_b)`.
 
 JSONL archives still live under `versus/data/*.jsonl` as a frozen historical record; nothing in the current pipeline reads them. The `versus.jsonl` helper module is dormant — the deferred paraphrase code path imports it, nothing else.
 
@@ -30,14 +30,17 @@ There's no DB-level uniqueness on either table. "Skip if exists" semantics live 
 
 ## Judge config + dedup
 
-`versus.judge_config.make_judge_config(variant, ...)` builds the structured `judge_inputs` blob. The display `judge_model` string (`<path>:<model>:<dim>:c<hash8>` with `<path>` ∈ {`blind`, `rumil:orch`}; historical rows may also carry `rumil:ws`) is purely cosmetic — it doesn't drive dedup.
+`versus.versus_config.make_versus_config(workflow, task, ...)` builds the structured config blob (lands in `versus_judgments.judge_inputs` / `versus_texts.params.config`). The legacy `make_judge_config(variant, ...)` API still exists as a back-compat shim that constructs a workflow + task pair internally and forwards into the same builder — keep using `make_versus_config` directly in new code. The display `judge_model` string is `<task.name>/<workflow.name>:<model>:c<hash8>` (e.g. `judge_pair/two_phase:claude-opus-4-7:c2937f03b`, `judge_pair/blind:claude-haiku-4-5:cabcd1234`); it's purely cosmetic and doesn't drive dedup. Historical rows may carry the older `<path>:<model>:<dim>:c<hash8>` shape (`<path>` ∈ {`blind`, `rumil:orch`, `rumil:ws`}); read-side parsers (`mainline.parse_judge_components`, `judge_config_is_current`) accept both.
 
-The blob covers, per variant:
+The blob has two component subdicts plus cross-cutting top-level fields:
 
-- **blind**: `model`, `dimension`, `model_config` (nested ModelConfig snapshot — sampling, thinking, effort, etc.), `prompts.shell_hash` (sha8 of the composed shell + dimension body). claude-* models route direct to Anthropic; everything else through OpenRouter.
-- **orch**: blind fields + `workspace_id`, `tool_descriptions_hash`, `pair_surface_hash`, `code_fingerprint`, `workspace_state_hash`, `budget`, `closer_hash`.
+- `workflow.*` — `kind` (e.g. `blind`, `two_phase`, `draft_and_edit`), `budget`, plus a snapshot of every entry in the workflow's `relevant_settings`.
+- `task.*` — `kind` (e.g. `judge_pair`), `dimension`, `prompt_hash`, `tool_prompt_hash`, `pair_surface_hash`, `closer_hash` (some fields elided per task; the blind shim's task only carries `dimension` + `prompt_hash`).
+- top-level: `model`, `model_config` (nested ModelConfig snapshot — sampling, thinking, effort, max_thinking_tokens, service_tier), `workspace_id`, `workspace_state_hash`, plus the post-#425 split `shared_code_fingerprint` (harness layer — files every versus run touches) + `workflow_code_fingerprint` (the workflow's declared `code_paths`). The legacy flat `code_fingerprint` is still accepted from the shim path for hash compat.
 
-At write time, the runner adds `text_a_id` / `text_b_id` (and `order` for rumil rows) before computing the hash. Adding a new "thing the LLM saw" is one place: extend `make_judge_config` (and the corresponding axis in `project_config_to_axes` so the provenance panel surfaces it).
+claude-* models route direct to Anthropic; everything else through OpenRouter.
+
+At write time, the runner adds `text_a_id` / `text_b_id` (and `order` for rumil rows) before computing the hash. Adding a new "thing the LLM saw" is one place: extend the relevant `task.fingerprint()` / `workflow.fingerprint()`, or `make_versus_config` for cross-cutting fields, plus the matching axis in `project_config_to_axes` so the provenance panel surfaces it. Historical-shape projection (`_project_legacy_config_to_axes`) is preserved for old rows; new fields land in `_project_new_config_to_axes`.
 
 ## Per-model registry
 
@@ -111,16 +114,18 @@ UI routes (`/versus` redirects to `/versus/results`; `/versus/inspect` and `/ver
 `scripts/run_completions.py` has two modes:
 
 - Default — single-shot: one LLM call per essay × prefix × model. Rows land with `source_id=<model_id>` (the bare model id).
-- `--orch <workflow_name>` — fires a rumil workflow (today: `two_phase`; later: `draft_and_edit` per #427) against a per-essay Question, then a closing call extracts the continuation. Rows land with `source_id=orch:<workflow>:<model>:c<hash8>` so judges can pair orch outputs against single-shot or human baselines. Requires `--workspace`. Pickable as a contestant by `run_rumil_judgments.py` with no further wiring — different workflows / configs / budgets all coexist as separate source_ids by design (the `c<hash8>` suffix is the workflow's `config_hash`).
+- `--orch <workflow_name>` — fires a rumil workflow against a per-essay Question via `versus.rumil_completion.run_orch_completion`, then a closing call extracts the continuation (or, for workflows where `produces_artifact=True`, the runner reads `question.content` directly). Rows land with `source_id=orch:<workflow>:<model>:c<hash8>` so judges can pair orch outputs against single-shot or human baselines. Requires `--workspace`. Pickable as a contestant by `run_rumil_judgments.py` with no further wiring — different workflows / configs / budgets all coexist as separate source_ids by design (the `c<hash8>` suffix is the workflow's `config_hash`).
+
+`WORKFLOW_REGISTRY` in `versus/src/versus/rumil_completion.py` is the source of truth for which workflows `--orch` accepts. Today: `two_phase` (`TwoPhaseWorkflow`, #426) and `draft_and_edit` (`DraftAndEditWorkflow`, #427 — drafter → N parallel critics → editor, `produces_artifact=True`). Workflow-specific knobs (e.g. `n_critics`, `max_rounds`, `drafter_model` for `draft_and_edit`) are passed via `--workflow-arg key=value` (repeatable, type-coerced from the workflow class's `__init__` signature). Adding a new workflow is one diff: implement the Workflow protocol (`rumil.versus_workflow`), register it in `WORKFLOW_REGISTRY`, update the docs.
 
 ## Judge variants
 
 `scripts/run_rumil_judgments.py` has two modes. See `.claude/skills/rumil-versus-judge/SKILL.md` for the detailed invocation guide, cost estimates, and confirmation thresholds.
 
-- Blind (default, no `--variant`) — single-turn LLM call using the blind shell + dimension prompt. Repeat `--model` for multi-model runs; each model routes by id (claude-* direct to Anthropic, others via OpenRouter). `judge_model = blind:<canonical_model>:<dim>:c<hash8>`. Defaults to `cfg.judging.models`.
-- `--variant orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<dim>:c<hash8>`. Requires local Supabase. Expensive.
+- Blind (default, no `--variant`) — single-turn LLM call using the blind shell + dimension prompt. Repeat `--model` for multi-model runs; each model routes by id (claude-* direct to Anthropic, others via OpenRouter). `judge_model = judge_pair/blind:<canonical_model>:c<hash8>` (no embedded dimension — it lives in `judge_inputs.task.dimension`). Defaults to `cfg.judging.models`.
+- `--variant orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = judge_pair/two_phase:<model>:c<hash8>`. Requires local Supabase. Expensive.
 
-The earlier `--variant ws` path (one SDK agent call with workspace-exploration tools, no orchestrator) was removed; a low-budget orch run subsumes the agentic-baseline use case. Historical `rumil:ws:*` rows are preserved.
+The earlier `--variant ws` path (one SDK agent call with workspace-exploration tools, no orchestrator) was removed; a low-budget orch run subsumes the agentic-baseline use case. Historical `rumil:ws:*` and `rumil:orch:<model>:<dim>:c<hash8>` rows are preserved and the read-side parsers accept both shapes.
 
 Model for orch is passed explicitly through the bridge (`--model opus|sonnet|haiku|<full-id>`, default opus) — do not rely on `settings.model`. The bridge uses `override_settings(rumil_model_override=model)` to propagate to nested rumil calls.
 

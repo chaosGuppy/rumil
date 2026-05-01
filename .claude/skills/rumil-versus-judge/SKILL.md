@@ -17,34 +17,48 @@ rumil paths also store project_id / run_id / rumil_call_id so the
 
 | Mode | What it does | judge_model format | Needs supabase? |
 |---|---|---|---|
-| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `blind:<model>:<dim>:c<hash8>` | no |
-| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<dim>:c<hash8>` | **yes** |
+| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `judge_pair/blind:<model>:c<hash8>` | no |
+| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `judge_pair/two_phase:<model>:c<hash8>` | **yes** |
 
 The earlier `--variant ws` path (one SDK agent call with
 workspace-exploration tools, no orchestrator) was removed; for an
 agentic-baseline run, use `--variant orch --budget 4` (the minimum).
 Historical `rumil:ws:*` rows in `versus_judgments` are preserved.
 
-`<dim>` is the rumil dimension name selected via `--dimension`
-(e.g. `general_quality`, `grounding`). The trailing `c<hash8>` is the
-first eight hex chars of the row's `judge_inputs_hash` — the dedup
-primitive. The blind shell is **without** tool advertisements (no
-scope-question references, no `load_page`/`search_workspace`
-mentions); orch shell keeps them. Both modes share the same
-template — see `rumil/versus_prompts.py` for the substitution dicts.
+The dimension (`general_quality`, `grounding`, ...) is selected via
+`--dimension` and lives in the structured `judge_inputs.task.dimension`
+field. It's no longer embedded in the display string —
+post-#424 rows use `judge_pair/<workflow>:<model>:c<hash8>`. Historical
+rows still carry the old `blind:<model>:<dim>:c<hash8>` /
+`rumil:orch:<model>:<dim>:c<hash8>` shapes; read-side parsers handle
+both. The trailing `c<hash8>` is the first eight hex chars of the
+row's `judge_inputs_hash` — the dedup primitive. The blind shell is
+**without** tool advertisements (no scope-question references, no
+`load_page`/`search_workspace` mentions); orch shell keeps them. Both
+modes share the same template — see `rumil/versus_prompts.py` for
+the substitution dicts.
 
 Each row carries a structured `judge_inputs: dict`; the DB generates
 `judge_inputs_hash` from its canonical-form JSON. The blob is built by
-`versus.judge_config.make_judge_config` and covers every input the
-judge saw — model, dimension, the per-model `model_config` snapshot
-(sampling, thinking, effort, max_thinking_tokens, service_tier — full
-`ModelConfig.to_record_dict()` from the registry), prompt content,
-tool descriptions, pair surface, code fingerprint, workspace state,
-budget, closer config — plus `text_a_id` / `text_b_id` and `order`
-added at write time. Editing the registry, swapping a prompt, or
-touching any code the fingerprint covers auto-forks the hash; no
-manual version bump to remember. See `versus/AGENT.md` for the full
-schema and the registry shape.
+`versus.versus_config.make_versus_config(workflow, task, ...)` (the
+back-compat shim `make_judge_config(variant, ...)` still exists for
+legacy callers and forwards into the new builder). The new shape has
+two component subdicts plus cross-cutting top-level fields:
+
+- `workflow.*` — `kind` (e.g. `blind`, `two_phase`), `budget`, plus a
+  snapshot of every entry in the workflow's `relevant_settings`.
+- `task.*` — `kind` (e.g. `judge_pair`), `dimension`, `prompt_hash`,
+  `tool_prompt_hash`, `pair_surface_hash`, `closer_hash`.
+- top-level: `model`, `model_config` (full `ModelConfig.to_record_dict()`
+  snapshot — sampling, thinking, effort, max_thinking_tokens,
+  service_tier), `workspace_id`, `workspace_state_hash`, plus
+  `shared_code_fingerprint` (harness layer) + `workflow_code_fingerprint`
+  (the workflow's declared `code_paths`) post-#425.
+
+`text_a_id` / `text_b_id` and `order` are added at write time. Editing
+the registry, swapping a prompt, or touching any code the fingerprint
+covers auto-forks the hash; no manual version bump to remember. See
+`versus/AGENT.md` for the full schema and the registry shape.
 
 ## When to use
 
@@ -322,26 +336,45 @@ over-read any single number:
 
 `config_hash` is what `judgment_key` keys on. Anything in the
 structured config dict produced by
-`versus.judge_config.make_judge_config` flows into it. So forking is
-automatic for:
+`versus.versus_config.make_versus_config(workflow, task, ...)` flows
+into it (the legacy back-compat shim `make_judge_config(variant, ...)`
+forwards into the same builder). The dict has two component subdicts
+plus cross-cutting top-level fields; forking is automatic for:
 
+`task.*` — covers prompt / pair / closer surfaces:
 - Edits to `prompts/versus-judge-shell.md` or
-  `prompts/versus-<dim>.md` (covered via the rendered prompt's sha).
-- Sampling-dict changes (temperature / max_tokens).
+  `prompts/versus-<dim>.md` — `task.prompt_hash` (rendered prompt sha).
 - Tool-description / docstring edits on `search_workspace` /
-  `load_page` / `explore_subgraph` (orch only).
+  `load_page` / `explore_subgraph` (orch only) — `task.tool_prompt_hash`.
 - Edits to the agent-visible Question page surface
-  (`_format_pair_content`, `_build_headline`, `_versus_extra` key
-  schema) — `pair_surface_hash` covers them.
-- Edits to bridge / orchestrator / call code under the
-  `JUDGE_CODE_FINGERPRINT_DIRS` and `JUDGE_CODE_FINGERPRINT_FILES`
-  paths — `code_fingerprint` covers them per file/directory.
-- Mutations to baseline workspace pages or links between runs —
-  `workspace_state_hash` is a cheap watermark that bumps on any
-  change visible to the agent's tools.
+  (`_build_headline`, `_format_pair_content`, `_build_abstract`,
+  `_versus_extra` key schema) — `task.pair_surface_hash` covers them.
 - Orch closer config (max_turns, disallowed_tools, render knobs) —
-  `closer_hash` covers it.
+  `task.closer_hash`.
+
+`workflow.*` — covers orchestrator-level knobs:
+- `kind` (e.g. `blind`, `two_phase`) and `budget`.
+- Snapshot of every entry in the workflow's `relevant_settings`
+  (assess_call_variant, available_moves, enable_red_team, etc.).
+  Flipping any of those settings forks the hash naturally.
+
+Top-level cross-cutting fields:
+- `model` and full `model_config` (sampling / thinking / effort /
+  max_thinking_tokens / service_tier from the per-model registry).
+- `workspace_id` and `workspace_state_hash` — a cheap watermark over
+  baseline pages + links that bumps on any change visible to the
+  agent's tools.
+- `shared_code_fingerprint` (harness layer, post-#425) +
+  `workflow_code_fingerprint` (the workflow's declared `code_paths`).
+  Edits to bridge / orchestrator / call / per-call-prompt code under
+  those paths fork the hash. Pre-#425 this was a single fat
+  `code_fingerprint` over `JUDGE_CODE_FINGERPRINT_DIRS` + `_FILES`;
+  post-#425 the harness slice is small and per-workflow code paths
+  give finer-grained forking (a TwoPhase prompt edit doesn't fork
+  blind rows).
 
 If a surface isn't on this list and you suspect it should fork the
-key, the right fix is to extend `make_judge_config` (and the matching
-axis in `project_config_to_axes`), not to add a willpower knob.
+key, the right fix is to extend `make_versus_config` (or the
+relevant `task.fingerprint()` / `workflow.fingerprint()`) and the
+matching axis in `project_config_to_axes`, not to add a willpower
+knob.

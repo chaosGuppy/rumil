@@ -388,6 +388,103 @@ def test_compute_pair_surface_hash_changes_when_extra_keys_change(monkeypatch):
     assert baseline != forked
 
 
+def test_compute_pair_surface_hash_changes_when_abstract_template_changes(monkeypatch):
+    """The abstract is rendered into the question page surface, so an
+    edit to its template must fork the dedup hash — same fork-on-edit
+    discipline as the headline / content / extra_keys axes."""
+    from versus.tasks import judge_pair as jp
+
+    baseline = compute_pair_surface_hash()
+
+    def _alt_abstract(pair):
+        return f"DIFFERENT ABSTRACT WORDING for {pair.task_name}"
+
+    monkeypatch.setattr(jp, "_build_abstract", _alt_abstract)
+    forked = compute_pair_surface_hash()
+
+    assert baseline != forked
+
+
+# Abstract: blind discipline (no source_id leak) ---------------------------
+
+
+def test_build_abstract_does_not_leak_source_ids():
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(
+        continuation_a_id="human",
+        continuation_b_id="anthropic/claude-opus-4-7",
+        source_a_id="human",
+        source_b_id="anthropic/claude-opus-4-7",
+    )
+    abstract = _build_abstract(pair)
+
+    # Raw source ids must not surface in the abstract — it's read into
+    # the parent-context prioritization scoring step, which is agent-
+    # visible.
+    assert "anthropic/claude-opus-4-7" not in abstract
+    assert "human" not in abstract.lower()
+
+
+def test_build_abstract_does_not_leak_essay_id_or_prefix_text():
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(
+        essay_id="forethought__the-ai-frontier",
+        prefix_text="The opening of an essay about a sensitive topic.",
+        prefix_hash="deadbeefcafef00d",
+    )
+    abstract = _build_abstract(pair)
+
+    # essay_id leaks the source via the namespacing prefix.
+    assert "forethought" not in abstract
+    assert "the-ai-frontier" not in abstract
+    # The abstract intentionally omits prefix text (substring truncation
+    # is misleading; agents that need it read the question content).
+    assert "sensitive topic" not in abstract
+
+
+def test_build_abstract_includes_dimension_for_meta_evaluation_framing():
+    """The abstract exists to clarify the framing for parent-context
+    rendering — the dimension name is the load-bearing signal it must
+    carry."""
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(task_name="grounding")
+    assert "grounding" in _build_abstract(pair)
+
+
+# create_question sets Page.abstract --------------------------------------
+
+
+def test_ensure_versus_question_sets_page_abstract():
+    """``JudgePairTask.create_question`` must populate ``Page.abstract``
+    so parent-scoring renderers see the meta-evaluation framing."""
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(task_name="general_quality")
+    page = _make_question_page_synchronously(pair)
+
+    assert page.abstract == _build_abstract(pair)
+    # Sanity: abstract is non-empty and dimension-aware.
+    assert "general_quality" in page.abstract
+
+
+def test_ensure_versus_question_abstract_does_not_leak_source_ids():
+    pair = _make_pair(
+        continuation_a_id="human",
+        source_a_id="human",
+        continuation_b_id="anthropic/claude-opus-4-7",
+        source_b_id="anthropic/claude-opus-4-7",
+    )
+    page = _make_question_page_synchronously(pair)
+
+    assert "anthropic/claude-opus-4-7" not in page.abstract
+    # `human` as a substring is risky (English word), but as a literal
+    # source label it must not appear — guard against the obvious leak.
+    assert "human" not in page.abstract.lower()
+
+
 def test_build_headline_uses_prefix_hash_not_essay_id():
     # prefix_hash is the source-free audit tag; essay_id would leak the
     # `<source>__` namespace prefix.

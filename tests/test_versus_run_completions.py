@@ -66,6 +66,103 @@ def test_make_workflow_and_task_unknown_name_lists_registered():
         rumil_completion._make_workflow_and_task("not_a_real_workflow", budget=4)
 
 
+def test_make_workflow_and_task_threads_extra_kwargs():
+    """``--workflow-arg`` parsed values reach the workflow constructor
+    and become attributes on the instance — pin the wiring so a future
+    refactor doesn't drop the kwargs silently."""
+    from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+
+    workflow, _ = rumil_completion._make_workflow_and_task(
+        "draft_and_edit",
+        budget=2,
+        extra_kwargs={"n_critics": 3, "max_rounds": 2},
+    )
+    assert isinstance(workflow, DraftAndEditWorkflow)
+    assert workflow.n_critics == 3
+    assert workflow.max_rounds == 2
+
+
+def test_parse_workflow_args_coerces_int_kwargs():
+    from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+
+    parsed = rumil_completion._parse_workflow_args(
+        ["n_critics=3", "max_rounds=2"], DraftAndEditWorkflow
+    )
+    assert parsed == {"n_critics": 3, "max_rounds": 2}
+
+
+def test_parse_workflow_args_keeps_str_kwargs_as_strings():
+    from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+
+    parsed = rumil_completion._parse_workflow_args(
+        ["drafter_model=claude-sonnet-4-5", "editor_model=claude-opus-4-7"],
+        DraftAndEditWorkflow,
+    )
+    assert parsed == {
+        "drafter_model": "claude-sonnet-4-5",
+        "editor_model": "claude-opus-4-7",
+    }
+
+
+def test_parse_workflow_args_none_clears_optional_default():
+    """``foo=none`` (case-insensitive) maps to Python ``None`` so a
+    user can explicitly clear an inherited str-or-None default."""
+    from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+
+    parsed = rumil_completion._parse_workflow_args(["drafter_model=None"], DraftAndEditWorkflow)
+    assert parsed == {"drafter_model": None}
+
+
+def test_parse_workflow_args_unknown_key_lists_accepted_names():
+    from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+
+    with pytest.raises(ValueError, match="zzz") as excinfo:
+        rumil_completion._parse_workflow_args(["zzz=1"], DraftAndEditWorkflow)
+    msg = str(excinfo.value)
+    assert "n_critics" in msg
+    assert "max_rounds" in msg
+    assert "drafter_model" in msg
+
+
+def test_parse_workflow_args_rejects_setting_budget():
+    from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+
+    with pytest.raises(ValueError, match="budget"):
+        rumil_completion._parse_workflow_args(["budget=10"], DraftAndEditWorkflow)
+
+
+def test_parse_workflow_args_rejects_malformed_pair():
+    from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+
+    with pytest.raises(ValueError, match="key=value"):
+        rumil_completion._parse_workflow_args(["bare_token"], DraftAndEditWorkflow)
+
+
+def test_parse_workflow_args_rejects_non_int_for_int_field():
+    from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+
+    with pytest.raises(ValueError, match="expected int"):
+        rumil_completion._parse_workflow_args(["n_critics=not-a-number"], DraftAndEditWorkflow)
+
+
+def test_run_completions_script_advertises_workflow_arg_flag():
+    """The CLI exposes --workflow-arg. Pin the flag exists + repeats
+    naturally so a refactor that drops it (or stops accumulating
+    repeats into a list) trips this test rather than silently degrading
+    UX.
+    """
+    script = Path(__file__).resolve().parents[1] / "versus" / "scripts" / "run_completions.py"
+    src = script.read_text()
+    # Flag is registered.
+    assert '"--workflow-arg"' in src
+    # action="append" so repeated flags accumulate (documented behaviour).
+    assert 'action="append"' in src
+    # metavar advertises the key=value shape.
+    assert 'metavar="key=value"' in src
+    # Validation routes through the parser in rumil_completion.
+    assert "_parse_workflow_args" in src
+
+
 @pytest.mark.asyncio
 async def test_run_orch_completion_unknown_workflow_exits(mocker):
     cfg = MagicMock()
@@ -119,7 +216,7 @@ async def test_run_orch_completion_dry_run_plans_without_firing(mocker):
         new=AsyncMock(return_value="ws-state-hash"),
     )
     mocker.patch(
-        "versus.versus_config.compute_judge_code_fingerprint",
+        "versus.versus_config.compute_shared_code_fingerprint",
         return_value={"src/rumil/llm.py": "deadbeef"},
     )
     mocker.patch(
@@ -206,7 +303,7 @@ async def test_run_orch_completion_skips_essays_with_existing_row(mocker):
         new=AsyncMock(return_value="ws-state-hash"),
     )
     mocker.patch(
-        "versus.versus_config.compute_judge_code_fingerprint",
+        "versus.versus_config.compute_shared_code_fingerprint",
         return_value={},
     )
     mocker.patch(

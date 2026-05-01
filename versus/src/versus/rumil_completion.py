@@ -26,7 +26,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import inspect
 import time
+import types
+import typing
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -77,15 +80,113 @@ def build_source_id(workflow_name: str, model: str, config_hash: str) -> str:
     return f"orch:{workflow_name}:{model}:c{config_hash[:8]}"
 
 
+def _accepted_workflow_kwargs(cls: type) -> dict[str, tuple[inspect.Parameter, Any]]:
+    """Return the keyword params of ``cls.__init__`` (excluding ``self``).
+
+    Maps ``param_name -> (param, resolved_annotation)`` for the kwargs
+    the constructor will accept. Resolves string annotations (which
+    ``from __future__ import annotations`` produces) via
+    :func:`typing.get_type_hints` so :func:`_coerce_workflow_arg` can
+    introspect the actual types instead of literal strings.
+    ``budget`` is included here even though it's set by the runner, so
+    an unknown-key error message lists it among accepted names.
+    """
+    sig = inspect.signature(cls.__init__)
+    try:
+        hints = typing.get_type_hints(cls.__init__)
+    except Exception:
+        # Constructors with forward refs we can't resolve fall back to
+        # the raw annotation string; coercion will treat it as str.
+        hints = {}
+    return {
+        name: (p, hints.get(name, p.annotation))
+        for name, p in sig.parameters.items()
+        if name != "self"
+    }
+
+
+def _coerce_workflow_arg(name: str, raw: str, annotation: Any) -> Any:
+    """Coerce a ``key=value`` string to the type the workflow expects.
+
+    Reads the parameter's resolved annotation and casts:
+
+    - ``int`` (and ``int | None``) → ``int(raw)``
+    - ``bool`` (and ``bool | None``) → ``"true"/"false"/"1"/"0"`` etc.
+    - ``str`` (and ``str | None``) → ``raw`` as-is
+    - anything else → ``raw`` (string passthrough; the constructor's
+      own validation surfaces any mismatch)
+
+    ``None``-valued kwargs are reachable via the literal string
+    ``"none"`` (case-insensitive) — it maps to Python ``None`` so users
+    can clear an inherited default without juggling YAML.
+    """
+    if raw.lower() == "none":
+        return None
+    types_in_anno = _flatten_optional(annotation)
+    if int in types_in_anno and bool not in types_in_anno:
+        try:
+            return int(raw)
+        except ValueError as e:
+            raise ValueError(f"--workflow-arg {name}={raw!r}: expected int") from e
+    if bool in types_in_anno:
+        lowered = raw.lower()
+        if lowered in ("true", "1", "yes"):
+            return True
+        if lowered in ("false", "0", "no"):
+            return False
+        raise ValueError(f"--workflow-arg {name}={raw!r}: expected bool")
+    return raw
+
+
+def _flatten_optional(annotation: Any) -> tuple[Any, ...]:
+    """Return the set of non-None types in a possibly-Optional annotation.
+
+    Handles ``int``, ``int | None``, ``Optional[int]``, ``Union[int, str]``
+    uniformly so :func:`_coerce_workflow_arg` can ask "is int allowed
+    here?" without re-implementing the union-walking logic.
+    """
+    origin = typing.get_origin(annotation)
+    if origin is typing.Union or origin is types.UnionType:
+        return tuple(a for a in typing.get_args(annotation) if a is not type(None))
+    return (annotation,)
+
+
+def _parse_workflow_args(pairs: Sequence[str], cls: type) -> dict[str, Any]:
+    """Parse ``key=value`` strings into a kwargs dict for ``cls``.
+
+    Validates each key against ``cls.__init__``'s signature. Unknown
+    keys raise ``ValueError`` listing the accepted names so the caller
+    (run_completions.py) can surface a helpful argparse error.
+    """
+    accepted = _accepted_workflow_kwargs(cls)
+    out: dict[str, Any] = {}
+    for raw in pairs:
+        if "=" not in raw:
+            raise ValueError(f"--workflow-arg expects key=value, got {raw!r}")
+        key, value = raw.split("=", 1)
+        if key not in accepted:
+            valid = sorted(k for k in accepted if k != "budget")
+            raise ValueError(
+                f"--workflow-arg {key!r} not accepted by {cls.__name__}; valid keys: {valid}"
+            )
+        if key == "budget":
+            raise ValueError("--workflow-arg cannot set 'budget'; pass --budget instead.")
+        _param, annotation = accepted[key]
+        out[key] = _coerce_workflow_arg(key, value, annotation)
+    return out
+
+
 def _make_workflow_and_task(
     workflow_name: str,
     *,
     budget: int,
+    extra_kwargs: dict[str, Any] | None = None,
 ) -> tuple[Any, CompleteEssayTask]:
     """Instantiate the workflow + task pair for a given run.
 
     Pulls the registered workflow class + defaults from
-    :data:`WORKFLOW_REGISTRY` and merges the runtime ``budget`` in.
+    :data:`WORKFLOW_REGISTRY` and merges the runtime ``budget`` plus
+    any caller-supplied ``extra_kwargs`` (e.g. from ``--workflow-arg``).
     Raises ``KeyError`` (with a list of registered names) if
     ``workflow_name`` isn't registered.
     """
@@ -93,7 +194,7 @@ def _make_workflow_and_task(
         valid = sorted(WORKFLOW_REGISTRY.keys())
         raise KeyError(f"unknown workflow {workflow_name!r}; registered: {valid}")
     cls, defaults = WORKFLOW_REGISTRY[workflow_name]
-    kwargs: dict[str, Any] = {**defaults, "budget": budget}
+    kwargs: dict[str, Any] = {**defaults, **(extra_kwargs or {}), "budget": budget}
     workflow = cls(**kwargs)
     task = CompleteEssayTask()
     return workflow, task
@@ -152,6 +253,7 @@ def _plan_pending(
     workspace_state_hash: str,
     code_fingerprint: dict[str, str],
     prod: bool,
+    workflow_kwargs: dict[str, Any] | None = None,
 ) -> list[_PendingCompletion]:
     """Enumerate pending essay × prefix completions.
 
@@ -163,7 +265,9 @@ def _plan_pending(
     from versus.model_config import get_model_config
     from versus.versus_config import make_versus_config
 
-    workflow, task = _make_workflow_and_task(workflow_name, budget=budget)
+    workflow, task = _make_workflow_and_task(
+        workflow_name, budget=budget, extra_kwargs=workflow_kwargs
+    )
     mc = get_model_config(model, cfg=cfg)
     db = versus_db.get_client(prod=prod)
     pending: list[_PendingCompletion] = []
@@ -221,6 +325,7 @@ async def run_orch_completion(
     concurrency: int | None = None,
     persist: bool = False,
     prod: bool = False,
+    workflow_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Run orch completions for ``essays`` under ``prefix_cfg``.
 
@@ -235,7 +340,7 @@ async def run_orch_completion(
     from rumil.settings import get_settings
     from rumil.versus_runner import run_versus
     from versus.model_config import get_model_config
-    from versus.versus_config import compute_judge_code_fingerprint, compute_workspace_state_hash
+    from versus.versus_config import compute_shared_code_fingerprint, compute_workspace_state_hash
 
     settings = get_settings()
 
@@ -251,7 +356,7 @@ async def run_orch_completion(
     ws_short = project.id[:8]
 
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
-    code_fingerprint = compute_judge_code_fingerprint()
+    code_fingerprint = compute_shared_code_fingerprint()
     mc = get_model_config(model, cfg=cfg)
 
     pending = _plan_pending(
@@ -265,6 +370,7 @@ async def run_orch_completion(
         workspace_state_hash=workspace_state_hash,
         code_fingerprint=code_fingerprint,
         prod=prod,
+        workflow_kwargs=workflow_kwargs,
     )
     if limit is not None:
         pending = pending[:limit]
@@ -301,7 +407,9 @@ async def run_orch_completion(
                 run_id=run_id, prod=prod, project_id=project.id, staged=not persist
             )
             try:
-                workflow, task = _make_workflow_and_task(workflow_name, budget=budget)
+                workflow, task = _make_workflow_and_task(
+                    workflow_name, budget=budget, extra_kwargs=workflow_kwargs
+                )
                 ctx = EssayPrefixContext(
                     essay_id=pc.task.essay_id,
                     prefix_hash=pc.task.prefix_config_hash,

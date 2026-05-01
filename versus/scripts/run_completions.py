@@ -193,6 +193,20 @@ def main() -> None:
             "completion text always lands in versus_texts regardless."
         ),
     )
+    ap.add_argument(
+        "--workflow-arg",
+        action="append",
+        default=[],
+        metavar="key=value",
+        help=(
+            "Orch only: workflow-specific kwarg as key=value. Repeatable. "
+            "Type-coerced from the workflow class's __init__ signature "
+            "(int, bool, str). Use 'none' to clear an inherited default. "
+            "Examples: --workflow-arg n_critics=3 --workflow-arg "
+            "max_rounds=2 --workflow-arg drafter_model=claude-sonnet-4-5. "
+            "Unknown keys are rejected with a list of accepted names."
+        ),
+    )
     args = ap.parse_args()
 
     cfg = config.load(args.config)
@@ -274,6 +288,19 @@ def main() -> None:
         from versus import rumil_completion
 
         model_id = resolve_model_alias(args.model[0])
+
+        # Validate --workflow-arg against the chosen workflow's __init__
+        # before any DB / network work. argparse-level error keeps the
+        # CLI feedback fast and uniform with other flag mistakes.
+        if args.orch not in rumil_completion.WORKFLOW_REGISTRY:
+            valid = sorted(rumil_completion.WORKFLOW_REGISTRY.keys())
+            ap.error(f"--orch {args.orch!r}: unknown workflow; registered: {valid}")
+        workflow_cls, _ = rumil_completion.WORKFLOW_REGISTRY[args.orch]
+        try:
+            workflow_kwargs = rumil_completion._parse_workflow_args(args.workflow_arg, workflow_cls)
+        except ValueError as e:
+            ap.error(str(e))
+
         for prefix_cfg in prefix_cfgs:
             print(f"[prefix] using variant {prefix_cfg.id!r} (db={target}, orch={args.orch!r})")
             asyncio.run(
@@ -290,6 +317,7 @@ def main() -> None:
                     concurrency=args.concurrency,
                     persist=args.persist,
                     prod=args.prod,
+                    workflow_kwargs=workflow_kwargs,
                 )
             )
         return

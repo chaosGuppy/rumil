@@ -32,6 +32,7 @@ from rumil.memos_to_artefacts import (
     draft_memos_from_scan,
     generate_memo_summary,
     load_scan_from_path,
+    publish_memo_index,
     save_memo_summary,
 )
 from rumil.models import (
@@ -132,6 +133,7 @@ _NON_ORCHESTRATOR_FLAGS: tuple[str, ...] = (
     "report_id",
     "scan_memos_id",
     "draft_memos_path",
+    "memos_id",
     "batch_file",
     "run_eval_id",
     "ab_eval_ids",
@@ -695,6 +697,95 @@ async def cmd_draft_memos(
             scan.root_question_headline,
         )
         log.info("Summary saved to: %s", summary_path)
+        index_page_id = await publish_memo_index(summary_text, scan, results, db)
+        if index_page_id is not None:
+            log.info("Memo index page: %s (links to %d memos)", index_page_id[:8], produced)
+
+
+async def cmd_memos(
+    question_id: str,
+    db: DB,
+    *,
+    max_depth: int = 4,
+    indices: Sequence[int] | None = None,
+    budget_per_memo: int = 30,
+    refine_max_rounds: int = 10,
+) -> None:
+    """Scan, draft, and publish a memo index for a completed investigation.
+
+    Single-shot pipeline: scan_for_memos → draft_memos_from_scan →
+    generate_memo_summary → publish_memo_index. The intermediate scan JSON
+    and per-memo markdown files are still written to pages/memo-scans/ and
+    pages/memos/{root_short}/ for human inspection.
+    """
+    question = await db.get_page(question_id)
+    if not question:
+        resolved = await db.resolve_page_id(question_id)
+        if resolved:
+            question = await db.get_page(resolved)
+    if not question:
+        log.error("question '%s' not found. Run --list to see existing questions.", question_id)
+        sys.exit(1)
+
+    if question.project_id and question.project_id != db.project_id:
+        db.project_id = question.project_id
+
+    log.info("Scanning for memo candidates: %s", question.headline[:80])
+    scan = await scan_for_memos(question.id, db, max_depth=max_depth)
+    scan_path = save_memo_scan(scan, question.headline)
+    _reconfigure_stdout_utf8()
+    print(render_scan_summary(scan))
+    log.info("Memo scan saved to: %s", scan_path)
+
+    n_to_draft = len(scan.candidates) if indices is None else len(indices)
+    if n_to_draft == 0:
+        log.info("No memo candidates produced; stopping before drafting.")
+        return
+
+    budget = n_to_draft * budget_per_memo
+    await db.init_budget(budget)
+    log.info(
+        "Drafting %d memo(s) (budget: %d = %d × %d)",
+        n_to_draft,
+        budget,
+        budget_per_memo,
+        n_to_draft,
+    )
+
+    results = await draft_memos_from_scan(
+        scan,
+        db,
+        indices=indices,
+        refine_max_rounds=refine_max_rounds,
+    )
+
+    log.info("--- Draft summary ---")
+    produced = 0
+    for candidate, result, file_path in results:
+        status = "ok" if result.artefact_id else "FAILED"
+        log.info("[%s] %s", status, candidate.title[:70])
+        if result.artefact_id:
+            produced += 1
+            log.info("    artefact: %s", result.artefact_id[:8])
+            if file_path is not None:
+                log.info("    file:     %s", file_path)
+    log.info("Drafted %d/%d memos.", produced, n_to_draft)
+
+    if produced == 0:
+        log.warning("No memos drafted; skipping index.")
+        return
+
+    log.info("Writing summary index...")
+    summary_text = await generate_memo_summary(scan, results, db)
+    summary_path = save_memo_summary(
+        summary_text,
+        scan.root_question_id,
+        scan.root_question_headline,
+    )
+    log.info("Summary saved to: %s", summary_path)
+    index_page_id = await publish_memo_index(summary_text, scan, results, db)
+    if index_page_id is not None:
+        log.info("Memo index page: %s (links to %d memos)", index_page_id[:8], produced)
 
 
 async def cmd_scan_memos(
@@ -1083,6 +1174,19 @@ async def async_main():
         dest="report_id",
         metavar="QUESTION_ID",
         help="Generate a multi-section research report for a question",
+    )
+    parser.add_argument(
+        "--memos",
+        dest="memos_id",
+        metavar="QUESTION_ID",
+        help=(
+            "End-to-end memo pipeline: scan a completed investigation for "
+            "memo-worthy findings, draft each one, write a summary index, "
+            "and publish the index as a SUMMARY page in the workspace "
+            "(linked to the root question and to each memo). Use --memo-indices "
+            "to draft a subset, --budget-per-memo to tune cost. For finer "
+            "control, use --scan-memos and --draft-memos separately."
+        ),
     )
     parser.add_argument(
         "--scan-memos",
@@ -1638,13 +1742,7 @@ async def async_main():
             db,
             max_depth=args.max_depth,
         )
-    elif args.scan_memos_id:
-        await cmd_scan_memos(
-            args.scan_memos_id,
-            db,
-            max_depth=args.max_depth,
-        )
-    elif args.draft_memos_path:
+    elif args.memos_id:
         memo_indices: Sequence[int] | None = None
         if args.memo_indices:
             try:
@@ -1652,10 +1750,31 @@ async def async_main():
             except ValueError:
                 log.error("--memo-indices must be a comma-separated list of integers.")
                 sys.exit(1)
+        await cmd_memos(
+            args.memos_id,
+            db,
+            max_depth=args.max_depth,
+            indices=memo_indices,
+            budget_per_memo=args.budget_per_memo,
+        )
+    elif args.scan_memos_id:
+        await cmd_scan_memos(
+            args.scan_memos_id,
+            db,
+            max_depth=args.max_depth,
+        )
+    elif args.draft_memos_path:
+        memo_indices_for_draft: Sequence[int] | None = None
+        if args.memo_indices:
+            try:
+                memo_indices_for_draft = [int(x) for x in args.memo_indices.split(",") if x.strip()]
+            except ValueError:
+                log.error("--memo-indices must be a comma-separated list of integers.")
+                sys.exit(1)
         await cmd_draft_memos(
             args.draft_memos_path,
             db,
-            indices=memo_indices,
+            indices=memo_indices_for_draft,
             budget_per_memo=args.budget_per_memo,
         )
     elif args.self_improve_id and args.self_improve_id != "__auto__":

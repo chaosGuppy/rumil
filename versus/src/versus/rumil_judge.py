@@ -336,9 +336,9 @@ async def run_ws(
     # the wire. Look up once; the same ModelConfig is passed to the bridge
     # (which threads it into the SDK agent + closer) AND recorded in
     # judge_inputs so the dedup hash forks on registry edits.
-    from versus.model_config import get_model_config
+    from versus.model_config import get_judge_model_config
 
-    mc = get_model_config(model, cfg=cfg)
+    mc = get_judge_model_config(model, cfg=cfg)
     sampling = {
         "temperature": mc.temperature,
         "max_tokens": mc.max_tokens,
@@ -587,9 +587,9 @@ async def run_orch(
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
     # Versus model registry as source of truth (see run_ws above).
-    from versus.model_config import get_model_config
+    from versus.model_config import get_judge_model_config
 
-    mc = get_model_config(model, cfg=cfg)
+    mc = get_judge_model_config(model, cfg=cfg)
     sampling = {
         "temperature": mc.temperature,
         "max_tokens": mc.max_tokens,

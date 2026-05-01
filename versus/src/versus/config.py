@@ -57,7 +57,15 @@ class JudgingCfg(pydantic.BaseModel):
     models: list[str]
     criteria: list[str] = pydantic.Field(default_factory=lambda: ["standalone_quality"])
     include_human_as_contestant: bool = True
-    max_tokens: int = 32000
+    # Purpose-specific override of ``models[<id>].sampling.max_tokens``
+    # for judge calls (blind, ws, orch). Reasoning judges (gpt-5.4,
+    # claude with thinking on) need more output headroom than
+    # completion-purpose calls on the same model. None means "use the
+    # registry's per-model max_tokens"; a value layers as
+    # ``replace(model_config, max_tokens=...)`` at each judge call site.
+    # Applied uniformly across judge models — for per-model judging
+    # caps, upgrade to a nested per-purpose registry shape.
+    max_tokens: int | None = 64000
 
 
 class SamplingCfg(pydantic.BaseModel):

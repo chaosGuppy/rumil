@@ -44,3 +44,25 @@ def get_model_config(model_id: str, *, cfg: versus_config.Config | None = None) 
         max_thinking_tokens=entry.max_thinking_tokens,
         service_tier=entry.service_tier,
     )
+
+
+def get_judge_model_config(
+    model_id: str, *, cfg: versus_config.Config | None = None
+) -> ModelConfig:
+    """``get_model_config`` with the judge-purpose max_tokens override applied.
+
+    Judges typically need more output headroom than completions on the
+    same model (reasoning judges chew through tokens). The registry
+    holds a sane completion-purpose default; this layer replaces
+    ``max_tokens`` with ``cfg.judging.max_tokens`` when set, leaving
+    everything else (temperature, thinking, effort, etc.) intact.
+    """
+    if cfg is None:
+        cfg = versus_config.load("config.yaml")
+    mc = get_model_config(model_id, cfg=cfg)
+    override = cfg.judging.max_tokens
+    if override is not None and override != mc.max_tokens:
+        from dataclasses import replace
+
+        mc = replace(mc, max_tokens=override)
+    return mc

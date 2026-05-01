@@ -117,7 +117,7 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
     )
     from versus import judge as versus_judge
     from versus.judge_config import make_judge_config, project_config_to_axes
-    from versus.model_config import get_model_config
+    from versus.model_config import get_judge_model_config
 
     out: dict[str, set[str]] = {axis: set() for axis in AXES_ORDER}
     thash = compute_tool_prompt_hash()
@@ -127,7 +127,7 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
     for criterion in cfg.judging.criteria:
         for model in cfg.judging.models:
             _, canonical = versus_judge.route_judge_model(model)
-            mc = get_model_config(model, cfg=cfg)
+            mc = get_judge_model_config(model, cfg=cfg)
             samples = []
             blind_cfg, _, _ = make_judge_config(
                 "blind",

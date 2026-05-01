@@ -34,7 +34,7 @@ from rumil.versus_prompts import (
     label_to_verdict,
 )
 from versus import anthropic_client, config, openrouter, versus_db
-from versus.model_config import get_model_config
+from versus.model_config import get_judge_model_config
 from versus.run_summary import RunSummary
 
 Provider = Literal["anthropic", "openrouter"]
@@ -153,7 +153,6 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
     ``workspace_state_hash``: that's a per-row baseline watermark, not
     a staleness signal — every row would flap.
     """
-    from versus.model_config import get_model_config
 
     inputs = row["judge_inputs"]
     is_tools = inputs["variant"] in ("ws", "orch")
@@ -170,7 +169,7 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
         if inputs.get("code_fingerprint") != compute_judge_code_fingerprint():
             return False
     try:
-        expected_mc = get_model_config(inputs["model"], cfg=cfg)
+        expected_mc = get_judge_model_config(inputs["model"], cfg=cfg)
     except KeyError:
         # Model no longer in the registry; row references a config that
         # versus can't reproduce. Stale by definition.
@@ -563,7 +562,7 @@ def run_blind(
             for dimension in effective_dimensions:
                 for base_model in models:
                     provider, canonical_model = route_judge_model(base_model)
-                    mc = get_model_config(base_model, cfg=cfg)
+                    mc = get_judge_model_config(base_model, cfg=cfg)
                     base_config, _, judge_model = build_blind_judge_config(
                         canonical_model, dimension, mc
                     )

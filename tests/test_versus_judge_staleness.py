@@ -18,7 +18,7 @@ import pathlib
 
 import pytest
 from versus.judge_config import compute_judge_code_fingerprint, make_judge_config
-from versus.model_config import get_model_config
+from versus.model_config import get_judge_model_config
 
 from rumil.model_config import ModelConfig
 from versus import config as versus_config
@@ -61,13 +61,13 @@ def _make_ws_row(*, model: str, model_config: ModelConfig) -> dict:
 
 
 def test_blind_row_with_registry_config_is_current(versus_cfg):
-    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    mc = get_judge_model_config("claude-haiku-4-5", cfg=versus_cfg)
     row = _make_blind_row(model="claude-haiku-4-5", model_config=mc)
     assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is True
 
 
 def test_blind_row_with_drifted_temperature_is_stale(versus_cfg):
-    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    mc = get_judge_model_config("claude-haiku-4-5", cfg=versus_cfg)
     drifted = ModelConfig(
         temperature=0.7,
         max_tokens=mc.max_tokens,
@@ -80,7 +80,7 @@ def test_blind_row_with_drifted_temperature_is_stale(versus_cfg):
 
 
 def test_blind_row_with_unexpected_thinking_is_stale(versus_cfg):
-    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    mc = get_judge_model_config("claude-haiku-4-5", cfg=versus_cfg)
     drifted = ModelConfig(
         temperature=mc.temperature,
         max_tokens=mc.max_tokens,
@@ -92,7 +92,7 @@ def test_blind_row_with_unexpected_thinking_is_stale(versus_cfg):
 
 
 def test_ws_row_for_opus_with_registry_config_is_current(versus_cfg):
-    mc = get_model_config("claude-opus-4-7", cfg=versus_cfg)
+    mc = get_judge_model_config("claude-opus-4-7", cfg=versus_cfg)
     row = _make_ws_row(model="claude-opus-4-7", model_config=mc)
     assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is True
 
@@ -101,7 +101,7 @@ def test_ws_row_for_opus_with_dropped_thinking_is_stale(versus_cfg):
     # Captured thinking=None but registry says opus 4.7 should run with
     # adaptive thinking. Stale because the row's recorded condition no
     # longer matches what versus would send today.
-    mc = get_model_config("claude-opus-4-7", cfg=versus_cfg)
+    mc = get_judge_model_config("claude-opus-4-7", cfg=versus_cfg)
     drifted = ModelConfig(
         temperature=mc.temperature,
         max_tokens=mc.max_tokens,
@@ -113,7 +113,7 @@ def test_ws_row_for_opus_with_dropped_thinking_is_stale(versus_cfg):
 
 
 def test_ws_row_for_opus_with_dropped_effort_is_stale(versus_cfg):
-    mc = get_model_config("claude-opus-4-7", cfg=versus_cfg)
+    mc = get_judge_model_config("claude-opus-4-7", cfg=versus_cfg)
     drifted = ModelConfig(
         temperature=mc.temperature,
         max_tokens=mc.max_tokens,
@@ -125,7 +125,7 @@ def test_ws_row_for_opus_with_dropped_effort_is_stale(versus_cfg):
 
 
 def test_unrelated_dimension_returns_false(versus_cfg):
-    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    mc = get_judge_model_config("claude-haiku-4-5", cfg=versus_cfg)
     row = _make_blind_row(model="claude-haiku-4-5", model_config=mc)
     # An unknown dimension makes compute_judge_prompt_hash raise; helper
     # returns False so unknown rows show up as stale rather than crashing.
@@ -135,6 +135,6 @@ def test_unrelated_dimension_returns_false(versus_cfg):
 def test_unknown_model_returns_false(versus_cfg):
     # Row references a model that's been removed from the registry —
     # versus can't reproduce the config, treat as stale.
-    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    mc = get_judge_model_config("claude-haiku-4-5", cfg=versus_cfg)
     row = _make_blind_row(model="not-a-registered-model", model_config=mc)
     assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False

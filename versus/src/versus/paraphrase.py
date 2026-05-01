@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
+from rumil.model_config import ModelConfig
 from versus import anthropic_client, config, jsonl, openrouter
 from versus import essay as versus_essay
 from versus.judge import route_judge_model
@@ -48,9 +49,14 @@ PARAPHRASE_INSTRUCTIONS = (
 HEADING_RE = re.compile(r"^(#{2,4})\s+(.+?)\s*$")
 
 
-def sampling_hash(model_cfg: config.ModelCfg) -> str:
+def sampling_hash(model_config: ModelConfig) -> str:
+    """Stable hash of the per-model registry config + paraphrase prompt
+    version. Forks deterministically when either the model's registry
+    entry (sampling, thinking, effort, etc.) or the paraphrase prompt
+    changes — drives the dedup key on paraphrase rows.
+    """
     payload = {
-        "params": model_cfg.model_dump(exclude={"id"}),
+        "model_config": model_config.to_record_dict(),
         "prompt_version": PARAPHRASE_PROMPT_VERSION,
     }
     blob = json.dumps(payload, sort_keys=True)
@@ -116,9 +122,9 @@ def _call_one_paraphrase(essay, m, sh, k, prompt, client, mc):
         "essay_id": essay.id,
         "model_id": m.id,
         "sampling_hash": sh,
-        # Full ModelConfig snapshot from the versus registry, recorded for
-        # traceability. ModelCfg's old loose fields (temperature/top_p/etc.)
-        # remain in params for back-compat with legacy reads.
+        # Full ModelConfig snapshot from the versus registry — what
+        # actually went on the wire. Plus the loose paraphrase-axis
+        # flag from the completion-models entry.
         "params": {**m.model_dump(exclude={"id"}), "model_config": mc.to_record_dict()},
         "prompt": prompt,
         "response_text": text,
@@ -147,12 +153,12 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay], *, dry_run: bool =
     for essay in essays:
         prompt = PARAPHRASE_INSTRUCTIONS.format(markdown=essay.markdown)
         for m in models:
-            sh = sampling_hash(m)
+            mc = get_model_config(m.id, cfg=cfg)
+            sh = sampling_hash(mc)
             k = paraphrase_key(essay.id, m.id, sh)
             if k in existing:
                 print(f"[skip] paraphrase {k}")
                 continue
-            mc = get_model_config(m.id, cfg=cfg)
             tasks_to_run.append((essay, m, sh, k, prompt, mc))
             existing.add(k)
 

@@ -31,10 +31,13 @@ class PrefixCfg(pydantic.BaseModel):
 
 
 class ModelCfg(pydantic.BaseModel):
+    """Per-model entry in ``completion.models`` — selects the model and its
+    paraphrase axis flag. Sampling / thinking / effort live in the
+    registry under ``Config.models[id]``; we keep this entry minimal so
+    the registry is the unambiguous source of truth.
+    """
+
     id: str
-    temperature: float = 0.7
-    max_tokens: int = 4000
-    top_p: float | None = None
     # When True, this model also produces paraphrases (in addition to
     # completions). Default False so the same list serves the completion
     # axis directly while paraphrases stay opt-in per-model.

@@ -11,9 +11,11 @@ from typing import Any
 
 import httpx
 
+from rumil.model_config import ModelConfig
 from versus import anthropic_client, config, openrouter, prepare, versus_db
 from versus import essay as versus_essay
 from versus.judge import route_judge_model
+from versus.model_config import get_model_config
 from versus.run_summary import RunSummary
 
 HUMAN_SOURCE_ID = "human"
@@ -35,39 +37,21 @@ def extract_continuation(text: str) -> str:
     return text.strip()
 
 
-def build_request_body(
-    model_id: str,
-    prompt: str,
-    *,
-    temperature: float | None,
-    top_p: float | None,
-    max_tokens: int | None,
-    thinking: dict[str, Any] | None,
-    output_config: dict[str, Any] | None,
-) -> dict[str, Any]:
+def build_request_body(model_id: str, prompt: str, *, cfg: ModelConfig) -> dict[str, Any]:
     """The canonical 'what we asked for' dict — used for both dedup hashing and storage.
 
-    Provider-shaped (OpenAI/Anthropic-compatible). Independent of the exact
-    on-wire bytes the SDK constructs (those vary across SDK versions and
-    aren't part of the eval condition).
-
-    ``thinking`` and ``output_config`` always appear in the dict (None or
-    populated) so the canonical hash forks if direct-path callers ever start
-    sending either. Today versus.anthropic_client doesn't include them on the
-    wire — None records the actual condition, not a hypothetical.
+    Provider-shaped (OpenAI/Anthropic-compatible). The recorded request
+    body always includes the full ``ModelConfig`` snapshot
+    (sampling + thinking + effort) so request_hash forks deterministically
+    on any registry change. Independent of the exact on-wire bytes the
+    SDK constructs (those vary across SDK versions and aren't part of
+    the eval condition).
     """
     body: dict[str, Any] = {
         "model": model_id,
         "messages": [{"role": "user", "content": prompt}],
-        "thinking": thinking,
-        "output_config": output_config,
+        "model_config": cfg.to_record_dict(),
     }
-    if temperature is not None:
-        body["temperature"] = temperature
-    if top_p is not None:
-        body["top_p"] = top_p
-    if max_tokens is not None:
-        body["max_tokens"] = max_tokens
     return body
 
 
@@ -107,17 +91,6 @@ def ensure_human_baseline(
         params={"target_words": task.target_words},
     )
     existing.add(key)
-
-
-def _model_sampling(m: config.ModelCfg, canonical_model: str) -> tuple[float | None, float | None]:
-    """Resolve (temperature, top_p) honoring per-provider quirks.
-
-    Opus 4.7 deprecates explicit temperature on Messages (returns 400); top_p
-    behaviour isn't documented, so drop both out of caution.
-    """
-    if canonical_model.startswith("claude-opus-4-7"):
-        return None, None
-    return m.temperature, m.top_p
 
 
 _TRANSIENT_HTTPX_ERRORS = (
@@ -166,33 +139,38 @@ def _call_one_completion(
     request_body,
     client,
     semaphore: threading.BoundedSemaphore,
+    mc: ModelConfig,
 ):
     with semaphore:
-        return _call_one_completion_inner(task, prompt, m, request_body, client)
+        return _call_one_completion_inner(task, prompt, m, request_body, client, mc)
 
 
-def _call_one_completion_inner(task, prompt, m, request_body, client):
+def _call_one_completion_inner(task, prompt, m, request_body, client, mc: ModelConfig):
     t0 = time.time()
     provider, canonical_model = route_judge_model(m.id)
-    temp, top_p = _model_sampling(m, canonical_model)
+    output_cfg = {"effort": mc.effort} if mc.effort is not None else None
 
     def _provider_call():
         if provider == "anthropic":
             r = anthropic_client.chat(
                 model=canonical_model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=temp,
-                max_tokens=m.max_tokens,
-                top_p=top_p,
+                temperature=mc.temperature,
+                max_tokens=mc.max_tokens,
+                top_p=mc.top_p,
+                thinking=mc.thinking,
+                output_config=output_cfg,
                 client=client,
             )
             return r, anthropic_client.extract_text(r)
+        # OpenRouter ignores thinking/output_config; registry entries for
+        # OpenRouter-routed models have them as None anyway.
         r = openrouter.chat(
             model=canonical_model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=m.temperature,
-            max_tokens=m.max_tokens,
-            top_p=m.top_p,
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
             client=client,
         )
         return r, openrouter.extract_text(r)
@@ -214,12 +192,10 @@ def _call_one_completion_inner(task, prompt, m, request_body, client):
             "duration_s": round(time.time() - t0, 2),
             "ts": dt.datetime.utcnow().isoformat() + "Z",
             "provider": provider,
-            # Direct anthropic_client doesn't send a thinking block or
-            # output_config.effort; record both explicitly so future callers
-            # can tell. See rumil.llm.thinking_config / effort_level for the
-            # rules that apply on bridge paths.
-            "thinking": None,
-            "effort": None,
+            # The full ModelConfig snapshot from the versus registry. Folded
+            # into request_hash via build_request_body too; recorded here in
+            # params for direct introspection without re-hashing.
+            "model_config": mc.to_record_dict(),
         },
     }
 
@@ -252,44 +228,32 @@ def run(
             tolerance=cfg.completion.length_tolerance,
         )
         for m in cfg.completion.models:
-            _, canonical_model = route_judge_model(m.id)
-            temp, top_p = _model_sampling(m, canonical_model)
-            # thinking/output_config: direct anthropic_client doesn't send
-            # either today, so the canonical request records None. The fields
-            # sit in the body so a future flip naturally forks request_hash.
-            request_body = build_request_body(
-                m.id,
-                prompt,
-                temperature=temp,
-                top_p=top_p,
-                max_tokens=m.max_tokens,
-                thinking=None,
-                output_config=None,
-            )
+            mc = get_model_config(m.id, cfg=cfg)
+            request_body = build_request_body(m.id, prompt, cfg=mc)
             request_hash = versus_db.compute_canonical_hash(request_body)
             key = (task.essay_id, m.id, request_hash)
             if key in existing:
                 print(f"[skip] {task.essay_id} | {m.id} | {request_hash[:12]}")
                 continue
-            tasks_to_run.append((task, prompt, m, request_body))
+            tasks_to_run.append((task, prompt, m, request_body, mc))
             existing.add(key)
 
     if not tasks_to_run:
         return
     if dry_run:
-        models_in_plan = sorted({m.id for _, _, m, _ in tasks_to_run})
+        models_in_plan = sorted({m.id for _, _, m, _, _ in tasks_to_run})
         print(
             f"[plan] {len(tasks_to_run)} completion calls "
             f"(per_model_concurrency={cfg.per_model_concurrency}, "
             f"models={len(models_in_plan)})"
         )
-        for task, _prompt, m, _rb in tasks_to_run:
+        for task, _prompt, m, _rb, _mc in tasks_to_run:
             print(f"  * {task.essay_id} | {m.id}")
         return
     # Per-model semaphores so a slow reasoning model can't block fast lanes.
     semaphores: dict[str, threading.BoundedSemaphore] = {
         m_id: threading.BoundedSemaphore(cfg.per_model_concurrency)
-        for m_id in {m.id for _, _, m, _ in tasks_to_run}
+        for m_id in {m.id for _, _, m, _, _ in tasks_to_run}
     }
     total_workers = cfg.per_model_concurrency * len(semaphores)
     print(
@@ -302,8 +266,8 @@ def run(
     try:
         with ThreadPoolExecutor(max_workers=total_workers) as pool:
             futures = {
-                pool.submit(_call_one_completion, t, p, m, rb, http, semaphores[m.id]): (t, m)
-                for (t, p, m, rb) in tasks_to_run
+                pool.submit(_call_one_completion, t, p, m, rb, http, semaphores[m.id], mc): (t, m)
+                for (t, p, m, rb, mc) in tasks_to_run
             }
             for fut in as_completed(futures):
                 t_essay_id, m = futures[fut][0].essay_id, futures[fut][1]

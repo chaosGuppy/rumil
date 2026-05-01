@@ -25,6 +25,7 @@ from typing import Any, Literal
 
 import httpx
 
+from rumil.model_config import ModelConfig
 from rumil.versus_prompts import (
     build_system_prompt,
     compute_prompt_hash,
@@ -33,6 +34,7 @@ from rumil.versus_prompts import (
     label_to_verdict,
 )
 from versus import anthropic_client, config, openrouter, versus_db
+from versus.model_config import get_model_config
 from versus.run_summary import RunSummary
 
 Provider = Literal["anthropic", "openrouter"]
@@ -102,22 +104,13 @@ def route_judge_model(model: str) -> tuple[Provider, str]:
     return ("openrouter", model)
 
 
-def _sampling_for(provider: Provider, canonical_model: str, max_tokens: int) -> dict:
-    """Per-provider sampling defaults.
-
-    Anthropic-direct: temperature is omitted for opus 4.7 (the Messages API
-    deprecated the param and 400s on it); 0.0 elsewhere. OpenRouter: always
-    0.0. Folded into the judge_inputs blob so a topup at a different temp
-    forks the hash and re-judges.
-    """
-    if provider == "anthropic":
-        use_temp = None if canonical_model.startswith("claude-opus-4-7") else 0.0
-        return {"temperature": use_temp, "max_tokens": max_tokens}
-    return {"temperature": JUDGE_TEMPERATURE, "max_tokens": max_tokens}
-
-
 def build_blind_judge_config(
-    canonical_model: str, dimension: str, sampling: dict
+    canonical_model: str,
+    dimension: str,
+    sampling: dict,
+    *,
+    thinking: dict | None = None,
+    effort: str | None = None,
 ) -> tuple[dict, str, str]:
     """Build ``(config, config_hash, judge_model)`` for one blind judgment.
 
@@ -126,20 +119,23 @@ def build_blind_judge_config(
     config dict and the legacy-shape ``judge_model`` come from one source
     of truth. The returned ``config_hash`` is computed independently of
     DB-side text_a_id/text_b_id; callers fold those in before persisting.
+
+    ``thinking`` and ``effort`` come from the versus model registry —
+    blind path now applies them on the wire (via versus.anthropic_client),
+    so judge_inputs records what was actually sent. Defaults are None
+    for the no-thinking / no-effort case (most non-claude models, plus
+    haiku and older sonnet).
     """
     from versus.judge_config import make_judge_config
 
-    # Blind path uses versus.anthropic_client directly, which never sends a
-    # thinking block or output_config.effort. Recording None explicitly so the
-    # dedup hash forks if blind ever starts sending either.
     return make_judge_config(
         "blind",
         model=canonical_model,
         dimension=dimension,
         sampling=sampling,
         prompt_hash=compute_judge_prompt_hash(dimension, with_tools=False),
-        thinking=None,
-        effort=None,
+        thinking=thinking,
+        effort=effort,
     )
 
 
@@ -357,6 +353,7 @@ class _BlindTask:
     user_prompt: str
     order: Order
     sampling: dict
+    model_config: ModelConfig
     judge_inputs: dict  # canonical condition blob — hash is judge_inputs_hash
     judge_inputs_hash: str
 
@@ -414,25 +411,33 @@ def _build_judge_request(
 def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
     """Run one blind judgment, dispatching by provider, return DB-shaped row."""
     t0 = time.time()
+    mc = task.model_config
+    output_cfg = {"effort": mc.effort} if mc.effort is not None else None
     if task.provider == "anthropic":
         resp = anthropic_client.chat(
             model=task.canonical_model,
             system=task.system_prompt,
             messages=[{"role": "user", "content": task.user_prompt}],
-            temperature=task.sampling["temperature"],
-            max_tokens=task.sampling["max_tokens"],
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
+            thinking=mc.thinking,
+            output_config=output_cfg,
             client=client,
         )
         text = anthropic_client.extract_text(resp)
     else:
+        # OpenRouter path: thinking / output_config aren't supported here;
+        # registry entries for OpenRouter-routed judges set them to None.
         resp = openrouter.chat(
             model=task.canonical_model,
             messages=[
                 {"role": "system", "content": task.system_prompt},
                 {"role": "user", "content": task.user_prompt},
             ],
-            temperature=task.sampling["temperature"],
-            max_tokens=task.sampling["max_tokens"],
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
             client=client,
         )
         text = openrouter.extract_text(resp)
@@ -561,9 +566,17 @@ def run_blind(
             for dimension in effective_dimensions:
                 for base_model in models:
                     provider, canonical_model = route_judge_model(base_model)
-                    sampling = _sampling_for(provider, canonical_model, cfg.judging.max_tokens)
+                    mc = get_model_config(base_model, cfg=cfg)
+                    sampling = {
+                        "temperature": mc.temperature,
+                        "max_tokens": mc.max_tokens,
+                    }
                     base_config, _, judge_model = build_blind_judge_config(
-                        canonical_model, dimension, sampling
+                        canonical_model,
+                        dimension,
+                        sampling,
+                        thinking=mc.thinking,
+                        effort=mc.effort,
                     )
                     judge_inputs, judge_inputs_hash = _build_judge_inputs(
                         base_config, src_a.text_id, src_b.text_id, order
@@ -603,6 +616,7 @@ def run_blind(
                             user_prompt=user_prompt,
                             order=order,
                             sampling=sampling,
+                            model_config=mc,
                             judge_inputs=judge_inputs,
                             judge_inputs_hash=judge_inputs_hash,
                         )

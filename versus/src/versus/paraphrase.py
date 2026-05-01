@@ -21,6 +21,7 @@ import httpx
 from versus import anthropic_client, config, jsonl, openrouter
 from versus import essay as versus_essay
 from versus.judge import route_judge_model
+from versus.model_config import get_model_config
 from versus.run_summary import RunSummary
 from versus.versions import PARAPHRASE_PROMPT_VERSION
 
@@ -83,22 +84,19 @@ def markdown_to_blocks(md: str) -> list[versus_essay.Block]:
     return out
 
 
-def _call_one_paraphrase(essay, m, sh, k, prompt, client):
+def _call_one_paraphrase(essay, m, sh, k, prompt, client, mc):
     t0 = time.time()
     provider, canonical_model = route_judge_model(m.id)
     if provider == "anthropic":
-        # Opus 4.7 deprecates explicit temperature; drop top_p too out of caution
-        # (see complete.py for context).
-        if canonical_model.startswith("claude-opus-4-7"):
-            temp, top_p = None, None
-        else:
-            temp, top_p = m.temperature, m.top_p
+        output_cfg = {"effort": mc.effort} if mc.effort is not None else None
         resp = anthropic_client.chat(
             model=canonical_model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=temp,
-            max_tokens=m.max_tokens,
-            top_p=top_p,
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
+            thinking=mc.thinking,
+            output_config=output_cfg,
             client=client,
         )
         text = anthropic_client.extract_text(resp)
@@ -106,9 +104,9 @@ def _call_one_paraphrase(essay, m, sh, k, prompt, client):
         resp = openrouter.chat(
             model=canonical_model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=m.temperature,
-            max_tokens=m.max_tokens,
-            top_p=m.top_p,
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
             client=client,
         )
         text = openrouter.extract_text(resp)
@@ -118,11 +116,10 @@ def _call_one_paraphrase(essay, m, sh, k, prompt, client):
         "essay_id": essay.id,
         "model_id": m.id,
         "sampling_hash": sh,
-        # thinking=None / effort=None: paraphrase routes through
-        # anthropic_client/openrouter directly, neither of which sends a
-        # thinking block or output_config.effort today. Record explicitly so a
-        # future change is visible from the row.
-        "params": {**m.model_dump(exclude={"id"}), "thinking": None, "effort": None},
+        # Full ModelConfig snapshot from the versus registry, recorded for
+        # traceability. ModelCfg's old loose fields (temperature/top_p/etc.)
+        # remain in params for back-compat with legacy reads.
+        "params": {**m.model_dump(exclude={"id"}), "model_config": mc.to_record_dict()},
         "prompt": prompt,
         "response_text": text,
         "response_words": len(text.split()),
@@ -155,14 +152,15 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay], *, dry_run: bool =
             if k in existing:
                 print(f"[skip] paraphrase {k}")
                 continue
-            tasks_to_run.append((essay, m, sh, k, prompt))
+            mc = get_model_config(m.id, cfg=cfg)
+            tasks_to_run.append((essay, m, sh, k, prompt, mc))
             existing.add(k)
 
     if not tasks_to_run:
         return
     if dry_run:
         print(f"[plan] {len(tasks_to_run)} paraphrase calls (concurrency={cfg.concurrency})")
-        for e, m, _sh, k, _p in tasks_to_run:
+        for e, m, _sh, k, _p, _mc in tasks_to_run:
             print(f"  * {e.id} | {m.id} | {k}")
         return
     print(f"[run ] {len(tasks_to_run)} paraphrase calls (concurrency={cfg.concurrency})")
@@ -171,8 +169,8 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay], *, dry_run: bool =
     try:
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             futures = {
-                pool.submit(_call_one_paraphrase, e, m, sh, k, p, client): k
-                for (e, m, sh, k, p) in tasks_to_run
+                pool.submit(_call_one_paraphrase, e, m, sh, k, p, client, mc): k
+                for (e, m, sh, k, p, mc) in tasks_to_run
             }
             for fut in as_completed(futures):
                 k = futures[fut]

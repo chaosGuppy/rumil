@@ -1,11 +1,10 @@
 """Pure-logic tests for rumil.versus_bridge.
 
 No LLM and no DB — everything here is fast and deterministic. The
-LLM-dependent code paths (judge_pair_ws_aware / judge_pair_orch) are
-exercised via the CLI manually; unit tests of those would either mock
-the agent (coupling to internal structure) or spend real tokens per
-run (slow, expensive, and mostly validating the SDK layer, not our
-code).
+LLM-dependent code path (judge_pair_orch) is exercised via the CLI
+manually; unit tests of it would either mock the agent (coupling to
+internal structure) or spend real tokens per run (slow, expensive, and
+mostly validating the SDK layer, not our code).
 
 Focus here is the surfaces that carry real correctness risk:
 

@@ -1,23 +1,22 @@
-"""Workspace-aware pairwise judging via rumil's agent/orchestrator paths.
+"""Workspace-aware pairwise judging via rumil's orchestrator path.
 
-Two variants, both writing rows into ``versus_judgments`` with
-``judge_model`` strings that distinguish them:
+One variant, writing rows into ``versus_judgments`` with a
+``judge_model`` string that identifies it:
 
-- ``ws`` (``rumil:ws:<model>:<ws>:<task>``): one VERSUS_JUDGE agent call
-  via rumil with single-arm workspace-exploration tools against a
-  user-chosen rumil workspace. Task is an essay-adapted rumil dimension
-  (``general_quality``, ``grounding``).
-
-- ``orch`` (``rumil:orch:<model>:<ws>:b<N>:<task>``): full
+- ``orch`` (``rumil:orch:<model>:<dim>:c<hash8>``): full
   TwoPhaseOrchestrator run against a per-pair Question, then a closing
   VERSUS_JUDGE call that emits the 7-point preference label. Budget is
   the orchestrator's research call cap (minimum: 4).
 
-Both populate ``project_id`` / ``run_id`` / ``rumil_call_id`` on the
+Populates ``project_id`` / ``run_id`` / ``rumil_call_id`` on the
 judgment row so the versus UI can surface trace URLs back to rumil.
 
-The blind (no-tools) judge paths — formerly ``text`` and ``rumil-text``
-— moved into :func:`versus.judge.run_blind`.
+The blind (no-tools) judge paths live in :func:`versus.judge.run_blind`.
+The earlier ``ws`` variant (one SDK agent call with workspace-exploration
+tools, no orchestrator) was removed — a low-budget TwoPhase run subsumes
+the agentic-baseline use case. Historical ``rumil:ws:*`` rows in
+``versus_judgments`` are preserved and continue to render through
+``versus.analyze`` / ``versus.mainline``.
 """
 
 from __future__ import annotations
@@ -54,8 +53,8 @@ class _PendingPair:
 
 
 # Returned per pending judgment by _plan_rumil_pairs. The variant arg
-# (ws/orch) lives on the make_judge_config call upstream — we just thread
-# the resulting base_config through so callers can fold in text_a_id /
+# lives on the make_judge_config call upstream — we just thread the
+# resulting base_config through so callers can fold in text_a_id /
 # text_b_id at insert time.
 @dataclass
 class _PendingJudgment:
@@ -260,260 +259,6 @@ def _resolve_task_body(task_name: str, is_versus_criterion: bool) -> str:
     return get_rumil_dimension_body(task_name)
 
 
-async def run_ws(
-    cfg: config.Config,
-    *,
-    workspace: str,
-    model: str,
-    dimensions: Sequence[str],
-    limit: int | None = None,
-    dry_run: bool = False,
-    concurrency: int | None = None,
-    essay_ids: Sequence[str] | None = None,
-    contestants: Sequence[str] | None = None,
-    vs_human: bool = False,
-    current_only: bool = False,
-    prefix_cfg: config.PrefixCfg | None = None,
-    persist: bool = False,
-    prod: bool = False,
-) -> None:
-    """Run the workspace-aware rumil judge against pending pairs.
-
-    ``model`` is the Anthropic model id the bridge runs the agent on;
-    passed explicitly so versus controls it without env-var ordering
-    gymnastics. It's the caller's job to resolve aliases (opus/sonnet/
-    haiku) to full ids.
-
-    ``dimensions`` is a list of essay-adapted rumil dimension names
-    (e.g. ``general_quality``, ``grounding``) -- each maps to a prompt
-    at ``prompts/versus-<name>.md``.
-    """
-    import uuid
-
-    from rumil.database import DB
-    from rumil.settings import get_settings
-    from rumil.versus_bridge import PairContext, judge_pair_ws_aware
-
-    settings = get_settings()
-    tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions]
-    if not tasks_spec:
-        print("[info] no dimensions specified for ws variant; nothing to do")
-        return
-
-    # Probe DB just for project lookup — projects live outside any run's
-    # staged view, and the per-pair DBs below inherit db.project_id through
-    # their explicit constructor arg.
-    probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=prod, staged=False)
-    project = await _resolve_workspace(probe_db, workspace)
-    probe_db.project_id = project.id
-    ws_short = project.id[:8]
-
-    task_body_cache = {(t, v): _resolve_task_body(t, v) for t, v in tasks_spec}
-    from rumil.versus_bridge import (
-        compute_pair_surface_hash,
-        compute_prompt_hash,
-        compute_tool_prompt_hash,
-    )
-    from versus.judge_config import (
-        compute_judge_code_fingerprint,
-        compute_workspace_state_hash,
-        make_judge_config,
-    )
-
-    prompt_hash_cache = {
-        k: compute_prompt_hash(b, with_tools=True) for k, b in task_body_cache.items()
-    }
-    thash = compute_tool_prompt_hash()
-    qhash = compute_pair_surface_hash()
-    code_fingerprint = compute_judge_code_fingerprint()
-    # Cheap watermark over baseline pages + links + mutation events so
-    # ws judgments fork config_hash when the underlying workspace
-    # mutates between runs. Read on the non-staged probe DB so two
-    # concurrent pairs see the same baseline.
-    workspace_state_hash = await compute_workspace_state_hash(probe_db)
-
-    # Versus model registry is the source of truth for what versus sends on
-    # the wire. Look up once; the same ModelConfig is passed to the bridge
-    # (which threads it into the SDK agent + closer) AND recorded in
-    # judge_inputs so the dedup hash forks on registry edits.
-    from versus.model_config import get_judge_model_config
-
-    mc = get_judge_model_config(model, cfg=cfg)
-
-    def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
-        dim = f"versus_{task_name}" if is_versus_crit else task_name
-        ph = prompt_hash_cache[(task_name, is_versus_crit)]
-        return make_judge_config(
-            "ws",
-            model=model,
-            dimension=dim,
-            model_config=mc,
-            prompt_hash=ph,
-            tool_prompt_hash=thash,
-            pair_surface_hash=qhash,
-            workspace_id=ws_short,
-            code_fingerprint=code_fingerprint,
-            workspace_state_hash=workspace_state_hash,
-        )
-
-    tasks = _plan_rumil_pairs(
-        cfg,
-        tasks_spec,
-        _compose_config,
-        essay_ids=essay_ids,
-        contestants=contestants,
-        vs_human=vs_human,
-        current_only=current_only,
-        prefix_cfg=prefix_cfg,
-        prod=prod,
-    )
-    if limit is not None:
-        tasks = tasks[:limit]
-    if not tasks:
-        print("[info] no pending rumil ws judgments")
-        return
-
-    effective_concurrency = concurrency if concurrency is not None else 2
-    print(
-        f"[plan] {len(tasks)} rumil ws-aware judgments "
-        f"(model={model}, workspace={workspace}, concurrency={effective_concurrency})"
-    )
-    if dry_run:
-        for pj in tasks[:20]:
-            kind = "versus" if pj.is_versus_crit else "rumil_dim"
-            pair = pj.pair
-            print(
-                f"  * [{kind}:{pj.task_name}] {pair.essay_id} {pair.source_a_id} vs "
-                f"{pair.source_b_id} -> {pj.judge_model}"
-            )
-        if len(tasks) > 20:
-            print(f"  ... and {len(tasks) - 20} more")
-        return
-
-    sem = asyncio.Semaphore(effective_concurrency)
-    done = 0
-    total = len(tasks)
-    lock = asyncio.Lock()
-    summary = RunSummary()
-
-    versus_client = versus_db.get_client(prod=prod)
-
-    async def _exec_one(pj: _PendingJudgment) -> None:
-        nonlocal done
-        pair = pj.pair
-        task_name = pj.task_name
-        is_versus_crit = pj.is_versus_crit
-        async with sem:
-            t0 = time.time()
-            # Each pair gets its own run_id + its own DB. Staging is
-            # per-run, concurrent pairs can't contaminate each other's
-            # staged views, the per-pair trace URL points at just that
-            # pair's VERSUS_JUDGE call, and the MutationState cache on
-            # the shared DB no longer thrashes across pairs.
-            run_id = str(uuid.uuid4())
-            db = await DB.create(
-                run_id=run_id, prod=prod, project_id=project.id, staged=not persist
-            )
-            try:
-                task_body = _resolve_task_body(task_name, is_versus_crit)
-                effective_task = f"versus_{task_name}" if is_versus_crit else task_name
-                pair_ctx = PairContext(
-                    essay_id=pair.essay_id,
-                    prefix_hash=pair.prefix_hash,
-                    prefix_text=pair.prefix_text,
-                    continuation_a_id=pair.display_first_id,
-                    continuation_a_text=pair.display_first_text,
-                    continuation_b_id=pair.display_second_id,
-                    continuation_b_text=pair.display_second_text,
-                    source_a_id=pair.source_a_id,
-                    source_b_id=pair.source_b_id,
-                    task_name=effective_task,
-                )
-                # runs.config is surfaced via the traces UI but is NOT
-                # fed to the agent (agent reads pages via load_page /
-                # search / explore_subgraph, never the runs row). Safe
-                # to embed per-pair metadata for forensic traceability.
-                await db.create_run(
-                    name=f"versus-rumil-ws:{workspace}:{pair.essay_id}",
-                    question_id=None,
-                    config={
-                        "origin": "versus",
-                        "workspace": workspace,
-                        "task_name": effective_task,
-                        "essay_id": pair.essay_id,
-                        # ``judge_config`` already carries the full ModelConfig
-                        # under judge_config['model_config'] (max_tokens,
-                        # thinking, effort, etc.); no need to duplicate
-                        # individual knobs at the runs.config top level.
-                        "judge_config": pj.base_config,
-                        # Canonical alphabetical order for dedup-key
-                        # purposes, NOT display order. display_first /
-                        # order live on the judgment row in
-                        # versus_judgments — intentionally not duplicated
-                        # here to keep runs.config blind-equivalent with
-                        # page.extra if a future change routes config
-                        # into agent context.
-                        "canonical_source_first": pair.source_a_id,
-                        "canonical_source_second": pair.source_b_id,
-                        "staged": not persist,
-                    },
-                )
-                print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
-                result = await judge_pair_ws_aware(
-                    db, pair_ctx, task_body=task_body, model=model, model_config=mc
-                )
-            except Exception as e:
-                print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
-                summary.record_error()
-                return
-            criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
-            row = _mirror_row(
-                pair,
-                pj.judge_model,
-                criterion_value,
-                result,
-                t0=t0,
-                judge_inputs=pj.base_config,
-                variant="ws",
-            )
-            async with lock:
-                versus_db.insert_judgment(
-                    versus_client,
-                    essay_id=row["essay_id"],
-                    prefix_hash=row["prefix_hash"],
-                    source_a=row["source_a"],
-                    source_b=row["source_b"],
-                    display_first=row["display_first"],
-                    text_a_id=row["text_a_id"],
-                    text_b_id=row["text_b_id"],
-                    criterion=row["criterion"],
-                    variant=row["variant"],
-                    judge_model=row["judge_model"],
-                    judge_inputs=row["judge_inputs"],
-                    verdict=row["verdict"],
-                    reasoning_text=row["reasoning_text"],
-                    preference_label=row["preference_label"],
-                    duration_s=row["duration_s"],
-                    project_id=project.id,
-                    run_id=run_id,
-                    rumil_call_id=row["rumil_call_id"],
-                    rumil_question_id=row["rumil_question_id"],
-                    rumil_cost_usd=row["rumil_cost_usd"],
-                )
-                done += 1
-                summary.record_success(cost_usd=result.cost_usd or 0.0)
-                print(
-                    f"[done {done}/{total}] {pair.essay_id} {pair.source_a_id} vs "
-                    f"{pair.source_b_id} [{criterion_value}] "
-                    f"label={result.preference_label!r} trace={result.trace_url}"
-                )
-
-    try:
-        await asyncio.gather(*[_exec_one(pj) for pj in tasks])
-    finally:
-        summary.print("ws judgments")
-
-
 async def run_orch(
     cfg: config.Config,
     *,
@@ -583,7 +328,10 @@ async def run_orch(
     code_fingerprint = compute_judge_code_fingerprint()
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
-    # Versus model registry as source of truth (see run_ws above).
+    # Versus model registry is the source of truth for what versus sends
+    # on the wire. Look up once; the same ModelConfig is passed to the
+    # bridge (which threads it into the orch closer + nested calls) AND
+    # recorded in judge_inputs so the dedup hash forks on registry edits.
     from versus.model_config import get_judge_model_config
 
     mc = get_judge_model_config(model, cfg=cfg)
@@ -689,8 +437,11 @@ async def run_orch(
                         "workspace": workspace,
                         "task_name": effective_task,
                         "essay_id": pair.essay_id,
-                        # See run_ws above: judge_config carries the full
-                        # ModelConfig already.
+                        # judge_config carries the full ModelConfig
+                        # already (under judge_config['model_config'] —
+                        # max_tokens, thinking, effort, etc.); no need to
+                        # duplicate individual knobs at the runs.config
+                        # top level.
                         "judge_config": pj.base_config,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /

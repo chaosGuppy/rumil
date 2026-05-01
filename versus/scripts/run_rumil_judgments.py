@@ -1,6 +1,6 @@
 """Run pairwise versus judgments.
 
-Three modes:
+Two modes:
 
 - **Blind** (default, no ``--variant``): single-turn LLM call with the
   blind shell — no tools, no DB, no workspace. Each ``--model`` is
@@ -8,13 +8,12 @@ Three modes:
   OpenRouter. This subsumes the previous ``text`` / ``rumil-text`` /
   OpenRouter judge paths into one entry point.
 
-- ``--variant ws``: one VERSUS_JUDGE agent call per pair via rumil's
-  SDK agent, with single-arm workspace-exploration tools against a
-  user-chosen rumil workspace. Requires ``--workspace`` + running
-  Supabase.
-
 - ``--variant orch``: full TwoPhaseOrchestrator run per pair + closing
   call. Expensive. Requires ``--workspace`` + running Supabase.
+
+The earlier ``--variant ws`` path was removed; a low-budget orch run
+covers the agentic-baseline use case. Historical ``rumil:ws:*`` rows
+in ``versus_judgments`` are preserved.
 
 Env resolution for ANTHROPIC_API_KEY / OPENROUTER_API_KEY: versus/.env,
 then <rumil-root>/.env, then the process environment.
@@ -71,11 +70,11 @@ def main() -> None:
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--variant",
-        choices=("ws", "orch"),
+        choices=("orch",),
         default=None,
         help=(
             "Tool-using variant. Omit for the default blind judge path. "
-            "ws/orch require --workspace and running Supabase."
+            "orch requires --workspace and running Supabase."
         ),
     )
     ap.add_argument(
@@ -88,14 +87,14 @@ def main() -> None:
             "(claude-*), or an OpenRouter id (provider/model). For the "
             "default blind path: repeat to judge with multiple models; "
             "claude-* go direct to Anthropic, others via OpenRouter; "
-            "defaults to cfg.judging.models. For ws/orch: pass at most "
+            "defaults to cfg.judging.models. For orch: pass at most "
             "one (default: opus)."
         ),
     )
     ap.add_argument(
         "--workspace",
         default=None,
-        help="Rumil workspace (project) name for ws/orch variants. Required for those variants; no default.",
+        help="Rumil workspace (project) name for the orch variant. Required for that variant; no default.",
     )
     ap.add_argument(
         "--dimension",
@@ -123,7 +122,7 @@ def main() -> None:
         help=(
             "Concurrent judgments per LLM call. If unset, the variant picks "
             "its own default: blind path = cfg.per_model_concurrency per "
-            "model (usually 8); ws = 2."
+            "model (usually 8); orch = 1 (serial)."
         ),
     )
     ap.add_argument("--limit", type=int, default=None, help="Cap on number of judgments.")
@@ -132,7 +131,7 @@ def main() -> None:
         "--essay",
         action="append",
         default=None,
-        help="Restrict planning to specified essay_id(s). Repeatable. Honored on blind, ws, and orch.",
+        help="Restrict planning to specified essay_id(s). Repeatable. Honored on blind and orch.",
     )
     ap.add_argument(
         "--include-stale",
@@ -150,13 +149,13 @@ def main() -> None:
         default=None,
         help=(
             "Comma-separated source_ids; only emit pairs where both sides "
-            "are in this list. Honored on blind, ws, and orch."
+            "are in this list. Honored on blind and orch."
         ),
     )
     ap.add_argument(
         "--vs-human",
         action="store_true",
-        help="Only emit pairs where one side is 'human'. ws/orch only.",
+        help="Only emit pairs where one side is 'human'. orch only.",
     )
     ap.add_argument(
         "--current-only",
@@ -179,7 +178,7 @@ def main() -> None:
             "variant are excluded too. Without this flag, every prefix_hash "
             "present in versus_texts is eligible. Sibling variants live "
             "under `prefix_variants:` in config.yaml; pass their `id`. "
-            "ws/orch variants currently take at most one --prefix-label."
+            "orch currently takes at most one --prefix-label."
         ),
     )
     ap.add_argument(
@@ -187,10 +186,10 @@ def main() -> None:
         action="store_true",
         help=(
             "Target the production Supabase database for versus_texts / "
-            "versus_judgments AND, on ws/orch, the rumil workspace + run "
-            "tables (default: local for both). On ws/orch, the workspace "
+            "versus_judgments AND, on orch, the rumil workspace + run "
+            "tables (default: local for both). On orch, the workspace "
             "named via --workspace must already exist on the target DB "
-            "(typo protection — create via rumil main.py first). ws/orch "
+            "(typo protection — create via rumil main.py first). orch "
             "runs are still staged by default; pass --persist to write the "
             "per-pair Question + research subtree to baseline."
         ),
@@ -200,9 +199,9 @@ def main() -> None:
         action="store_true",
         help=(
             "Persist versus-created pages to the workspace baseline instead "
-            "of staging them (ws/orch only). Default is staged: the agent "
+            "of staging them (orch only). Default is staged: the agent "
             "still reads baseline workspace material but its Question pages "
-            "and (for orch) research subtree are scoped to the run's staged "
+            "and the orch research subtree are scoped to the run's staged "
             "view -- invisible to other readers of the workspace."
         ),
     )
@@ -277,45 +276,25 @@ def main() -> None:
 
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
 
-    if args.variant == "ws":
-        asyncio.run(
-            rumil_judge.run_ws(
-                cfg,
-                workspace=args.workspace,
-                model=model_id,
-                dimensions=dimensions,
-                limit=args.limit,
-                dry_run=args.dry_run,
-                concurrency=args.concurrency,
-                essay_ids=essay_ids,
-                contestants=contestants,
-                vs_human=args.vs_human,
-                current_only=args.current_only,
-                prefix_cfg=prefix_cfg_one,
-                persist=args.persist,
-                prod=args.prod,
-            )
+    asyncio.run(
+        rumil_judge.run_orch(
+            cfg,
+            workspace=args.workspace,
+            model=model_id,
+            dimensions=dimensions,
+            budget=args.budget,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            concurrency=args.concurrency,
+            essay_ids=essay_ids,
+            contestants=contestants,
+            vs_human=args.vs_human,
+            current_only=args.current_only,
+            prefix_cfg=prefix_cfg_one,
+            persist=args.persist,
+            prod=args.prod,
         )
-    elif args.variant == "orch":
-        asyncio.run(
-            rumil_judge.run_orch(
-                cfg,
-                workspace=args.workspace,
-                model=model_id,
-                dimensions=dimensions,
-                budget=args.budget,
-                limit=args.limit,
-                dry_run=args.dry_run,
-                concurrency=args.concurrency,
-                essay_ids=essay_ids,
-                contestants=contestants,
-                vs_human=args.vs_human,
-                current_only=args.current_only,
-                prefix_cfg=prefix_cfg_one,
-                persist=args.persist,
-                prod=args.prod,
-            )
-        )
+    )
 
 
 if __name__ == "__main__":

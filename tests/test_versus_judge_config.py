@@ -40,17 +40,13 @@ _BLIND_KW: dict[str, Any] = {
     "prompt_hash": "deadbeef",
 }
 
-_WS_KW: dict[str, Any] = {
+_ORCH_KW: dict[str, Any] = {
     **_BLIND_KW,
     "tool_prompt_hash": "11111111",
     "pair_surface_hash": "22222222",
     "workspace_id": "abcd1234",
     "code_fingerprint": {"src/rumil/versus_bridge.py": "aaaaaaaa"},
     "workspace_state_hash": "0011223344556677",
-}
-
-_ORCH_KW: dict[str, Any] = {
-    **_WS_KW,
     "budget": 4,
     "closer_hash": "33333333",
 }
@@ -119,35 +115,28 @@ def test_orch_config_hash_changes_when_code_fingerprint_changes():
 
 
 @pytest.mark.parametrize(
-    ("variant", "missing"),
+    "missing",
     (
-        ("ws", "tool_prompt_hash"),
-        ("ws", "pair_surface_hash"),
-        ("ws", "workspace_id"),
-        ("ws", "code_fingerprint"),
-        ("ws", "workspace_state_hash"),
-        ("orch", "budget"),
-        ("orch", "closer_hash"),
-        ("orch", "code_fingerprint"),
-        ("orch", "workspace_state_hash"),
+        "tool_prompt_hash",
+        "pair_surface_hash",
+        "workspace_id",
+        "code_fingerprint",
+        "workspace_state_hash",
+        "budget",
+        "closer_hash",
     ),
 )
-def test_missing_required_arg_raises_value_error(variant, missing):
-    kw = dict(_ORCH_KW if variant == "orch" else _WS_KW)
+def test_missing_required_arg_raises_value_error(missing):
+    kw = dict(_ORCH_KW)
     kw[missing] = None
     with pytest.raises(ValueError):
-        make_judge_config(variant, **kw)
+        make_judge_config("orch", **kw)
 
 
 def test_blind_judge_model_display_shape():
     _, ch, jm = make_judge_config("blind", **_BLIND_KW)
     # New display shape: blind:<model>:<dim>:c<hash8>
     assert jm == f"blind:claude-opus-4-7:general_quality:c{ch[:8]}"
-
-
-def test_ws_judge_model_display_shape():
-    _, ch, jm = make_judge_config("ws", **_WS_KW)
-    assert jm == f"rumil:ws:claude-opus-4-7:general_quality:c{ch[:8]}"
 
 
 def test_orch_judge_model_display_shape():
@@ -179,12 +168,12 @@ def test_compute_file_fingerprint_records_missing_paths_as_empty(tmp_path, monke
 
 
 def test_summarize_provenance_reads_from_config_when_present():
-    cfg, ch, jm = make_judge_config("ws", **_WS_KW)
+    cfg, ch, jm = make_judge_config("orch", **_ORCH_KW)
     rows = [
         {"prefix_config_hash": "ph1", "judge_model": jm, "config": cfg, "config_hash": ch},
     ]
     out = versus_mainline.summarize_provenance(rows)
-    assert out["judge_path"] == {"rumil:ws": 1}
+    assert out["judge_path"] == {"rumil:orch": 1}
     assert out["judge_workspace_id"] == {"abcd1234": 1}
     assert out["judge_pair_hash"] == {"q22222222": 1}
 
@@ -193,7 +182,6 @@ def test_summarize_provenance_reads_from_config_when_present():
     ("variant", "kw", "expected_keys"),
     (
         ("blind", _BLIND_KW, {"variant", "model", "task", "phash"}),
-        ("ws", _WS_KW, {"variant", "model", "task", "phash"}),
         ("orch", _ORCH_KW, {"variant", "model", "task", "phash"}),
     ),
 )
@@ -234,7 +222,6 @@ _CONFIG_FIELDS_OPAQUE = {"variant", "model_config", "prompts"}
     ("variant", "kw"),
     (
         ("blind", _BLIND_KW),
-        ("ws", _WS_KW),
         ("orch", _ORCH_KW),
     ),
 )

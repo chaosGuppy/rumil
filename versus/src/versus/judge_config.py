@@ -7,10 +7,12 @@ fingerprint of code paths whose behavior affects the run. The structured
 dict + its sha256 are stored on every new row alongside the existing
 ``judge_model`` string.
 
-This module is the single compose site for all three judge paths
-(blind / ws / orch); ``versus.judge.build_blind_judge_config`` and the
-``_compose`` lambdas in ``versus.rumil_judge.run_ws`` / ``run_orch`` all
-delegate here.
+This module is the single compose site for both judge paths
+(blind / orch); ``versus.judge.build_blind_judge_config`` and the
+``_compose`` lambda in ``versus.rumil_judge.run_orch`` both delegate
+here. Historical ``rumil:ws:*`` rows still live in the database and
+read fine through the existing parsers — this builder just no longer
+emits new ws rows.
 
 The visible ``judge_model`` shape is unchanged from the pre-config era
 so existing dedup keys keep matching; ``config_hash`` is additive
@@ -28,7 +30,7 @@ from typing import Any, Literal
 
 from rumil.model_config import ModelConfig
 
-Variant = Literal["blind", "ws", "orch"]
+Variant = Literal["blind", "orch"]
 
 
 def _repo_root() -> pathlib.Path:
@@ -122,7 +124,7 @@ def compute_judge_code_fingerprint() -> dict[str, str]:
     One entry per fingerprint directory (collapsed to a single sha over
     its files) plus one entry per individual file in
     :data:`versus.versions.JUDGE_CODE_FINGERPRINT_FILES`. Read once at
-    plan time; stable for a single ``run_ws`` / ``run_orch`` invocation.
+    plan time; stable for a single ``run_orch`` invocation.
     """
     from versus.versions import JUDGE_CODE_FINGERPRINT_DIRS, JUDGE_CODE_FINGERPRINT_FILES
 
@@ -175,9 +177,9 @@ def make_judge_config(
 
     Per-variant required args (asserted):
     - blind: ``model_config``, ``prompt_hash``
-    - ws: blind + ``workspace_id``, ``tool_prompt_hash``, ``pair_surface_hash``,
-      ``code_fingerprint``, ``workspace_state_hash``
-    - orch: ws + ``budget``, ``closer_hash``
+    - orch: blind + ``workspace_id``, ``tool_prompt_hash``,
+      ``pair_surface_hash``, ``code_fingerprint``, ``workspace_state_hash``,
+      ``budget``, ``closer_hash``
     """
     config: dict[str, Any] = {
         "variant": variant,
@@ -186,26 +188,26 @@ def make_judge_config(
         "model_config": model_config.to_record_dict(),
         "prompts": {"shell_hash": prompt_hash},
     }
-    if variant in ("ws", "orch"):
+    if variant == "orch":
         if (
             workspace_id is None
             or tool_prompt_hash is None
             or pair_surface_hash is None
             or code_fingerprint is None
             or workspace_state_hash is None
+            or budget is None
+            or closer_hash is None
         ):
             raise ValueError(
-                f"variant={variant!r} requires workspace_id, tool_prompt_hash, "
-                "pair_surface_hash, code_fingerprint, workspace_state_hash"
+                "variant='orch' requires workspace_id, tool_prompt_hash, "
+                "pair_surface_hash, code_fingerprint, workspace_state_hash, "
+                "budget, closer_hash"
             )
         config["workspace_id"] = workspace_id
         config["tool_descriptions_hash"] = tool_prompt_hash
         config["pair_surface_hash"] = pair_surface_hash
         config["code_fingerprint"] = code_fingerprint
         config["workspace_state_hash"] = workspace_state_hash
-    if variant == "orch":
-        if budget is None or closer_hash is None:
-            raise ValueError("variant='orch' requires budget, closer_hash")
         config["budget"] = budget
         config["closer_hash"] = closer_hash
     config_hash = compute_config_hash(config)
@@ -254,6 +256,10 @@ def project_config_to_axes(
             :8
         ]
         out["judge_model_config_hash"] = f"m{mc_hash}"
+    # ``variant in ("ws", "orch")`` historically: ws rows wrote the same
+    # workspace/tool/pair/code/state fields, so this branch keeps reading
+    # them from any row that has them — letting historical ws rows render
+    # alongside current orch rows.
     if variant in ("ws", "orch"):
         out["judge_workspace_id"] = config["workspace_id"]
         out["judge_tool_hash"] = f"t{config['tool_descriptions_hash']}"

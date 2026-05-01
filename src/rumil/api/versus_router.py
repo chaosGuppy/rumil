@@ -482,7 +482,8 @@ class JudgmentDetail(pydantic.BaseModel):
     Includes the verbatim prompt + reasoning text + raw provider response,
     so a reader can audit what the judge actually saw and said. Most fields
     are optional because the shape varies across judge variants (OpenRouter
-    vs anthropic vs rumil:text vs rumil:ws/orch).
+    vs anthropic vs rumil:text vs rumil:orch; historical rumil:ws rows
+    also still appear).
     """
 
     key: str

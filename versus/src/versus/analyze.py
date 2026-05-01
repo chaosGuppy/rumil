@@ -34,7 +34,8 @@ def model_sort_key(judge: str) -> tuple:
     Families (left to right): gemini, openai, anthropic, other. Weak->strong
     within family: flash < pro for gemini, nano < mini < full for openai,
     haiku < sonnet < opus for anthropic. Variant (relevant for judges):
-    blind < rumil:ws < rumil:orch.
+    blind < rumil:ws < rumil:orch. ``rumil:ws`` is historical-only — no
+    new rows produced — but the slot is kept so old rows sort sensibly.
 
     Accepts both source-id strings ("human", "google/gemini-3-flash",
     "paraphrase:openai/gpt-5") and the post-cleanup judge_model shape
@@ -100,7 +101,9 @@ def label_from_config(cfg: dict) -> dict:
     """Derive the stacked column-header dict from a judge_inputs blob.
 
     Returns ``{variant, model, task, phash}``. Drives the FE
-    column-header layout. Orch carries its budget tag.
+    column-header layout. Orch carries its budget tag. The ``ws``
+    branch is kept to render historical rows; new rows only ever
+    have variant ∈ {blind, orch}.
     """
     variant = cfg["variant"]
     model = cfg["model"]

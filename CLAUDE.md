@@ -137,7 +137,7 @@ Load-bearing invariants you shouldn't break in a passing edit:
 
 - **Blind judging**: no source_id (can literally be `"human"`) in any agent-visible surface — Question page headline/content, `page.extra`, inline user prompts.
 - **Dedup discipline**: completions and judgments live in `versus_texts` / `versus_judgments` (Postgres) keyed on generated content hashes (`request_hash` / `judge_inputs_hash`) — editing a prompt template, sampling param, or any code the fingerprint covers naturally forks the hash and lands a new row. No `*_PROMPT_VERSION` constants. The runner decides "skip if exists" via `versus_db.find_*` queries; replicates (e.g. temperature>0 sampling) are first-class.
-- **Bridge model**: `judge_pair_ws_aware` / `judge_pair_orch` take `model` explicitly; don't reintroduce `settings.model` reads there.
+- **Bridge model**: `judge_pair_orch` takes `model` explicitly; don't reintroduce `settings.model` reads there. (The earlier `judge_pair_ws_aware` path was removed; historical `rumil:ws:*` rows are read-only-preserved.)
 
 ## Key Conventions
 

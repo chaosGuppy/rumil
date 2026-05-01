@@ -5,22 +5,23 @@ human remainder). This module lets us use rumil's agent + orchestrator
 infrastructure as the judge on those pairs, so we can measure how well
 rumil discriminates vs. single-shot OpenRouter judges.
 
-Two judging paths exposed:
-
-- ``judge_pair_ws_aware`` -- one agent call with single-arm workspace
-  tools (search / load_page / explore_subgraph). The agent reads the
-  pair from a Question page at its scope and optionally consults
-  workspace material. Produces a trace URL and a 7-point preference
-  label.
+One judging path exposed:
 
 - ``judge_pair_orch`` -- full ``TwoPhaseOrchestrator`` run against the
   per-pair Question, followed by a cheap closer call that reads the
   resulting research subgraph and emits the same 7-point label.
 
+The earlier ``judge_pair_ws_aware`` path (one SDK agent call with
+workspace-exploration tools, no orchestrator) was removed -- a low-budget
+TwoPhase run subsumes the agentic-baseline use case. Historical
+``rumil:ws:*`` rows in ``versus_judgments`` are preserved and continue
+to render through the read-side parsers in ``versus.analyze`` /
+``versus.mainline``.
+
 Task bodies are caller-supplied. ``get_rumil_dimension_body(name)`` reads
 an essay-adapted dimension prompt from ``prompts/versus-<name>.md``;
 callers that want versus's own criterion prompts pass the prompt text
-directly. Neither path writes to the ``ab_eval_reports`` table -- all
+directly. The orch path doesn't write to the ``ab_eval_reports`` table --
 verdicts are returned as ``JudgeResult`` for the caller (usually versus
 itself) to mirror wherever it likes.
 """
@@ -79,27 +80,24 @@ def compute_tool_prompt_hash() -> str:
     """Short deterministic hash of the workspace-exploration tool prompts.
 
     Hashes the ``{tool_name: description_string}`` map for the three
-    tools the rumil bridge exposes to ws-aware judges
-    (``search_workspace``, ``load_page``, ``explore_subgraph``). Used as
-    the ``:t<hash>`` suffix on ``rumil:ws:*`` and ``rumil:orch:*``
-    judge_model strings so edits to those tool docstrings fork the
-    dedup key.
+    tools the rumil bridge exposes to the orch closer
+    (``search_workspace``, ``load_page``, ``explore_subgraph``). Folded
+    into the orch ``judge_inputs`` blob so edits to those tool
+    docstrings fork the dedup key.
 
     Scope decision (documented so it doesn't drift): this covers only
     the workspace-exploration family -- the tools directly passed to
-    the SDK in ``judge_pair_ws_aware`` and ``_run_orch_closer``. The
-    orchestrator's dispatched calls inside ``judge_pair_orch`` use a
-    broader tool set (find_considerations, assess, scout-*, etc.)
-    that isn't passed from this bridge; those are covered by
-    ``code_fingerprint`` over the orchestrators / calls / prompts
-    directories. Hashing workspace-exploration tool docstrings for
-    both ws and orch keeps the key schemes parallel.
+    the SDK in ``_run_orch_closer``. The orchestrator's dispatched
+    calls inside ``judge_pair_orch`` use a broader tool set
+    (find_considerations, assess, scout-*, etc.) that isn't passed
+    from this bridge; those are covered by ``code_fingerprint`` over
+    the orchestrators / calls / prompts directories.
 
     Parameters match the bridge's actual call sites: load_page's
     default_detail is "content", explore_subgraph's questions_only is
-    False (the ws bridge uses the full-graph variant). If either of
-    those call-site parameters changes, the description text changes
-    naturally and the hash forks without further intervention.
+    False. If either of those call-site parameters changes, the
+    description text changes naturally and the hash forks without
+    further intervention.
     """
     db_stub = MagicMock()
     trace_stub = MagicMock()
@@ -215,28 +213,6 @@ def _format_pair_content(pair: PairContext) -> str:
     )
 
 
-def _build_ws_user_prompt(pair: PairContext, question_id: str) -> str:
-    """Compose the inline user message for the ws-aware agent call.
-
-    Extracted from ``_judge_pair_ws_aware_inner`` so structural tests can
-    verify it doesn't leak ``source_a_id`` / ``source_b_id`` (which can
-    literally be ``"human"``). The agent reads the pair content via
-    ``load_page`` on the scope question; this message is just the
-    instruction shell.
-    """
-    return (
-        "Compare Continuation A and Continuation B on the dimension "
-        f"**{pair.task_name}**.\n\n"
-        f"The scope question (`{question_id}`) contains the essay "
-        "prefix, continuation A, and continuation B. Read it with "
-        "`load_page` if you don't already have the content in "
-        "context. Use `search_workspace` and `explore_subgraph` if "
-        "relevant workspace material exists on the essay's topic.\n\n"
-        "End your response with one of the 7-point preference labels "
-        "on its own line."
-    )
-
-
 def _surface_hash_sentinel() -> dict[str, str]:
     """Build the sentinel dict from PairContext's actual fields, so
     adding/removing a field auto-updates the surface hash and hash
@@ -249,9 +225,9 @@ def _surface_hash_sentinel() -> dict[str, str]:
 def compute_pair_surface_hash() -> str:
     """Short deterministic hash of the Versus Question page surface.
 
-    Used as the ``:q<hash>`` suffix on ``rumil:ws:*`` / ``rumil:orch:*``
-    ``judge_model`` strings so structural edits to the agent-visible
-    page surface auto-fork the dedup key without a manual version bump.
+    Folded into the orch ``judge_inputs`` blob so structural edits to
+    the agent-visible page surface auto-fork the dedup key without a
+    manual version bump.
 
     Covers three surfaces together:
 
@@ -262,13 +238,12 @@ def compute_pair_surface_hash() -> str:
       (values are pair-dependent and live in the content body instead;
       only the key schema is hashed).
 
-    Scope: ws/orch only. The blind path (single-turn LLM call, no DB)
+    Scope: orch only. The blind path (single-turn LLM call, no DB)
     doesn't read the Question page, so a page-surface edit there
     wouldn't affect blind judgments — forking blind keys for a
-    surface edit would force unnecessary re-judging. Inline user
-    prompts, ``disallowed_tools``, and the orchestrator-internal
-    tool set are covered by ``code_fingerprint`` over the bridge +
-    orchestrator + calls files.
+    surface edit would force unnecessary re-judging. ``disallowed_tools``
+    and the orchestrator-internal tool set are covered by
+    ``code_fingerprint`` over the bridge + orchestrator + calls files.
     """
     sentinel = PairContext(**_surface_hash_sentinel())
     blob = json.dumps(
@@ -307,130 +282,6 @@ async def ensure_versus_question(db: DB, pair: PairContext) -> str:
     )
     await db.save_page(page)
     return page.id
-
-
-async def judge_pair_ws_aware(
-    db: DB,
-    pair: PairContext,
-    *,
-    task_body: str,
-    model: str,
-    broadcaster: Broadcaster | None = None,
-    model_config: ModelConfig | None = None,
-) -> JudgeResult:
-    """Run a single VERSUS_JUDGE agent call with single-arm workspace tools.
-
-    The caller supplies ``task_body`` -- either the essay-adapted rumil
-    dimension prompt (see :func:`get_rumil_dimension_body`) or a versus
-    criterion prompt. It is slotted into ``prompts/versus-judge-shell.md``
-    to produce the final system prompt.
-
-    ``model`` is the Anthropic model id passed through to the agent via
-    a scoped :func:`override_settings` block so downstream rumil code
-    (sdk_agent, text_call, any nested calls) reads the same value. No
-    env-var gymnastics.
-
-    ``model_config`` (optional) pins thinking / effort /
-    max_thinking_tokens for the SDK agent's underlying Anthropic call.
-    Versus's bridge passes the registry-derived ModelConfig so wire
-    behavior matches versus's config.yaml; without it, the SDK falls
-    back to its own per-model defaults.
-    """
-    with override_settings(rumil_model_override=model):
-        return await _judge_pair_ws_aware_inner(
-            db,
-            pair,
-            task_body=task_body,
-            broadcaster=broadcaster,
-            model_config=model_config,
-        )
-
-
-async def _judge_pair_ws_aware_inner(
-    db: DB,
-    pair: PairContext,
-    *,
-    task_body: str,
-    broadcaster: Broadcaster | None,
-    model_config: ModelConfig | None = None,
-) -> JudgeResult:
-    question_id = await ensure_versus_question(db, pair)
-    call = await db.create_call(
-        call_type=CallType.VERSUS_JUDGE,
-        scope_page_id=question_id,
-    )
-    trace = CallTrace(call.id, db, broadcaster=broadcaster)
-    await db.update_call_status(call.id, CallStatus.RUNNING)
-
-    explore_llm_tool = make_explore_subgraph_tool(db, trace, questions_only=False)
-    load_page_llm_tool = make_load_page_tool(db, trace)
-    search_llm_tool = make_search_tool(db, trace)
-    mcp_tools = [
-        wrap_as_mcp_tool(explore_llm_tool),
-        wrap_as_mcp_tool(load_page_llm_tool),
-        wrap_as_mcp_tool(search_llm_tool),
-    ]
-
-    system_prompt = build_system_prompt(task_body, with_tools=True)
-    user_prompt = _build_ws_user_prompt(pair, question_id)
-
-    allowed = [
-        f"mcp__{_TOOL_SERVER_NAME}__{t.name}"
-        for t in (explore_llm_tool, load_page_llm_tool, search_llm_tool)
-    ]
-
-    config = SdkAgentConfig(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        server_name=_TOOL_SERVER_NAME,
-        mcp_tools=mcp_tools,
-        call=call,
-        call_type=CallType.VERSUS_JUDGE,
-        scope_page_id=question_id,
-        db=db,
-        trace=trace,
-        broadcaster=broadcaster,
-        allowed_tools=allowed,
-        disallowed_tools=["Write", "Edit", "Glob"],
-        model_config=model_config,
-    )
-
-    try:
-        result = await run_sdk_agent(config)
-        # See _run_orch_closer for the rationale: the shared prompt shell
-        # pins the verdict to the final turn, so label extraction should
-        # only scan the final turn's text.
-        report_text = "\n\n".join(result.last_assistant_text)
-        call.status = CallStatus.COMPLETE
-        call.completed_at = datetime.now(UTC)
-        call.result_summary = report_text[:500]
-        if trace.total_cost_usd > 0:
-            call.cost_usd = trace.total_cost_usd
-        await db.save_call(call)
-    except Exception:
-        log.exception(
-            "versus ws-aware judge failed (essay=%s, pair=%s/%s, task=%s)",
-            pair.essay_id,
-            pair.source_a_id,
-            pair.source_b_id,
-            pair.task_name,
-        )
-        await db.update_call_status(call.id, CallStatus.FAILED)
-        raise
-
-    label = extract_preference(report_text)
-    return JudgeResult(
-        verdict=label_to_verdict(label),
-        preference_label=label,
-        reasoning_text=report_text,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        trace_url=_frontend_trace_url(db.run_id, call.id),
-        call_id=call.id,
-        run_id=db.run_id,
-        question_id=question_id,
-        cost_usd=trace.total_cost_usd or 0.0,
-    )
 
 
 async def _render_question_for_closer(db: DB, question_id: str) -> str:

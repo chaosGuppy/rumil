@@ -155,6 +155,9 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
     """
 
     inputs = row["judge_inputs"]
+    # Historical "ws" rows are kept here so the staleness check on those
+    # rows (with_tools=True prompt + code_fingerprint) keeps working;
+    # we no longer write new ws rows.
     is_tools = inputs["variant"] in ("ws", "orch")
     try:
         expected_ph = compute_judge_prompt_hash(criterion, with_tools=is_tools)

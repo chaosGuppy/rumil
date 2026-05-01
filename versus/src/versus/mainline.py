@@ -31,8 +31,10 @@ AXIS_DESCRIPTIONS: dict[str, str] = {
     ),
     "judge_path": (
         "Which judge code path produced the row. blind = single LLM "
-        "call; rumil:ws = SDK agent with workspace tools; rumil:orch = "
-        "full orchestrator run."
+        "call; rumil:orch = full orchestrator run. (Historical "
+        "rumil:ws rows — single SDK agent call with workspace tools "
+        "— still appear from a prior pipeline; that path no longer "
+        "produces new rows.)"
     ),
     "judge_base_model": ("Underlying LLM model id (provider/<model> or just <model>)."),
     "judge_dimension": ("Criterion the judge was rendered for (e.g. general_quality, grounding)."),
@@ -142,19 +144,6 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
             )
             samples.append(blind_cfg)
             tools_ph = versus_judge.compute_judge_prompt_hash(criterion, with_tools=True)
-            ws_cfg, _, _ = make_judge_config(
-                "ws",
-                model=canonical,
-                dimension=criterion,
-                model_config=mc,
-                prompt_hash=tools_ph,
-                tool_prompt_hash=thash,
-                pair_surface_hash=qhash,
-                workspace_id="<runtime>",
-                code_fingerprint={"_": "_"},
-                workspace_state_hash="<runtime>",
-            )
-            samples.append(ws_cfg)
             orch_cfg, _, _ = make_judge_config(
                 "orch",
                 model=canonical,

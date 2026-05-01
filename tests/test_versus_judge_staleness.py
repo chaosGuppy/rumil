@@ -2,7 +2,7 @@
 
 The staleness detector returns False when any code-side input to the
 judge has drifted from what a fresh run would produce — prompt shell
-hash, code fingerprint (ws/orch), or the recorded ``model_config``
+hash, code fingerprint (orch), or the recorded ``model_config``
 snapshot vs. what the versus model registry currently says for that
 model.
 
@@ -44,9 +44,9 @@ def _make_blind_row(*, model: str, model_config: ModelConfig) -> dict:
     return {"judge_inputs": cfg}
 
 
-def _make_ws_row(*, model: str, model_config: ModelConfig) -> dict:
+def _make_orch_row(*, model: str, model_config: ModelConfig) -> dict:
     cfg, _, _ = make_judge_config(
-        "ws",
+        "orch",
         model=model,
         dimension="general_quality",
         model_config=model_config,
@@ -56,6 +56,8 @@ def _make_ws_row(*, model: str, model_config: ModelConfig) -> dict:
         workspace_id="abcd1234",
         code_fingerprint=compute_judge_code_fingerprint(),
         workspace_state_hash="0011223344556677",
+        budget=4,
+        closer_hash="33333333",
     )
     return {"judge_inputs": cfg}
 
@@ -91,13 +93,13 @@ def test_blind_row_with_unexpected_thinking_is_stale(versus_cfg):
     assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False
 
 
-def test_ws_row_for_opus_with_registry_config_is_current(versus_cfg):
+def test_orch_row_for_opus_with_registry_config_is_current(versus_cfg):
     mc = get_judge_model_config("claude-opus-4-7", cfg=versus_cfg)
-    row = _make_ws_row(model="claude-opus-4-7", model_config=mc)
+    row = _make_orch_row(model="claude-opus-4-7", model_config=mc)
     assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is True
 
 
-def test_ws_row_for_opus_with_dropped_thinking_is_stale(versus_cfg):
+def test_orch_row_for_opus_with_dropped_thinking_is_stale(versus_cfg):
     # Captured thinking=None but registry says opus 4.7 should run with
     # adaptive thinking. Stale because the row's recorded condition no
     # longer matches what versus would send today.
@@ -108,11 +110,11 @@ def test_ws_row_for_opus_with_dropped_thinking_is_stale(versus_cfg):
         thinking=None,
         effort=mc.effort,
     )
-    row = _make_ws_row(model="claude-opus-4-7", model_config=drifted)
+    row = _make_orch_row(model="claude-opus-4-7", model_config=drifted)
     assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False
 
 
-def test_ws_row_for_opus_with_dropped_effort_is_stale(versus_cfg):
+def test_orch_row_for_opus_with_dropped_effort_is_stale(versus_cfg):
     mc = get_judge_model_config("claude-opus-4-7", cfg=versus_cfg)
     drifted = ModelConfig(
         temperature=mc.temperature,
@@ -120,7 +122,7 @@ def test_ws_row_for_opus_with_dropped_effort_is_stale(versus_cfg):
         thinking=mc.thinking,
         effort=None,
     )
-    row = _make_ws_row(model="claude-opus-4-7", model_config=drifted)
+    row = _make_orch_row(model="claude-opus-4-7", model_config=drifted)
     assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False
 
 

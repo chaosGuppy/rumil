@@ -26,7 +26,7 @@ OpenRouter-only judgment script.
 | "run a flash / gpt-5.4 / gemini completion on essay X" | yes |
 | "regenerate paraphrases after a prompt bump" | yes |
 | "top up judgments (any model)" | **no** — use `rumil-versus-judge` |
-| "run a rumil:ws / rumil:orch judge" | **no** — use `rumil-versus-judge` |
+| "run a rumil:orch judge" | **no** — use `rumil-versus-judge` |
 | "pre-flight check before a topup" | **no** — see `status.py` below |
 
 ## Before any run: check staleness

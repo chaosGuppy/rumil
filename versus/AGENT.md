@@ -4,7 +4,7 @@ Pairwise LLM eval harness on longform web essays: models continue essay openings
 
 Sources plug in as per-source fetchers under `versus/src/versus/sources/` (currently forethought, redwood, carlsmith). Each produces `Essay` objects with a namespaced id `<source>__<slug>` so dedup keys stay unique across sources. Config lists sources in `essays.sources` with per-source `max_recent` and optional `max_images` / `max_image_ratio` filters; `essays.exclude_ids` blocks specific essays from the pipeline.
 
-Library lives at `versus/src/versus/`; CLI entry points at `versus/scripts/`; cached essays in `versus/data/essays/`. Bridge to rumil is `src/rumil/versus_bridge.py` — exposes `judge_pair_ws_aware` (single agent call with workspace tools) and `judge_pair_orch` (full `TwoPhaseOrchestrator` per pair + closing call). API routes under `/versus` live in `src/rumil/api/versus_router.py`. Skill for invoking versus from Claude Code: `.claude/skills/rumil-versus-judge/`.
+Library lives at `versus/src/versus/`; CLI entry points at `versus/scripts/`; cached essays in `versus/data/essays/`. Bridge to rumil is `src/rumil/versus_bridge.py` — exposes `judge_pair_orch` (full `TwoPhaseOrchestrator` per pair + closing call). API routes under `/versus` live in `src/rumil/api/versus_router.py`. Skill for invoking versus from Claude Code: `.claude/skills/rumil-versus-judge/`. (Historical `rumil:ws:*` rows — from an earlier single-agent-call path — are preserved in `versus_judgments` and continue to render through the read-side parsers; no new ws rows are produced.)
 
 ## Storage
 
@@ -30,13 +30,12 @@ There's no DB-level uniqueness on either table. "Skip if exists" semantics live 
 
 ## Judge config + dedup
 
-`versus.judge_config.make_judge_config(variant, ...)` builds the structured `judge_inputs` blob. The display `judge_model` string (`<path>:<model>:<dim>:c<hash8>` with `<path>` ∈ {`blind`, `rumil:ws`, `rumil:orch`}) is purely cosmetic — it doesn't drive dedup.
+`versus.judge_config.make_judge_config(variant, ...)` builds the structured `judge_inputs` blob. The display `judge_model` string (`<path>:<model>:<dim>:c<hash8>` with `<path>` ∈ {`blind`, `rumil:orch`}; historical rows may also carry `rumil:ws`) is purely cosmetic — it doesn't drive dedup.
 
 The blob covers, per variant:
 
 - **blind**: `model`, `dimension`, `model_config` (nested ModelConfig snapshot — sampling, thinking, effort, etc.), `prompts.shell_hash` (sha8 of the composed shell + dimension body). claude-* models route direct to Anthropic; everything else through OpenRouter.
-- **ws**: blind fields + `workspace_id`, `tool_descriptions_hash`, `pair_surface_hash`, `code_fingerprint`, `workspace_state_hash`.
-- **orch**: ws fields + `budget`, `closer_hash`.
+- **orch**: blind fields + `workspace_id`, `tool_descriptions_hash`, `pair_surface_hash`, `code_fingerprint`, `workspace_state_hash`, `budget`, `closer_hash`.
 
 At write time, the runner adds `text_a_id` / `text_b_id` (and `order` for rumil rows) before computing the hash. Adding a new "thing the LLM saw" is one place: extend `make_judge_config` (and the corresponding axis in `project_config_to_axes` so the provenance panel surfaces it).
 
@@ -44,7 +43,7 @@ At write time, the runner adds `text_a_id` / `text_b_id` (and `order` for rumil 
 
 `versus/config.yaml` `models:` is the source of truth for what each model gets on the wire — `sampling.temperature`, `sampling.max_tokens`, `sampling.top_p`, `thinking`, `effort`, `max_thinking_tokens`, `service_tier`. Validator on Config catches typos: every model used by `completion.models` / `judging.models` must have a registry entry.
 
-`versus.model_config.get_model_config(model_id, cfg=cfg)` resolves the entry into a `rumil.model_config.ModelConfig`. `get_judge_model_config(model_id, cfg=cfg)` is the same with `cfg.judging.max_tokens` layered on top — judges typically need more output headroom than completion-purpose calls. Both are read everywhere downstream: completions, paraphrases, blind/ws/orch judges, the staleness detector, and `mainline.current_values_summary` for the provenance panel.
+`versus.model_config.get_model_config(model_id, cfg=cfg)` resolves the entry into a `rumil.model_config.ModelConfig`. `get_judge_model_config(model_id, cfg=cfg)` is the same with `cfg.judging.max_tokens` layered on top — judges typically need more output headroom than completion-purpose calls. Both are read everywhere downstream: completions, paraphrases, blind/orch judges, the staleness detector, and `mainline.current_values_summary` for the provenance panel.
 
 Editing a registry entry forks `request_hash` / `judge_inputs_hash` deterministically, so prior data stays valid as the prior config and topup runs land fresh rows under the new condition. `models[<id>].sampling.max_tokens` ignored on direct-Anthropic claude-opus-4-7 because `temperature` is null — the wire kwargs builder drops null fields.
 
@@ -58,7 +57,7 @@ Every contestant is a row in `versus_texts` with `kind ∈ {human, completion}` 
 
 ## Judging contract
 
-Judges reason freely; we parse the **last** 7-point preference label from the output. All three backends (blind, `rumil:ws`, `rumil:orch`) share this parser via `versus.judge.parse_verdict_from_label` → `rumil.versus_prompts.extract_preference`. Don't constrain the whole response to JSON — chain-of-thought materially improves judgment quality.
+Judges reason freely; we parse the **last** 7-point preference label from the output. Both backends (blind, `rumil:orch`) share this parser via `versus.judge.parse_verdict_from_label` → `rumil.versus_prompts.extract_preference`. Don't constrain the whole response to JSON — chain-of-thought materially improves judgment quality.
 
 Display order (A vs B) is deterministic per `(essay_id, sorted_pair)` via `judge.order_pair()` so every judge sees the same assignment for the same pair. The judgment row records `display_first` directly, and `judge_inputs.order` ∈ {`ab`, `ba`} encodes how display order maps onto canonical (alphabetical) `source_a`/`source_b` order. The order is folded into `judge_inputs`, so the same pair judged in both orientations forks the hash and lands as two rows.
 
@@ -68,22 +67,22 @@ Source ids can literally be `"human"`, so any surface the judge sees (prompt, Qu
 
 `essay_id` is also kept off agent-visible surfaces. Its namespaced form `<source>__<slug>` (see `versus.essay.namespaced_id`) bakes the source into what looks like a neutral id and would leak through headline embeddings, `search_workspace`, and `load_page` output. The Question headline uses `prefix_hash[:8]` as a source-free audit tag; `page.extra` drops `essay_id` entirely. Correlation from a trace back to the essay goes through `runs.config.essay_id` (operator-visible, non-agent-visible) or the judgment row's `essay_id` keyed by `question_id`.
 
-**`runs.config` vs `page.extra` — intentional divergence.** `runs.config` for `ws`/`orch` runs is surfaced in the traces UI but **not** fed to the agent (agent reads pages via `load_page` / `search` / `explore_subgraph`; it never reads the runs row). It's the operator-facing identifying layer: holds `essay_id`, `canonical_source_first` / `canonical_source_second` (which can literally be `"human"`), judge identity, etc. `page.extra` is the stricter blind layer — nothing source-identifying. The two are intentionally NOT blind-equivalent today. If a future refactor routes `runs.config` into agent context, it must first be scrubbed to match `page.extra`'s blindness.
+**`runs.config` vs `page.extra` — intentional divergence.** `runs.config` for `orch` runs is surfaced in the traces UI but **not** fed to the agent (agent reads pages via `load_page` / `search` / `explore_subgraph`; it never reads the runs row). It's the operator-facing identifying layer: holds `essay_id`, `canonical_source_first` / `canonical_source_second` (which can literally be `"human"`), judge identity, etc. `page.extra` is the stricter blind layer — nothing source-identifying. The two are intentionally NOT blind-equivalent today. If a future refactor routes `runs.config` into agent context, it must first be scrubbed to match `page.extra`'s blindness.
 
 **Canonical vs display order.** Two different A/B conventions coexist, easy to confuse:
 
 - `canonical_source_first` / `canonical_source_second` in `runs.config`, and `source_a` / `source_b` in the judgment row, are the **alphabetical** dedup-key order (`sorted([x, y])`). They don't tell you which side the judge saw as "Continuation A".
 - `display_first` on the judgment row is the actual display order. The `judge_inputs.order` field (`ab` or `ba`) encodes how display order maps onto canonical order; `judge.order_from_display_first` computes it.
 
-## Project / run linkage for ws/orch judgments
+## Project / run linkage for orch judgments
 
-Judgments produced inside a rumil orchestrator/ws call carry soft references back to rumil:
+Judgments produced inside a rumil orchestrator call carry soft references back to rumil:
 
 - `project_id` (uuid, nullable) — set when the judgment is from a rumil project
 - `run_id` (text, nullable) — the rumil run that produced the verdict; backed by `runs.id`
 - `rumil_call_id` (text, nullable) — the specific call within the run that emitted the verdict
 
-These are all soft references (no FK) so versus stays standalone for blind work and survives if the rumil run gets pruned.
+These are all soft references (no FK) so versus stays standalone for blind work and survives if the rumil run gets pruned. (Historical ws rows in the table also have these fields populated.)
 
 ## Running
 
@@ -98,7 +97,7 @@ supabase start                  # one-time
 
 uv run scripts/fetch_essays.py
 uv run scripts/run_completions.py
-uv run scripts/run_rumil_judgments.py    # blind judges (default); --variant ws|orch for tool-using paths
+uv run scripts/run_rumil_judgments.py    # blind judges (default); --variant orch for the tool-using path
 ```
 
 Env resolution for `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` cascades: `versus/.env`, then `<rumil-root>/.env`, then process env. Files override process env.
@@ -107,13 +106,14 @@ UI routes (`/versus` redirects to `/versus/results`; `/versus/inspect` and `/ver
 
 ## Judge variants
 
-`scripts/run_rumil_judgments.py` has three modes. See `.claude/skills/rumil-versus-judge/SKILL.md` for the detailed invocation guide, cost estimates, and confirmation thresholds.
+`scripts/run_rumil_judgments.py` has two modes. See `.claude/skills/rumil-versus-judge/SKILL.md` for the detailed invocation guide, cost estimates, and confirmation thresholds.
 
 - Blind (default, no `--variant`) — single-turn LLM call using the blind shell + dimension prompt. Repeat `--model` for multi-model runs; each model routes by id (claude-* direct to Anthropic, others via OpenRouter). `judge_model = blind:<canonical_model>:<dim>:c<hash8>`. Defaults to `cfg.judging.models`.
-- `--variant ws` — one VERSUS_JUDGE agent call with workspace-exploration tools against a `--workspace`. `judge_model = rumil:ws:<model>:<dim>:c<hash8>`. Requires local Supabase.
 - `--variant orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = rumil:orch:<model>:<dim>:c<hash8>`. Requires local Supabase. Expensive.
 
-Model for ws/orch is passed explicitly through the bridge (`--model opus|sonnet|haiku|<full-id>`, default opus) — do not rely on `settings.model`. The bridge uses `override_settings(rumil_model_override=model)` to propagate to nested rumil calls.
+The earlier `--variant ws` path (one SDK agent call with workspace-exploration tools, no orchestrator) was removed; a low-budget orch run subsumes the agentic-baseline use case. Historical `rumil:ws:*` rows are preserved.
+
+Model for orch is passed explicitly through the bridge (`--model opus|sonnet|haiku|<full-id>`, default opus) — do not rely on `settings.model`. The bridge uses `override_settings(rumil_model_override=model)` to propagate to nested rumil calls.
 
 ## Known quirks
 

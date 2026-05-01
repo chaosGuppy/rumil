@@ -96,13 +96,22 @@ export ANTHROPIC_API_KEY=...    # required for rumil-style judges
 supabase start                  # one-time
 
 uv run scripts/fetch_essays.py
-uv run scripts/run_completions.py
-uv run scripts/run_rumil_judgments.py    # blind judges (default); --variant orch for the tool-using path
+uv run scripts/run_completions.py                    # single-shot completions (one LLM call per essay × prefix × model)
+uv run scripts/run_completions.py --orch two_phase \
+    --workspace <ws> --model <id> --budget 4         # orch-driven completions; lands as source_id=orch:<workflow>:<model>:c<hash8>
+uv run scripts/run_rumil_judgments.py                # blind judges (default); --variant orch for the tool-using path
 ```
 
 Env resolution for `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` cascades: `versus/.env`, then `<rumil-root>/.env`, then process env. Files override process env.
 
 UI routes (`/versus` redirects to `/versus/results`; `/versus/inspect` and `/versus/results` are the real pages) mount in the rumil Next.js frontend; API endpoints in `src/rumil/api/versus_router.py` read versus_texts / versus_judgments and translate to a legacy-shaped envelope so the frontend types didn't have to change.
+
+## Completion variants
+
+`scripts/run_completions.py` has two modes:
+
+- Default — single-shot: one LLM call per essay × prefix × model. Rows land with `source_id=<model_id>` (the bare model id).
+- `--orch <workflow_name>` — fires a rumil workflow (today: `two_phase`; later: `draft_and_edit` per #427) against a per-essay Question, then a closing call extracts the continuation. Rows land with `source_id=orch:<workflow>:<model>:c<hash8>` so judges can pair orch outputs against single-shot or human baselines. Requires `--workspace`. Pickable as a contestant by `run_rumil_judgments.py` with no further wiring — different workflows / configs / budgets all coexist as separate source_ids by design (the `c<hash8>` suffix is the workflow's `config_hash`).
 
 ## Judge variants
 

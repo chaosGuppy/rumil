@@ -26,9 +26,10 @@ class _Artifact:
     label: str
 
 
-def _make_workflow(mocker):
+def _make_workflow(mocker, *, produces_artifact: bool = False):
     workflow = MagicMock()
     workflow.name = "test_workflow"
+    workflow.produces_artifact = produces_artifact
     workflow.fingerprint = MagicMock(return_value={"kind": "test_workflow"})
     workflow.setup = AsyncMock()
     workflow.run = AsyncMock()
@@ -200,6 +201,60 @@ async def test_run_versus_threads_model_into_settings_override(mocker):
         model="claude-haiku-4-5",
     )
     assert captured["model_override"] == "claude-haiku-4-5"
+
+
+@pytest.mark.asyncio
+async def test_run_versus_skips_closer_when_workflow_produces_artifact(mocker):
+    """``produces_artifact=True`` workflows have already written the
+    final text to ``question.content``; the runner reads it directly
+    and skips the closer call. ``extract_artifact`` runs against that
+    text; ``system_prompt`` / ``user_prompt`` come back empty.
+    """
+    workflow = _make_workflow(mocker, produces_artifact=True)
+    task = _make_task(mocker)
+    db = _make_db(mocker)
+    fake_question = MagicMock()
+    fake_question.content = "FINAL_ARTIFACT_TEXT"
+    db.get_page = AsyncMock(return_value=fake_question)
+    fake_call = MagicMock()
+    fake_call.id = "wf-call-1"
+    fake_call.created_at = 1.0
+    db.get_calls_for_run = AsyncMock(return_value=[fake_call])
+    closer = mocker.patch(
+        "rumil.versus_runner.run_closer_agent",
+        new=AsyncMock(return_value=("UNUSED", MagicMock())),
+    )
+    result = await run_versus(
+        db,
+        workflow=workflow,
+        task=task,
+        inputs={"x": 1},
+        model="claude-haiku-4-5",
+    )
+    closer.assert_not_awaited()
+    task.render_for_closer.assert_not_awaited()
+    task.closer_prompts.assert_not_called()
+    task.extract_artifact.assert_called_once_with("FINAL_ARTIFACT_TEXT")
+    assert result.system_prompt == ""
+    assert result.user_prompt == ""
+    # call_id falls back to the most-recent run call.
+    assert result.call_id == "wf-call-1"
+
+
+@pytest.mark.asyncio
+async def test_run_versus_raises_when_artifact_workflow_question_missing(mocker):
+    workflow = _make_workflow(mocker, produces_artifact=True)
+    task = _make_task(mocker)
+    db = _make_db(mocker)
+    db.get_page = AsyncMock(return_value=None)
+    with pytest.raises(RuntimeError, match="produces_artifact"):
+        await run_versus(
+            db,
+            workflow=workflow,
+            task=task,
+            inputs=None,
+            model="claude-haiku-4-5",
+        )
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,13 @@ into :func:`rumil.versus_runner.run_versus` together with a workflow
 from __future__ import annotations
 
 from versus.tasks.base import TArtifact, TInputs, VersusTask
+from versus.tasks.complete_essay import (
+    CompleteEssayTask,
+    CompletionArtifact,
+    EssayPrefixContext,
+    compute_completion_closer_hash,
+    compute_question_surface_hash,
+)
 from versus.tasks.judge_pair import (
     JudgeArtifact,
     JudgePairTask,
@@ -18,6 +25,9 @@ from versus.tasks.judge_pair import (
 )
 
 __all__ = (
+    "CompleteEssayTask",
+    "CompletionArtifact",
+    "EssayPrefixContext",
     "JudgeArtifact",
     "JudgePairTask",
     "PairContext",
@@ -25,6 +35,8 @@ __all__ = (
     "TInputs",
     "VersusTask",
     "compute_closer_hash",
+    "compute_completion_closer_hash",
     "compute_pair_surface_hash",
+    "compute_question_surface_hash",
     "compute_tool_prompt_hash",
 )

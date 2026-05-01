@@ -6,17 +6,35 @@ Default scope is the same gate ``/versus`` applies: current
 source fetchers (minus ``exclude_ids``) — useful for backfill or
 debugging old-schema rows.
 
+Two paths share this script:
+
+- **Single-shot** (default): one LLM call per essay × prefix × model.
+  Behaviour preserved byte-for-byte from before the orch path landed —
+  the existing ``request_hash`` covers all effective inputs.
+- **Orch** (``--orch <workflow>``): runs a rumil workflow (TwoPhase,
+  later DraftAndEdit) against a per-essay Question, then a closing
+  call extracts a finished continuation. Lands as a ``versus_texts``
+  row tagged ``source_id="orch:<workflow>:<model>:c<hash8>"`` so
+  judges can pair orch outputs against single-shot or human baselines.
+
 Filters mirror run_judgments.py so targeted runs are possible without
 editing config.yaml:
   --model <id>    (repeatable)  restrict to specific completion models
   --essay <id>    (repeatable)  restrict to specific essays
   --include-stale               run over all fetched essays, not just the active set
   --prefix-label <id>           target a specific prefix variant (default: canonical)
+  --orch <workflow_name>        switch to the orch path (requires --workspace, --budget)
+  --workspace <name>            rumil workspace (orch only; required)
+  --budget N                    orch budget per essay (orch only)
+  --persist                     orch only — disable staging
+  --concurrency N               orch only — concurrent runs
+  --limit N                     cap planned essays (orch only; honored before firing)
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import pathlib
 import sys
@@ -126,6 +144,55 @@ def main() -> None:
         action="store_true",
         help="Print the planned completion calls and exit without firing API requests.",
     )
+    ap.add_argument(
+        "--orch",
+        default=None,
+        help=(
+            "Switch to orch-driven completions: run the named workflow "
+            "(e.g. 'two_phase') against a per-essay Question, then a closing "
+            "call emits a continuation. Requires --workspace and --budget. "
+            "When omitted, falls through to the single-shot completion path. "
+            "Output rows are tagged source_id=orch:<workflow>:<model>:c<hash8>."
+        ),
+    )
+    ap.add_argument(
+        "--workspace",
+        default=None,
+        help="Rumil workspace (project) name. Required when --orch is set; ignored otherwise.",
+    )
+    ap.add_argument(
+        "--budget",
+        type=int,
+        default=4,
+        help=(
+            "Orch only: research-call budget per essay. TwoPhaseOrchestrator "
+            "requires a minimum of 4. Default: 4."
+        ),
+    )
+    ap.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="Orch only: concurrent runs. Default: 1 (serial).",
+    )
+    ap.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Orch only: cap on number of essays processed.",
+    )
+    ap.add_argument(
+        "--persist",
+        action="store_true",
+        help=(
+            "Orch only: persist versus-created pages to baseline instead "
+            "of staging them. Default is staged: the agent still reads "
+            "baseline workspace material but its Question pages and the "
+            "orch research subtree are scoped to the run's staged view "
+            "— invisible to other readers of the workspace. The final "
+            "completion text always lands in versus_texts regardless."
+        ),
+    )
     args = ap.parse_args()
 
     cfg = config.load(args.config)
@@ -190,6 +257,43 @@ def main() -> None:
             sys.exit(1)
 
     target = "prod" if args.prod else "local"
+
+    if args.orch is not None:
+        # Orch path: dispatch to the rumil_completion driver. Single-shot
+        # path is bypassed entirely so the existing request_hash / row
+        # shape is unaffected.
+        if not args.workspace:
+            ap.error("--orch requires --workspace <name>")
+        if not args.model:
+            ap.error("--orch requires --model <id> (single model per run)")
+        if len(args.model) > 1:
+            ap.error(f"--orch takes at most one --model (got {len(args.model)}: {args.model})")
+        # Resolve through rumil's alias table so 'opus' / 'sonnet' / 'haiku'
+        # work the same way they do for run_rumil_judgments.py.
+        from rumil.settings import resolve_model_alias
+        from versus import rumil_completion
+
+        model_id = resolve_model_alias(args.model[0])
+        for prefix_cfg in prefix_cfgs:
+            print(f"[prefix] using variant {prefix_cfg.id!r} (db={target}, orch={args.orch!r})")
+            asyncio.run(
+                rumil_completion.run_orch_completion(
+                    cfg,
+                    essays,
+                    workspace=args.workspace,
+                    workflow_name=args.orch,
+                    model=model_id,
+                    budget=args.budget,
+                    prefix_cfg=prefix_cfg,
+                    limit=args.limit,
+                    dry_run=args.dry_run,
+                    concurrency=args.concurrency,
+                    persist=args.persist,
+                    prod=args.prod,
+                )
+            )
+        return
+
     for prefix_cfg in prefix_cfgs:
         print(f"[prefix] using variant {prefix_cfg.id!r} (db={target})")
         complete.run(cfg, essays, prefix_cfg=prefix_cfg, prod=args.prod, dry_run=args.dry_run)

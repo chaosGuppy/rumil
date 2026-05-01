@@ -447,8 +447,11 @@ async def run_ws(
                         "workspace": workspace,
                         "task_name": effective_task,
                         "essay_id": pair.essay_id,
+                        # ``judge_config`` already carries the full ModelConfig
+                        # under judge_config['model_config'] (max_tokens,
+                        # thinking, effort, etc.); no need to duplicate
+                        # individual knobs at the runs.config top level.
                         "judge_config": pj.base_config,
-                        "judging_max_tokens": cfg.judging.max_tokens,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /
                         # order live on the judgment row in
@@ -698,8 +701,9 @@ async def run_orch(
                         "workspace": workspace,
                         "task_name": effective_task,
                         "essay_id": pair.essay_id,
+                        # See run_ws above: judge_config carries the full
+                        # ModelConfig already.
                         "judge_config": pj.base_config,
-                        "judging_max_tokens": cfg.judging.max_tokens,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /
                         # order live on the judgment row in

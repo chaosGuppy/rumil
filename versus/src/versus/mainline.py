@@ -45,7 +45,11 @@ AXIS_DESCRIPTIONS: dict[str, str] = {
         "body, with or without the workspace-tools section). Bumps "
         "when any of the source files change."
     ),
-    "judge_sampling_hash": ("Hash of model sampling params (temperature, max_tokens, top_p)."),
+    "judge_model_config_hash": (
+        "Hash of the per-model registry config (sampling, thinking, effort, "
+        "max_thinking_tokens, service_tier) — the full ``ModelConfig`` "
+        "snapshot. Bumps on any registry edit for the judge model."
+    ),
     "judge_tool_hash": (
         "Hash of the {tool_name -> description} map for the workspace "
         "exploration tools. ws/orch only."

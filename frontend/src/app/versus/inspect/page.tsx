@@ -40,9 +40,38 @@ function deltaSlot(words: number, target: number): React.ReactNode {
   );
 }
 
-/** Strip a leading `paraphrase:` prefix; otherwise return source_id verbatim. */
+/** Reduce a source_id to its underlying model id for display / filtering.
+ *  - `paraphrase:<model>` → `<model>`
+ *  - `orch:<workflow>:<model>:c<hash8>` → `<model>` (workflow is dropped here;
+ *    surface it via {@link workflowOf} alongside).
+ *  - Anything else (raw model id, "human") → returned verbatim. */
 function modelOf(sourceId: string): string {
-  return sourceId.startsWith("paraphrase:") ? sourceId.slice("paraphrase:".length) : sourceId;
+  if (sourceId === "human") return "human";
+  if (sourceId.startsWith("paraphrase:")) return sourceId.slice("paraphrase:".length);
+  if (sourceId.startsWith("orch:")) {
+    const parts = sourceId.split(":");
+    if (parts.length >= 4) return parts[2];
+    return sourceId;
+  }
+  return sourceId;
+}
+
+/** Extract the workflow name from an orch source_id, e.g.
+ *  `orch:two_phase:claude-opus-4-7:c12345678` → "two_phase". Returns null
+ *  for non-orch ids so callers can branch on its truthiness. */
+function workflowOfSource(sourceId: string): string | null {
+  if (!sourceId.startsWith("orch:")) return null;
+  const parts = sourceId.split(":");
+  return parts.length >= 4 ? parts[1] : null;
+}
+
+/** Workflow segment from a compound judge_model display string, e.g.
+ *  `judge_pair/two_phase:claude-opus-4-7:c12345678` → "two_phase". Returns
+ *  null when the string doesn't match the new shape (legacy rows). */
+function workflowOfJudge(judgeModel: string | null | undefined): string | null {
+  if (!judgeModel) return null;
+  const m = judgeModel.match(/^[^/]+\/([^:]+):/);
+  return m ? m[1] : null;
 }
 
 /** HTML-id-safe rendering of a source_id or config_hash. */
@@ -76,8 +105,12 @@ function VariantPill({ vid }: { vid: string }) {
 
 /** Short label for a model id (drop the provider prefix). */
 function shortModel(id: string): string {
-  const after = id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
-  return id.startsWith("paraphrase:") ? `para:${shortModel(modelOf(id))}` : after;
+  if (id.startsWith("paraphrase:")) return `para:${shortModel(modelOf(id))}`;
+  if (id.startsWith("orch:")) {
+    const wf = workflowOfSource(id);
+    return wf ? `${shortModel(modelOf(id))}·orch:${wf}` : id;
+  }
+  return id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
 }
 
 /** Trailing config-hash chunk on a legacy compound judge_model_id, e.g.
@@ -203,18 +236,43 @@ export default async function VersusInspectPage({
   // identical across variants by construction.
   const head = variantBundles[0];
 
-  // Models seen across all variants, for the model filter.
+  // Models seen across all variants, for the model filter. We track two
+  // tiers: the base model id (collapses single-shot + orch contestants
+  // sharing a base model) and the full orch source_id (so users can pick
+  // a specific workflow's contestant — single-shot rows won't match those
+  // entries because their data-model tag carries only the base id).
   const modelSet = new Set<string>();
+  const orchSet = new Set<string>();
+  const noteOrch = (sid: string) => {
+    if (sid.startsWith("orch:")) orchSet.add(sid);
+  };
   for (const v of variantBundles) {
     for (const s of v.sources) {
-      if (s.source_id !== "human") modelSet.add(modelOf(s.source_id));
+      if (s.source_id !== "human") {
+        modelSet.add(modelOf(s.source_id));
+        noteOrch(s.source_id);
+      }
     }
     for (const j of v.judgments) {
-      if (j.source_a !== "human") modelSet.add(modelOf(j.source_a));
-      if (j.source_b !== "human") modelSet.add(modelOf(j.source_b));
+      if (j.source_a !== "human") {
+        modelSet.add(modelOf(j.source_a));
+        noteOrch(j.source_a);
+      }
+      if (j.source_b !== "human") {
+        modelSet.add(modelOf(j.source_b));
+        noteOrch(j.source_b);
+      }
     }
   }
-  const modelOptions = Array.from(modelSet).sort().map((m) => ({ value: m, label: m }));
+  const baseOptions = Array.from(modelSet).sort().map((m) => ({ value: m, label: m }));
+  const orchOptions = Array.from(orchSet).sort().map((sid) => {
+    const wf = workflowOfSource(sid);
+    return {
+      value: sid,
+      label: wf ? `${modelOf(sid)} (orch:${wf})` : sid,
+    };
+  });
+  const modelOptions = [...baseOptions, ...orchOptions];
 
   // Source rows: source_id -> { variantId -> Source }. Renders as one
   // card per source, with one cell per variant.
@@ -1100,16 +1158,30 @@ function SourceRow({
 }) {
   const isHuman = sourceId === "human";
   const model = modelOf(sourceId);
+  const workflow = workflowOfSource(sourceId);
+  // Orch rows match both the base-model dropdown entry and their own
+  // workflow-specific entry (full source_id). Whitespace-separated so
+  // InspectModelFilter's split-and-match logic accepts either.
+  const dataModel = isHuman
+    ? ""
+    : workflow
+      ? `${model} ${sourceId}`
+      : model;
   return (
     <section
       id={anchorId("src", sourceId)}
       className="inspect-source-row"
       data-filterable
-      data-model={isHuman ? "" : model}
+      data-model={dataModel}
       data-always-show={isHuman ? "1" : undefined}
     >
       <header className="inspect-source-row-head">
-        <code className="versus-mono">{sourceId}</code>
+        <code className="versus-mono" title={sourceId}>{sourceId}</code>
+        {workflow && (
+          <span className="versus-pill" style={{ fontSize: 11 }}>
+            orch:{workflow}
+          </span>
+        )}
       </header>
       <div className="inspect-cells">
         {variantIds.map((vid) => {
@@ -1186,6 +1258,17 @@ function JudgmentRow({
           <strong className="versus-mono" title={sample.judge_model}>
             {sample.judge_model_id}
           </strong>
+          {(() => {
+            const wf = workflowOfJudge(sample.judge_model);
+            // "blind" is the default / least-info path — surface it inline
+            // anyway so users can tell it apart from rows where the workflow
+            // segment is missing entirely (legacy shape).
+            return wf ? (
+              <span className="versus-pill" style={{ fontSize: 11 }} title={`workflow: ${wf}`}>
+                {wf}
+              </span>
+            ) : null;
+          })()}
           <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
             c{sample.config_hash.slice(0, 8)}
           </span>
@@ -1339,16 +1422,21 @@ function InspectToc({
               {sourceOrder.map((sid) => {
                 const isHuman = sid === "human";
                 const model = modelOf(sid);
+                const wf = workflowOfSource(sid);
+                const dm = isHuman ? "" : wf ? `${model} ${sid}` : model;
+                const label = isHuman
+                  ? "human"
+                  : wf
+                    ? `${shortModel(model)} (orch:${wf})`
+                    : shortModel(sid);
                 return (
                   <li
                     key={sid}
                     data-filterable
-                    data-model={isHuman ? "" : model}
+                    data-model={dm}
                     data-always-show={isHuman ? "1" : undefined}
                   >
-                    <a href={`#${anchorId("src", sid)}`}>
-                      {isHuman ? "human" : shortModel(sid)}
-                    </a>
+                    <a href={`#${anchorId("src", sid)}`}>{label}</a>
                   </li>
                 );
               })}

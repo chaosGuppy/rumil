@@ -1534,6 +1534,95 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           )}
         </div>
       )}
+
+      {event.event === "draft" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.draft_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.draft_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.draft_text ? (
+            <CollapsiblePre label="Draft text" content={event.draft_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {event.event === "critique_round" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>critics</span>
+            <span className="trace-kv-value">{event.critiques.length}</span>
+          </div>
+          {event.critiques.length === 0 ? (
+            <span className="trace-empty">(no critiques)</span>
+          ) : (
+            event.critiques.map((c, i) => {
+              const critiqueLabel =
+                `Critic ${c.critic_index ?? i}`
+                + (c.model ? ` · ${c.model}` : "");
+              return (
+                <div key={i} className="trace-fruit-type-row">
+                  <div className="trace-fruit-type-header">
+                    <span className="trace-score-headline">{critiqueLabel}</span>
+                    {c.critique_text && (
+                      <span className="trace-collapsible-meta">
+                        {c.critique_text.length.toLocaleString()} ch
+                      </span>
+                    )}
+                  </div>
+                  {c.critique_text ? (
+                    <CollapsiblePre label="Critique" content={c.critique_text} />
+                  ) : (
+                    <span className="trace-empty">(empty)</span>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {event.event === "edit" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.revised_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.revised_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.revised_text ? (
+            <CollapsiblePre label="Revised text" content={event.revised_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
     </div>
   );
 });

@@ -91,8 +91,6 @@ def derive_model_config(model: str, *, max_tokens: int | None = None) -> ModelCo
     model-id-driven helpers. ``max_tokens`` overrides the default cap
     when provided.
     """
-    from rumil.model_config import ModelConfig
-
     return ModelConfig(
         temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(model) else None,
         max_tokens=max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,

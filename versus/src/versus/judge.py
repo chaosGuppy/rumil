@@ -174,9 +174,7 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
         # Model no longer in the registry; row references a config that
         # versus can't reproduce. Stale by definition.
         return False
-    if inputs.get("model_config") != expected_mc.to_record_dict():
-        return False
-    return True
+    return inputs.get("model_config") == expected_mc.to_record_dict()
 
 
 def parse_verdict_from_label(text: str) -> tuple[str | None, str | None]:
@@ -251,9 +249,7 @@ def is_refusal(row: dict) -> bool:
         if fr in REFUSAL_FINISH_REASONS or nfr in REFUSAL_NATIVE_REASONS:
             return True
     text = (row.get("text") or "").strip()
-    if not text or len(text.split()) < _MIN_RESPONSE_WORDS:
-        return True
-    return False
+    return not text or len(text.split()) < _MIN_RESPONSE_WORDS
 
 
 def _prefix_text_from_request(request: dict | None) -> str:
@@ -348,7 +344,6 @@ class _BlindTask:
     system_prompt: str
     user_prompt: str
     order: Order
-    sampling: dict
     model_config: ModelConfig
     judge_inputs: dict  # canonical condition blob — hash is judge_inputs_hash
     judge_inputs_hash: str
@@ -380,7 +375,7 @@ def _build_judge_request(
     canonical_model: str,
     system_prompt: str,
     user_prompt: str,
-    sampling: dict,
+    model_config: ModelConfig,
 ) -> dict[str, Any]:
     """Canonical provider-shaped request body for storage on the row.
 
@@ -397,10 +392,10 @@ def _build_judge_request(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-    if sampling.get("temperature") is not None:
-        body["temperature"] = sampling["temperature"]
-    if sampling.get("max_tokens") is not None:
-        body["max_tokens"] = sampling["max_tokens"]
+    if model_config.temperature is not None:
+        body["temperature"] = model_config.temperature
+    if model_config.max_tokens is not None:
+        body["max_tokens"] = model_config.max_tokens
     return body
 
 
@@ -443,7 +438,7 @@ def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
         canonical_model=task.canonical_model,
         system_prompt=task.system_prompt,
         user_prompt=task.user_prompt,
-        sampling=task.sampling,
+        model_config=task.model_config,
     )
     return {
         "essay_id": task.essay_id,
@@ -566,7 +561,6 @@ def run_blind(
                     base_config, _, judge_model = build_blind_judge_config(
                         canonical_model, dimension, mc
                     )
-                    sampling = {"temperature": mc.temperature, "max_tokens": mc.max_tokens}
                     judge_inputs, judge_inputs_hash = _build_judge_inputs(
                         base_config, src_a.text_id, src_b.text_id, order
                     )
@@ -604,7 +598,6 @@ def run_blind(
                             system_prompt=system_prompt,
                             user_prompt=user_prompt,
                             order=order,
-                            sampling=sampling,
                             model_config=mc,
                             judge_inputs=judge_inputs,
                             judge_inputs_hash=judge_inputs_hash,

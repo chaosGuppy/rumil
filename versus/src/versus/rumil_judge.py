@@ -339,12 +339,6 @@ async def run_ws(
     from versus.model_config import get_judge_model_config
 
     mc = get_judge_model_config(model, cfg=cfg)
-    sampling = {
-        "temperature": mc.temperature,
-        "max_tokens": mc.max_tokens,
-    }
-    thinking = mc.thinking
-    effort = mc.effort
 
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name
@@ -593,12 +587,6 @@ async def run_orch(
     from versus.model_config import get_judge_model_config
 
     mc = get_judge_model_config(model, cfg=cfg)
-    sampling = {
-        "temperature": mc.temperature,
-        "max_tokens": mc.max_tokens,
-    }
-    thinking = mc.thinking
-    effort = mc.effort
 
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name

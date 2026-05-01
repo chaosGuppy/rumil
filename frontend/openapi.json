@@ -3542,6 +3542,18 @@
           "thinking_off": {
             "type": "boolean",
             "title": "Thinking Off"
+          },
+          "original_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Config"
           }
         },
         "type": "object",
@@ -3556,7 +3568,8 @@
           "temperature",
           "max_tokens",
           "has_thinking",
-          "thinking_off"
+          "thinking_off",
+          "original_config"
         ],
         "title": "BaseExchangeOut",
         "description": "Reconstructed base exchange \u2014 what the fork editor pre-populates."
@@ -5795,6 +5808,18 @@
             "type": "object",
             "title": "Sampling"
           },
+          "model_config_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Config Snapshot"
+          },
           "criterion": {
             "type": "string",
             "title": "Criterion"
@@ -5971,6 +5996,7 @@
           "config_hash",
           "prompt_hash",
           "sampling",
+          "model_config_snapshot",
           "criterion",
           "source_a",
           "source_b",
@@ -6050,6 +6076,18 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Sampling"
+          },
+          "model_config_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Config Snapshot"
           },
           "verdict": {
             "anyOf": [
@@ -6230,6 +6268,7 @@
           "config_hash",
           "prompt_hash",
           "sampling",
+          "model_config_snapshot",
           "verdict",
           "winner_source",
           "preference_label",

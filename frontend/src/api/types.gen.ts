@@ -296,6 +296,12 @@ export type BaseExchangeOut = {
      * Thinking Off
      */
     thinking_off: boolean;
+    /**
+     * Original Config
+     */
+    original_config: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -1668,6 +1674,12 @@ export type Judgment = {
         [key: string]: unknown;
     };
     /**
+     * Model Config Snapshot
+     */
+    model_config_snapshot: {
+        [key: string]: unknown;
+    } | null;
+    /**
      * Criterion
      */
     criterion: string;
@@ -1818,6 +1830,12 @@ export type JudgmentDetail = {
     sampling: {
         [key: string]: unknown;
     };
+    /**
+     * Model Config Snapshot
+     */
+    model_config_snapshot: {
+        [key: string]: unknown;
+    } | null;
     /**
      * Verdict
      */

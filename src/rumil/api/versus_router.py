@@ -448,6 +448,11 @@ class Judgment(pydantic.BaseModel):
     config_hash: str
     prompt_hash: str
     sampling: dict
+    # Full ModelConfig snapshot from the registry — null on legacy rows
+    # written before the nested-shape migration. Carries thinking, effort,
+    # max_thinking_tokens, service_tier alongside the sampling fields the
+    # legacy ``sampling`` field already exposes.
+    model_config_snapshot: dict | None
     criterion: str
     source_a: str
     source_b: str
@@ -493,6 +498,7 @@ class JudgmentDetail(pydantic.BaseModel):
     config_hash: str
     prompt_hash: str
     sampling: dict
+    model_config_snapshot: dict | None
     verdict: str | None
     winner_source: str | None
     preference_label: str | None
@@ -942,7 +948,8 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 judge_model_id=row_cfg["model"],
                 config_hash=row["config_hash"],
                 prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
-                sampling=row_cfg["sampling"] or row.get("sampling") or {},
+                sampling=row.get("sampling") or {},
+                model_config_snapshot=row_cfg.get("model_config"),
                 criterion=row.get("criterion", ""),
                 source_a=row.get("source_a", ""),
                 source_b=row.get("source_b", ""),
@@ -1369,7 +1376,8 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
         judge_model_id=row_cfg["model"],
         config_hash=row["config_hash"],
         prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
-        sampling=row_cfg["sampling"] or row.get("sampling") or {},
+        sampling=row.get("sampling") or {},
+        model_config_snapshot=row_cfg.get("model_config"),
         verdict=row.get("verdict"),
         winner_source=row.get("winner_source"),
         preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),

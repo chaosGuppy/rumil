@@ -1188,9 +1188,9 @@ function JudgmentRow({
               {sample.prompt_hash}
             </span>
           )}
-          {sample.sampling && (
+          {(sample.model_config_snapshot || sample.sampling) && (
             <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
-              {samplingTag(sample.sampling)}
+              {modelConfigTag(sample.model_config_snapshot, sample.sampling)}
             </span>
           )}
         </div>
@@ -1392,12 +1392,37 @@ function InspectToc({
   );
 }
 
-function samplingTag(sampling: { [k: string]: unknown }): string {
+function modelConfigTag(
+  modelConfig: { [k: string]: unknown } | null | undefined,
+  sampling: { [k: string]: unknown } | null | undefined,
+): string {
+  // Prefer the full ModelConfig snapshot (post-registry rows). Fall back
+  // to the legacy sampling-only field for rows written before the schema
+  // migration. Renders the per-row condition compactly:
+  //   T=0 · mt=32000 · think=adaptive · effort=xhigh · tier=priority
+  // Empty bits are dropped so the tag stays short on plain rows.
+  const src = modelConfig ?? sampling ?? {};
   const bits: string[] = [];
-  const t = sampling["temperature"];
-  const m = sampling["max_tokens"];
+  const t = src["temperature"];
+  const m = src["max_tokens"];
   if (t !== undefined && t !== null) bits.push(`T=${t as number | string}`);
   if (m !== undefined && m !== null) bits.push(`mt=${m as number | string}`);
+  const thinking = src["thinking"];
+  if (thinking && typeof thinking === "object") {
+    const th = thinking as { type?: string; display?: string };
+    const label = th.type
+      ? th.display
+        ? `${th.type}/${th.display}`
+        : th.type
+      : "on";
+    bits.push(`think=${label}`);
+  }
+  const effort = src["effort"];
+  if (typeof effort === "string") bits.push(`effort=${effort}`);
+  const mtt = src["max_thinking_tokens"];
+  if (typeof mtt === "number") bits.push(`mtt=${mtt}`);
+  const tier = src["service_tier"];
+  if (typeof tier === "string") bits.push(`tier=${tier}`);
   return bits.join(" · ");
 }
 

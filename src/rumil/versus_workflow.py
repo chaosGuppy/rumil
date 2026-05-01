@@ -33,6 +33,7 @@ from typing import Protocol, runtime_checkable
 
 from rumil.database import DB
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 
 
@@ -62,18 +63,49 @@ class _BudgetedOrchWorkflow:
     ``produces_artifact`` defaults to ``False`` — these orchestrators
     leave their output as a research subgraph (considerations, claims,
     judgements, refreshed View), and the closer extracts the label.
+
+    ``relevant_settings`` lists names of :class:`rumil.settings.Settings`
+    fields whose values affect this workflow's *behaviour* (which calls
+    dispatch, which moves are available, etc.). Their current values
+    are folded into :meth:`fingerprint` so an orchestrator-level setting
+    flip auto-forks the dedup key. Settings that affect *prompt content*
+    are deliberately not listed — the code fingerprint over the
+    prompts directory already covers them.
     """
 
     name: str = "<override>"
     code_paths: Sequence[str] = ()
     produces_artifact: bool = False
     orch_cls: type
+    relevant_settings: Sequence[str] = (
+        # which assess implementation runs (default vs big context).
+        "assess_call_variant",
+        # which moves the orchestrator can dispatch.
+        "available_moves",
+        "available_calls",
+        # whether prioritization runs the red-team pass.
+        "enable_red_team",
+        # global prio knobs gate whether and when global prioritization fires.
+        "enable_global_prio",
+        # subquestion linker on/off changes which links the orch creates.
+        "subquestion_linker_enabled",
+        # which prioritization variant runs end-to-end.
+        "prioritizer_variant",
+        # view variant changes how the closer reads the orch's output.
+        "view_variant",
+        # budget pacing affects how the orch spends its budget.
+        "budget_pacing_enabled",
+    )
 
     def __init__(self, *, budget: int) -> None:
         self.budget = budget
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]:
-        return {"kind": self.name, "budget": self.budget}
+        settings = get_settings()
+        snap: dict[str, str | int | bool | None] = {
+            f"settings.{k}": getattr(settings, k) for k in self.relevant_settings
+        }
+        return {"kind": self.name, "budget": self.budget, **snap}
 
     async def setup(self, db: DB, question_id: str) -> None:
         await db.init_budget(self.budget)
@@ -87,7 +119,7 @@ class TwoPhaseWorkflow(_BudgetedOrchWorkflow):
     """Versus workflow wrapping :class:`TwoPhaseOrchestrator`."""
 
     name = "two_phase"
-    code_paths = (
+    code_paths: Sequence[str] = (
         "src/rumil/orchestrators/two_phase.py",
         "src/rumil/orchestrators/base.py",
         "src/rumil/orchestrators/common.py",

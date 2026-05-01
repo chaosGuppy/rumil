@@ -313,7 +313,7 @@ async def run_orch(
         compute_prompt_hash,
         compute_tool_prompt_hash,
     )
-    from versus.judge_config import (
+    from versus.versus_config import (
         compute_judge_code_fingerprint,
         compute_workspace_state_hash,
         make_judge_config,

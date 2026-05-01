@@ -7,7 +7,7 @@ mainline value set from the active config so the panel can flag stale
 or non-mainline rows.
 
 The axis projection itself lives in
-:func:`versus.judge_config.project_config_to_axes` — this module just
+:func:`versus.versus_config.project_config_to_axes` — this module just
 declares which axes the panel cares about (and in what order) plus
 the human-readable descriptions.
 """
@@ -21,7 +21,7 @@ from versus import config as versus_config
 
 # Single source of truth: ordering matches insertion order; the panel
 # reads ``AXES_ORDER`` directly. Add a new axis = add an entry here AND
-# extend ``versus.judge_config.project_config_to_axes`` to populate it.
+# extend ``versus.versus_config.project_config_to_axes`` to populate it.
 AXIS_DESCRIPTIONS: dict[str, str] = {
     "prefix_config_hash": (
         "Hash of essay text + prefix variant params (n_paragraphs, "
@@ -110,7 +110,7 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
 
     Builds a sample structured config for each (variant × model ×
     dimension) combination using current code, projects each through
-    :func:`versus.judge_config.project_config_to_axes`, and unions the
+    :func:`versus.versus_config.project_config_to_axes`, and unions the
     results per axis. Axes whose value depends on per-run runtime
     state (see ``_RUNTIME_AXES``) are returned empty — the caller
     layers in those values where it has them (e.g. the router unions
@@ -122,8 +122,8 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
         compute_tool_prompt_hash,
     )
     from versus import judge as versus_judge
-    from versus.judge_config import make_judge_config, project_config_to_axes
     from versus.model_config import get_judge_model_config
+    from versus.versus_config import make_judge_config, project_config_to_axes
 
     out: dict[str, set[str]] = {axis: set() for axis in AXES_ORDER}
     thash = compute_tool_prompt_hash()
@@ -171,10 +171,10 @@ def summarize_provenance(rows: Iterable[dict]) -> dict[str, dict[str, int]]:
 
     Every row carries ``config`` + ``config_hash``; the projection
     routes them to the panel's axis counters. New axes are added via
-    :func:`versus.judge_config.project_config_to_axes` and a matching
+    :func:`versus.versus_config.project_config_to_axes` and a matching
     entry in :data:`AXIS_DESCRIPTIONS`.
     """
-    from versus.judge_config import project_config_to_axes
+    from versus.versus_config import project_config_to_axes
 
     counts: dict[str, Counter] = {axis: Counter() for axis in AXES_ORDER}
 

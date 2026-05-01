@@ -361,28 +361,28 @@ def test_compute_pair_surface_hash_is_short_hex():
 
 
 def test_compute_pair_surface_hash_changes_when_headline_template_changes(monkeypatch):
-    import rumil.versus_bridge as vb
+    from versus.tasks import judge_pair as jp
 
     baseline = compute_pair_surface_hash()
 
     def _alt_headline(pair):
         return f"DIFFERENT HEADLINE FORMAT: {pair.task_name}"
 
-    monkeypatch.setattr(vb, "_build_headline", _alt_headline)
+    monkeypatch.setattr(jp, "_build_headline", _alt_headline)
     forked = compute_pair_surface_hash()
 
     assert baseline != forked
 
 
 def test_compute_pair_surface_hash_changes_when_extra_keys_change(monkeypatch):
-    import rumil.versus_bridge as vb
+    from versus.tasks import judge_pair as jp
 
     baseline = compute_pair_surface_hash()
 
     def _alt_extra(pair):
         return {"source": "versus", "prefix_hash": pair.prefix_hash, "new_key": "x"}
 
-    monkeypatch.setattr(vb, "_versus_extra", _alt_extra)
+    monkeypatch.setattr(jp, "_versus_extra", _alt_extra)
     forked = compute_pair_surface_hash()
 
     assert baseline != forked
@@ -517,16 +517,14 @@ def test_preference_labels_are_in_scale_order():
     ]
 
 
-# Workflow indirection: hash compatibility --------------------------------
+# Structured-config dict-shape regression ---------------------------------
 #
-# The orch path now goes through ``TwoPhaseWorkflow``. The dedup key is
-# computed by ``versus.judge_config.make_judge_config`` from inputs that
-# the bridge collects (model, dimension, model_config, prompt/tool/pair/
-# closer hashes, code_fingerprint, workspace state, budget). The
-# workflow refactor changes only how the orchestrator is dispatched —
-# none of the inputs to make_judge_config. This test pins a fixed-input
-# config_hash so an accidental change to make_judge_config's serialization
-# (or the surrounding compose logic) immediately fails CI.
+# The orch path now goes through ``TwoPhaseWorkflow`` + ``JudgePairTask``
+# via ``make_versus_config``. The dict shape changed in #424 (workflow /
+# task subdicts, settings snapshot folded in), so config_hash forks
+# intentionally. Don't pin a hash — pin the *shape* so accidental
+# restructuring (key renames, missing subdict keys) fails CI without
+# the dedup-hash forking churn that an explicit fork would cause.
 
 
 _HASH_FIXTURE_KW: dict = {
@@ -542,21 +540,41 @@ _HASH_FIXTURE_KW: dict = {
     "closer_hash": "33333333",
 }
 
-# Captured before the workflow refactor with the inputs above. Any
-# change to make_judge_config that's not also a deliberate fork should
-# fail this test.
-_EXPECTED_ORCH_CONFIG_HASH = "2937f03ba716aa68"
 
-
-def test_orch_config_hash_unchanged_by_workflow_refactor():
-    from versus.judge_config import make_judge_config
+def test_orch_make_judge_config_produces_new_shape_dict():
+    """The post-#424 shim returns a dict with the new structured shape:
+    top-level cross-cutting fields + ``workflow`` / ``task`` subdicts.
+    Pin the shape — not the hash — so adding behavioural knobs to a
+    workflow/task fingerprint forks the hash naturally without churning
+    this test.
+    """
+    from versus.versus_config import make_judge_config
 
     from rumil.model_config import ModelConfig
 
     mc = ModelConfig(temperature=None, max_tokens=1024)
-    _, h, _ = make_judge_config(
+    cfg, h, jm = make_judge_config(
         "orch",
         model_config=mc,
         **_HASH_FIXTURE_KW,
     )
-    assert h == _EXPECTED_ORCH_CONFIG_HASH
+    assert set(cfg.keys()) >= {
+        "model",
+        "model_config",
+        "workflow",
+        "task",
+        "workspace_id",
+        "workspace_state_hash",
+        "code_fingerprint",
+    }
+    assert cfg["workflow"]["kind"] == "two_phase"
+    assert cfg["workflow"]["budget"] == 4
+    assert cfg["task"]["kind"] == "judge_pair"
+    assert cfg["task"]["dimension"] == "general_quality"
+    assert cfg["task"]["prompt_hash"] == "deadbeef"
+    assert cfg["task"]["tool_prompt_hash"] == "11111111"
+    assert cfg["task"]["pair_surface_hash"] == "22222222"
+    assert cfg["task"]["closer_hash"] == "33333333"
+    assert "variant" not in cfg  # legacy shape removed
+    # judge_model now uses "<task>/<workflow>:<model>:c<hash8>".
+    assert jm == f"judge_pair/two_phase:claude-opus-4-7:c{h[:8]}"

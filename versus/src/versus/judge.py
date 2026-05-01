@@ -126,7 +126,7 @@ def build_blind_judge_config(
     on the wire — sampling, thinking, effort, etc. The whole bundle
     lives under ``judge_inputs.model_config`` and feeds the dedup hash.
     """
-    from versus.judge_config import make_judge_config
+    from versus.versus_config import make_judge_config
 
     return make_judge_config(
         "blind",
@@ -152,22 +152,34 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
     service_tier) surfaces as stale rows. Doesn't check
     ``workspace_state_hash``: that's a per-row baseline watermark, not
     a staleness signal — every row would flap.
+
+    Handles both pre-#424 flat-dict rows (``variant`` / ``prompts`` /
+    ``code_fingerprint`` at top level) and post-#424 structured rows
+    (``workflow`` / ``task`` subdicts).
     """
 
     inputs = row["judge_inputs"]
-    # Historical "ws" rows are kept here so the staleness check on those
-    # rows (with_tools=True prompt + code_fingerprint) keeps working;
-    # we no longer write new ws rows.
-    is_tools = inputs["variant"] in ("ws", "orch")
+    # New-shape rows have a ``workflow`` subdict; legacy rows have a
+    # top-level ``variant``. Historical "ws" rows are flat with
+    # variant="ws"; their staleness check (with_tools=True prompt +
+    # code_fingerprint) still runs through the legacy branch.
+    if "workflow" in inputs:
+        workflow_kind = (inputs.get("workflow") or {}).get("kind")
+        is_tools = workflow_kind not in (None, "blind")
+        prompt_hash = (inputs.get("task") or {}).get("prompt_hash")
+    else:
+        variant = inputs.get("variant")
+        is_tools = variant in ("ws", "orch")
+        prompt_hash = (inputs.get("prompts") or {}).get("shell_hash")
     try:
         expected_ph = compute_judge_prompt_hash(criterion, with_tools=is_tools)
     except ValueError:
         return False
-    if inputs["prompts"]["shell_hash"] != expected_ph:
+    if prompt_hash != expected_ph:
         return False
     if is_tools:
-        # circular: rumil.versus_bridge -> versus.judge_config -> versus.judge
-        from versus.judge_config import compute_judge_code_fingerprint
+        # circular: rumil.versus_bridge -> versus.versus_config -> versus.judge
+        from versus.versus_config import compute_judge_code_fingerprint
 
         if inputs.get("code_fingerprint") != compute_judge_code_fingerprint():
             return False

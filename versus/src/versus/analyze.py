@@ -103,10 +103,32 @@ def label_from_config(cfg: dict) -> dict:
     Returns ``{variant, model, task, phash}``. Drives the FE
     column-header layout. Orch carries its budget tag. The ``ws``
     branch is kept to render historical rows; new rows only ever
-    have variant ∈ {blind, orch}.
+    have workflow.kind ∈ {blind, two_phase, ...}.
+
+    Handles both pre-#424 flat-dict rows and post-#424 structured rows
+    (``workflow`` / ``task`` subdicts) so the panel renders correctly
+    across the transition.
     """
-    variant = cfg["variant"]
     model = cfg["model"]
+    if "workflow" in cfg:
+        workflow = cfg.get("workflow") or {}
+        task = cfg.get("task") or {}
+        workflow_kind = workflow.get("kind")
+        dim = task.get("dimension", "")
+        ph = task.get("prompt_hash", "")
+        phash = f"p{ph}" if ph else ""
+        if workflow_kind == "blind":
+            head = model.split("/", 1)[0] if "/" in model else "anthropic"
+        else:
+            budget = workflow.get("budget")
+            head = (
+                f"rumil:{workflow_kind} b{budget}"
+                if budget is not None
+                else f"rumil:{workflow_kind}"
+            )
+        return {"variant": head, "model": model, "task": dim, "phash": phash}
+    # Legacy flat-dict shape (pre-#424 rows in versus_judgments).
+    variant = cfg["variant"]
     dim = cfg["dimension"]
     phash = f"p{cfg['prompts']['shell_hash']}"
     if variant == "orch":

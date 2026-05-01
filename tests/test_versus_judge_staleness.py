@@ -17,8 +17,8 @@ from __future__ import annotations
 import pathlib
 
 import pytest
-from versus.judge_config import compute_judge_code_fingerprint, make_judge_config
 from versus.model_config import get_judge_model_config
+from versus.versus_config import compute_judge_code_fingerprint, make_judge_config
 
 from rumil.model_config import ModelConfig
 from versus import config as versus_config

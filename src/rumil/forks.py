@@ -15,7 +15,7 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import anthropic
 from anthropic.types import (
@@ -32,13 +32,14 @@ from rumil.database import DB
 from rumil.llm import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
-    _effort_level,
     _is_retryable,
     _log_before_retry,
     _stop_after_status_retries,
     _supports_sampling_params,
-    _thinking_config,
+    derive_model_config,
+    thinking_config,
 )
+from rumil.model_config import ModelConfig, model_config_from_record
 from rumil.models import CallType
 from rumil.moves.registry import MOVES
 from rumil.pricing import compute_cost
@@ -81,7 +82,20 @@ class ForkOverrides(BaseModel):
 
 @dataclass
 class BaseExchange:
-    """Reconstructed base exchange — what the original API call sent."""
+    """Reconstructed base exchange — what the original API call sent.
+
+    ``original_config`` holds the typed ``ModelConfig`` that was
+    actually applied on the wire (sampling, thinking, effort), captured
+    at exchange-write time. When non-None, fork rebuilds prefer it over
+    re-deriving from current rules — so a fork reproduces the original
+    condition even if rules changed since. Cleared when the user
+    overrides the model (a captured config is tied to its model).
+
+    The flat ``temperature`` / ``max_tokens`` / ``has_thinking`` /
+    ``thinking_off`` fields stay on this dataclass for back-compat with
+    the existing fork UI / overrides flow, but the source of truth at
+    the point of replay is ``original_config`` when present.
+    """
 
     exchange_id: str
     call_id: str
@@ -94,6 +108,7 @@ class BaseExchange:
     max_tokens: int
     has_thinking: bool
     thinking_off: bool
+    original_config: ModelConfig | None = None
 
 
 @dataclass
@@ -146,9 +161,12 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
     available_moves preset — exchange rows don't store tools directly, so
     this is a best-effort reconstruction.
 
-    The model isn't stored on the exchange row either, so we fall back to
-    ``settings.model`` — operators can override explicitly if they want
-    something else.
+    The model is read from the exchange row's ``model`` column (added in
+    migration 20260501000019). For pre-migration rows where it's NULL, fall
+    back to the run config — versus runs put it at
+    ``runs.config['judge_config']['model']``, normal runs at
+    ``runs.config['model']`` (captured by ``Settings.capture_config()``).
+    Last resort is ``settings.model``.
     """
     row = await db.get_llm_exchange(base_exchange_id)
     if row is None:
@@ -176,6 +194,24 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
                 )
 
     settings = get_settings()
+    model = row.get("model")
+    if not model and row.get("run_id"):
+        run = await db.get_run(row["run_id"])
+        cfg = (run or {}).get("config") or {}
+        judge_cfg = cfg.get("judge_config") if isinstance(cfg, dict) else None
+        if isinstance(judge_cfg, dict) and judge_cfg.get("model"):
+            model = judge_cfg["model"]
+        elif isinstance(cfg, dict) and cfg.get("model"):
+            model = cfg["model"]
+    if not model:
+        model = settings.model
+    raw_kwargs = row.get("request_kwargs") if isinstance(row.get("request_kwargs"), dict) else None
+    captured = model_config_from_record(raw_kwargs) if raw_kwargs is not None else None
+    has_thinking = (
+        captured.thinking is not None
+        if captured is not None
+        else thinking_config(model) is not None
+    )
     return BaseExchange(
         exchange_id=base_exchange_id,
         call_id=row.get("call_id", ""),
@@ -183,17 +219,32 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
         system_prompt=row.get("system_prompt") or "",
         user_messages=list(user_messages),
         tools=tools,
-        model=settings.model,
-        temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(settings.model) else None,
-        max_tokens=DEFAULT_MAX_TOKENS,
-        has_thinking=_thinking_config(settings.model) is not None,
+        model=model,
+        temperature=captured.temperature
+        if captured is not None
+        else (DEFAULT_TEMPERATURE if _supports_sampling_params(model) else None),
+        max_tokens=captured.max_tokens if captured is not None else DEFAULT_MAX_TOKENS,
+        has_thinking=has_thinking,
         thinking_off=False,
+        original_config=captured,
     )
 
 
 def merge_overrides(base: BaseExchange, overrides: ForkOverrides) -> BaseExchange:
-    """Apply non-null override fields onto the base."""
+    """Apply non-null override fields onto the base.
+
+    A model override drops ``original_config`` since the captured thinking /
+    effort were tied to the original model and don't transfer cleanly. Same
+    model: the captured config survives so build_kwargs can reproduce it.
+    """
+    model_overridden = overrides.model is not None and overrides.model != base.model
     merged_model = overrides.model if overrides.model is not None else base.model
+    captured = None if model_overridden else base.original_config
+    has_thinking = (
+        captured.thinking is not None
+        if captured is not None
+        else thinking_config(merged_model) is not None
+    )
     return BaseExchange(
         exchange_id=base.exchange_id,
         call_id=base.call_id,
@@ -210,27 +261,57 @@ def merge_overrides(base: BaseExchange, overrides: ForkOverrides) -> BaseExchang
         if overrides.temperature is not None
         else base.temperature,
         max_tokens=overrides.max_tokens if overrides.max_tokens is not None else base.max_tokens,
-        has_thinking=_thinking_config(merged_model) is not None,
+        has_thinking=has_thinking,
         thinking_off=overrides.thinking_off
         if overrides.thinking_off is not None
         else base.thinking_off,
+        original_config=captured,
     )
 
 
 def build_kwargs(merged: BaseExchange) -> dict:
-    """Build Anthropic messages.create kwargs from a merged base+overrides."""
+    """Build Anthropic messages.create kwargs from a merged base+overrides.
+
+    When ``original_config`` is present (captured at exchange-write time),
+    its ``to_anthropic_kwargs()`` is the source of truth — thinking and
+    output_config track the original even if the underlying rules changed
+    since. ``thinking_off=True`` still wins as an explicit user override.
+    Without a captured config we fall back to ``derive_model_config(model)``,
+    matching the pre-capture behavior.
+    """
     kwargs: dict = {
         "model": merged.model,
-        "max_tokens": merged.max_tokens,
         "system": merged.system_prompt,
         "messages": merged.user_messages,
     }
-    if _supports_sampling_params(merged.model) and merged.temperature is not None:
-        kwargs["temperature"] = merged.temperature
-    if not merged.thinking_off and (thinking := _thinking_config(merged.model)) is not None:
-        kwargs["thinking"] = thinking
-    if (effort := _effort_level(merged.model)) is not None:
-        kwargs["output_config"] = {"effort": effort}
+    captured = merged.original_config
+    if captured is not None:
+        # Override the temperature from BaseExchange when one was set explicitly,
+        # otherwise let the captured config carry it.
+        cfg = captured
+        if merged.thinking_off:
+            cfg = replace(cfg, thinking=None)
+        kwargs.update(cfg.to_anthropic_kwargs())
+        # An explicit fork-time temperature override (different from captured)
+        # still wins, mirroring the pre-capture override behavior.
+        if (
+            _supports_sampling_params(merged.model)
+            and merged.temperature is not None
+            and merged.temperature != cfg.temperature
+        ):
+            kwargs["temperature"] = merged.temperature
+        if merged.max_tokens != cfg.max_tokens:
+            kwargs["max_tokens"] = merged.max_tokens
+    else:
+        cfg = derive_model_config(merged.model, max_tokens=merged.max_tokens)
+        if merged.thinking_off:
+            cfg = replace(cfg, thinking=None)
+        # Honor an explicit override-time temperature even on the recompute path.
+        if merged.temperature is not None and _supports_sampling_params(merged.model):
+            cfg = replace(cfg, temperature=merged.temperature)
+        elif not _supports_sampling_params(merged.model):
+            cfg = replace(cfg, temperature=None)
+        kwargs.update(cfg.to_anthropic_kwargs())
     if merged.tools:
         kwargs["tools"] = merged.tools
     return kwargs

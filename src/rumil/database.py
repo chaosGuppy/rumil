@@ -2825,6 +2825,8 @@ class DB:
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
         user_messages: Sequence[dict] | None = None,
+        model: str | None = None,
+        request_kwargs: dict[str, Any] | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         row: dict[str, Any] = {
@@ -2843,9 +2845,12 @@ class DB:
             "duration_ms": duration_ms,
             "cache_creation_input_tokens": cache_creation_input_tokens,
             "cache_read_input_tokens": cache_read_input_tokens,
+            "model": model,
         }
         if user_messages is not None:
             row["user_messages"] = user_messages
+        if request_kwargs is not None:
+            row["request_kwargs"] = request_kwargs
         await self._execute(self.client.table("call_llm_exchanges").insert(row))
         return exchange_id
 

@@ -135,12 +135,14 @@ def main() -> None:
         help="Restrict planning to specified essay_id(s). Repeatable. Honored on blind, ws, and orch.",
     )
     ap.add_argument(
-        "--active",
+        "--include-stale",
         action="store_true",
         help=(
-            "Restrict to the canonical active set: current schema_version "
-            "and not in cfg.essays.exclude_ids. Same gate /versus applies. "
-            "Composes with --essay (intersected)."
+            "Default behavior is the canonical active set (current "
+            "schema_version, not in cfg.essays.exclude_ids — same gate "
+            "/versus applies). Pass this to plan against every essay "
+            "with rows in versus_texts instead, including off-feed or "
+            "old-schema rows. Composes with --essay (intersected)."
         ),
     )
     ap.add_argument(
@@ -185,8 +187,12 @@ def main() -> None:
         action="store_true",
         help=(
             "Target the production Supabase database for versus_texts / "
-            "versus_judgments (default: local). Blind path only — ws/orch "
-            "still hit local rumil DB."
+            "versus_judgments AND, on ws/orch, the rumil workspace + run "
+            "tables (default: local for both). On ws/orch, the workspace "
+            "named via --workspace must already exist on the target DB "
+            "(typo protection — create via rumil main.py first). ws/orch "
+            "runs are still staged by default; pass --persist to write the "
+            "per-pair Question + research subtree to baseline."
         ),
     )
     ap.add_argument(
@@ -212,13 +218,13 @@ def main() -> None:
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 
-    if args.active:
+    if args.include_stale:
+        essay_ids = args.essay
+    else:
         active = prepare.active_essay_ids(
             cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
         )
         essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
-    else:
-        essay_ids = args.essay
 
     prefix_cfgs = (
         [prepare.resolve_prefix_cfg(cfg, label) for label in args.prefix_label]
@@ -262,13 +268,6 @@ def main() -> None:
     if not args.workspace:
         ap.error(f"--workspace is required for --variant {args.variant}")
 
-    if args.prod:
-        ap.error(
-            f"--prod is not yet wired through --variant {args.variant}; "
-            "the blind path is the only prod-aware judge today. ws/orch "
-            "would need DB.create(prod=...) plumbing in rumil_judge.py too."
-        )
-
     if prefix_cfgs is not None and len(prefix_cfgs) > 1:
         ap.error(
             f"--variant {args.variant} takes at most one --prefix-label "
@@ -294,6 +293,7 @@ def main() -> None:
                 current_only=args.current_only,
                 prefix_cfg=prefix_cfg_one,
                 persist=args.persist,
+                prod=args.prod,
             )
         )
     elif args.variant == "orch":
@@ -313,6 +313,7 @@ def main() -> None:
                 current_only=args.current_only,
                 prefix_cfg=prefix_cfg_one,
                 persist=args.persist,
+                prod=args.prod,
             )
         )
 

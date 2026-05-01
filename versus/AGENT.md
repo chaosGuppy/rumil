@@ -11,7 +11,7 @@ Library lives at `versus/src/versus/`; CLI entry points at `versus/scripts/`; ca
 Two Postgres tables, accessed through `versus.versus_db`:
 
 - `versus_texts` — every essay-shaped contestant: human baselines and model continuations (paraphrase support is deferred, see below). Columns include `request` / `response` (raw provider-shaped JSONB for the API call that produced the text), `text` (extracted continuation), and a generated `request_hash` over the canonical request body.
-- `versus_judgments` — pairwise verdicts. `request` / `response` capture the blind judge's literal API call; `judge_inputs` is the canonical condition blob (model, sampling, prompt content, tool descriptions, pair surface, workspace state, code fingerprint, budget, closer config, plus `text_a_id` / `text_b_id` so re-judging different completion samples naturally forks). `judge_inputs_hash` is generated. `winner_source` is generated from `verdict` + `display_first` + `(source_a, source_b)`.
+- `versus_judgments` — pairwise verdicts. `request` / `response` capture the blind judge's literal API call; `judge_inputs` is the canonical condition blob (model, dimension, nested `model_config` from the per-model registry, prompt content, tool descriptions, pair surface, workspace state, code fingerprint, budget, closer config, plus `text_a_id` / `text_b_id` so re-judging different completion samples naturally forks). `judge_inputs_hash` is generated. `winner_source` is generated from `verdict` + `display_first` + `(source_a, source_b)`.
 
 JSONL archives still live under `versus/data/*.jsonl` as a frozen historical record; nothing in the current pipeline reads them. The `versus.jsonl` helper module is dormant — the deferred paraphrase code path imports it, nothing else.
 
@@ -34,11 +34,19 @@ There's no DB-level uniqueness on either table. "Skip if exists" semantics live 
 
 The blob covers, per variant:
 
-- **blind**: `model`, `dimension`, `sampling`, `prompts.shell_hash` (sha8 of the composed shell + dimension body). claude-* models route direct to Anthropic; everything else through OpenRouter.
+- **blind**: `model`, `dimension`, `model_config` (nested ModelConfig snapshot — sampling, thinking, effort, etc.), `prompts.shell_hash` (sha8 of the composed shell + dimension body). claude-* models route direct to Anthropic; everything else through OpenRouter.
 - **ws**: blind fields + `workspace_id`, `tool_descriptions_hash`, `pair_surface_hash`, `code_fingerprint`, `workspace_state_hash`.
 - **orch**: ws fields + `budget`, `closer_hash`.
 
 At write time, the runner adds `text_a_id` / `text_b_id` (and `order` for rumil rows) before computing the hash. Adding a new "thing the LLM saw" is one place: extend `make_judge_config` (and the corresponding axis in `project_config_to_axes` so the provenance panel surfaces it).
+
+## Per-model registry
+
+`versus/config.yaml` `models:` is the source of truth for what each model gets on the wire — `sampling.temperature`, `sampling.max_tokens`, `sampling.top_p`, `thinking`, `effort`, `max_thinking_tokens`, `service_tier`. Validator on Config catches typos: every model used by `completion.models` / `judging.models` must have a registry entry.
+
+`versus.model_config.get_model_config(model_id, cfg=cfg)` resolves the entry into a `rumil.model_config.ModelConfig`. `get_judge_model_config(model_id, cfg=cfg)` is the same with `cfg.judging.max_tokens` layered on top — judges typically need more output headroom than completion-purpose calls. Both are read everywhere downstream: completions, paraphrases, blind/ws/orch judges, the staleness detector, and `mainline.current_values_summary` for the provenance panel.
+
+Editing a registry entry forks `request_hash` / `judge_inputs_hash` deterministically, so prior data stays valid as the prior config and topup runs land fresh rows under the new condition. `models[<id>].sampling.max_tokens` ignored on direct-Anthropic claude-opus-4-7 because `temperature` is null — the wire kwargs builder drops null fields.
 
 ## Sources, unified
 

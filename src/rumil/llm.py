@@ -22,7 +22,7 @@ import re
 import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
@@ -43,6 +43,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from rumil.model_config import ModelConfig
 from rumil.pricing import compute_cost
 from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
@@ -67,10 +68,10 @@ def _supports_sampling_params(model: str) -> bool:
     # 1.0 — we'd rather skip it than set 1.0, so gate on thinking being off.
     if model.startswith("claude-opus-4-7"):
         return False
-    return _thinking_config(model) is None
+    return thinking_config(model) is None
 
 
-def _thinking_config(model: str) -> dict | None:
+def thinking_config(model: str) -> dict | None:
     # Adaptive thinking: Opus 4.7/4.6 and Sonnet 4.6. Haiku and older Sonnet
     # don't support adaptive. On 4.7, thinking text is omitted by default —
     # ask for summarized so sdk_agent can still capture it.
@@ -81,7 +82,24 @@ def _thinking_config(model: str) -> dict | None:
     return None
 
 
-def _effort_level(model: str) -> str | None:
+def derive_model_config(model: str, *, max_tokens: int | None = None) -> ModelConfig:
+    """Default ``ModelConfig`` for ``model``, derived from rumil rules.
+
+    What rumil's call paths use when no explicit override is passed:
+    sampling defaults from ``_supports_sampling_params`` /
+    ``DEFAULT_TEMPERATURE``, plus thinking + effort from the
+    model-id-driven helpers. ``max_tokens`` overrides the default cap
+    when provided.
+    """
+    return ModelConfig(
+        temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(model) else None,
+        max_tokens=max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
+        thinking=thinking_config(model),
+        effort=effort_level(model),
+    )
+
+
+def effort_level(model: str) -> str | None:
     # xhigh is Opus 4.7-only; high is the best shared setting elsewhere.
     # Haiku and Sonnet 4.5 don't support the effort parameter at all.
     if model.startswith("claude-opus-4-7"):
@@ -417,6 +435,17 @@ class AgentResult:
     messages: list[dict] = field(default_factory=list)
 
 
+def _capture_request_kwargs(cfg: ModelConfig) -> dict:
+    """Persist the ``ModelConfig`` that was applied on the wire.
+
+    Stored in the ``request_kwargs`` column on ``call_llm_exchanges``.
+    ``ModelConfig.to_record_dict()`` is null-preserving so the same
+    config produces the same JSONB regardless of how it landed on the
+    wire. Forks read this back via :func:`model_config_from_record`.
+    """
+    return cfg.to_record_dict()
+
+
 @dataclass
 class LLMExchangeMetadata:
     """Context for automatically saving an LLM exchange to the database.
@@ -449,6 +478,7 @@ async def _save_exchange(
     cache_creation_input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
     user_messages: Sequence[dict] | None = None,
+    request_kwargs: dict | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event."""
     exchange_id = await db.save_llm_exchange(
@@ -465,6 +495,8 @@ async def _save_exchange(
         cache_creation_input_tokens=cache_creation_input_tokens or None,
         cache_read_input_tokens=cache_read_input_tokens or None,
         user_messages=user_messages,
+        model=model,
+        request_kwargs=request_kwargs,
     )
     cost_usd = compute_cost(
         model=model,
@@ -577,32 +609,39 @@ async def call_anthropic_api(
     db: DB | None = None,
     cache: bool = False,
     effort: str | None = None,
+    model_config: ModelConfig | None = None,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
     If metadata and db are provided, the exchange is automatically saved
     to the database and a trace event is recorded.
+
+    Pass ``model_config`` to override the per-model defaults that
+    :func:`derive_model_config` would otherwise pick (sampling, thinking,
+    effort). The legacy ``effort`` kwarg is honored only when
+    ``model_config`` is None — pass effort via ``model_config.effort``
+    in new code.
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
+    if model_config is not None and effort is not None:
+        raise ValueError("pass effort via model_config.effort, not both")
+    if model_config is None:
+        cfg = derive_model_config(model)
+        # Caller can override effort only when the model actually supports it;
+        # for Haiku/older Sonnet effort_level returns None and the API rejects
+        # the param.
+        if effort is not None and cfg.effort is not None:
+            cfg = replace(cfg, effort=effort)
+    else:
+        cfg = model_config
     system_prompt = _with_date_suffix(system_prompt)
     kwargs: dict = {
         "model": model,
-        "max_tokens": DEFAULT_MAX_TOKENS,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
+        **cfg.to_anthropic_kwargs(),
     }
-    if _supports_sampling_params(model):
-        kwargs["temperature"] = DEFAULT_TEMPERATURE
-    if (thinking := _thinking_config(model)) is not None:
-        kwargs["thinking"] = thinking
-    base_effort = _effort_level(model)
-    # Caller can override only when the model actually supports `effort`;
-    # for Haiku/older Sonnet `_effort_level` returns None and the param is
-    # not accepted by the API.
-    effective_effort = effort if (effort is not None and base_effort is not None) else base_effort
-    if effective_effort is not None:
-        kwargs["output_config"] = {"effort": effective_effort}
     if tools:
         kwargs["tools"] = tools
 
@@ -681,6 +720,7 @@ async def call_anthropic_api(
                 or 0,
                 cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
                 user_messages=serialized,
+                request_kwargs=_capture_request_kwargs(cfg),
             )
         except Exception as exc:
             log.error(
@@ -1280,19 +1320,15 @@ async def _structured_call_parse(
     model = model or settings.model
     system_prompt = _with_date_suffix(system_prompt)
 
+    cfg = derive_model_config(model, max_tokens=max_tokens)
+    if disable_thinking:
+        cfg = replace(cfg, thinking=None, effort=None)
     parse_kwargs: dict = {
         "model": model,
-        "max_tokens": max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(msg_list) if cache else msg_list,
+        **cfg.to_anthropic_kwargs(),
     }
-    if _supports_sampling_params(model):
-        parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
-    if not disable_thinking:
-        if (thinking := _thinking_config(model)) is not None:
-            parse_kwargs["thinking"] = thinking
-        if (effort := _effort_level(model)) is not None:
-            parse_kwargs["output_config"] = {"effort": effort}
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
     if tools is not None:
@@ -1342,6 +1378,7 @@ async def _structured_call_parse(
             or 0,
             cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
             user_messages=serialized,
+            request_kwargs=_capture_request_kwargs(cfg),
         )
     if response.parsed_output is not None:
         log.debug(

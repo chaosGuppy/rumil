@@ -85,7 +85,18 @@ def _legacy_judgment_dict(row: dict) -> dict:
         "duration_s": row.get("duration_s"),
         "config": judge_inputs,
         "config_hash": row.get("judge_inputs_hash"),
-        "sampling": judge_inputs.get("sampling"),
+        # Inspect-page legacy: surfaces just temperature + max_tokens for the
+        # row's "T=… · mt=…" tag. The full ModelConfig snapshot now lives at
+        # judge_inputs.model_config; consumers wanting thinking / effort /
+        # service_tier should read from there.
+        "sampling": (
+            {
+                "temperature": judge_inputs.get("model_config", {}).get("temperature"),
+                "max_tokens": judge_inputs.get("model_config", {}).get("max_tokens"),
+            }
+            if judge_inputs.get("model_config")
+            else None
+        ),
         "rumil_call_id": row.get("rumil_call_id"),
         "rumil_run_id": row.get("run_id"),
         "rumil_question_id": row.get("rumil_question_id"),

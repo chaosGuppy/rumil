@@ -32,11 +32,15 @@ template — see `rumil/versus_prompts.py` for the substitution dicts.
 Each row carries a structured `judge_inputs: dict`; the DB generates
 `judge_inputs_hash` from its canonical-form JSON. The blob is built by
 `versus.judge_config.make_judge_config` and covers every input the
-judge saw — model, sampling, prompt content, tool descriptions, pair
-surface, code fingerprint, workspace state, budget, closer config —
-plus `text_a_id` / `text_b_id` and `order` added at write time. Any
-change in any of those auto-forks the hash; no manual version bump to
-remember. See `versus/AGENT.md` for the full schema.
+judge saw — model, dimension, the per-model `model_config` snapshot
+(sampling, thinking, effort, max_thinking_tokens, service_tier — full
+`ModelConfig.to_record_dict()` from the registry), prompt content,
+tool descriptions, pair surface, code fingerprint, workspace state,
+budget, closer config — plus `text_a_id` / `text_b_id` and `order`
+added at write time. Editing the registry, swapping a prompt, or
+touching any code the fingerprint covers auto-forks the hash; no
+manual version bump to remember. See `versus/AGENT.md` for the full
+schema and the registry shape.
 
 ## When to use
 
@@ -301,10 +305,13 @@ over-read any single number:
   (`TwoPhaseOrchestrator` rejects anything smaller with a clear
   error).
 - **Re-running is free.** Dedup keys include the variant, model,
-  workspace, dimension (or versus criterion), budget, sampling params
-  (via `:s<hash>`), tool-prompt contents (via `:t<hash>` for ws/orch),
+  workspace, dimension (or versus criterion), budget, the full
+  per-model `model_config` snapshot from the registry (via
+  `:m<hash>`), tool-prompt contents (via `:t<hash>` for ws/orch),
   and `order` slot — so any combination change produces fresh rows
-  without clobbering existing ones. `order` is currently always
+  without clobbering existing ones. Editing `versus/config.yaml`
+  `models:` for the judge model forks the hash naturally; old rows
+  stay valid as the prior config. `order` is currently always
   single-order; the slot exists so mirror-mode can be switched on
   without a migration.
 - **Rumil trace UI requires rumil's frontend** (`./scripts/dev-api.sh`

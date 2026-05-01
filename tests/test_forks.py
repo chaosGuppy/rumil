@@ -14,6 +14,7 @@ from rumil.forks import (
     resolve_base,
 )
 from rumil.models import CallType
+from rumil.settings import get_settings
 
 
 def test_hash_overrides_drops_nulls():
@@ -314,8 +315,6 @@ async def test_resolve_base_falls_back_to_run_config_model(tmp_db, scout_call):
 
 async def test_resolve_base_falls_back_to_settings_model(tmp_db, scout_call):
     """When neither the exchange row nor the run config carries a model, fall back to settings.model."""
-    from rumil.settings import get_settings
-
     exchange_id = await _seed_exchange(tmp_db, scout_call.id)
     base = await resolve_base(tmp_db, exchange_id)
     assert base.model == get_settings().model

@@ -47,6 +47,11 @@ class Source:
     source_id: str  # "human" or the model id
     text: str  # the completion text
     text_id: str  # versus_texts.id — threaded through so judgments can FK to it
+    # SHA256 hash of versus_texts.request->'model_config'. Distinguishes
+    # rows produced under different registry configs (same source_id,
+    # different conditions). NULL for legacy rows that predate the
+    # registry. Aggregations / UI can use this to bucket variants.
+    model_config_hash: str | None = None
 
 
 def pair_order_seed(essay_id: str, a: str, b: str) -> int:
@@ -318,6 +323,7 @@ def load_sources_by_essay(
             source_id=row["source_id"],
             text=row["text"],
             text_id=row["id"],
+            model_config_hash=row.get("model_config_hash"),
         )
     if skipped:
         for essay_id, source_id in skipped:

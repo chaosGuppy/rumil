@@ -515,3 +515,48 @@ def test_preference_labels_are_in_scale_order():
         "B somewhat preferred",
         "B strongly preferred",
     ]
+
+
+# Workflow indirection: hash compatibility --------------------------------
+#
+# The orch path now goes through ``TwoPhaseWorkflow``. The dedup key is
+# computed by ``versus.judge_config.make_judge_config`` from inputs that
+# the bridge collects (model, dimension, model_config, prompt/tool/pair/
+# closer hashes, code_fingerprint, workspace state, budget). The
+# workflow refactor changes only how the orchestrator is dispatched —
+# none of the inputs to make_judge_config. This test pins a fixed-input
+# config_hash so an accidental change to make_judge_config's serialization
+# (or the surrounding compose logic) immediately fails CI.
+
+
+_HASH_FIXTURE_KW: dict = {
+    "model": "claude-opus-4-7",
+    "dimension": "general_quality",
+    "prompt_hash": "deadbeef",
+    "tool_prompt_hash": "11111111",
+    "pair_surface_hash": "22222222",
+    "workspace_id": "abcd1234",
+    "code_fingerprint": {"src/rumil/versus_bridge.py": "aaaaaaaa"},
+    "workspace_state_hash": "0011223344556677",
+    "budget": 4,
+    "closer_hash": "33333333",
+}
+
+# Captured before the workflow refactor with the inputs above. Any
+# change to make_judge_config that's not also a deliberate fork should
+# fail this test.
+_EXPECTED_ORCH_CONFIG_HASH = "2937f03ba716aa68"
+
+
+def test_orch_config_hash_unchanged_by_workflow_refactor():
+    from versus.judge_config import make_judge_config
+
+    from rumil.model_config import ModelConfig
+
+    mc = ModelConfig(temperature=None, max_tokens=1024)
+    _, h, _ = make_judge_config(
+        "orch",
+        model_config=mc,
+        **_HASH_FIXTURE_KW,
+    )
+    assert h == _EXPECTED_ORCH_CONFIG_HASH

@@ -49,12 +49,12 @@ from rumil.models import (
     PageType,
     Workspace,
 )
-from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.run_eval.runner import wrap_as_mcp_tool
 from rumil.sdk_agent import SdkAgentConfig, run_sdk_agent
 from rumil.settings import get_settings, override_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace
+from rumil.versus_workflow import TwoPhaseWorkflow
 from rumil.workspace_exploration.explore import make_explore_subgraph_tool
 from rumil.workspace_exploration.load_page import make_load_page_tool
 from rumil.workspace_exploration.search import make_search_tool
@@ -488,11 +488,10 @@ async def judge_pair_orch(
     """
     with override_settings(rumil_model_override=model):
         question_id = await ensure_versus_question(db, pair)
-        await db.init_budget(budget)
-
-        orch = TwoPhaseOrchestrator(db=db, broadcaster=broadcaster, budget_cap=budget)
+        workflow = TwoPhaseWorkflow(budget=budget)
         try:
-            await orch.run(question_id)
+            await workflow.setup(db, question_id)
+            await workflow.run(db, question_id, broadcaster)
         except Exception:
             log.exception(
                 "versus orch failed (essay=%s, pair=%s/%s, task=%s)",

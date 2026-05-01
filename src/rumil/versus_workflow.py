@@ -1,0 +1,97 @@
+"""Workflow protocol for plugging rumil orchestrators into versus tasks.
+
+Versus needs to drive different rumil "shapes of work" through one
+interface — today, the orch judge path runs ``TwoPhaseOrchestrator`` per
+pair; later, completion tasks (#426/#427) will run draft-and-edit or
+similar over the same harness. Each shape is a ``Workflow``.
+
+The protocol is deliberately thin — ``setup`` seeds the budget,
+``run`` does the work, ``fingerprint`` describes the workflow's
+behaviour-affecting knobs for dedup keys. ``code_paths`` is declared
+on the protocol now and consumed in #425 when per-workflow code
+fingerprinting lands. ``produces_artifact`` flags whether the closer
+should read ``question.content`` verbatim (artifact workflows like
+DraftAndEdit) or extract a label from the research subgraph
+(research workflows like TwoPhase).
+
+Invariants worth preserving in subclasses:
+
+- ``setup`` only touches ``db`` (e.g. ``init_budget``). Idempotent —
+  versus rerun mode may skip it when the budget is already seeded.
+- ``run`` is where async work + tracing spans happen. Keeping it pure
+  execution lets the bridge / harness wrap timing, retries, langfuse
+  spans without disturbing setup.
+- ``fingerprint()`` returns workflow-specific knobs only. Global
+  settings that affect behaviour (assess_call_variant, etc.) live in
+  the run config; #424 will fold them in via ``make_versus_config``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Protocol, runtime_checkable
+
+from rumil.database import DB
+from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
+from rumil.tracing.broadcast import Broadcaster
+
+
+@runtime_checkable
+class Workflow(Protocol):
+    """One pluggable shape of work versus can fire on a question."""
+
+    name: str
+    code_paths: Sequence[str]
+    produces_artifact: bool
+
+    def fingerprint(self) -> Mapping[str, str | int | bool | None]: ...
+
+    async def setup(self, db: DB, question_id: str) -> None: ...
+
+    async def run(self, db: DB, question_id: str, broadcaster: Broadcaster | None) -> None: ...
+
+
+class _BudgetedOrchWorkflow:
+    """Shared base for orchestrators that take ``budget_cap=N``.
+
+    Captures the ``db.init_budget(budget) -> Orch(db, broadcaster,
+    budget_cap=budget).run(qid)`` shape used by TwoPhase / Experimental
+    / ClaimInvestigation. Subclasses set ``name``, ``code_paths``, and
+    ``orch_cls``.
+
+    ``produces_artifact`` defaults to ``False`` — these orchestrators
+    leave their output as a research subgraph (considerations, claims,
+    judgements, refreshed View), and the closer extracts the label.
+    """
+
+    name: str = "<override>"
+    code_paths: Sequence[str] = ()
+    produces_artifact: bool = False
+    orch_cls: type
+
+    def __init__(self, *, budget: int) -> None:
+        self.budget = budget
+
+    def fingerprint(self) -> Mapping[str, str | int | bool | None]:
+        return {"kind": self.name, "budget": self.budget}
+
+    async def setup(self, db: DB, question_id: str) -> None:
+        await db.init_budget(self.budget)
+
+    async def run(self, db: DB, question_id: str, broadcaster: Broadcaster | None) -> None:
+        orch = self.orch_cls(db=db, broadcaster=broadcaster, budget_cap=self.budget)
+        await orch.run(question_id)
+
+
+class TwoPhaseWorkflow(_BudgetedOrchWorkflow):
+    """Versus workflow wrapping :class:`TwoPhaseOrchestrator`."""
+
+    name = "two_phase"
+    code_paths = (
+        "src/rumil/orchestrators/two_phase.py",
+        "src/rumil/orchestrators/base.py",
+        "src/rumil/orchestrators/common.py",
+        "src/rumil/orchestrators/dispatch_handlers.py",
+    )
+    produces_artifact = False
+    orch_cls = TwoPhaseOrchestrator

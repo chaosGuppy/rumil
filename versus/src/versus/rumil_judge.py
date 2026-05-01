@@ -33,16 +33,6 @@ from versus import config, judge, versus_db
 from versus.run_summary import RunSummary
 
 
-def _anthropic_sampling(model: str, max_tokens: int) -> dict:
-    """Sampling dict for ws/orch direct-Anthropic calls.
-
-    Opus 4.7 deprecates the temperature param on the Messages API (returns
-    400), so we omit it. Sonnet/Haiku use temperature=0.0 for determinism.
-    """
-    use_temp = None if model.startswith("claude-opus-4-7") else 0.0
-    return {"temperature": use_temp, "max_tokens": max_tokens}
-
-
 @dataclass
 class _PendingPair:
     essay_id: str

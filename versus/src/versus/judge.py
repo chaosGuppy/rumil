@@ -331,9 +331,6 @@ def load_sources_by_essay(
     return groups, prefix_text_by_group
 
 
-JUDGE_TEMPERATURE = 0.0
-
-
 @dataclass(frozen=True)
 class _BlindTask:
     essay_id: str

@@ -342,14 +342,19 @@ async def run_ws(
     # concurrent pairs see the same baseline.
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
-    sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
-    # rumil's call_anthropic_api applies thinking_config() and effort_level()
-    # to the model automatically; record the same values here so judge_inputs
-    # reflects the actual condition and the dedup hash forks if rules change.
-    from rumil.llm import effort_level, thinking_config
+    # Versus model registry is the source of truth for what versus sends on
+    # the wire. Look up once; the same ModelConfig is passed to the bridge
+    # (which threads it into the SDK agent + closer) AND recorded in
+    # judge_inputs so the dedup hash forks on registry edits.
+    from versus.model_config import get_model_config
 
-    thinking = thinking_config(model)
-    effort = effort_level(model)
+    mc = get_model_config(model, cfg=cfg)
+    sampling = {
+        "temperature": mc.temperature,
+        "max_tokens": mc.max_tokens,
+    }
+    thinking = mc.thinking
+    effort = mc.effort
 
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name
@@ -358,10 +363,8 @@ async def run_ws(
             "ws",
             model=model,
             dimension=dim,
-            sampling=sampling,
+            model_config=mc,
             prompt_hash=ph,
-            thinking=thinking,
-            effort=effort,
             tool_prompt_hash=thash,
             pair_surface_hash=qhash,
             workspace_id=ws_short,
@@ -469,7 +472,9 @@ async def run_ws(
                     },
                 )
                 print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
-                result = await judge_pair_ws_aware(db, pair_ctx, task_body=task_body, model=model)
+                result = await judge_pair_ws_aware(
+                    db, pair_ctx, task_body=task_body, model=model, model_config=mc
+                )
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
                 summary.record_error()
@@ -591,14 +596,16 @@ async def run_orch(
     code_fingerprint = compute_judge_code_fingerprint()
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
-    sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
-    # rumil applies thinking_config() AND effort_level() to the orchestrator's
-    # research calls AND the closer; mirror both here so judge_inputs reflects
-    # the actual condition.
-    from rumil.llm import effort_level, thinking_config
+    # Versus model registry as source of truth (see run_ws above).
+    from versus.model_config import get_model_config
 
-    thinking = thinking_config(model)
-    effort = effort_level(model)
+    mc = get_model_config(model, cfg=cfg)
+    sampling = {
+        "temperature": mc.temperature,
+        "max_tokens": mc.max_tokens,
+    }
+    thinking = mc.thinking
+    effort = mc.effort
 
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name
@@ -607,10 +614,8 @@ async def run_orch(
             "orch",
             model=model,
             dimension=dim,
-            sampling=sampling,
+            model_config=mc,
             prompt_hash=ph,
-            thinking=thinking,
-            effort=effort,
             tool_prompt_hash=thash,
             pair_surface_hash=qhash,
             workspace_id=ws_short,
@@ -719,7 +724,12 @@ async def run_orch(
                 )
                 print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
                 result = await judge_pair_orch(
-                    db, pair_ctx, task_body=task_body, model=model, budget=budget
+                    db,
+                    pair_ctx,
+                    task_body=task_body,
+                    model=model,
+                    budget=budget,
+                    model_config=mc,
                 )
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")

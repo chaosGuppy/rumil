@@ -41,4 +41,6 @@ def get_model_config(model_id: str, *, cfg: versus_config.Config | None = None) 
         top_p=entry.sampling.top_p,
         thinking=dict(entry.thinking) if entry.thinking is not None else None,
         effort=entry.effort,
+        max_thinking_tokens=entry.max_thinking_tokens,
+        service_tier=entry.service_tier,
     )

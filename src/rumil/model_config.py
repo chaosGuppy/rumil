@@ -30,9 +30,14 @@ class ModelConfig:
     ``thinking`` is the Anthropic adaptive/extended-thinking dict (e.g.
     ``{"type": "adaptive", "display": "summarized"}``) or ``None``.
     ``effort`` is wrapped on the wire as ``output_config.effort``.
-    Direct anthropic_client paths today set both to ``None``; bridge
-    paths populate them from rumil's model rules (or, with the versus
-    registry, from the operator's declarative config).
+    ``max_thinking_tokens`` caps extended-thinking budget when applicable.
+    ``service_tier`` selects priority/standard queueing (``"auto"`` /
+    ``"standard_only"`` / ``"priority"``). All optional fields default
+    to ``None``; on the wire they're emitted only when set.
+
+    Forward-looking: when adding a new condition field to track
+    (top_k, stop_sequences, etc.), add it here as optional. The
+    canonical record dict and dedup hash fork naturally on first use.
     """
 
     temperature: float | None
@@ -40,6 +45,8 @@ class ModelConfig:
     top_p: float | None = None
     thinking: dict[str, Any] | None = None
     effort: str | None = None
+    max_thinking_tokens: int | None = None
+    service_tier: str | None = None
 
     def to_anthropic_kwargs(self) -> dict[str, Any]:
         """Build the messages.create kwargs subset for this config.
@@ -55,9 +62,14 @@ class ModelConfig:
         if self.top_p is not None:
             kwargs["top_p"] = self.top_p
         if self.thinking is not None:
-            kwargs["thinking"] = dict(self.thinking)
+            thinking = dict(self.thinking)
+            if self.max_thinking_tokens is not None:
+                thinking["budget_tokens"] = self.max_thinking_tokens
+            kwargs["thinking"] = thinking
         if self.effort is not None:
             kwargs["output_config"] = {"effort": self.effort}
+        if self.service_tier is not None:
+            kwargs["service_tier"] = self.service_tier
         return kwargs
 
     def to_record_dict(self) -> dict[str, Any]:
@@ -85,4 +97,6 @@ def model_config_from_record(record: dict[str, Any]) -> ModelConfig:
         top_p=record.get("top_p"),
         thinking=record.get("thinking"),
         effort=record.get("effort"),
+        max_thinking_tokens=record.get("max_thinking_tokens"),
+        service_tier=record.get("service_tier"),
     )

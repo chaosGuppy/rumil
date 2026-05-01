@@ -107,10 +107,7 @@ def route_judge_model(model: str) -> tuple[Provider, str]:
 def build_blind_judge_config(
     canonical_model: str,
     dimension: str,
-    sampling: dict,
-    *,
-    thinking: dict | None = None,
-    effort: str | None = None,
+    model_config: ModelConfig,
 ) -> tuple[dict, str, str]:
     """Build ``(config, config_hash, judge_model)`` for one blind judgment.
 
@@ -120,11 +117,9 @@ def build_blind_judge_config(
     of truth. The returned ``config_hash`` is computed independently of
     DB-side text_a_id/text_b_id; callers fold those in before persisting.
 
-    ``thinking`` and ``effort`` come from the versus model registry —
-    blind path now applies them on the wire (via versus.anthropic_client),
-    so judge_inputs records what was actually sent. Defaults are None
-    for the no-thinking / no-effort case (most non-claude models, plus
-    haiku and older sonnet).
+    ``model_config`` is the registry-resolved ModelConfig versus applies
+    on the wire — sampling, thinking, effort, etc. The whole bundle
+    lives under ``judge_inputs.model_config`` and feeds the dedup hash.
     """
     from versus.judge_config import make_judge_config
 
@@ -132,14 +127,12 @@ def build_blind_judge_config(
         "blind",
         model=canonical_model,
         dimension=dimension,
-        sampling=sampling,
+        model_config=model_config,
         prompt_hash=compute_judge_prompt_hash(dimension, with_tools=False),
-        thinking=thinking,
-        effort=effort,
     )
 
 
-def judge_config_is_current(row: dict, criterion: str) -> bool:
+def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | None = None) -> bool:
     """Return False if any code-side input to the judge has drifted.
 
     Status.py uses this to surface stale rows in the STALE banner.
@@ -148,35 +141,36 @@ def judge_config_is_current(row: dict, criterion: str) -> bool:
 
     Checks the prompt shell hash for all variants, plus the
     ``code_fingerprint`` for ws/orch — that fingerprint catches semantic
-    non-prompt edits (parser changes, SDK migrations, etc.) — and both
-    the ``thinking`` block and ``effort`` level (None for blind, the
-    rules-driven values from ``rumil.llm`` for ws/orch) so changes to
-    those rules surface as stale rows. Doesn't check
+    non-prompt edits (parser changes, SDK migrations, etc.) — and the
+    full ``model_config`` snapshot against the versus model registry,
+    so any registry edit (sampling, thinking, effort, max_thinking_tokens,
+    service_tier) surfaces as stale rows. Doesn't check
     ``workspace_state_hash``: that's a per-row baseline watermark, not
     a staleness signal — every row would flap.
     """
-    from rumil.llm import effort_level, thinking_config
+    from versus.model_config import get_model_config
 
-    cfg = row["judge_inputs"]
-    is_tools = cfg["variant"] in ("ws", "orch")
+    inputs = row["judge_inputs"]
+    is_tools = inputs["variant"] in ("ws", "orch")
     try:
         expected_ph = compute_judge_prompt_hash(criterion, with_tools=is_tools)
     except ValueError:
         return False
-    if cfg["prompts"]["shell_hash"] != expected_ph:
+    if inputs["prompts"]["shell_hash"] != expected_ph:
         return False
     if is_tools:
         # circular: rumil.versus_bridge -> versus.judge_config -> versus.judge
         from versus.judge_config import compute_judge_code_fingerprint
 
-        if cfg.get("code_fingerprint") != compute_judge_code_fingerprint():
+        if inputs.get("code_fingerprint") != compute_judge_code_fingerprint():
             return False
-    is_blind = cfg["variant"] == "blind"
-    expected_thinking = None if is_blind else thinking_config(cfg["model"])
-    if cfg.get("thinking") != expected_thinking:
+    try:
+        expected_mc = get_model_config(inputs["model"], cfg=cfg)
+    except KeyError:
+        # Model no longer in the registry; row references a config that
+        # versus can't reproduce. Stale by definition.
         return False
-    expected_effort = None if is_blind else effort_level(cfg["model"])
-    if cfg.get("effort") != expected_effort:
+    if inputs.get("model_config") != expected_mc.to_record_dict():
         return False
     return True
 
@@ -567,17 +561,10 @@ def run_blind(
                 for base_model in models:
                     provider, canonical_model = route_judge_model(base_model)
                     mc = get_model_config(base_model, cfg=cfg)
-                    sampling = {
-                        "temperature": mc.temperature,
-                        "max_tokens": mc.max_tokens,
-                    }
                     base_config, _, judge_model = build_blind_judge_config(
-                        canonical_model,
-                        dimension,
-                        sampling,
-                        thinking=mc.thinking,
-                        effort=mc.effort,
+                        canonical_model, dimension, mc
                     )
+                    sampling = {"temperature": mc.temperature, "max_tokens": mc.max_tokens}
                     judge_inputs, judge_inputs_hash = _build_judge_inputs(
                         base_config, src_a.text_id, src_b.text_id, order
                     )

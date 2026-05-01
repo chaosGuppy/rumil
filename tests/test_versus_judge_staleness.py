@@ -1,41 +1,56 @@
 """Tests for ``versus.judge.judge_config_is_current``.
 
-The staleness detector fails False when any code-side input to the
+The staleness detector returns False when any code-side input to the
 judge has drifted from what a fresh run would produce — prompt shell
-hash, code fingerprint (ws/orch), or thinking config (per
-:func:`rumil.llm.thinking_config`).
+hash, code fingerprint (ws/orch), or the recorded ``model_config``
+snapshot vs. what the versus model registry currently says for that
+model.
+
+Tests construct judgment rows via ``make_judge_config`` using a
+ModelConfig that matches (or deliberately differs from) what versus's
+registry returns for the given model id. The staleness detector loads
+versus/config.yaml from the repo root.
 """
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 from versus.judge_config import compute_judge_code_fingerprint, make_judge_config
+from versus.model_config import get_model_config
 
+from rumil.model_config import ModelConfig
+from versus import config as versus_config
 from versus import judge as versus_judge
 
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+_VERSUS_CFG_PATH = _REPO_ROOT / "versus" / "config.yaml"
 
-def _make_blind_row(*, model: str, thinking: dict | None = None, effort: str | None = None) -> dict:
+
+@pytest.fixture
+def versus_cfg() -> versus_config.Config:
+    return versus_config.load(_VERSUS_CFG_PATH)
+
+
+def _make_blind_row(*, model: str, model_config: ModelConfig) -> dict:
     cfg, _, _ = make_judge_config(
         "blind",
         model=model,
         dimension="general_quality",
-        sampling={"temperature": 0.0, "max_tokens": 1024},
+        model_config=model_config,
         prompt_hash=versus_judge.compute_judge_prompt_hash("general_quality", with_tools=False),
-        thinking=thinking,
-        effort=effort,
     )
     return {"judge_inputs": cfg}
 
 
-def _make_ws_row(*, model: str, thinking: dict | None, effort: str | None = None) -> dict:
+def _make_ws_row(*, model: str, model_config: ModelConfig) -> dict:
     cfg, _, _ = make_judge_config(
         "ws",
         model=model,
         dimension="general_quality",
-        sampling={"temperature": 0.0, "max_tokens": 1024},
+        model_config=model_config,
         prompt_hash=versus_judge.compute_judge_prompt_hash("general_quality", with_tools=True),
-        thinking=thinking,
-        effort=effort,
         tool_prompt_hash="11111111",
         pair_surface_hash="22222222",
         workspace_id="abcd1234",
@@ -45,104 +60,81 @@ def _make_ws_row(*, model: str, thinking: dict | None, effort: str | None = None
     return {"judge_inputs": cfg}
 
 
-def test_blind_row_with_thinking_none_is_current():
-    row = _make_blind_row(model="claude-haiku-4-5", thinking=None)
-    assert versus_judge.judge_config_is_current(row, "general_quality") is True
+def test_blind_row_with_registry_config_is_current(versus_cfg):
+    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    row = _make_blind_row(model="claude-haiku-4-5", model_config=mc)
+    assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is True
 
 
-def test_blind_row_with_unexpected_thinking_is_stale():
-    row = _make_blind_row(model="claude-haiku-4-5", thinking={"type": "adaptive"})
-    assert versus_judge.judge_config_is_current(row, "general_quality") is False
-
-
-def test_ws_row_for_haiku_with_no_thinking_is_current():
-    # haiku doesn't get adaptive thinking — recorded None matches expected None.
-    row = _make_ws_row(model="claude-haiku-4-5", thinking=None)
-    assert versus_judge.judge_config_is_current(row, "general_quality") is True
-
-
-def test_ws_row_for_opus_47_with_adaptive_thinking_is_current():
-    row = _make_ws_row(
-        model="claude-opus-4-7-20251001",
-        thinking={"type": "adaptive", "display": "summarized"},
-        effort="xhigh",
+def test_blind_row_with_drifted_temperature_is_stale(versus_cfg):
+    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    drifted = ModelConfig(
+        temperature=0.7,
+        max_tokens=mc.max_tokens,
+        top_p=mc.top_p,
+        thinking=mc.thinking,
+        effort=mc.effort,
     )
-    assert versus_judge.judge_config_is_current(row, "general_quality") is True
+    row = _make_blind_row(model="claude-haiku-4-5", model_config=drifted)
+    assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False
 
 
-def test_ws_row_for_opus_47_missing_thinking_is_stale():
-    # An older row predating thinking-recording: thinking field missing →
-    # treated as None, but expected is the adaptive dict for opus 4.7 → stale.
-    row = _make_ws_row(model="claude-opus-4-7-20251001", thinking=None)
-    assert versus_judge.judge_config_is_current(row, "general_quality") is False
-
-
-def test_ws_row_with_wrong_thinking_dict_is_stale():
-    row = _make_ws_row(
-        model="claude-opus-4-7-20251001",
-        thinking={"type": "adaptive"},  # missing the display field opus 4.7 sets
+def test_blind_row_with_unexpected_thinking_is_stale(versus_cfg):
+    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    drifted = ModelConfig(
+        temperature=mc.temperature,
+        max_tokens=mc.max_tokens,
+        thinking={"type": "adaptive"},
+        effort=mc.effort,
     )
-    assert versus_judge.judge_config_is_current(row, "general_quality") is False
+    row = _make_blind_row(model="claude-haiku-4-5", model_config=drifted)
+    assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False
 
 
-def test_unrelated_dimension_returns_false():
-    row = _make_blind_row(model="claude-haiku-4-5", thinking=None)
-    # An unknown dimension makes compute_judge_prompt_hash raise; helper
-    # returns False so unknown rows show up as stale rather than crashing.
-    assert versus_judge.judge_config_is_current(row, "no-such-dimension") is False
+def test_ws_row_for_opus_with_registry_config_is_current(versus_cfg):
+    mc = get_model_config("claude-opus-4-7", cfg=versus_cfg)
+    row = _make_ws_row(model="claude-opus-4-7", model_config=mc)
+    assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is True
 
 
-@pytest.mark.parametrize(
-    ("model", "expected_thinking"),
-    (
-        ("claude-haiku-4-5", None),
-        ("claude-opus-4-7-20251001", {"type": "adaptive", "display": "summarized"}),
-        ("claude-sonnet-4-6", {"type": "adaptive"}),
-    ),
-)
-def test_thinking_check_uses_rumil_thinking_config(model, expected_thinking):
-    # Records the rumil rules at the time of writing. If thinking_config
-    # changes for any of these models, this test breaks deliberately so
-    # the impact on staleness semantics gets reviewed.
-    from rumil.llm import thinking_config
-
-    assert thinking_config(model) == expected_thinking
-
-
-def test_blind_row_with_unexpected_effort_is_stale():
-    row = _make_blind_row(model="claude-haiku-4-5", effort="high")
-    assert versus_judge.judge_config_is_current(row, "general_quality") is False
-
-
-def test_ws_row_for_opus_47_with_xhigh_effort_is_current():
-    row = _make_ws_row(
-        model="claude-opus-4-7-20251001",
-        thinking={"type": "adaptive", "display": "summarized"},
-        effort="xhigh",
+def test_ws_row_for_opus_with_dropped_thinking_is_stale(versus_cfg):
+    # Captured thinking=None but registry says opus 4.7 should run with
+    # adaptive thinking. Stale because the row's recorded condition no
+    # longer matches what versus would send today.
+    mc = get_model_config("claude-opus-4-7", cfg=versus_cfg)
+    drifted = ModelConfig(
+        temperature=mc.temperature,
+        max_tokens=mc.max_tokens,
+        thinking=None,
+        effort=mc.effort,
     )
-    assert versus_judge.judge_config_is_current(row, "general_quality") is True
+    row = _make_ws_row(model="claude-opus-4-7", model_config=drifted)
+    assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False
 
 
-def test_ws_row_for_opus_47_missing_effort_is_stale():
-    row = _make_ws_row(
-        model="claude-opus-4-7-20251001",
-        thinking={"type": "adaptive", "display": "summarized"},
+def test_ws_row_for_opus_with_dropped_effort_is_stale(versus_cfg):
+    mc = get_model_config("claude-opus-4-7", cfg=versus_cfg)
+    drifted = ModelConfig(
+        temperature=mc.temperature,
+        max_tokens=mc.max_tokens,
+        thinking=mc.thinking,
         effort=None,
     )
-    assert versus_judge.judge_config_is_current(row, "general_quality") is False
+    row = _make_ws_row(model="claude-opus-4-7", model_config=drifted)
+    assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False
 
 
-@pytest.mark.parametrize(
-    ("model", "expected_effort"),
-    (
-        ("claude-haiku-4-5", None),
-        ("claude-opus-4-7-20251001", "xhigh"),
-        ("claude-sonnet-4-6", "high"),
-    ),
-)
-def test_effort_check_uses_rumil_effort_level(model, expected_effort):
-    # Same idea as the thinking version: pin current rules so silent drift
-    # in effort_level forces a deliberate test update.
-    from rumil.llm import effort_level
+def test_unrelated_dimension_returns_false(versus_cfg):
+    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    row = _make_blind_row(model="claude-haiku-4-5", model_config=mc)
+    # An unknown dimension makes compute_judge_prompt_hash raise; helper
+    # returns False so unknown rows show up as stale rather than crashing.
+    assert versus_judge.judge_config_is_current(row, "no-such-dimension", cfg=versus_cfg) is False
 
-    assert effort_level(model) == expected_effort
+
+def test_unknown_model_returns_false(versus_cfg):
+    # Row references a model that's been removed from the registry —
+    # versus can't reproduce the config, treat as stale.
+    mc = get_model_config("claude-haiku-4-5", cfg=versus_cfg)
+    row = _make_blind_row(model="not-a-registered-model", model_config=mc)
+    assert versus_judge.judge_config_is_current(row, "general_quality", cfg=versus_cfg) is False

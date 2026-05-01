@@ -66,18 +66,27 @@ class SamplingCfg(pydantic.BaseModel):
 class VersusModelConfig(pydantic.BaseModel):
     """Per-model effective config that versus applies on the wire.
 
-    Source of truth for what gets sent to the provider — sampling
-    defaults, Anthropic thinking block, effort level. Direct paths
-    (completions, paraphrases, blind judge) and bridge paths (ws/orch)
-    both read from this registry, so a single yaml edit changes the
-    effective condition everywhere consistently. The recorded
+    Source of truth for what gets sent to the provider — sampling,
+    Anthropic thinking block, effort level, optional max-thinking
+    budget, optional service tier. Direct paths (completions,
+    paraphrases, blind judge) and bridge paths (ws/orch) both read
+    from this registry, so a single yaml edit changes the effective
+    condition everywhere consistently. The recorded
     ``model_config_hash`` on each row forks naturally on any change,
     keeping old rows reproducible.
+
+    Forward-looking optional fields (top_k, stop_sequences, etc.) get
+    added here when they become relevant. ``service_tier`` is most
+    useful on prod (``"priority"`` for cost-tolerant lower-latency
+    runs); ``max_thinking_tokens`` caps explicit thinking budget when
+    a model supports extended thinking with a budget knob.
     """
 
     sampling: SamplingCfg
     thinking: dict[str, Any] | None = None
     effort: str | None = None
+    max_thinking_tokens: int | None = None
+    service_tier: str | None = None
 
 
 class StorageCfg(pydantic.BaseModel):

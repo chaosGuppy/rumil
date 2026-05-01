@@ -28,15 +28,16 @@ from versus.judge_config import (  # noqa: E402
     project_config_to_axes,
 )
 
+from rumil.model_config import ModelConfig  # noqa: E402
 from versus import mainline as versus_mainline  # noqa: E402
+
+_BASE_MC = ModelConfig(temperature=None, max_tokens=1024)
 
 _BLIND_KW: dict[str, Any] = {
     "model": "claude-opus-4-7",
     "dimension": "general_quality",
-    "sampling": {"temperature": None, "max_tokens": 1024},
+    "model_config": _BASE_MC,
     "prompt_hash": "deadbeef",
-    "thinking": None,
-    "effort": None,
 }
 
 _WS_KW: dict[str, Any] = {
@@ -67,10 +68,19 @@ def test_config_hash_is_deterministic_for_identical_inputs():
     (
         ("model", "claude-sonnet-4-6"),
         ("dimension", "grounding"),
-        ("sampling", {"temperature": 0.2, "max_tokens": 1024}),
         ("prompt_hash", "abcd1234"),
-        ("thinking", {"type": "adaptive"}),
-        ("effort", "high"),
+        (
+            "model_config",
+            ModelConfig(temperature=0.2, max_tokens=1024),
+        ),
+        (
+            "model_config",
+            ModelConfig(temperature=None, max_tokens=1024, thinking={"type": "adaptive"}),
+        ),
+        (
+            "model_config",
+            ModelConfig(temperature=None, max_tokens=1024, effort="high"),
+        ),
     ),
 )
 def test_config_hash_changes_when_any_input_changes(override_key, override_value):
@@ -80,28 +90,22 @@ def test_config_hash_changes_when_any_input_changes(override_key, override_value
     assert base_hash != bumped_hash
 
 
-def test_thinking_field_recorded_when_non_none():
-    kw = {**_BLIND_KW, "thinking": {"type": "adaptive", "display": "summarized"}}
-    cfg, _, _ = make_judge_config("blind", **kw)
-    assert cfg["thinking"] == {"type": "adaptive", "display": "summarized"}
-
-
-def test_thinking_field_present_as_none_when_omitted():
-    cfg, _, _ = make_judge_config("blind", **_BLIND_KW)
-    assert "thinking" in cfg
-    assert cfg["thinking"] is None
-
-
-def test_effort_field_recorded_when_non_none():
-    kw = {**_BLIND_KW, "effort": "xhigh"}
-    cfg, _, _ = make_judge_config("blind", **kw)
-    assert cfg["effort"] == "xhigh"
-
-
-def test_effort_field_present_as_none_when_omitted():
-    cfg, _, _ = make_judge_config("blind", **_BLIND_KW)
-    assert "effort" in cfg
-    assert cfg["effort"] is None
+def test_model_config_recorded_as_nested_dict():
+    mc = ModelConfig(
+        temperature=None,
+        max_tokens=1024,
+        thinking={"type": "adaptive", "display": "summarized"},
+        effort="xhigh",
+    )
+    cfg, _, _ = make_judge_config("blind", **{**_BLIND_KW, "model_config": mc})
+    assert cfg["model_config"] == mc.to_record_dict()
+    # Sanity-check that thinking/effort live inside the nested dict, not
+    # as siblings of "model" / "dimension".
+    assert "thinking" not in cfg
+    assert "effort" not in cfg
+    assert "sampling" not in cfg
+    assert cfg["model_config"]["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert cfg["model_config"]["effort"] == "xhigh"
 
 
 def test_orch_config_hash_changes_when_code_fingerprint_changes():
@@ -220,10 +224,10 @@ _CONFIG_FIELD_TO_AXIS = {
     "closer_hash": "judge_closer_hash",
 }
 # Top-level keys deliberately not exposed as their own axis (covered
-# by other axes implicitly). ``thinking`` and ``effort`` project only
-# when non-None, matching ``sampling`` — all three are folded into
-# config_hash but only surface as a separate axis when set.
-_CONFIG_FIELDS_OPAQUE = {"variant", "sampling", "prompts", "thinking", "effort"}
+# by other axes implicitly). ``model_config`` is the nested ModelConfig
+# snapshot; folded into config_hash and surfaced as
+# ``judge_model_config_hash`` axis on demand.
+_CONFIG_FIELDS_OPAQUE = {"variant", "model_config", "prompts"}
 
 
 @pytest.mark.parametrize(

@@ -13,6 +13,7 @@ from rumil.forks import (
     merge_overrides,
     resolve_base,
 )
+from rumil.model_config import ModelConfig
 from rumil.models import CallType
 from rumil.settings import get_settings
 
@@ -147,13 +148,18 @@ def test_build_kwargs_omits_tools_when_empty():
 
 
 def test_build_kwargs_uses_captured_thinking_over_recompute():
-    # Captured original_kwargs has a different thinking dict than the current
+    # Captured original_config has a different thinking dict than the current
     # rules would produce — fork must reproduce the original, not the new one.
     captured_thinking = {"type": "adaptive", "display": "summarized", "marker": "old"}
     base = _base(
         model="claude-opus-4-7",
         has_thinking=True,
-        original_kwargs={"thinking": captured_thinking, "output_config": {"effort": "old-xhigh"}},
+        original_config=ModelConfig(
+            temperature=None,
+            max_tokens=1000,
+            thinking=captured_thinking,
+            effort="old-xhigh",
+        ),
     )
     k = build_kwargs(base)
     assert k["thinking"] == captured_thinking
@@ -162,7 +168,7 @@ def test_build_kwargs_uses_captured_thinking_over_recompute():
 
 def test_build_kwargs_falls_back_to_rules_when_no_capture():
     # Old row without request_kwargs: behavior should match pre-capture defaults.
-    base = _base(model="claude-opus-4-7", has_thinking=True, original_kwargs=None)
+    base = _base(model="claude-opus-4-7", has_thinking=True, original_config=None)
     k = build_kwargs(base)
     assert k["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert k["output_config"] == {"effort": "xhigh"}
@@ -174,7 +180,9 @@ def test_build_kwargs_thinking_off_overrides_captured():
         model="claude-opus-4-7",
         has_thinking=True,
         thinking_off=True,
-        original_kwargs={"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+        original_config=ModelConfig(
+            temperature=None, max_tokens=1000, thinking={"type": "adaptive"}, effort="high"
+        ),
     )
     k = build_kwargs(base)
     assert "thinking" not in k
@@ -189,7 +197,7 @@ def test_build_kwargs_captured_none_thinking_omits_block():
     base = _base(
         model="claude-haiku-4-5-20251001",
         has_thinking=False,
-        original_kwargs={"thinking": None, "output_config": None},
+        original_config=ModelConfig(temperature=0.0, max_tokens=1000, thinking=None, effort=None),
     )
     k = build_kwargs(base)
     assert "thinking" not in k
@@ -202,21 +210,22 @@ def test_merge_overrides_drops_capture_when_model_changes():
     base = _base(
         model="claude-opus-4-7",
         has_thinking=True,
-        original_kwargs={"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}},
+        original_config=ModelConfig(
+            temperature=None, max_tokens=1000, thinking={"type": "adaptive"}, effort="xhigh"
+        ),
     )
     merged = merge_overrides(base, ForkOverrides(model="claude-haiku-4-5-20251001"))
-    assert merged.original_kwargs is None
+    assert merged.original_config is None
     assert merged.has_thinking is False
 
 
 def test_merge_overrides_preserves_capture_when_model_unchanged():
-    base = _base(
-        model="claude-opus-4-7",
-        has_thinking=True,
-        original_kwargs={"thinking": {"type": "adaptive"}},
+    captured = ModelConfig(
+        temperature=None, max_tokens=1000, thinking={"type": "adaptive"}, effort=None
     )
+    base = _base(model="claude-opus-4-7", has_thinking=True, original_config=captured)
     merged = merge_overrides(base, ForkOverrides(temperature=0.5))
-    assert merged.original_kwargs == {"thinking": {"type": "adaptive"}}
+    assert merged.original_config == captured
 
 
 _FORK_DEFAULTS = dict(

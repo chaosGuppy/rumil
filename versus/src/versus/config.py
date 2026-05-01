@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+from typing import Any
 
 import pydantic
 import yaml
@@ -56,6 +57,29 @@ class JudgingCfg(pydantic.BaseModel):
     max_tokens: int = 32000
 
 
+class SamplingCfg(pydantic.BaseModel):
+    temperature: float | None
+    max_tokens: int
+    top_p: float | None = None
+
+
+class VersusModelConfig(pydantic.BaseModel):
+    """Per-model effective config that versus applies on the wire.
+
+    Source of truth for what gets sent to the provider — sampling
+    defaults, Anthropic thinking block, effort level. Direct paths
+    (completions, paraphrases, blind judge) and bridge paths (ws/orch)
+    both read from this registry, so a single yaml edit changes the
+    effective condition everywhere consistently. The recorded
+    ``model_config_hash`` on each row forks naturally on any change,
+    keeping old rows reproducible.
+    """
+
+    sampling: SamplingCfg
+    thinking: dict[str, Any] | None = None
+    effort: str | None = None
+
+
 class StorageCfg(pydantic.BaseModel):
     # Completions and judgments live in versus_texts / versus_judgments
     # (Postgres) — see versus.versus_db. Only the dormant paraphrase code
@@ -74,6 +98,13 @@ class Config(pydantic.BaseModel):
     completion: CompletionCfg
     paraphrasing: ParaphrasingCfg = pydantic.Field(default_factory=ParaphrasingCfg)
     judging: JudgingCfg
+    # Per-model effective config registry, keyed by model id. Every
+    # model that appears in ``completion.models`` or ``judging.models``
+    # must have an entry here (validated on load). Source of truth for
+    # what versus actually sends; both direct and bridge call paths
+    # read from this registry rather than recomputing from rumil's
+    # implicit rules.
+    models: dict[str, VersusModelConfig] = pydantic.Field(default_factory=dict)
     storage: StorageCfg
     concurrency: int = 20
     # Per-model concurrency cap. Each unique completion/judge model id
@@ -89,6 +120,25 @@ class Config(pydantic.BaseModel):
         dupes = {i for i in ids if ids.count(i) > 1}
         if dupes:
             raise ValueError(f"duplicate prefix variant ids: {sorted(dupes)}")
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def _check_model_registry_coverage(self) -> Config:
+        """Every model used by completion / judging needs a registry entry.
+
+        Catches typos and forgotten registry updates at load time rather
+        than at first-call time when the row would silently fall back to
+        rumil's implicit rules.
+        """
+        used: set[str] = {m.id for m in self.completion.models}
+        used.update(self.judging.models)
+        missing = sorted(used - set(self.models.keys()))
+        if missing:
+            raise ValueError(
+                "config.models is missing entries for: "
+                + ", ".join(missing)
+                + ". Add a per-model VersusModelConfig under `models:` for each."
+            )
         return self
 
 

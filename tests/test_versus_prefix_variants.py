@@ -22,12 +22,16 @@ from versus import config, prepare  # noqa: E402
 
 
 def _make_cfg(prefix: dict, variants: list[dict] | None = None) -> config.Config:
+    placeholder = config.VersusModelConfig(
+        sampling=config.SamplingCfg(temperature=0, max_tokens=1024)
+    )
     return config.Config(
         essays=config.EssaysCfg(),
         prefix=config.PrefixCfg(**prefix),
         prefix_variants=[config.PrefixCfg(**v) for v in (variants or [])],
         completion=config.CompletionCfg(models=[config.ModelCfg(id="m")]),
         judging=config.JudgingCfg(models=["j"]),
+        models={"m": placeholder, "j": placeholder},
         storage=config.StorageCfg(),
     )
 

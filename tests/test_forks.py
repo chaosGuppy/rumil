@@ -146,6 +146,79 @@ def test_build_kwargs_omits_tools_when_empty():
     assert "tools" not in k
 
 
+def test_build_kwargs_uses_captured_thinking_over_recompute():
+    # Captured original_kwargs has a different thinking dict than the current
+    # rules would produce — fork must reproduce the original, not the new one.
+    captured_thinking = {"type": "adaptive", "display": "summarized", "marker": "old"}
+    base = _base(
+        model="claude-opus-4-7",
+        has_thinking=True,
+        original_kwargs={"thinking": captured_thinking, "output_config": {"effort": "old-xhigh"}},
+    )
+    k = build_kwargs(base)
+    assert k["thinking"] == captured_thinking
+    assert k["output_config"] == {"effort": "old-xhigh"}
+
+
+def test_build_kwargs_falls_back_to_rules_when_no_capture():
+    # Old row without request_kwargs: behavior should match pre-capture defaults.
+    base = _base(model="claude-opus-4-7", has_thinking=True, original_kwargs=None)
+    k = build_kwargs(base)
+    assert k["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert k["output_config"] == {"effort": "xhigh"}
+
+
+def test_build_kwargs_thinking_off_overrides_captured():
+    # An explicit thinking_off on the fork still wins, even when captured had it.
+    base = _base(
+        model="claude-opus-4-7",
+        has_thinking=True,
+        thinking_off=True,
+        original_kwargs={"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+    )
+    k = build_kwargs(base)
+    assert "thinking" not in k
+    # output_config tracks the captured value regardless of thinking_off — those
+    # are independent knobs on the API and the recorded effort still applied.
+    assert k["output_config"] == {"effort": "high"}
+
+
+def test_build_kwargs_captured_none_thinking_omits_block():
+    # A row that captured thinking=None means "the original explicitly didn't
+    # send a thinking block". Reproduce: omit it.
+    base = _base(
+        model="claude-haiku-4-5-20251001",
+        has_thinking=False,
+        original_kwargs={"thinking": None, "output_config": None},
+    )
+    k = build_kwargs(base)
+    assert "thinking" not in k
+    assert "output_config" not in k
+
+
+def test_merge_overrides_drops_capture_when_model_changes():
+    # Captured thinking is tied to the old model; switching models means the
+    # capture is no longer the right reproduction target. Fall back to recompute.
+    base = _base(
+        model="claude-opus-4-7",
+        has_thinking=True,
+        original_kwargs={"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}},
+    )
+    merged = merge_overrides(base, ForkOverrides(model="claude-haiku-4-5-20251001"))
+    assert merged.original_kwargs is None
+    assert merged.has_thinking is False
+
+
+def test_merge_overrides_preserves_capture_when_model_unchanged():
+    base = _base(
+        model="claude-opus-4-7",
+        has_thinking=True,
+        original_kwargs={"thinking": {"type": "adaptive"}},
+    )
+    merged = merge_overrides(base, ForkOverrides(temperature=0.5))
+    assert merged.original_kwargs == {"thinking": {"type": "adaptive"}}
+
+
 _FORK_DEFAULTS = dict(
     overrides={},
     model="claude-haiku-4-5-20251001",

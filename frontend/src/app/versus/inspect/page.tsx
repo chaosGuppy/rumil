@@ -80,6 +80,38 @@ function shortModel(id: string): string {
   return id.startsWith("paraphrase:") ? `para:${shortModel(modelOf(id))}` : after;
 }
 
+/** Trailing config-hash chunk on a legacy compound judge_model_id, e.g.
+ *  "blind:claude-haiku-4-5:general_quality:c19517145" → "c19517145". Returns
+ *  the empty string when the id has no recognizable suffix (raw model id). */
+function configHashSuffix(judgeModelId: string): string {
+  const parts = judgeModelId.split(":");
+  const last = parts[parts.length - 1];
+  return last.startsWith("c") && last.length > 1 ? last : "";
+}
+
+/** Build a map id → display label, appending the config-hash suffix when two
+ *  ids would otherwise share the same short name. Used so thinking/effort
+ *  variants of the same model render as distinct columns instead of two
+ *  visually-identical labels. */
+function disambiguatedLabels(judgeModelIds: string[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  const baseCounts = new Map<string, number>();
+  for (const id of judgeModelIds) {
+    const base = shortModel(id);
+    baseCounts.set(base, (baseCounts.get(base) ?? 0) + 1);
+  }
+  for (const id of judgeModelIds) {
+    const base = shortModel(id);
+    if ((baseCounts.get(base) ?? 0) > 1) {
+      const suffix = configHashSuffix(id);
+      labels.set(id, suffix ? `${base}:${suffix}` : base);
+    } else {
+      labels.set(id, base);
+    }
+  }
+  return labels;
+}
+
 type VariantBundle = {
   id: string;
   detail: EssayDetail;
@@ -643,11 +675,14 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                   <thead>
                     <tr>
                       <th></th>
-                      {judges.map((jb) => (
-                        <th key={jb} title={jb}>
-                          {shortModel(jb)}
-                        </th>
-                      ))}
+                      {(() => {
+                        const labels = disambiguatedLabels(judges);
+                        return judges.map((jb) => (
+                          <th key={jb} title={jb}>
+                            {labels.get(jb) ?? shortModel(jb)}
+                          </th>
+                        ));
+                      })()}
                     </tr>
                   </thead>
                   <tbody>
@@ -980,7 +1015,9 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
       </p>
       {flips.length > 0 && (
         <ul className="inspect-flip-list">
-          {flips.map((p, idx) => {
+          {(() => {
+            const judgeLabels = disambiguatedLabels(flips.map((p) => p.judge));
+            return flips.map((p, idx) => {
             const sides = [p.source_a, p.source_b].filter((s) => s !== "human").map(modelOf);
             const dataModel = sides.length > 0 ? sides.join(" ") : "";
             const alwaysShow = sides.length === 0 ? "1" : undefined;
@@ -993,7 +1030,7 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
                 data-always-show={alwaysShow}
               >
                 <div className="inspect-flip-pair">
-                  <span className="versus-mono">{shortModel(p.judge)}</span>{" "}
+                  <span className="versus-mono">{judgeLabels.get(p.judge) ?? shortModel(p.judge)}</span>{" "}
                   <span className="versus-muted">·</span>{" "}
                   <span className="versus-muted" style={{ fontSize: 11 }}>{p.criterion}</span>{" "}
                   <span className="versus-muted">·</span>{" "}
@@ -1019,7 +1056,8 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
                 </div>
               </li>
             );
-          })}
+            });
+          })()}
         </ul>
       )}
     </section>
@@ -1324,18 +1362,25 @@ function InspectToc({
           <li>
             <a href="#judgments">judgments</a>
             <ul>
-              {judgeOrder.map((jb) => (
-                <li
-                  key={jb}
-                  data-filterable
-                  data-model={jb}
-                  data-always-show="1"
-                >
-                  <a href={`#${anchorId("judge", jb)}`}>
-                    {shortModel(judgeModelIdByHash.get(jb) ?? jb)}
-                  </a>
-                </li>
-              ))}
+              {(() => {
+                const ids = judgeOrder.map((jb) => judgeModelIdByHash.get(jb) ?? jb);
+                const labels = disambiguatedLabels(ids);
+                return judgeOrder.map((jb) => {
+                  const id = judgeModelIdByHash.get(jb) ?? jb;
+                  return (
+                    <li
+                      key={jb}
+                      data-filterable
+                      data-model={jb}
+                      data-always-show="1"
+                    >
+                      <a href={`#${anchorId("judge", jb)}`}>
+                        {labels.get(id) ?? shortModel(id)}
+                      </a>
+                    </li>
+                  );
+                });
+              })()}
             </ul>
           </li>
         )}

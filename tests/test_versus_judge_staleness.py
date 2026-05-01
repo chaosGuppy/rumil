@@ -14,7 +14,7 @@ from versus.judge_config import compute_judge_code_fingerprint, make_judge_confi
 from versus import judge as versus_judge
 
 
-def _make_blind_row(*, model: str, thinking: dict | None = None) -> dict:
+def _make_blind_row(*, model: str, thinking: dict | None = None, effort: str | None = None) -> dict:
     cfg, _, _ = make_judge_config(
         "blind",
         model=model,
@@ -22,11 +22,12 @@ def _make_blind_row(*, model: str, thinking: dict | None = None) -> dict:
         sampling={"temperature": 0.0, "max_tokens": 1024},
         prompt_hash=versus_judge.compute_judge_prompt_hash("general_quality", with_tools=False),
         thinking=thinking,
+        effort=effort,
     )
     return {"judge_inputs": cfg}
 
 
-def _make_ws_row(*, model: str, thinking: dict | None) -> dict:
+def _make_ws_row(*, model: str, thinking: dict | None, effort: str | None = None) -> dict:
     cfg, _, _ = make_judge_config(
         "ws",
         model=model,
@@ -34,6 +35,7 @@ def _make_ws_row(*, model: str, thinking: dict | None) -> dict:
         sampling={"temperature": 0.0, "max_tokens": 1024},
         prompt_hash=versus_judge.compute_judge_prompt_hash("general_quality", with_tools=True),
         thinking=thinking,
+        effort=effort,
         tool_prompt_hash="11111111",
         pair_surface_hash="22222222",
         workspace_id="abcd1234",
@@ -63,6 +65,7 @@ def test_ws_row_for_opus_47_with_adaptive_thinking_is_current():
     row = _make_ws_row(
         model="claude-opus-4-7-20251001",
         thinking={"type": "adaptive", "display": "summarized"},
+        effort="xhigh",
     )
     assert versus_judge.judge_config_is_current(row, "general_quality") is True
 
@@ -104,3 +107,42 @@ def test_thinking_check_uses_rumil_thinking_config(model, expected_thinking):
     from rumil.llm import thinking_config
 
     assert thinking_config(model) == expected_thinking
+
+
+def test_blind_row_with_unexpected_effort_is_stale():
+    row = _make_blind_row(model="claude-haiku-4-5", effort="high")
+    assert versus_judge.judge_config_is_current(row, "general_quality") is False
+
+
+def test_ws_row_for_opus_47_with_xhigh_effort_is_current():
+    row = _make_ws_row(
+        model="claude-opus-4-7-20251001",
+        thinking={"type": "adaptive", "display": "summarized"},
+        effort="xhigh",
+    )
+    assert versus_judge.judge_config_is_current(row, "general_quality") is True
+
+
+def test_ws_row_for_opus_47_missing_effort_is_stale():
+    row = _make_ws_row(
+        model="claude-opus-4-7-20251001",
+        thinking={"type": "adaptive", "display": "summarized"},
+        effort=None,
+    )
+    assert versus_judge.judge_config_is_current(row, "general_quality") is False
+
+
+@pytest.mark.parametrize(
+    ("model", "expected_effort"),
+    (
+        ("claude-haiku-4-5", None),
+        ("claude-opus-4-7-20251001", "xhigh"),
+        ("claude-sonnet-4-6", "high"),
+    ),
+)
+def test_effort_check_uses_rumil_effort_level(model, expected_effort):
+    # Same idea as the thinking version: pin current rules so silent drift
+    # in effort_level forces a deliberate test update.
+    from rumil.llm import effort_level
+
+    assert effort_level(model) == expected_effort

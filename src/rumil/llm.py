@@ -81,7 +81,7 @@ def thinking_config(model: str) -> dict | None:
     return None
 
 
-def _effort_level(model: str) -> str | None:
+def effort_level(model: str) -> str | None:
     # xhigh is Opus 4.7-only; high is the best shared setting elsewhere.
     # Haiku and Sonnet 4.5 don't support the effort parameter at all.
     if model.startswith("claude-opus-4-7"):
@@ -385,6 +385,21 @@ class AgentResult:
     messages: list[dict] = field(default_factory=list)
 
 
+_CONDITION_KWARGS = ("temperature", "max_tokens", "thinking", "output_config")
+
+
+def _capture_request_kwargs(kwargs: dict) -> dict:
+    """Extract the request-condition fields worth persisting on the exchange row.
+
+    Skips bulky fields (messages, system, tools) — those live in their own
+    columns or are rebuildable. Keeps the small dicts (thinking, output_config)
+    plus sampling so forks can reproduce the original condition without
+    relying on whatever ``thinking_config`` / ``effort_level`` rules currently
+    say for the model.
+    """
+    return {k: kwargs[k] for k in _CONDITION_KWARGS if k in kwargs}
+
+
 @dataclass
 class LLMExchangeMetadata:
     """Context for automatically saving an LLM exchange to the database.
@@ -417,6 +432,7 @@ async def _save_exchange(
     cache_creation_input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
     user_messages: Sequence[dict] | None = None,
+    request_kwargs: dict | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event."""
     exchange_id = await db.save_llm_exchange(
@@ -434,6 +450,7 @@ async def _save_exchange(
         cache_read_input_tokens=cache_read_input_tokens or None,
         user_messages=user_messages,
         model=model,
+        request_kwargs=request_kwargs,
     )
     cost_usd = compute_cost(
         model=model,
@@ -565,9 +582,9 @@ async def call_anthropic_api(
         kwargs["temperature"] = DEFAULT_TEMPERATURE
     if (thinking := thinking_config(model)) is not None:
         kwargs["thinking"] = thinking
-    base_effort = _effort_level(model)
+    base_effort = effort_level(model)
     # Caller can override only when the model actually supports `effort`;
-    # for Haiku/older Sonnet `_effort_level` returns None and the param is
+    # for Haiku/older Sonnet `effort_level` returns None and the param is
     # not accepted by the API.
     effective_effort = effort if (effort is not None and base_effort is not None) else base_effort
     if effective_effort is not None:
@@ -650,6 +667,7 @@ async def call_anthropic_api(
                 or 0,
                 cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
                 user_messages=serialized,
+                request_kwargs=_capture_request_kwargs(kwargs),
             )
         except Exception as exc:
             log.error(
@@ -1260,7 +1278,7 @@ async def _structured_call_parse(
     if not disable_thinking:
         if (thinking := thinking_config(model)) is not None:
             parse_kwargs["thinking"] = thinking
-        if (effort := _effort_level(model)) is not None:
+        if (effort := effort_level(model)) is not None:
             parse_kwargs["output_config"] = {"effort": effort}
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
@@ -1311,6 +1329,7 @@ async def _structured_call_parse(
             or 0,
             cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
             user_messages=serialized,
+            request_kwargs=_capture_request_kwargs(parse_kwargs),
         )
     if response.parsed_output is not None:
         log.debug(

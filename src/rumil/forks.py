@@ -32,11 +32,11 @@ from rumil.database import DB
 from rumil.llm import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
-    _effort_level,
     _is_retryable,
     _log_before_retry,
     _stop_after_status_retries,
     _supports_sampling_params,
+    effort_level,
     thinking_config,
 )
 from rumil.models import CallType
@@ -81,7 +81,17 @@ class ForkOverrides(BaseModel):
 
 @dataclass
 class BaseExchange:
-    """Reconstructed base exchange — what the original API call sent."""
+    """Reconstructed base exchange — what the original API call sent.
+
+    ``original_kwargs`` holds the verbatim request-condition fields that
+    were sent on the wire (thinking, output_config, temperature,
+    max_tokens), captured at exchange-write time. When non-None, fork
+    rebuilds prefer it over recomputing from current
+    ``thinking_config`` / ``effort_level`` rules — so a fork reproduces
+    the original condition even if rules changed since. Cleared when
+    the user overrides the model (captured kwargs would be wrong for
+    the new model).
+    """
 
     exchange_id: str
     call_id: str
@@ -94,6 +104,7 @@ class BaseExchange:
     max_tokens: int
     has_thinking: bool
     thinking_off: bool
+    original_kwargs: dict | None = None
 
 
 @dataclass
@@ -190,6 +201,13 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
             model = cfg["model"]
     if not model:
         model = settings.model
+    captured = row.get("request_kwargs") if isinstance(row.get("request_kwargs"), dict) else None
+    captured_temp = captured.get("temperature") if captured else None
+    captured_max_tokens = captured.get("max_tokens") if captured else None
+    if captured is not None and "thinking" in captured:
+        has_thinking = captured["thinking"] is not None
+    else:
+        has_thinking = thinking_config(model) is not None
     return BaseExchange(
         exchange_id=base_exchange_id,
         call_id=row.get("call_id", ""),
@@ -198,16 +216,30 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
         user_messages=list(user_messages),
         tools=tools,
         model=model,
-        temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(model) else None,
-        max_tokens=DEFAULT_MAX_TOKENS,
-        has_thinking=thinking_config(model) is not None,
+        temperature=captured_temp
+        if captured is not None
+        else (DEFAULT_TEMPERATURE if _supports_sampling_params(model) else None),
+        max_tokens=captured_max_tokens if captured_max_tokens is not None else DEFAULT_MAX_TOKENS,
+        has_thinking=has_thinking,
         thinking_off=False,
+        original_kwargs=captured,
     )
 
 
 def merge_overrides(base: BaseExchange, overrides: ForkOverrides) -> BaseExchange:
-    """Apply non-null override fields onto the base."""
+    """Apply non-null override fields onto the base.
+
+    A model override drops ``original_kwargs`` since the captured thinking /
+    effort were tied to the original model and don't transfer cleanly. Same
+    model: captured kwargs survive so build_kwargs can reproduce them.
+    """
+    model_overridden = overrides.model is not None and overrides.model != base.model
     merged_model = overrides.model if overrides.model is not None else base.model
+    captured = None if model_overridden else base.original_kwargs
+    if captured is not None and "thinking" in captured:
+        has_thinking = captured["thinking"] is not None
+    else:
+        has_thinking = thinking_config(merged_model) is not None
     return BaseExchange(
         exchange_id=base.exchange_id,
         call_id=base.call_id,
@@ -224,15 +256,24 @@ def merge_overrides(base: BaseExchange, overrides: ForkOverrides) -> BaseExchang
         if overrides.temperature is not None
         else base.temperature,
         max_tokens=overrides.max_tokens if overrides.max_tokens is not None else base.max_tokens,
-        has_thinking=thinking_config(merged_model) is not None,
+        has_thinking=has_thinking,
         thinking_off=overrides.thinking_off
         if overrides.thinking_off is not None
         else base.thinking_off,
+        original_kwargs=captured,
     )
 
 
 def build_kwargs(merged: BaseExchange) -> dict:
-    """Build Anthropic messages.create kwargs from a merged base+overrides."""
+    """Build Anthropic messages.create kwargs from a merged base+overrides.
+
+    When ``original_kwargs`` is present (captured at exchange-write time),
+    thinking and output_config are read from there so a fork reproduces the
+    original condition even if ``thinking_config`` / ``effort_level`` rules
+    have changed since. ``thinking_off=True`` still wins (an explicit user
+    override). Otherwise we fall back to recomputing from current rules,
+    matching the pre-capture behavior.
+    """
     kwargs: dict = {
         "model": merged.model,
         "max_tokens": merged.max_tokens,
@@ -241,9 +282,16 @@ def build_kwargs(merged: BaseExchange) -> dict:
     }
     if _supports_sampling_params(merged.model) and merged.temperature is not None:
         kwargs["temperature"] = merged.temperature
-    if not merged.thinking_off and (thinking := thinking_config(merged.model)) is not None:
+    captured = merged.original_kwargs
+    if captured is not None and "thinking" in captured:
+        if not merged.thinking_off and captured["thinking"] is not None:
+            kwargs["thinking"] = captured["thinking"]
+    elif not merged.thinking_off and (thinking := thinking_config(merged.model)) is not None:
         kwargs["thinking"] = thinking
-    if (effort := _effort_level(merged.model)) is not None:
+    if captured is not None and "output_config" in captured:
+        if captured["output_config"] is not None:
+            kwargs["output_config"] = captured["output_config"]
+    elif (effort := effort_level(merged.model)) is not None:
         kwargs["output_config"] = {"effort": effort}
     if merged.tools:
         kwargs["tools"] = merged.tools

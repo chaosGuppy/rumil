@@ -42,16 +42,25 @@ def build_request_body(
     temperature: float | None,
     top_p: float | None,
     max_tokens: int | None,
+    thinking: dict[str, Any] | None,
+    output_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """The canonical 'what we asked for' dict — used for both dedup hashing and storage.
 
     Provider-shaped (OpenAI/Anthropic-compatible). Independent of the exact
     on-wire bytes the SDK constructs (those vary across SDK versions and
     aren't part of the eval condition).
+
+    ``thinking`` and ``output_config`` always appear in the dict (None or
+    populated) so the canonical hash forks if direct-path callers ever start
+    sending either. Today versus.anthropic_client doesn't include them on the
+    wire — None records the actual condition, not a hypothetical.
     """
     body: dict[str, Any] = {
         "model": model_id,
         "messages": [{"role": "user", "content": prompt}],
+        "thinking": thinking,
+        "output_config": output_config,
     }
     if temperature is not None:
         body["temperature"] = temperature
@@ -205,10 +214,12 @@ def _call_one_completion_inner(task, prompt, m, request_body, client):
             "duration_s": round(time.time() - t0, 2),
             "ts": dt.datetime.utcnow().isoformat() + "Z",
             "provider": provider,
-            # Direct anthropic_client doesn't send a thinking block; record
-            # explicitly so future callers can tell. See rumil.llm.thinking_config
-            # for the rules that apply on bridge paths.
+            # Direct anthropic_client doesn't send a thinking block or
+            # output_config.effort; record both explicitly so future callers
+            # can tell. See rumil.llm.thinking_config / effort_level for the
+            # rules that apply on bridge paths.
             "thinking": None,
+            "effort": None,
         },
     }
 
@@ -243,8 +254,17 @@ def run(
         for m in cfg.completion.models:
             _, canonical_model = route_judge_model(m.id)
             temp, top_p = _model_sampling(m, canonical_model)
+            # thinking/output_config: direct anthropic_client doesn't send
+            # either today, so the canonical request records None. The fields
+            # sit in the body so a future flip naturally forks request_hash.
             request_body = build_request_body(
-                m.id, prompt, temperature=temp, top_p=top_p, max_tokens=m.max_tokens
+                m.id,
+                prompt,
+                temperature=temp,
+                top_p=top_p,
+                max_tokens=m.max_tokens,
+                thinking=None,
+                output_config=None,
             )
             request_hash = versus_db.compute_canonical_hash(request_body)
             key = (task.essay_id, m.id, request_hash)

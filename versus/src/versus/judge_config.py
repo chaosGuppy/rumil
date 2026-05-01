@@ -169,6 +169,7 @@ def make_judge_config(
     sampling: dict[str, Any] | None,
     prompt_hash: str,
     thinking: dict[str, Any] | None,
+    effort: str | None,
     tool_prompt_hash: str | None = None,
     pair_surface_hash: str | None = None,
     workspace_id: str | None = None,
@@ -185,12 +186,16 @@ def make_judge_config(
     string.
 
     ``thinking`` is the Anthropic thinking-block dict (e.g. ``{"type":
-    "adaptive"}``) or ``None``. Direct anthropic_client paths (blind)
-    pass ``None`` because they don't send a thinking block. Bridge
-    paths (ws/orch) pass the dict that ``rumil.llm.thinking_config``
-    returns for the model — the same dict that lands on the wire.
-    Recorded so changes to thinking rules naturally fork the dedup
-    hash; see CLAUDE.local.md "Records" principle.
+    "adaptive"}``) or ``None``. ``effort`` is the reasoning-effort
+    string (e.g. ``"xhigh"``, ``"high"``) wrapped as
+    ``output_config.effort`` on the request, or ``None``. Direct
+    anthropic_client paths (blind) pass ``None`` for both because
+    they don't send those blocks. Bridge paths (ws/orch) pass the
+    dict / string that ``rumil.llm.thinking_config`` and
+    ``rumil.llm.effort_level`` return for the model — what actually
+    lands on the wire. Both are folded into the canonical config so
+    rule changes naturally fork the dedup hash; see CLAUDE.local.md
+    "Records" principle.
 
     Per-variant required args (asserted):
     - blind: ``sampling``, ``prompt_hash``
@@ -204,6 +209,7 @@ def make_judge_config(
         "dimension": dimension,
         "sampling": dict(sampling) if sampling is not None else None,
         "thinking": dict(thinking) if thinking is not None else None,
+        "effort": effort,
         "prompts": {"shell_hash": prompt_hash},
     }
     if variant in ("ws", "orch"):
@@ -275,6 +281,8 @@ def project_config_to_axes(
             json.dumps(thinking, sort_keys=True, default=str).encode()
         ).hexdigest()[:8]
         out["judge_thinking_hash"] = f"t{th_hash}"
+    if (effort := config.get("effort")) is not None:
+        out["judge_effort"] = f"e{effort}"
     if variant in ("ws", "orch"):
         out["judge_workspace_id"] = config["workspace_id"]
         out["judge_tool_hash"] = f"t{config['tool_descriptions_hash']}"

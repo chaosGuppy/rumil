@@ -144,25 +144,6 @@ def compute_config_hash(config: dict[str, Any]) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
-def compute_sampling_hash(sampling: dict | None) -> str | None:
-    """Short deterministic hash of sampling params for judge_model dedup.
-
-    Sorted-key JSON so key order doesn't fork the hash. Returns None when
-    ``sampling`` is None. 8 hex chars is enough to distinguish
-    temperature / max_tokens combos without cluttering the key.
-
-    Per CLAUDE.local.md: "if some judgements were made at 0 or at 0.2
-    temp, we want that to be in the data." Without folding sampling
-    into the dedup key, a ``--topup`` at a different temperature
-    silently no-ops against existing rows judged at the old
-    temperature.
-    """
-    if sampling is None:
-        return None
-    blob = json.dumps(sampling, sort_keys=True, default=str)
-    return hashlib.sha256(blob.encode()).hexdigest()[:8]
-
-
 def make_judge_config(
     variant: Variant,
     *,

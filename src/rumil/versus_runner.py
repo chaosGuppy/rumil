@@ -21,7 +21,7 @@ the workflow's research dispatches plus the closer call.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from rumil.database import DB
 from rumil.model_config import ModelConfig
@@ -34,10 +34,21 @@ from rumil.versus_workflow import Workflow
 TInputs = TypeVar("TInputs")
 TArtifact = TypeVar("TArtifact")
 
+WorkflowStatus = Literal["complete", "incomplete", "failed"]
+
 
 @dataclass
 class VersusResult(Generic[TArtifact]):
-    """End-to-end output of one ``run_versus`` invocation."""
+    """End-to-end output of one ``run_versus`` invocation.
+
+    ``status`` distinguishes "ran cleanly to completion" from
+    "produced a partial artifact within budget" from "raised before
+    finishing." Default ``"complete"``; workflows that have a partial-
+    output failure mode (e.g. ``DraftAndEditWorkflow`` running out of
+    budget mid-edit-round) override by setting ``last_status`` on the
+    workflow instance — the runner reads it after ``workflow.run``
+    and threads it onto the result.
+    """
 
     artifact: TArtifact
     run_id: str
@@ -47,6 +58,7 @@ class VersusResult(Generic[TArtifact]):
     cost_usd: float
     system_prompt: str
     user_prompt: str
+    status: WorkflowStatus = "complete"
 
 
 def _frontend_trace_url(run_id: str, call_id: str | None = None) -> str:
@@ -101,6 +113,7 @@ async def run_versus(
     artifact = task.extract_artifact(closer_text)
     run_calls = await db.get_calls_for_run(db.run_id)
     total_cost = sum((c.cost_usd or 0.0) for c in run_calls)
+    status: WorkflowStatus = getattr(workflow, "last_status", "complete")
     return VersusResult(
         artifact=artifact,
         run_id=db.run_id,
@@ -110,4 +123,5 @@ async def run_versus(
         cost_usd=total_cost,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
+        status=status,
     )

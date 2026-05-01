@@ -32,6 +32,7 @@ def _make_workflow(mocker):
     workflow.fingerprint = MagicMock(return_value={"kind": "test_workflow"})
     workflow.setup = AsyncMock()
     workflow.run = AsyncMock()
+    del workflow.last_status  # opt-in attr; tests set it explicitly when needed
     return workflow
 
 
@@ -111,6 +112,33 @@ async def test_run_versus_returns_artifact_and_metadata(mocker):
     assert result.system_prompt == "SYSTEM_SENTINEL"
     assert result.user_prompt == "USER_SENTINEL"
     assert "/traces/run-1" in result.trace_url
+    assert result.status == "complete"
+
+
+@pytest.mark.asyncio
+async def test_run_versus_threads_workflow_last_status(mocker):
+    """Workflows that produce partial output (e.g. DraftAndEdit running
+    out of budget mid-edit) signal it by setting ``last_status``; the
+    runner threads that onto the result.
+    """
+    workflow = _make_workflow(mocker)
+    workflow.last_status = "incomplete"
+    task = _make_task(mocker)
+    db = _make_db(mocker)
+    fake_call = MagicMock()
+    fake_call.id = "call-1"
+    mocker.patch(
+        "rumil.versus_runner.run_closer_agent",
+        new=AsyncMock(return_value=("text", fake_call)),
+    )
+    result = await run_versus(
+        db,
+        workflow=workflow,
+        task=task,
+        inputs=None,
+        model="claude-haiku-4-5",
+    )
+    assert result.status == "incomplete"
 
 
 @pytest.mark.asyncio

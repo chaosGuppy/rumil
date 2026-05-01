@@ -11,7 +11,7 @@ orchestrator Jobs in the cluster. See `rumil.api.jobs`.
 import logging
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -628,12 +628,14 @@ async def get_ab_eval(
     )
 
 
-async def _load_context_eval_arm(db: DB, run_id: str) -> ContextEvalArmOut:
+async def _load_context_eval_arm(db: DB, run_id: str) -> tuple[ContextEvalArmOut, DB]:
     """Load one arm of a context-builder eval (gold or candidate).
 
     Resolves the staged read DB, finds the run's single CONTEXT_BUILDER_EVAL
     call, parses its context_built event from the trace, and packages it
-    with the builder name from runs.config.eval.
+    with the builder name from runs.config.eval. Returns the read_db too
+    so the caller can reuse it for any follow-up reads against the same
+    run (e.g. the question page) without re-resolving staging state.
     """
     read_db, _is_staged, run_config = await _resolve_staged_read_db(db, run_id)
     eval_meta = (run_config.get("eval") or {}) if isinstance(run_config, dict) else {}
@@ -660,7 +662,7 @@ async def _load_context_eval_arm(db: DB, run_id: str) -> ContextEvalArmOut:
             detail=f"Call {call.id} has no context_built event",
         )
 
-    return ContextEvalArmOut(
+    arm = ContextEvalArmOut(
         run_id=run_id,
         call_id=call.id,
         builder_name=builder_name,
@@ -668,12 +670,13 @@ async def _load_context_eval_arm(db: DB, run_id: str) -> ContextEvalArmOut:
         cost_usd=call.cost_usd,
         config=run_config,
     )
+    return arm, read_db
 
 
 def _diff_context_pages(
     gold: ContextBuiltEventOut,
     candidate: ContextBuiltEventOut,
-) -> tuple[list[PageRef], list[PageRef], list[PageRef]]:
+) -> tuple[Sequence[PageRef], Sequence[PageRef], Sequence[PageRef]]:
     """Diff the union of pages each arm pulled into context.
 
     For each arm, the union covers working_context + preloaded + scope-linked
@@ -713,11 +716,15 @@ async def get_context_eval_diff(
     _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
-    gold = await _load_context_eval_arm(db, gold_run_id)
-    candidate = await _load_context_eval_arm(db, candidate_run_id)
+    gold, gold_read_db = await _load_context_eval_arm(db, gold_run_id)
+    candidate, _ = await _load_context_eval_arm(db, candidate_run_id)
 
-    question_id = await db.get_run_question_id(gold_run_id)
-    question_page = await db.get_page(question_id) if question_id else None
+    # Use the gold's staged read_db so a (theoretically) staged eval run sees
+    # its own page mutations on the question lookup. Today eval runs are
+    # never staged, but this matches the trace-tree pattern in
+    # get_run_trace_tree.
+    question_id = await gold_read_db.get_run_question_id(gold_run_id)
+    question_page = await gold_read_db.get_page(question_id) if question_id else None
 
     only_gold, only_cand, in_both = _diff_context_pages(
         gold.context_built,
@@ -728,9 +735,9 @@ async def get_context_eval_diff(
         question=question_page,
         gold=gold,
         candidate=candidate,
-        pages_only_in_gold=only_gold,
-        pages_only_in_candidate=only_cand,
-        pages_in_both=in_both,
+        pages_only_in_gold=list(only_gold),
+        pages_only_in_candidate=list(only_cand),
+        pages_in_both=list(in_both),
     )
 
 

@@ -3496,6 +3496,36 @@ class DB:
         )
         return rows[0]["id"] if rows else None
 
+    async def set_run_eval_meta(
+        self,
+        run_id: str,
+        *,
+        role: str,
+        context_builder: str,
+        question_id: str,
+        paired_run_id: str | None = None,
+    ) -> None:
+        """Tag a runs row with the context-builder-eval metadata block.
+
+        Called by the eval workflow only AFTER the call completes
+        successfully — so a run whose build_context phase failed never
+        gets the eval.role tag, and find_eval_gold_run won't surface it
+        as a usable cache hit.
+        """
+        rows = _rows(
+            await self._execute(self.client.table("runs").select("config").eq("id", run_id))
+        )
+        if not rows:
+            return
+        config = dict(rows[0].get("config") or {})
+        config["eval"] = {
+            "role": role,
+            "context_builder": context_builder,
+            "paired_run_id": paired_run_id,
+            "question_id": question_id,
+        }
+        await self._execute(self.client.table("runs").update({"config": config}).eq("id", run_id))
+
     async def update_run_config_eval_partner(
         self,
         run_id: str,

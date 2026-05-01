@@ -95,19 +95,18 @@ async def _run_arm(
     role: str,
     paired_run_id: str | None,
 ) -> str:
-    """Create a run + call and execute the named builder; return run_id."""
+    """Create a run + call and execute the named builder; return run_id.
+
+    Tags the run with config.eval ONLY after the call completes — a
+    failed build_context leaves the run untagged, so find_eval_gold_run
+    won't surface it as a usable cache hit on subsequent invocations.
+    """
     run_id = str(uuid.uuid4())
     db = await DB.create(run_id=run_id, prod=prod, staged=False)
     db.project_id = project_id
     try:
         settings = get_settings()
         base_config = settings.capture_config()
-        base_config["eval"] = {
-            "role": role,
-            "context_builder": builder_name,
-            "paired_run_id": paired_run_id,
-            "question_id": question_id,
-        }
         name = f"context-eval {role}: {builder_name}"
         await db.create_run(name=name, question_id=question_id, config=base_config)
         await db.init_budget(0)
@@ -125,6 +124,13 @@ async def _run_arm(
             builder_name=builder_name,
         )
         await runner.run()
+        await db.set_run_eval_meta(
+            run_id,
+            role=role,
+            context_builder=builder_name,
+            question_id=question_id,
+            paired_run_id=paired_run_id,
+        )
     finally:
         await db.close()
     return run_id

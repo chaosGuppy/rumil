@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
 from rumil.versus_workflow import TwoPhaseWorkflow
 from versus import config, prepare, versus_db
 from versus.run_summary import RunSummary
@@ -45,11 +46,12 @@ from versus.tasks import CompleteEssayTask, EssayPrefixContext
 #   3. Update the run_completions.py docs and the rumil-versus-complete
 #      skill.
 #
-# TODO(#427): add ``"draft_and_edit": (DraftAndEditWorkflow, {})`` once
-# the workflow lands. ``produces_artifact=True`` is handled
-# transparently by run_versus — no special wiring here.
+# ``produces_artifact=True`` workflows (e.g. ``draft_and_edit``) are
+# handled transparently by run_versus — the runner skips the closer
+# call and reads ``question.content`` verbatim. No special wiring here.
 WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
     "two_phase": (TwoPhaseWorkflow, {}),
+    "draft_and_edit": (DraftAndEditWorkflow, {}),
 }
 
 

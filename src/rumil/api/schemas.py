@@ -18,8 +18,11 @@ from rumil.tracing.trace_events import (
     AutocompactEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
+    CritiqueRoundEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
+    DraftEvent,
+    EditEvent,
     ErrorEvent,
     EvaluationCompleteEvent,
     ExperimentalScoringCompletedEvent,
@@ -211,6 +214,18 @@ class ImpactFilterEventOut(ImpactFilterEvent, _TraceEnvelopeMixin):
     pass
 
 
+class DraftEventOut(DraftEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CritiqueRoundEventOut(CritiqueRoundEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EditEventOut(EditEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -244,7 +259,10 @@ TraceEventOut = Annotated[
     | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut
     | QuestionDedupeEventOut
-    | ImpactFilterEventOut,
+    | ImpactFilterEventOut
+    | DraftEventOut
+    | CritiqueRoundEventOut
+    | EditEventOut,
     Field(discriminator="event"),
 ]
 

@@ -346,6 +346,48 @@ class ImpactFilterEvent(BaseModel):
     pare_model: str | None = None
 
 
+class DraftEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow when the drafter produces (or
+    re-produces) a continuation. Round 0 is the initial draft; later
+    rounds are post-edit drafts that the editor handed off."""
+
+    event: Literal["draft"] = "draft"
+    round: int = 0
+    draft_text: str = ""
+    draft_chars: int = 0
+    model: str = ""
+
+
+class CritiqueItem(BaseModel):
+    """One critic's free-form prose output for a given round."""
+
+    critic_index: int = 0
+    critique_text: str = ""
+    model: str = ""
+
+
+class CritiqueRoundEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow after a parallel critic fan-out
+    completes for one round. ``critiques`` carries one entry per critic
+    in spawn order."""
+
+    event: Literal["critique_round"] = "critique_round"
+    round: int = 0
+    critiques: list[CritiqueItem] = []
+
+
+class EditEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow when the editor folds critiques
+    into a revised draft. The resulting draft becomes the next round's
+    starting point (or the final artifact if budget runs out)."""
+
+    event: Literal["edit"] = "edit"
+    round: int = 0
+    revised_text: str = ""
+    revised_chars: int = 0
+    model: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -379,6 +421,9 @@ TraceEvent = Annotated[
     | GlobalPhaseCompletedEvent
     | UpdateViewPhaseCompletedEvent
     | QuestionDedupeEvent
-    | ImpactFilterEvent,
+    | ImpactFilterEvent
+    | DraftEvent
+    | CritiqueRoundEvent
+    | EditEvent,
     Field(discriminator="event"),
 ]

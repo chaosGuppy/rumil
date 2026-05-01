@@ -2639,6 +2639,15 @@
                       },
                       {
                         "$ref": "#/components/schemas/ImpactFilterEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DraftEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/CritiqueRoundEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/EditEventOut"
                       }
                     ],
                     "discriminator": {
@@ -2676,7 +2685,10 @@
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
                         "question_dedupe": "#/components/schemas/QuestionDedupeEventOut",
-                        "impact_filter": "#/components/schemas/ImpactFilterEventOut"
+                        "impact_filter": "#/components/schemas/ImpactFilterEventOut",
+                        "draft": "#/components/schemas/DraftEventOut",
+                        "critique_round": "#/components/schemas/CritiqueRoundEventOut",
+                        "edit": "#/components/schemas/EditEventOut"
                       }
                     }
                   },
@@ -4396,6 +4408,68 @@
         ],
         "title": "CriterionMatrix"
       },
+      "CritiqueItem": {
+        "properties": {
+          "critic_index": {
+            "type": "integer",
+            "title": "Critic Index",
+            "default": 0
+          },
+          "critique_text": {
+            "type": "string",
+            "title": "Critique Text",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "CritiqueItem",
+        "description": "One critic's free-form prose output for a given round."
+      },
+      "CritiqueRoundEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "critique_round",
+            "title": "Event",
+            "default": "critique_round"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "critiques": {
+            "items": {
+              "$ref": "#/components/schemas/CritiqueItem"
+            },
+            "type": "array",
+            "title": "Critiques",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "critiques"
+        ],
+        "title": "CritiqueRoundEventOut"
+      },
       "DedupeCandidateItem": {
         "properties": {
           "id": {
@@ -4585,6 +4659,104 @@
           "dispatches"
         ],
         "title": "DispatchesPlannedEventOut"
+      },
+      "DraftEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "draft",
+            "title": "Event",
+            "default": "draft"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "draft_text": {
+            "type": "string",
+            "title": "Draft Text",
+            "default": ""
+          },
+          "draft_chars": {
+            "type": "integer",
+            "title": "Draft Chars",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "draft_text",
+          "draft_chars",
+          "model"
+        ],
+        "title": "DraftEventOut"
+      },
+      "EditEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "edit",
+            "title": "Event",
+            "default": "edit"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "revised_text": {
+            "type": "string",
+            "title": "Revised Text",
+            "default": ""
+          },
+          "revised_chars": {
+            "type": "integer",
+            "title": "Revised Chars",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "revised_text",
+          "revised_chars",
+          "model"
+        ],
+        "title": "EditEventOut"
       },
       "ErrorEventOut": {
         "properties": {
@@ -6286,7 +6458,7 @@
           "duration_s"
         ],
         "title": "JudgmentDetail",
-        "description": "Full judgment row for the side-panel inspector on /versus/results.\n\nIncludes the verbatim prompt + reasoning text + raw provider response,\nso a reader can audit what the judge actually saw and said. Most fields\nare optional because the shape varies across judge variants (OpenRouter\nvs anthropic vs rumil:text vs rumil:ws/orch)."
+        "description": "Full judgment row for the side-panel inspector on /versus/results.\n\nIncludes the verbatim prompt + reasoning text + raw provider response,\nso a reader can audit what the judge actually saw and said. Most fields\nare optional because the shape varies across judge variants (OpenRouter\nvs anthropic vs rumil:text vs rumil:orch; historical rumil:ws rows\nalso still appear)."
       },
       "JudgmentRow": {
         "properties": {

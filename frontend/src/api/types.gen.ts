@@ -747,6 +747,52 @@ export type CriterionMatrix = {
 };
 
 /**
+ * CritiqueItem
+ *
+ * One critic's free-form prose output for a given round.
+ */
+export type CritiqueItem = {
+    /**
+     * Critic Index
+     */
+    critic_index?: number;
+    /**
+     * Critique Text
+     */
+    critique_text?: string;
+    /**
+     * Model
+     */
+    model?: string;
+};
+
+/**
+ * CritiqueRoundEventOut
+ */
+export type CritiqueRoundEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'critique_round';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Critiques
+     */
+    critiques: Array<CritiqueItem>;
+};
+
+/**
  * DedupeCandidateItem
  */
 export type DedupeCandidateItem = {
@@ -878,6 +924,74 @@ export type DispatchesPlannedEventOut = {
      * Dispatches
      */
     dispatches: Array<DispatchTraceItem>;
+};
+
+/**
+ * DraftEventOut
+ */
+export type DraftEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'draft';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Draft Text
+     */
+    draft_text: string;
+    /**
+     * Draft Chars
+     */
+    draft_chars: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * EditEventOut
+ */
+export type EditEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'edit';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Revised Text
+     */
+    revised_text: string;
+    /**
+     * Revised Chars
+     */
+    revised_chars: number;
+    /**
+     * Model
+     */
+    model: string;
 };
 
 /**
@@ -1773,7 +1887,8 @@ export type Judgment = {
  * Includes the verbatim prompt + reasoning text + raw provider response,
  * so a reader can audit what the judge actually saw and said. Most fields
  * are optional because the shape varies across judge variants (OpenRouter
- * vs anthropic vs rumil:text vs rumil:ws/orch).
+ * vs anthropic vs rumil:text vs rumil:orch; historical rumil:ws rows
+ * also still appear).
  */
 export type JudgmentDetail = {
     /**
@@ -5433,7 +5548,13 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'question_dedupe';
     } & QuestionDedupeEventOut) | ({
         event: 'impact_filter';
-    } & ImpactFilterEventOut)>;
+    } & ImpactFilterEventOut) | ({
+        event: 'draft';
+    } & DraftEventOut) | ({
+        event: 'critique_round';
+    } & CritiqueRoundEventOut) | ({
+        event: 'edit';
+    } & EditEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

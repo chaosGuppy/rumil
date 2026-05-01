@@ -146,9 +146,12 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
     available_moves preset — exchange rows don't store tools directly, so
     this is a best-effort reconstruction.
 
-    The model isn't stored on the exchange row either, so we fall back to
-    ``settings.model`` — operators can override explicitly if they want
-    something else.
+    The model is read from the exchange row's ``model`` column (added in
+    migration 20260501000019). For pre-migration rows where it's NULL, fall
+    back to the run config — versus runs put it at
+    ``runs.config['judge_config']['model']``, normal runs at
+    ``runs.config['model']`` (captured by ``Settings.capture_config()``).
+    Last resort is ``settings.model``.
     """
     row = await db.get_llm_exchange(base_exchange_id)
     if row is None:
@@ -176,6 +179,17 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
                 )
 
     settings = get_settings()
+    model = row.get("model")
+    if not model and row.get("run_id"):
+        run = await db.get_run(row["run_id"])
+        cfg = (run or {}).get("config") or {}
+        judge_cfg = cfg.get("judge_config") if isinstance(cfg, dict) else None
+        if isinstance(judge_cfg, dict) and judge_cfg.get("model"):
+            model = judge_cfg["model"]
+        elif isinstance(cfg, dict) and cfg.get("model"):
+            model = cfg["model"]
+    if not model:
+        model = settings.model
     return BaseExchange(
         exchange_id=base_exchange_id,
         call_id=row.get("call_id", ""),
@@ -183,10 +197,10 @@ async def resolve_base(db: DB, base_exchange_id: str) -> BaseExchange:
         system_prompt=row.get("system_prompt") or "",
         user_messages=list(user_messages),
         tools=tools,
-        model=settings.model,
-        temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(settings.model) else None,
+        model=model,
+        temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(model) else None,
         max_tokens=DEFAULT_MAX_TOKENS,
-        has_thinking=_thinking_config(settings.model) is not None,
+        has_thinking=_thinking_config(model) is not None,
         thinking_off=False,
     )
 

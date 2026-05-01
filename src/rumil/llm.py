@@ -433,6 +433,7 @@ async def _save_exchange(
         cache_creation_input_tokens=cache_creation_input_tokens or None,
         cache_read_input_tokens=cache_read_input_tokens or None,
         user_messages=user_messages,
+        model=model,
     )
     cost_usd = compute_cost(
         model=model,

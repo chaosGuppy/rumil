@@ -314,6 +314,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                         round_num=turn_num,
                         cache_creation_input_tokens=turn.cache_creation_input_tokens or None,
                         cache_read_input_tokens=turn.cache_read_input_tokens or None,
+                        model=settings.model,
                     )
                     await child_trace.record(
                         LLMExchangeEvent(
@@ -509,6 +510,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                             round_num=turn_counter,
                             cache_creation_input_tokens=cache_creation,
                             cache_read_input_tokens=cache_read,
+                            model=settings.model,
                         )
                         await config.trace.record(
                             LLMExchangeEvent(

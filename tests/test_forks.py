@@ -164,7 +164,11 @@ _FORK_DEFAULTS = dict(
 
 
 async def _seed_exchange(
-    db, call_id: str, system_prompt: str = "sys", user_message: str = "hi"
+    db,
+    call_id: str,
+    system_prompt: str = "sys",
+    user_message: str = "hi",
+    model: str | None = None,
 ) -> str:
     return await db.save_llm_exchange(
         call_id=call_id,
@@ -175,6 +179,7 @@ async def _seed_exchange(
         tool_calls=[],
         input_tokens=10,
         output_tokens=5,
+        model=model,
     )
 
 
@@ -275,6 +280,57 @@ async def test_resolve_base_reconstructs_inputs(tmp_db, scout_call):
 async def test_resolve_base_raises_on_missing_id(tmp_db):
     with pytest.raises(ValueError):
         await resolve_base(tmp_db, "00000000-0000-0000-0000-000000000000")
+
+
+async def test_resolve_base_reads_model_from_exchange_row(tmp_db, scout_call):
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id, model="claude-sonnet-4-6")
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == "claude-sonnet-4-6"
+
+
+async def test_resolve_base_falls_back_to_judge_config_model(tmp_db, scout_call):
+    """Versus runs store the actual judge model at runs.config['judge_config']['model']."""
+    await tmp_db.create_run(
+        name="versus-test",
+        question_id=None,
+        config={"judge_config": {"model": "claude-sonnet-4-6"}},
+    )
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id)
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == "claude-sonnet-4-6"
+
+
+async def test_resolve_base_falls_back_to_run_config_model(tmp_db, scout_call):
+    """Normal runs store the captured model at runs.config['model'] via Settings.capture_config()."""
+    await tmp_db.create_run(
+        name="normal-test",
+        question_id=None,
+        config={"model": "claude-opus-4-6"},
+    )
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id)
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == "claude-opus-4-6"
+
+
+async def test_resolve_base_falls_back_to_settings_model(tmp_db, scout_call):
+    """When neither the exchange row nor the run config carries a model, fall back to settings.model."""
+    from rumil.settings import get_settings
+
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id)
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == get_settings().model
+
+
+async def test_resolve_base_prefers_row_model_over_run_config(tmp_db, scout_call):
+    """Row-level model wins even when run config has a different one."""
+    await tmp_db.create_run(
+        name="conflict-test",
+        question_id=None,
+        config={"judge_config": {"model": "claude-sonnet-4-6"}, "model": "claude-opus-4-6"},
+    )
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id, model="claude-haiku-4-5-20251001")
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == "claude-haiku-4-5-20251001"
 
 
 @pytest.mark.llm

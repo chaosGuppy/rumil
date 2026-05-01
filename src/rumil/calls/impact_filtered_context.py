@@ -127,19 +127,27 @@ IMPACT_SYSTEM = (PROMPTS_DIR / "impact_filter_score.md").read_text(encoding="utf
 PARING_SYSTEM = (PROMPTS_DIR / "impact_filter_pare.md").read_text(encoding="utf-8")
 
 
-def _render_candidate_user_msg(top_question: str, context_text: str, sample: Page) -> str:
-    """User message for the impact-percentile call. The system prompt + the "
-    "first part of this message (top question + context) are stable across "
-    "candidates and will be cached."""
-    parts: list[str] = [
-        "# Top-level research question\n\n",
-        top_question.strip(),
-        "\n\n# Standard context already available to the analyst\n\n",
+def _render_scoring_prefix(top_question: str, context_text: str) -> str:
+    """Per-question, per-context prefix shared by every scoring call.
+
+    Identical across all candidates for a given build_context, so it sits in
+    its own content block with cache_control — the second-and-later scoring
+    calls then hit the prompt cache for ~10x cheaper input tokens."""
+    return (
+        "# Top-level research question\n\n"
+        f"{top_question.strip()}\n\n"
+        "# Standard context already available to the analyst\n\n"
         "(Built by the workspace's standard context builder. Treat this as "
         "the baseline — the analyst will write their answer using at minimum "
         "this context. Your job is to judge marginal value of the candidate "
-        "ON TOP OF this.)\n\n",
-        context_text,
+        "ON TOP OF this.)\n\n"
+        f"{context_text}"
+    )
+
+
+def _render_scoring_candidate(sample: Page) -> str:
+    """Per-candidate suffix for the scoring call (the only block that varies)."""
+    parts: list[str] = [
         "\n\n# Candidate page under review\n\n",
         f"Type: {sample.page_type.value}\n",
         f"Headline: {sample.headline}\n",
@@ -157,6 +165,40 @@ def _render_candidate_user_msg(top_question: str, context_text: str, sample: Pag
         "Then assign an impact percentile per the rubric in the schema."
     )
     return "".join(parts)
+
+
+def _build_scoring_messages(
+    top_question: str,
+    context_text: str,
+    sample: Page,
+) -> list[dict]:
+    """Build the scoring user message with cache_control on the shared prefix.
+
+    Without this split, the single-string user_message + ``cache=True`` puts
+    the cache breakpoint at the END of the message — the per-candidate part —
+    so consecutive calls never share a cache prefix and we re-pay full input
+    cost on the ~50k-token (system + question + standard context) prefix on
+    every call. With concurrency in the 1000s of candidates that easily
+    blows the Anthropic TPM tier limits, triggering 429 storms and SDK +
+    tenacity retries that inflate the actual call count well above the
+    candidate count.
+    """
+    return [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": _render_scoring_prefix(top_question, context_text),
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {
+                    "type": "text",
+                    "text": _render_scoring_candidate(sample),
+                },
+            ],
+        },
+    ]
 
 
 def _render_paring_user_msg(top_question: str, page: Page) -> str:
@@ -364,14 +406,14 @@ class ImpactFilteredContext(ContextBuilder):
 
         async def _score_one(page: Page) -> tuple[Page, ImpactVerdict] | None:
             async with sem:
-                msg = _render_candidate_user_msg(top_question_text, inner_context_text, page)
+                messages = _build_scoring_messages(top_question_text, inner_context_text, page)
                 try:
                     result = await structured_call(
                         system_prompt=IMPACT_SYSTEM,
-                        user_message=msg,
+                        messages=messages,
                         response_model=ImpactVerdict,
                         model=scoring_model,
-                        cache=True,
+                        cache=False,
                         parse_manually=False,
                     )
                 except Exception as e:

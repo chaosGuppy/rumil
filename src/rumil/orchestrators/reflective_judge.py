@@ -268,6 +268,8 @@ class ReflectiveJudgeWorkflow:
             },
         )
         await db.update_call_status(call.id, CallStatus.RUNNING)
+        from rumil.calls.common import mark_call_completed
+
         trace = CallTrace(call.id, db, broadcaster=broadcaster)
         trace_token = set_trace(trace)
         try:
@@ -279,12 +281,14 @@ class ReflectiveJudgeWorkflow:
                 model_config=model_config,
             )
             await db.update_page_content(question_id, verdict_text)
+            # Must run before reset_trace: mark_call_completed reads
+            # total_cost_usd from the active trace via get_trace() to
+            # populate call.cost_usd. Resetting first drops cost to 0,
+            # which cascades into runs.cost_usd_cents and
+            # versus_judgments.rumil_cost_usd via the run-cost trigger.
+            await mark_call_completed(call, db, summary="reflective_judge: complete")
         finally:
             reset_trace(trace_token)
-
-        from rumil.calls.common import mark_call_completed
-
-        await mark_call_completed(call, db, summary="reflective_judge: complete")
 
     async def _run_stages(
         self,

@@ -46,6 +46,26 @@ from rumil.tracing.tracer import get_trace
 
 log = logging.getLogger(__name__)
 
+
+async def embed_task_for_page(
+    db: DB,
+    page_id: str,
+    framing: str,
+    *,
+    label: str = "question",
+) -> str:
+    """Build the natural-language task summary embedded into the preamble.
+
+    Names the page being investigated and follows with the call's procedural
+    framing. Falls back to ``framing`` alone when the page can't be loaded
+    (e.g. it has been superseded). DB errors propagate.
+    """
+    page = await db.get_page(page_id)
+    if page is None:
+        return framing
+    return f'the {label} being investigated: "{page.headline}"\n\n{framing}'
+
+
 PAGE_ID_FIELDS: dict[MoveType, list[str]] = {
     MoveType.LOAD_PAGE: ["page_id"],
     MoveType.LINK_CONSIDERATION: ["claim_id", "question_id"],
@@ -333,11 +353,18 @@ async def run_agent_loop(
             elif isinstance(block, ToolUseBlock):
                 tool_uses.append(block)
 
-        if response.stop_reason == "end_turn" or not tool_uses:
-            log.debug(
-                "run_agent_loop ending: stop_reason=%s, tool_uses=%d, rounds_used=%d",
-                response.stop_reason,
+        if response.stop_reason == "end_turn" and tool_uses:
+            log.warning(
+                "Model returned stop_reason=end_turn with %d pending tool call(s); "
+                "executing them anyway (round %d).",
                 len(tool_uses),
+                round_num + 1,
+            )
+
+        if not tool_uses:
+            log.debug(
+                "run_agent_loop ending: stop_reason=%s, tool_uses=0, rounds_used=%d",
+                response.stop_reason,
                 round_num + 1,
             )
             rr = RoundRecord(

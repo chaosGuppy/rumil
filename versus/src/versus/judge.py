@@ -25,6 +25,7 @@ from typing import Any, Literal
 
 import httpx
 
+from rumil.model_config import ModelConfig
 from rumil.versus_prompts import (
     build_system_prompt,
     compute_prompt_hash,
@@ -33,6 +34,8 @@ from rumil.versus_prompts import (
     label_to_verdict,
 )
 from versus import anthropic_client, config, openrouter, versus_db
+from versus.model_config import get_judge_model_config
+from versus.run_summary import RunSummary
 
 Provider = Literal["anthropic", "openrouter"]
 
@@ -44,6 +47,11 @@ class Source:
     source_id: str  # "human" or the model id
     text: str  # the completion text
     text_id: str  # versus_texts.id — threaded through so judgments can FK to it
+    # SHA256 hash of versus_texts.request->'model_config'. Distinguishes
+    # rows produced under different registry configs (same source_id,
+    # different conditions). NULL for legacy rows that predate the
+    # registry. Aggregations / UI can use this to bucket variants.
+    model_config_hash: str | None = None
 
 
 def pair_order_seed(essay_id: str, a: str, b: str) -> int:
@@ -101,22 +109,10 @@ def route_judge_model(model: str) -> tuple[Provider, str]:
     return ("openrouter", model)
 
 
-def _sampling_for(provider: Provider, canonical_model: str, max_tokens: int) -> dict:
-    """Per-provider sampling defaults.
-
-    Anthropic-direct: temperature is omitted for opus 4.7 (the Messages API
-    deprecated the param and 400s on it); 0.0 elsewhere. OpenRouter: always
-    0.0. Folded into the judge_inputs blob so a topup at a different temp
-    forks the hash and re-judges.
-    """
-    if provider == "anthropic":
-        use_temp = None if canonical_model.startswith("claude-opus-4-7") else 0.0
-        return {"temperature": use_temp, "max_tokens": max_tokens}
-    return {"temperature": JUDGE_TEMPERATURE, "max_tokens": max_tokens}
-
-
 def build_blind_judge_config(
-    canonical_model: str, dimension: str, sampling: dict
+    canonical_model: str,
+    dimension: str,
+    model_config: ModelConfig,
 ) -> tuple[dict, str, str]:
     """Build ``(config, config_hash, judge_model)`` for one blind judgment.
 
@@ -125,6 +121,10 @@ def build_blind_judge_config(
     config dict and the legacy-shape ``judge_model`` come from one source
     of truth. The returned ``config_hash`` is computed independently of
     DB-side text_a_id/text_b_id; callers fold those in before persisting.
+
+    ``model_config`` is the registry-resolved ModelConfig versus applies
+    on the wire — sampling, thinking, effort, etc. The whole bundle
+    lives under ``judge_inputs.model_config`` and feeds the dedup hash.
     """
     from versus.judge_config import make_judge_config
 
@@ -132,12 +132,12 @@ def build_blind_judge_config(
         "blind",
         model=canonical_model,
         dimension=dimension,
-        sampling=sampling,
+        model_config=model_config,
         prompt_hash=compute_judge_prompt_hash(dimension, with_tools=False),
     )
 
 
-def judge_config_is_current(row: dict, criterion: str) -> bool:
+def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | None = None) -> bool:
     """Return False if any code-side input to the judge has drifted.
 
     Status.py uses this to surface stale rows in the STALE banner.
@@ -146,25 +146,35 @@ def judge_config_is_current(row: dict, criterion: str) -> bool:
 
     Checks the prompt shell hash for all variants, plus the
     ``code_fingerprint`` for ws/orch — that fingerprint catches semantic
-    non-prompt edits (parser changes, SDK migrations, etc.). Doesn't
-    check ``workspace_state_hash``: that's a per-row baseline watermark,
-    not a staleness signal — every row would flap.
+    non-prompt edits (parser changes, SDK migrations, etc.) — and the
+    full ``model_config`` snapshot against the versus model registry,
+    so any registry edit (sampling, thinking, effort, max_thinking_tokens,
+    service_tier) surfaces as stale rows. Doesn't check
+    ``workspace_state_hash``: that's a per-row baseline watermark, not
+    a staleness signal — every row would flap.
     """
-    cfg = row["judge_inputs"]
-    is_tools = cfg["variant"] in ("ws", "orch")
+
+    inputs = row["judge_inputs"]
+    is_tools = inputs["variant"] in ("ws", "orch")
     try:
         expected_ph = compute_judge_prompt_hash(criterion, with_tools=is_tools)
     except ValueError:
         return False
-    if cfg["prompts"]["shell_hash"] != expected_ph:
+    if inputs["prompts"]["shell_hash"] != expected_ph:
         return False
     if is_tools:
         # circular: rumil.versus_bridge -> versus.judge_config -> versus.judge
         from versus.judge_config import compute_judge_code_fingerprint
 
-        if cfg.get("code_fingerprint") != compute_judge_code_fingerprint():
+        if inputs.get("code_fingerprint") != compute_judge_code_fingerprint():
             return False
-    return True
+    try:
+        expected_mc = get_judge_model_config(inputs["model"], cfg=cfg)
+    except KeyError:
+        # Model no longer in the registry; row references a config that
+        # versus can't reproduce. Stale by definition.
+        return False
+    return inputs.get("model_config") == expected_mc.to_record_dict()
 
 
 def parse_verdict_from_label(text: str) -> tuple[str | None, str | None]:
@@ -239,9 +249,7 @@ def is_refusal(row: dict) -> bool:
         if fr in REFUSAL_FINISH_REASONS or nfr in REFUSAL_NATIVE_REASONS:
             return True
     text = (row.get("text") or "").strip()
-    if not text or len(text.split()) < _MIN_RESPONSE_WORDS:
-        return True
-    return False
+    return not text or len(text.split()) < _MIN_RESPONSE_WORDS
 
 
 def _prefix_text_from_request(request: dict | None) -> str:
@@ -310,14 +318,12 @@ def load_sources_by_essay(
             source_id=row["source_id"],
             text=row["text"],
             text_id=row["id"],
+            model_config_hash=row.get("model_config_hash"),
         )
     if skipped:
         for essay_id, source_id in skipped:
             print(f"[skip-refusal] {essay_id} / {source_id}")
     return groups, prefix_text_by_group
-
-
-JUDGE_TEMPERATURE = 0.0
 
 
 @dataclass(frozen=True)
@@ -338,7 +344,7 @@ class _BlindTask:
     system_prompt: str
     user_prompt: str
     order: Order
-    sampling: dict
+    model_config: ModelConfig
     judge_inputs: dict  # canonical condition blob — hash is judge_inputs_hash
     judge_inputs_hash: str
 
@@ -369,7 +375,7 @@ def _build_judge_request(
     canonical_model: str,
     system_prompt: str,
     user_prompt: str,
-    sampling: dict,
+    model_config: ModelConfig,
 ) -> dict[str, Any]:
     """Canonical provider-shaped request body for storage on the row.
 
@@ -386,35 +392,43 @@ def _build_judge_request(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ]
-    if sampling.get("temperature") is not None:
-        body["temperature"] = sampling["temperature"]
-    if sampling.get("max_tokens") is not None:
-        body["max_tokens"] = sampling["max_tokens"]
+    if model_config.temperature is not None:
+        body["temperature"] = model_config.temperature
+    if model_config.max_tokens is not None:
+        body["max_tokens"] = model_config.max_tokens
     return body
 
 
 def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
     """Run one blind judgment, dispatching by provider, return DB-shaped row."""
     t0 = time.time()
+    mc = task.model_config
+    output_cfg = {"effort": mc.effort} if mc.effort is not None else None
     if task.provider == "anthropic":
         resp = anthropic_client.chat(
             model=task.canonical_model,
             system=task.system_prompt,
             messages=[{"role": "user", "content": task.user_prompt}],
-            temperature=task.sampling["temperature"],
-            max_tokens=task.sampling["max_tokens"],
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
+            thinking=mc.thinking,
+            output_config=output_cfg,
             client=client,
         )
         text = anthropic_client.extract_text(resp)
     else:
+        # OpenRouter path: thinking / output_config aren't supported here;
+        # registry entries for OpenRouter-routed judges set them to None.
         resp = openrouter.chat(
             model=task.canonical_model,
             messages=[
                 {"role": "system", "content": task.system_prompt},
                 {"role": "user", "content": task.user_prompt},
             ],
-            temperature=task.sampling["temperature"],
-            max_tokens=task.sampling["max_tokens"],
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
             client=client,
         )
         text = openrouter.extract_text(resp)
@@ -424,7 +438,7 @@ def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
         canonical_model=task.canonical_model,
         system_prompt=task.system_prompt,
         user_prompt=task.user_prompt,
-        sampling=task.sampling,
+        model_config=task.model_config,
     )
     return {
         "essay_id": task.essay_id,
@@ -543,9 +557,9 @@ def run_blind(
             for dimension in effective_dimensions:
                 for base_model in models:
                     provider, canonical_model = route_judge_model(base_model)
-                    sampling = _sampling_for(provider, canonical_model, cfg.judging.max_tokens)
+                    mc = get_judge_model_config(base_model, cfg=cfg)
                     base_config, _, judge_model = build_blind_judge_config(
-                        canonical_model, dimension, sampling
+                        canonical_model, dimension, mc
                     )
                     judge_inputs, judge_inputs_hash = _build_judge_inputs(
                         base_config, src_a.text_id, src_b.text_id, order
@@ -584,7 +598,7 @@ def run_blind(
                             system_prompt=system_prompt,
                             user_prompt=user_prompt,
                             order=order,
-                            sampling=sampling,
+                            model_config=mc,
                             judge_inputs=judge_inputs,
                             judge_inputs_hash=judge_inputs_hash,
                         )
@@ -614,6 +628,7 @@ def run_blind(
             print(f"  ... and {len(tasks) - 20} more")
         return
 
+    summary = RunSummary()
     http = httpx.Client(timeout=600.0)
     try:
         with ThreadPoolExecutor(max_workers=total_workers) as pool:
@@ -631,6 +646,7 @@ def run_blind(
                     row = fut.result()
                 except Exception as e:
                     print(f"[err ] {t.essay_id} {t.a_id} vs {t.b_id} [{t.dimension}]: {e}")
+                    summary.record_error()
                     continue
                 versus_db.insert_judgment(
                     db,
@@ -653,12 +669,14 @@ def run_blind(
                     duration_s=row["duration_s"],
                 )
                 done += 1
+                summary.record_success(row.get("response"))
                 print(
                     f"[done {done}/{total}] {t.essay_id} {t.a_id} vs {t.b_id} "
                     f"[{t.dimension}] verdict={row['verdict']}"
                 )
     finally:
         http.close()
+        summary.print("blind judgments")
 
 
 def _call_with_semaphore(sem: threading.BoundedSemaphore, fn, *args, **kwargs):

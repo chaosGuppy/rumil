@@ -45,8 +45,17 @@ def chat(
     client: httpx.Client | None = None,
     retries: int = 2,
     system: str | None = None,
+    thinking: dict | None = None,
+    output_config: dict | None = None,
 ) -> dict:
-    """Return full response JSON. Retries on transient empty-text failures."""
+    """Return full response JSON. Retries on transient empty-text failures.
+
+    ``thinking`` is the Anthropic adaptive/extended-thinking dict (e.g.
+    ``{"type": "adaptive"}``) or None. ``output_config`` carries
+    ``{"effort": "..."}`` when applicable. Both default to None — pass
+    them explicitly when the versus model registry says the model
+    should run with them.
+    """
     payload: dict = {
         "model": model,
         "messages": messages,
@@ -58,6 +67,10 @@ def chat(
         payload["top_p"] = top_p
     if system is not None:
         payload["system"] = system
+    if thinking is not None:
+        payload["thinking"] = thinking
+    if output_config is not None:
+        payload["output_config"] = output_config
 
     close = client is None
     client = client or httpx.Client(timeout=timeout)

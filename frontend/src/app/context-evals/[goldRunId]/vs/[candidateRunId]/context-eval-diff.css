@@ -1,0 +1,197 @@
+@import "../../../traces/[runId]/trace.css";
+
+.ce-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.ce-header {
+  border-bottom: 1px solid var(--border, #2a2a2a);
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+
+.ce-back-link {
+  display: inline-block;
+  font-size: 13px;
+  color: var(--muted, #888);
+  text-decoration: none;
+  margin-bottom: 8px;
+}
+
+.ce-back-link:hover {
+  color: var(--fg, #ddd);
+}
+
+.ce-title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 4px 0 12px 0;
+}
+
+.ce-arms-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ce-arm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border, #2a2a2a);
+  background: var(--surface, #181818);
+  min-width: 220px;
+}
+
+.ce-arm-card--gold {
+  border-left: 3px solid #d4943a;
+}
+
+.ce-arm-card--candidate {
+  border-left: 3px solid #5b8def;
+}
+
+.ce-arm-trace-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg, #ddd);
+  text-decoration: none;
+}
+
+.ce-arm-trace-link:hover {
+  text-decoration: underline;
+}
+
+.ce-arm-id {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--muted, #888);
+}
+
+.ce-arm-summary {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted, #888);
+}
+
+.ce-arm-role {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ce-arm-builder {
+  color: var(--fg, #ddd);
+}
+
+.ce-section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted, #888);
+  margin-bottom: 8px;
+}
+
+.ce-diff-section {
+  margin-bottom: 32px;
+}
+
+.ce-bucket-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.ce-bucket {
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  background: var(--surface, #181818);
+  padding: 10px 12px;
+}
+
+.ce-bucket--gold {
+  border-top: 3px solid #d4943a;
+}
+
+.ce-bucket--candidate {
+  border-top: 3px solid #5b8def;
+}
+
+.ce-bucket--both {
+  border-top: 3px solid #4dab6f;
+}
+
+.ce-bucket-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.ce-bucket-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ce-bucket-count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--muted, #888);
+}
+
+.ce-bucket-body {
+  font-size: 12px;
+}
+
+.ce-context-section {
+  margin-top: 24px;
+}
+
+.ce-context-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.ce-context-col {
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  background: var(--surface, #181818);
+  padding: 12px;
+}
+
+.ce-context-col--gold {
+  border-top: 3px solid #d4943a;
+}
+
+.ce-context-col--candidate {
+  border-top: 3px solid #5b8def;
+}
+
+.ce-context-col-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+}
+
+.ce-context-col-arm {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media (max-width: 1100px) {
+  .ce-bucket-grid,
+  .ce-context-grid {
+    grid-template-columns: 1fr;
+  }
+}

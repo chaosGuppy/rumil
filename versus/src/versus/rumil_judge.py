@@ -30,16 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from versus import config, judge, versus_db
-
-
-def _anthropic_sampling(model: str, max_tokens: int) -> dict:
-    """Sampling dict for ws/orch direct-Anthropic calls.
-
-    Opus 4.7 deprecates the temperature param on the Messages API (returns
-    400), so we omit it. Sonnet/Haiku use temperature=0.0 for determinism.
-    """
-    use_temp = None if model.startswith("claude-opus-4-7") else 0.0
-    return {"temperature": use_temp, "max_tokens": max_tokens}
+from versus.run_summary import RunSummary
 
 
 @dataclass
@@ -85,6 +76,7 @@ def _plan_rumil_pairs(
     vs_human: bool = False,
     current_only: bool = False,
     prefix_cfg: config.PrefixCfg | None = None,
+    prod: bool = False,
 ) -> list[_PendingJudgment]:
     """Enumerate pending judgments (skipping ones already in versus_judgments).
 
@@ -109,12 +101,12 @@ def _plan_rumil_pairs(
 
     essay_id_set = set(essay_ids) if essay_ids else None
     contestants_set = set(contestants) if contestants else None
+    db = versus_db.get_client(prod=prod)
     current_hashes = (
-        prepare.current_prefix_hashes(cfg, prefix_cfg=prefix_cfg)
+        prepare.current_prefix_hashes(cfg, prefix_cfg=prefix_cfg, client=db)
         if (current_only or prefix_cfg is not None)
         else None
     )
-    db = versus_db.get_client()
     groups, prefix_texts = judge.load_sources_by_essay(db)
     existing = judge._existing_judgment_keys(db)
     out: list[_PendingJudgment] = []
@@ -283,6 +275,7 @@ async def run_ws(
     current_only: bool = False,
     prefix_cfg: config.PrefixCfg | None = None,
     persist: bool = False,
+    prod: bool = False,
 ) -> None:
     """Run the workspace-aware rumil judge against pending pairs.
 
@@ -310,7 +303,7 @@ async def run_ws(
     # Probe DB just for project lookup — projects live outside any run's
     # staged view, and the per-pair DBs below inherit db.project_id through
     # their explicit constructor arg.
-    probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
+    probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=prod, staged=False)
     project = await _resolve_workspace(probe_db, workspace)
     probe_db.project_id = project.id
     ws_short = project.id[:8]
@@ -339,7 +332,13 @@ async def run_ws(
     # concurrent pairs see the same baseline.
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
-    sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
+    # Versus model registry is the source of truth for what versus sends on
+    # the wire. Look up once; the same ModelConfig is passed to the bridge
+    # (which threads it into the SDK agent + closer) AND recorded in
+    # judge_inputs so the dedup hash forks on registry edits.
+    from versus.model_config import get_judge_model_config
+
+    mc = get_judge_model_config(model, cfg=cfg)
 
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name
@@ -348,7 +347,7 @@ async def run_ws(
             "ws",
             model=model,
             dimension=dim,
-            sampling=sampling,
+            model_config=mc,
             prompt_hash=ph,
             tool_prompt_hash=thash,
             pair_surface_hash=qhash,
@@ -366,6 +365,7 @@ async def run_ws(
         vs_human=vs_human,
         current_only=current_only,
         prefix_cfg=prefix_cfg,
+        prod=prod,
     )
     if limit is not None:
         tasks = tasks[:limit]
@@ -394,8 +394,9 @@ async def run_ws(
     done = 0
     total = len(tasks)
     lock = asyncio.Lock()
+    summary = RunSummary()
 
-    versus_client = versus_db.get_client()
+    versus_client = versus_db.get_client(prod=prod)
 
     async def _exec_one(pj: _PendingJudgment) -> None:
         nonlocal done
@@ -411,7 +412,7 @@ async def run_ws(
             # the shared DB no longer thrashes across pairs.
             run_id = str(uuid.uuid4())
             db = await DB.create(
-                run_id=run_id, prod=False, project_id=project.id, staged=not persist
+                run_id=run_id, prod=prod, project_id=project.id, staged=not persist
             )
             try:
                 task_body = _resolve_task_body(task_name, is_versus_crit)
@@ -440,8 +441,11 @@ async def run_ws(
                         "workspace": workspace,
                         "task_name": effective_task,
                         "essay_id": pair.essay_id,
+                        # ``judge_config`` already carries the full ModelConfig
+                        # under judge_config['model_config'] (max_tokens,
+                        # thinking, effort, etc.); no need to duplicate
+                        # individual knobs at the runs.config top level.
                         "judge_config": pj.base_config,
-                        "judging_max_tokens": cfg.judging.max_tokens,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /
                         # order live on the judgment row in
@@ -455,9 +459,12 @@ async def run_ws(
                     },
                 )
                 print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
-                result = await judge_pair_ws_aware(db, pair_ctx, task_body=task_body, model=model)
+                result = await judge_pair_ws_aware(
+                    db, pair_ctx, task_body=task_body, model=model, model_config=mc
+                )
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
+                summary.record_error()
                 return
             criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
             row = _mirror_row(
@@ -494,13 +501,17 @@ async def run_ws(
                     rumil_cost_usd=row["rumil_cost_usd"],
                 )
                 done += 1
+                summary.record_success(cost_usd=result.cost_usd or 0.0)
                 print(
                     f"[done {done}/{total}] {pair.essay_id} {pair.source_a_id} vs "
                     f"{pair.source_b_id} [{criterion_value}] "
                     f"label={result.preference_label!r} trace={result.trace_url}"
                 )
 
-    await asyncio.gather(*[_exec_one(pj) for pj in tasks])
+    try:
+        await asyncio.gather(*[_exec_one(pj) for pj in tasks])
+    finally:
+        summary.print("ws judgments")
 
 
 async def run_orch(
@@ -519,6 +530,7 @@ async def run_orch(
     persist: bool = False,
     current_only: bool = False,
     prefix_cfg: config.PrefixCfg | None = None,
+    prod: bool = False,
 ) -> None:
     """Run the orchestrator rumil judge against pending pairs.
 
@@ -544,7 +556,7 @@ async def run_orch(
 
     # Probe is always non-staged: project lookup isn't per-run and
     # needs to see baseline rows.
-    probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=False, staged=False)
+    probe_db = await DB.create(run_id=str(uuid.uuid4()), prod=prod, staged=False)
     project = await _resolve_workspace(probe_db, workspace)
     probe_db.project_id = project.id
     ws_short = project.id[:8]
@@ -571,7 +583,10 @@ async def run_orch(
     code_fingerprint = compute_judge_code_fingerprint()
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
 
-    sampling = _anthropic_sampling(model, cfg.judging.max_tokens)
+    # Versus model registry as source of truth (see run_ws above).
+    from versus.model_config import get_judge_model_config
+
+    mc = get_judge_model_config(model, cfg=cfg)
 
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name
@@ -580,7 +595,7 @@ async def run_orch(
             "orch",
             model=model,
             dimension=dim,
-            sampling=sampling,
+            model_config=mc,
             prompt_hash=ph,
             tool_prompt_hash=thash,
             pair_surface_hash=qhash,
@@ -600,6 +615,7 @@ async def run_orch(
         vs_human=vs_human,
         current_only=current_only,
         prefix_cfg=prefix_cfg,
+        prod=prod,
     )
     if limit is not None:
         tasks = tasks[:limit]
@@ -629,8 +645,9 @@ async def run_orch(
     total = len(tasks)
     sem = asyncio.Semaphore(effective_concurrency)
     lock = asyncio.Lock()
+    summary = RunSummary()
 
-    versus_client = versus_db.get_client()
+    versus_client = versus_db.get_client(prod=prod)
 
     async def _exec_one(pj: _PendingJudgment) -> None:
         nonlocal done
@@ -644,7 +661,7 @@ async def run_orch(
             # per-run so concurrent pairs don't contaminate each other's
             # staged views.
             db = await DB.create(
-                run_id=run_id, prod=False, project_id=project.id, staged=not persist
+                run_id=run_id, prod=prod, project_id=project.id, staged=not persist
             )
             try:
                 task_body = _resolve_task_body(task_name, is_versus_crit)
@@ -672,8 +689,9 @@ async def run_orch(
                         "workspace": workspace,
                         "task_name": effective_task,
                         "essay_id": pair.essay_id,
+                        # See run_ws above: judge_config carries the full
+                        # ModelConfig already.
                         "judge_config": pj.base_config,
-                        "judging_max_tokens": cfg.judging.max_tokens,
                         # Canonical alphabetical order for dedup-key
                         # purposes, NOT display order. display_first /
                         # order live on the judgment row in
@@ -688,10 +706,16 @@ async def run_orch(
                 )
                 print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
                 result = await judge_pair_orch(
-                    db, pair_ctx, task_body=task_body, model=model, budget=budget
+                    db,
+                    pair_ctx,
+                    task_body=task_body,
+                    model=model,
+                    budget=budget,
+                    model_config=mc,
                 )
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
+                summary.record_error()
                 return
             criterion_value = f"versus_{task_name}" if is_versus_crit else f"rumil_{task_name}"
             row = _mirror_row(
@@ -728,10 +752,14 @@ async def run_orch(
                     rumil_cost_usd=row["rumil_cost_usd"],
                 )
                 done += 1
+                summary.record_success(cost_usd=result.cost_usd or 0.0)
                 print(
                     f"[done {done}/{total}] {pair.essay_id} {pair.source_a_id} vs "
                     f"{pair.source_b_id} [{criterion_value}] "
                     f"label={result.preference_label!r} trace={result.trace_url}"
                 )
 
-    await asyncio.gather(*[_exec_one(pj) for pj in tasks])
+    try:
+        await asyncio.gather(*[_exec_one(pj) for pj in tasks])
+    finally:
+        summary.print("orch judgments")

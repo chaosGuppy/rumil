@@ -7,7 +7,7 @@ import logging
 from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
-from rumil.calls.common import mark_call_completed
+from rumil.calls.common import embed_task_for_page, mark_call_completed
 from rumil.calls.dispatches import (
     DISPATCH_DEFS,
     RECURSE_CLAIM_DISPATCH_DEF,
@@ -377,6 +377,9 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             "Do not do anything else — just dispatch."
         )
 
+        embed_task = await embed_task_for_page(
+            self.db, question_id, "fan-out scouting prioritization."
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -388,8 +391,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             ),
             system_prompt=build_system_prompt(
                 "two_phase_initial_prioritization",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="two_phase_initial_prioritization",
         )
 
         dispatches = list(result.dispatches)
@@ -655,6 +661,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             extra_defs.append(RECURSE_DISPATCH_DEF)
             extra_defs.append(RECURSE_CLAIM_DISPATCH_DEF)
 
+        embed_task = await embed_task_for_page(
+            self.db,
+            question_id,
+            "main-phase prioritization across open lines of research.",
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -667,8 +678,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
                 "two_phase_main_phase_prioritization",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="two_phase_main_phase_prioritization",
             dispatch_budget=dispatch_budget,
         )
 

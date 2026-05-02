@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from rumil.budget import _consume_budget
 from rumil.calls.common import (
+    embed_task_for_page,
     execute_tool_uses,
     prepare_tools,
     record_round_moves,
@@ -73,10 +74,17 @@ class SimpleAgentLoop(WorkspaceUpdater):
             list(self._available_moves) if self._available_moves is not None else list(MoveType)
         )
         tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
-        system_prompt = build_system_prompt(self._prompt_name or self._call_type.value)
+        prompt_name = self._prompt_name or self._call_type.value
+        embed_task = await embed_task_for_page(infra.db, infra.question_id, self._task_description)
+        system_prompt = build_system_prompt(
+            prompt_name,
+            task=embed_task,
+            include_per_call=False,
+        )
         user_message = build_user_message(
             context.context_text,
             self._task_description,
+            call_type=prompt_name,
         )
 
         agent_result = await run_agent_loop(
@@ -174,7 +182,6 @@ class MultiRoundLoop(WorkspaceUpdater):
         )
         tools = [MOVES[mt].bind(infra.state) for mt in moves_list]
         tool_defs, _ = prepare_tools(tools)
-        system_prompt = build_system_prompt(self._call_type.value)
 
         if self._task_description is not None:
             task = self._task_description
@@ -185,7 +192,17 @@ class MultiRoundLoop(WorkspaceUpdater):
                 "Question ID (use this when linking considerations): "
                 f"`{infra.question_id}`"
             )
-        user_message = build_user_message(context.context_text, task)
+        embed_task = await embed_task_for_page(infra.db, infra.question_id, task)
+        system_prompt = build_system_prompt(
+            self._call_type.value,
+            task=embed_task,
+            include_per_call=False,
+        )
+        user_message = build_user_message(
+            context.context_text,
+            task,
+            call_type=self._call_type.value,
+        )
 
         resume_messages: list[dict] = []
         rounds_completed = 0
@@ -323,14 +340,23 @@ class WebResearchLoop(WorkspaceUpdater):
         custom_tool_defs, custom_tool_fns = prepare_tools(custom_tools)
         all_tool_defs: list = server_tools + custom_tool_defs
 
-        system_prompt = build_system_prompt("web_research")
         task = (
             "Search the web for evidence relevant to this question and create "
             "source-grounded claims.\n\n"
             "Question ID (use this when linking considerations): "
             f"`{infra.question_id}`"
         )
-        user_message = build_user_message(context.context_text, task)
+        embed_task = await embed_task_for_page(infra.db, infra.question_id, task)
+        system_prompt = build_system_prompt(
+            "web_research",
+            task=embed_task,
+            include_per_call=False,
+        )
+        user_message = build_user_message(
+            context.context_text,
+            task,
+            call_type="web_research",
+        )
         messages: list[dict] = [{"role": "user", "content": user_message}]
 
         log.debug(

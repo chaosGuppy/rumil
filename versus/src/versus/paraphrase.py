@@ -18,9 +18,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
+from rumil.model_config import ModelConfig
 from versus import anthropic_client, config, jsonl, openrouter
 from versus import essay as versus_essay
 from versus.judge import route_judge_model
+from versus.model_config import get_model_config
+from versus.run_summary import RunSummary
 from versus.versions import PARAPHRASE_PROMPT_VERSION
 
 PARAPHRASE_INSTRUCTIONS = (
@@ -46,9 +49,14 @@ PARAPHRASE_INSTRUCTIONS = (
 HEADING_RE = re.compile(r"^(#{2,4})\s+(.+?)\s*$")
 
 
-def sampling_hash(model_cfg: config.ModelCfg) -> str:
+def sampling_hash(model_config: ModelConfig) -> str:
+    """Stable hash of the per-model registry config + paraphrase prompt
+    version. Forks deterministically when either the model's registry
+    entry (sampling, thinking, effort, etc.) or the paraphrase prompt
+    changes — drives the dedup key on paraphrase rows.
+    """
     payload = {
-        "params": model_cfg.model_dump(exclude={"id"}),
+        "model_config": model_config.to_record_dict(),
         "prompt_version": PARAPHRASE_PROMPT_VERSION,
     }
     blob = json.dumps(payload, sort_keys=True)
@@ -82,22 +90,19 @@ def markdown_to_blocks(md: str) -> list[versus_essay.Block]:
     return out
 
 
-def _call_one_paraphrase(essay, m, sh, k, prompt, client):
+def _call_one_paraphrase(essay, m, sh, k, prompt, client, mc):
     t0 = time.time()
     provider, canonical_model = route_judge_model(m.id)
     if provider == "anthropic":
-        # Opus 4.7 deprecates explicit temperature; drop top_p too out of caution
-        # (see complete.py for context).
-        if canonical_model.startswith("claude-opus-4-7"):
-            temp, top_p = None, None
-        else:
-            temp, top_p = m.temperature, m.top_p
+        output_cfg = {"effort": mc.effort} if mc.effort is not None else None
         resp = anthropic_client.chat(
             model=canonical_model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=temp,
-            max_tokens=m.max_tokens,
-            top_p=top_p,
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
+            thinking=mc.thinking,
+            output_config=output_cfg,
             client=client,
         )
         text = anthropic_client.extract_text(resp)
@@ -105,9 +110,9 @@ def _call_one_paraphrase(essay, m, sh, k, prompt, client):
         resp = openrouter.chat(
             model=canonical_model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=m.temperature,
-            max_tokens=m.max_tokens,
-            top_p=m.top_p,
+            temperature=mc.temperature,
+            max_tokens=mc.max_tokens,
+            top_p=mc.top_p,
             client=client,
         )
         text = openrouter.extract_text(resp)
@@ -117,7 +122,10 @@ def _call_one_paraphrase(essay, m, sh, k, prompt, client):
         "essay_id": essay.id,
         "model_id": m.id,
         "sampling_hash": sh,
-        "params": m.model_dump(exclude={"id"}),
+        # Full ModelConfig snapshot from the versus registry — what
+        # actually went on the wire. Plus the loose paraphrase-axis
+        # flag from the completion-models entry.
+        "params": {**m.model_dump(exclude={"id"}), "model_config": mc.to_record_dict()},
         "prompt": prompt,
         "response_text": text,
         "response_words": len(text.split()),
@@ -133,7 +141,7 @@ def paraphrase_models(cfg: config.Config) -> list[config.ModelCfg]:
     return [m for m in cfg.completion.models if m.paraphrase]
 
 
-def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
+def run(cfg: config.Config, essays: list[versus_essay.Essay], *, dry_run: bool = False) -> None:
     models = paraphrase_models(cfg)
     if not cfg.paraphrasing.enabled or not models:
         print("[paraphrase] disabled or no models flagged paraphrase=true; skipping")
@@ -145,23 +153,30 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
     for essay in essays:
         prompt = PARAPHRASE_INSTRUCTIONS.format(markdown=essay.markdown)
         for m in models:
-            sh = sampling_hash(m)
+            mc = get_model_config(m.id, cfg=cfg)
+            sh = sampling_hash(mc)
             k = paraphrase_key(essay.id, m.id, sh)
             if k in existing:
                 print(f"[skip] paraphrase {k}")
                 continue
-            tasks_to_run.append((essay, m, sh, k, prompt))
+            tasks_to_run.append((essay, m, sh, k, prompt, mc))
             existing.add(k)
 
     if not tasks_to_run:
         return
+    if dry_run:
+        print(f"[plan] {len(tasks_to_run)} paraphrase calls (concurrency={cfg.concurrency})")
+        for e, m, _sh, k, _p, _mc in tasks_to_run:
+            print(f"  * {e.id} | {m.id} | {k}")
+        return
     print(f"[run ] {len(tasks_to_run)} paraphrase calls (concurrency={cfg.concurrency})")
+    summary = RunSummary()
     client = httpx.Client(timeout=600.0)
     try:
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             futures = {
-                pool.submit(_call_one_paraphrase, e, m, sh, k, p, client): k
-                for (e, m, sh, k, p) in tasks_to_run
+                pool.submit(_call_one_paraphrase, e, m, sh, k, p, client, mc): k
+                for (e, m, sh, k, p, mc) in tasks_to_run
             }
             for fut in as_completed(futures):
                 k = futures[fut]
@@ -169,8 +184,11 @@ def run(cfg: config.Config, essays: list[versus_essay.Essay]) -> None:
                     row = fut.result()
                 except Exception as ex:
                     print(f"[err ] paraphrase {k}: {ex}")
+                    summary.record_error()
                     continue
                 jsonl.append(log, row)
+                summary.record_success(row.get("raw_response"))
                 print(f"[done] paraphrase {k}")
     finally:
         client.close()
+        summary.print("paraphrases")

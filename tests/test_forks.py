@@ -13,7 +13,9 @@ from rumil.forks import (
     merge_overrides,
     resolve_base,
 )
+from rumil.model_config import ModelConfig
 from rumil.models import CallType
+from rumil.settings import get_settings
 
 
 def test_hash_overrides_drops_nulls():
@@ -145,6 +147,87 @@ def test_build_kwargs_omits_tools_when_empty():
     assert "tools" not in k
 
 
+def test_build_kwargs_uses_captured_thinking_over_recompute():
+    # Captured original_config has a different thinking dict than the current
+    # rules would produce — fork must reproduce the original, not the new one.
+    captured_thinking = {"type": "adaptive", "display": "summarized", "marker": "old"}
+    base = _base(
+        model="claude-opus-4-7",
+        has_thinking=True,
+        original_config=ModelConfig(
+            temperature=None,
+            max_tokens=1000,
+            thinking=captured_thinking,
+            effort="old-xhigh",
+        ),
+    )
+    k = build_kwargs(base)
+    assert k["thinking"] == captured_thinking
+    assert k["output_config"] == {"effort": "old-xhigh"}
+
+
+def test_build_kwargs_falls_back_to_rules_when_no_capture():
+    # Old row without request_kwargs: behavior should match pre-capture defaults.
+    base = _base(model="claude-opus-4-7", has_thinking=True, original_config=None)
+    k = build_kwargs(base)
+    assert k["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert k["output_config"] == {"effort": "xhigh"}
+
+
+def test_build_kwargs_thinking_off_overrides_captured():
+    # An explicit thinking_off on the fork still wins, even when captured had it.
+    base = _base(
+        model="claude-opus-4-7",
+        has_thinking=True,
+        thinking_off=True,
+        original_config=ModelConfig(
+            temperature=None, max_tokens=1000, thinking={"type": "adaptive"}, effort="high"
+        ),
+    )
+    k = build_kwargs(base)
+    assert "thinking" not in k
+    # output_config tracks the captured value regardless of thinking_off — those
+    # are independent knobs on the API and the recorded effort still applied.
+    assert k["output_config"] == {"effort": "high"}
+
+
+def test_build_kwargs_captured_none_thinking_omits_block():
+    # A row that captured thinking=None means "the original explicitly didn't
+    # send a thinking block". Reproduce: omit it.
+    base = _base(
+        model="claude-haiku-4-5-20251001",
+        has_thinking=False,
+        original_config=ModelConfig(temperature=0.0, max_tokens=1000, thinking=None, effort=None),
+    )
+    k = build_kwargs(base)
+    assert "thinking" not in k
+    assert "output_config" not in k
+
+
+def test_merge_overrides_drops_capture_when_model_changes():
+    # Captured thinking is tied to the old model; switching models means the
+    # capture is no longer the right reproduction target. Fall back to recompute.
+    base = _base(
+        model="claude-opus-4-7",
+        has_thinking=True,
+        original_config=ModelConfig(
+            temperature=None, max_tokens=1000, thinking={"type": "adaptive"}, effort="xhigh"
+        ),
+    )
+    merged = merge_overrides(base, ForkOverrides(model="claude-haiku-4-5-20251001"))
+    assert merged.original_config is None
+    assert merged.has_thinking is False
+
+
+def test_merge_overrides_preserves_capture_when_model_unchanged():
+    captured = ModelConfig(
+        temperature=None, max_tokens=1000, thinking={"type": "adaptive"}, effort=None
+    )
+    base = _base(model="claude-opus-4-7", has_thinking=True, original_config=captured)
+    merged = merge_overrides(base, ForkOverrides(temperature=0.5))
+    assert merged.original_config == captured
+
+
 _FORK_DEFAULTS = dict(
     overrides={},
     model="claude-haiku-4-5-20251001",
@@ -164,7 +247,11 @@ _FORK_DEFAULTS = dict(
 
 
 async def _seed_exchange(
-    db, call_id: str, system_prompt: str = "sys", user_message: str = "hi"
+    db,
+    call_id: str,
+    system_prompt: str = "sys",
+    user_message: str = "hi",
+    model: str | None = None,
 ) -> str:
     return await db.save_llm_exchange(
         call_id=call_id,
@@ -175,6 +262,7 @@ async def _seed_exchange(
         tool_calls=[],
         input_tokens=10,
         output_tokens=5,
+        model=model,
     )
 
 
@@ -275,6 +363,55 @@ async def test_resolve_base_reconstructs_inputs(tmp_db, scout_call):
 async def test_resolve_base_raises_on_missing_id(tmp_db):
     with pytest.raises(ValueError):
         await resolve_base(tmp_db, "00000000-0000-0000-0000-000000000000")
+
+
+async def test_resolve_base_reads_model_from_exchange_row(tmp_db, scout_call):
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id, model="claude-sonnet-4-6")
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == "claude-sonnet-4-6"
+
+
+async def test_resolve_base_falls_back_to_judge_config_model(tmp_db, scout_call):
+    """Versus runs store the actual judge model at runs.config['judge_config']['model']."""
+    await tmp_db.create_run(
+        name="versus-test",
+        question_id=None,
+        config={"judge_config": {"model": "claude-sonnet-4-6"}},
+    )
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id)
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == "claude-sonnet-4-6"
+
+
+async def test_resolve_base_falls_back_to_run_config_model(tmp_db, scout_call):
+    """Normal runs store the captured model at runs.config['model'] via Settings.capture_config()."""
+    await tmp_db.create_run(
+        name="normal-test",
+        question_id=None,
+        config={"model": "claude-opus-4-6"},
+    )
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id)
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == "claude-opus-4-6"
+
+
+async def test_resolve_base_falls_back_to_settings_model(tmp_db, scout_call):
+    """When neither the exchange row nor the run config carries a model, fall back to settings.model."""
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id)
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == get_settings().model
+
+
+async def test_resolve_base_prefers_row_model_over_run_config(tmp_db, scout_call):
+    """Row-level model wins even when run config has a different one."""
+    await tmp_db.create_run(
+        name="conflict-test",
+        question_id=None,
+        config={"judge_config": {"model": "claude-sonnet-4-6"}, "model": "claude-opus-4-6"},
+    )
+    exchange_id = await _seed_exchange(tmp_db, scout_call.id, model="claude-haiku-4-5-20251001")
+    base = await resolve_base(tmp_db, exchange_id)
+    assert base.model == "claude-haiku-4-5-20251001"
 
 
 @pytest.mark.llm

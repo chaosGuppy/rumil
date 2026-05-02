@@ -296,6 +296,12 @@ export type BaseExchangeOut = {
      * Thinking Off
      */
     thinking_off: boolean;
+    /**
+     * Original Config
+     */
+    original_config: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -453,7 +459,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'create_view_max_effort' | 'global_prioritization' | 'update_view' | 'update_view_max_effort' | 'create_freeform_view' | 'update_freeform_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'red_team' | 'claude_code_direct' | 'versus_judge';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'create_view_max_effort' | 'global_prioritization' | 'update_view' | 'update_view_max_effort' | 'create_freeform_view' | 'update_freeform_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'red_team' | 'claude_code_direct' | 'versus_judge' | 'context_builder_eval';
 
 /**
  * CallTypeFruitScoreItem
@@ -724,6 +730,65 @@ export type ContextBuiltEventOut = {
      * Context Text Chars
      */
     context_text_chars: number;
+};
+
+/**
+ * ContextEvalArmOut
+ *
+ * One arm (gold or candidate) of a context-builder eval.
+ */
+export type ContextEvalArmOut = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Builder Name
+     */
+    builder_name: string;
+    context_built: ContextBuiltEventOut;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number | null;
+    /**
+     * Config
+     */
+    config?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * ContextEvalDiffOut
+ *
+ * Side-by-side diff of two context-builder runs on the same question.
+ *
+ * pages_only_in_gold/pages_only_in_candidate/pages_in_both are the result
+ * of diffing the union of working_context, preloaded, and scope-linked
+ * pages from each arm's context_built event. Headlines are carried via
+ * PageRef so the UI can render links without an extra lookup.
+ */
+export type ContextEvalDiffOut = {
+    question?: Page | null;
+    gold: ContextEvalArmOut;
+    candidate: ContextEvalArmOut;
+    /**
+     * Pages Only In Gold
+     */
+    pages_only_in_gold?: Array<PageRef>;
+    /**
+     * Pages Only In Candidate
+     */
+    pages_only_in_candidate?: Array<PageRef>;
+    /**
+     * Pages In Both
+     */
+    pages_in_both?: Array<PageRef>;
 };
 
 /**
@@ -1668,6 +1733,12 @@ export type Judgment = {
         [key: string]: unknown;
     };
     /**
+     * Model Config Snapshot
+     */
+    model_config_snapshot: {
+        [key: string]: unknown;
+    } | null;
+    /**
      * Criterion
      */
     criterion: string;
@@ -1818,6 +1889,12 @@ export type JudgmentDetail = {
     sampling: {
         [key: string]: unknown;
     };
+    /**
+     * Model Config Snapshot
+     */
+    model_config_snapshot: {
+        [key: string]: unknown;
+    } | null;
     /**
      * Verdict
      */
@@ -5498,6 +5575,51 @@ export type GetAbEvalApiAbEvalsEvalIdGetResponses = {
 };
 
 export type GetAbEvalApiAbEvalsEvalIdGetResponse = GetAbEvalApiAbEvalsEvalIdGetResponses[keyof GetAbEvalApiAbEvalsEvalIdGetResponses];
+
+export type GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Gold Run Id
+         */
+        gold_run_id: string;
+        /**
+         * Candidate Run Id
+         */
+        candidate_run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/context-evals/{gold_run_id}/vs/{candidate_run_id}';
+};
+
+export type GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetError = GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetErrors[keyof GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetErrors];
+
+export type GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContextEvalDiffOut;
+};
+
+export type GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetResponse = GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetResponses[keyof GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetResponses];
 
 export type ListLlmExchangesApiCallsCallIdLlmExchangesGetData = {
     body?: never;

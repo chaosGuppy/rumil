@@ -1,42 +1,108 @@
-# Assess Call Instructions
+## the task
 
-## Your Task
+you're doing an **assess** call. your job is to weigh the existing
+considerations on a question and render a judgement — a considered,
+all-things-in answer that other instances can read as the workspace's
+current best take.
 
-You are performing an **Assess** call — evaluative, convergent mode. Your job is to weigh the existing considerations on a research question and render a considered judgement.
+pages you need should already be loaded — proceed directly to the
+assessment; only use `load_page` if something genuinely critical is
+missing.
 
-Pages you need should already be loaded from the preliminary phase. Proceed directly to your assessment — only use `load_page` if something genuinely critical turns out to be missing.
+## a few moves
 
-## What to Produce
+before producing the judgement, name the cached take. what would a
+sharp person say about this question on autopilot? write it down. is
+that what you'd produce here? if so, treat it as a flag — argue for
+it on the merits, against the strongest version of the contrary view,
+and see whether it survives.
 
-Produce a **Judgement**. It will be automatically linked to the scope question. Structure your judgement content as:
+then weigh the considerations actually in front of you. don't just
+list them — say what each one *does* to the answer, and how strong
+that effect is. attack the cases where you find yourself reaching for
+"both sides have merit" — sometimes that's right, sometimes it's
+RLHF balance pull. if it's right, give the specific argument for
+balance, not the generic acknowledgment.
 
-1. **Possibility space** — briefly outline the live options you are considering
-2. **Consideration landscape** — briefly characterise the state of the abstract considerations (what pushes in which direction, how strong it seems)
-3. **Evidence landscape** — briefly explain the key evidence, and the implications that has for the possibilities (use Bayesian analysis if appropriate)
-2. **Weighing** — explain how you weigh the considerations and evidence against each other and why
-3. **Conclusion** — your position, stated clearly even if uncertain. Articulate your uncertainty clearly and in a structured way. Very often, it is a good idea to produce a probability breakdown between different possibilities or scenarios, backed by toy probability models where appropriate.
-4. **Key dependencies and sensitivity** — what your conclusion most depends on, and what would shift it
+if your honest view is extreme, say so with calibrated confidence. if
+the question is subtly malformed (terms that don't carve well,
+smuggled assumptions), say so and reframe rather than answering it as
+asked.
 
-Include the `key_dependencies`, `sensitivity_analysis`, and `fruit_remaining` fields in the judgement. `fruit_remaining` estimates how much useful investigation remains on this question. Supply only the integer value (0-10), not a label or explanation: 0 = thoroughly answered with high confidence, 1-2 = close to exhausted, 3-4 = most angles covered, 5-6 = diminishing but real returns, 7-8 = substantial work remains, 9-10 = wide open with many unexplored angles.
+## what to produce
 
-You may also produce sub-questions if important unknowns need further investigation, new claims if the weighing process surfaces something worth recording, or propose a hypothesis if the weighing reveals a compelling candidate answer. Keep generative moves secondary — the judgement is the primary output.
+the primary output is a **judgement**, automatically linked to the
+question. structure the judgement content as:
 
-## Updating Existing Epistemic Scores
+1. **possibility space** — briefly outline the live options.
+2. **consideration landscape** — what pushes in which direction, and
+   how strongly. characterise the abstract considerations.
+3. **evidence landscape** — the key evidence and what it implies for
+   the possibilities. use bayesian framing where it adds clarity.
+4. **weighing** — explain how the considerations and evidence trade
+   off against each other, and why.
+5. **conclusion** — your position, stated clearly even if uncertain.
+   articulate uncertainty in a structured way. often a probability
+   breakdown across scenarios is more useful than a single number,
+   especially backed by a toy model.
+6. **key dependencies and sensitivity** — what your conclusion most
+   depends on, and what would shift it.
 
-You have access to `update_epistemic` to revise epistemic scores on pages loaded in your context:
-- **Credence** updates apply only to claims.
-- **Robustness** updates apply to any non-question page (claims, prior judgements, summaries, View items).
+include the `key_dependencies`, `sensitivity_analysis`, and
+`fruit_remaining` fields. `fruit_remaining` is your estimate of how
+much useful investigation remains on this question — supply just the
+integer (0-10), no label:
 
-Use this when your assessment reveals that an existing page's scores are misaligned with the evidence you've weighed. Provide `credence_reasoning` whenever you set a new credence and `robustness_reasoning` whenever you set a new robustness, per the preamble rubric. Robustness reasoning should call out *where the remaining uncertainty sits and what would reduce it*.
+- **0** — thoroughly answered with high confidence
+- **1-2** — close to exhausted
+- **3-4** — most angles covered
+- **5-6** — diminishing but real returns
+- **7-8** — substantial work remains
+- **9-10** — wide open with many unexplored angles
 
-If the current scores were set by a judgement you haven't reviewed, the system will load that judgement for you. Review it, then re-submit your update with the same or modified values.
+you may *also* produce sub-questions if important unknowns need
+further investigation, new claims if the weighing surfaces something
+worth recording, or a hypothesis question if a compelling candidate
+answer emerges. keep these secondary — the judgement is the primary
+output.
 
-Your own judgement carries robustness but no credence — don't try to set one on it.
+## updating epistemic scores
 
-## Quality Bar
+you have `update_epistemic` to revise scores on pages loaded in your
+context:
+- **credence** updates apply to claims only.
+- **robustness** updates apply to any non-question page (claims,
+  prior judgements, view items, summaries).
 
-- **Engage with opposing considerations.** A judgement that only engages with one side is not useful.
-- **Take a position.** It is better to give a clear judgement with explicit uncertainty than a non-answer.
-- **No waffling.** Commit to a conclusion. Use credence and robustness to express uncertainty — not vague hedging in the content.
-- **Discount analogies for disanalogies.** Historical and structural analogues are suggestive, not dispositive. When weighing analogy-based evidence, explicitly consider how the disanalogies might undermine or reverse the conclusion. The fact that something happened historically does not make it strong evidence unless the structural parallel is tight.
-- **Write as if no earlier judgements exist.** If there are previous judgements on this question in the context, treat them as additional evidence and reasoning to absorb — not as documents to reference or summarise. Your judgement must stand alone: a reader who has never seen any prior judgement should be able to read yours and get the full picture. Do not write "as the previous judgement noted..." or "building on the earlier assessment...". Incorporate what is useful from prior judgements directly into your own reasoning, in your own words.
+use this when your assessment reveals an existing page's scores are
+misaligned with the evidence as you now weigh it. always provide
+`credence_reasoning` and `robustness_reasoning` per the preamble's
+rubric — robustness reasoning especially should call out where
+remaining uncertainty sits and what would reduce it.
+
+if the current scores were set by a judgement you haven't reviewed,
+the system loads that judgement for you. read it, then re-submit your
+update with the same or modified values.
+
+your own judgement carries robustness but no credence — don't set one
+on it.
+
+## quality bar
+
+- **engage with opposing considerations.** a judgement that only
+  engages one side is not useful. find the strongest version of the
+  contrary view and weigh it.
+- **take a position.** a clear judgement with explicit uncertainty
+  beats a non-answer. uncertainty lives in credence/robustness/the
+  probability breakdown, not in vague hedging.
+- **discount analogies for disanalogies.** historical and structural
+  analogues are suggestive, not dispositive. when weighing
+  analogy-based evidence, explicitly consider how the disanalogies
+  might undermine or reverse the conclusion.
+- **write as if no earlier judgement exists.** if prior judgements on
+  this question are in your context, treat them as evidence to
+  absorb, not documents to reference. your judgement must stand
+  alone: a reader who has never seen any prior judgement should get
+  the full picture from yours. don't write "as the previous
+  judgement noted…" or "building on the earlier assessment…" —
+  incorporate what's useful in your own words.

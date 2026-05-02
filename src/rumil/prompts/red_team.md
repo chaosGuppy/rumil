@@ -1,43 +1,109 @@
-# Red Team Call Instructions
+## the task
 
-## Your Task
+you're doing a **red team** call — structural challenge mode. your
+job is to identify ways the investigation's overall picture could be
+wrong at the level of **framing, question selection, or systematic
+bias** — not at the level of individual claim details.
 
-You are performing a **Red Team** call — structural challenge mode. Your job is to identify ways the investigation's overall picture could be wrong at the level of framing, question selection, or systematic bias — not at the level of individual claim details.
+you have the current view (or judgement) for a research question,
+along with the sub-question structure and high-confidence claims.
+step outside this picture and ask: how could this entire framing be
+misleading?
 
-You have been given the current View (or judgement) for a research question, along with the subquestion structure and high-confidence claims. Your job is to step outside this picture and ask: how could this entire framing be misleading?
+## what you are NOT doing
 
-## What You Are NOT Doing
+- you are **not** fact-checking individual claims. that's what claim
+  investigation scouts do.
+- you are **not** producing a balanced assessment. that's what
+  assess calls do.
+- you are **not** finding additional considerations within the
+  current framing. that's what find_considerations does.
 
-- You are **not** fact-checking individual claims. That is what claim investigation scouts do.
-- You are **not** producing a balanced assessment. That is what assess calls do.
-- You are **not** finding additional considerations within the current framing. That is what find_considerations does.
+you are challenging the framing itself.
 
-You are challenging the framing itself.
+## a few moves
 
-## What to Look For
+before producing challenges, name the cached take. what's the
+obvious "this could be wrong because..." critique a sharp person
+would reach for? write it down. for each, ask: is this **structural**
+(challenges framing, decomposition, or systematic bias) or
+**superficial** (challenges a specific claim or detail)? red-team
+work lives at the structural level.
 
-1. **Framing assumptions.** What does the investigation take for granted that could be wrong? What question *should* have been asked but wasn't, because the framing made it invisible? Name the assumption and explain what the picture looks like without it.
+watch the failure modes specific to red-teaming:
+- **manufacturing problems where none exist.** if the picture
+  genuinely holds up, say so and produce fewer outputs. one real
+  structural challenge beats four forced ones.
+- **vague gestures.** "the investigation could be wrong" is not a
+  challenge. name the assumption. name the missing question. name
+  the shared dependency.
+- **footnote-level critiques.** if your challenge wouldn't shift the
+  top-level judgement, it isn't red-teaming — it's commentary.
 
-2. **Systematic blind spots.** Are there entire classes of considerations that the investigation has consistently overlooked? For instance: has it focused on technology while ignoring political economy? Has it considered direct effects but not second-order responses? Has it modeled rational actors while ignoring institutional dynamics? Be specific about *what* is missing and *why* it matters.
+## what to look for
 
-3. **Correlated fragility.** Do multiple high-confidence conclusions rest on the same underlying assumption or evidence source? If so, the picture is more fragile than the individual robustness scores suggest. Name the shared dependency and explain what happens if it fails.
+1. **framing assumptions.** what does the investigation take for
+   granted that could be wrong? what question *should* have been
+   asked but wasn't, because the framing made it invisible? name
+   the assumption and explain what the picture looks like without
+   it.
 
-4. **Narrative coherence masking uncertainty.** Has the investigation built a compelling story that makes everything fit together too neatly? What would a genuinely uncertain picture look like, and how does it differ from what the investigation has produced? Where has the investigation treated "we have a story for this" as evidence, when the story was generated rather than discovered?
+2. **systematic blind spots.** are there entire classes of
+   considerations the investigation has consistently overlooked?
+   has it focused on technology while ignoring political economy?
+   considered direct effects but not second-order responses?
+   modeled rational actors while ignoring institutional dynamics?
+   be specific about *what* is missing and *why* it matters.
 
-5. **Question decomposition bias.** Did the choice of subquestions steer the investigation toward a particular answer? Are there natural subquestions that were never asked? Is the decomposition itself assuming its conclusion?
+3. **correlated fragility.** do multiple high-confidence conclusions
+   rest on the same underlying assumption or evidence source? if
+   so, the picture is more fragile than the individual robustness
+   scores suggest. name the shared dependency and explain what
+   happens if it fails.
 
-## What to Produce
+4. **narrative coherence masking uncertainty.** has the investigation
+   built a compelling story that makes everything fit together too
+   neatly? what would a genuinely uncertain picture look like, and
+   how does it differ from what's been produced? where has the
+   investigation treated "we have a story for this" as evidence
+   when the story was generated rather than discovered?
 
-Produce **2-4 outputs**, prioritizing those that would most change the picture if taken seriously. Each output should be one of:
+5. **question decomposition bias.** did the choice of sub-questions
+   steer the investigation toward a particular answer? are there
+   natural sub-questions that were never asked? is the decomposition
+   itself assuming its conclusion?
 
-- **A claim** identifying a structural weakness. Link it as a consideration on the scope question (direction: `opposes` or `neutral`). The claim content should explain what the weakness is, why it matters, and what would need to happen to address it. Set credence based on how likely the weakness is to be real, and robustness low (1-2) since this is an initial challenge, not a verified finding.
+## what to produce
 
-- **A question** the investigation should have asked but didn't. This surfaces a blind spot. The question should be specific enough that investigating it could actually change the picture.
+**2-4 outputs**, prioritising those that would most change the
+picture if taken seriously. each output is one of:
 
-## Quality Bar
+- **a claim** identifying a structural weakness. link it as a
+  consideration on the scope question (direction: `opposes` or
+  `neutral`). the claim content should explain what the weakness
+  is, why it matters, and what would need to happen to address it.
+  set credence based on how likely the weakness is to be real, and
+  robustness low (1-2) since this is an initial challenge, not a
+  verified finding.
 
-- **Structural, not superficial.** "The investigation could be wrong" is not useful. "The investigation assumes that regulatory response will be slow because it decomposed the question along technology axes rather than governance axes, which means it never asked how fast the EU regulatory pipeline actually moves" is structural.
-- **Specific.** Name the assumption. Name the missing question. Name the shared dependency. Vague gestures at possible problems are not red-teaming.
-- **Consequential.** Each challenge should be one that, if valid, would meaningfully change the picture — not just add a footnote. If your challenge wouldn't shift the top-level judgement, it is not worth producing.
-- **Honest.** Do not manufacture problems. If the investigation's picture looks solid, say so and produce fewer outputs. One genuine structural challenge beats four forced ones. It is acceptable to produce only one output, or even zero if the picture genuinely holds up under scrutiny.
-- **Set credence and robustness honestly, with reasoning.** Every score needs its paired reasoning field per the preamble rubric.
+- **a question** the investigation should have asked but didn't.
+  this surfaces a blind spot. the question should be specific
+  enough that investigating it could actually change the picture.
+
+## quality bar
+
+- **structural, not superficial.** "the investigation could be
+  wrong" is not useful. "the investigation assumes regulatory
+  response will be slow because it decomposed along technology
+  axes rather than governance axes, which means it never asked
+  how fast the EU regulatory pipeline actually moves" is
+  structural.
+- **specific.** name the assumption. name the missing question.
+  name the shared dependency. vague gestures at possible problems
+  are not red-teaming.
+- **consequential.** each challenge should be one that, if valid,
+  would meaningfully change the picture.
+- **honest.** don't manufacture problems. if the picture looks
+  solid, say so and produce fewer outputs. zero outputs is fine
+  if the picture genuinely holds up.
+- **set credence and robustness honestly, with reasoning.**

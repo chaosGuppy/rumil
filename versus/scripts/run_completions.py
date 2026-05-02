@@ -24,7 +24,7 @@ editing config.yaml:
   --include-stale               run over all fetched essays, not just the active set
   --prefix-label <id>           target a specific prefix variant (default: canonical)
   --orch <workflow_name>        switch to the orch path (requires --workspace, --budget)
-  --workspace <name>            rumil workspace (orch only; required)
+  --workspace <name>            rumil workspace (orch only; default: versus)
   --budget N                    orch budget per essay (orch only)
   --persist                     orch only — disable staging
   --concurrency N               orch only — concurrent runs
@@ -157,8 +157,8 @@ def main() -> None:
     )
     ap.add_argument(
         "--workspace",
-        default=None,
-        help="Rumil workspace (project) name. Required when --orch is set; ignored otherwise.",
+        default="versus",
+        help="Rumil workspace (project) name. Used when --orch is set; ignored otherwise. Default: versus.",
     )
     ap.add_argument(
         "--budget",
@@ -277,7 +277,7 @@ def main() -> None:
         # path is bypassed entirely so the existing request_hash / row
         # shape is unaffected.
         if not args.workspace:
-            ap.error("--orch requires --workspace <name>")
+            ap.error("--orch requires --workspace <name> (default 'versus' should not be empty)")
         if not args.model:
             ap.error("--orch requires --model <id> (single model per run)")
         if len(args.model) > 1:

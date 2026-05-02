@@ -93,8 +93,8 @@ def main() -> None:
     )
     ap.add_argument(
         "--workspace",
-        default=None,
-        help="Rumil workspace (project) name for the orch variant. Required for that variant; no default.",
+        default="versus",
+        help="Rumil workspace (project) name for the orch variant. Default: versus.",
     )
     ap.add_argument(
         "--dimension",

@@ -2,7 +2,7 @@
 name: rumil-versus-complete
 description: Run orchestrator-driven essay completions for the versus pairwise-eval pipeline. Per essay × prefix × model × workflow, fires a rumil orchestrator (TwoPhase, DraftAndEdit) and writes the resulting continuation as a `versus_texts` row tagged `kind="completion"`, `source_id="orch:<workflow>:<model>:c<hash8>"` — pickable as a contestant by `rumil-versus-judge` afterwards. Use when the user wants to A/B orchestrator-produced continuations against single-shot model continuations or against the human baseline. Both `--orch two_phase` and `--orch draft_and_edit` are usable. For single-shot completions (no orch), use `rumil-versus-generate`.
 allowed-tools: Bash, Read
-argument-hint: "--orch <workflow_name> [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--budget N] [--essay <id>...] [--prefix-label <id>] [--include-stale] [--limit N] [--concurrency N] [--persist] [--prod] [--workflow-arg key=value ...] [--dry-run]"
+argument-hint: "--orch <workflow_name> [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--budget N] [--essay <id>...] [--prefix-label <id>] [--include-stale] [--limit N] [--concurrency N] [--persist] [--prod] [--workflow-arg key=value ...] [--dry-run]"
 ---
 
 # rumil-versus-complete
@@ -98,17 +98,17 @@ text. Re-run `run_completions.py` (single-shot path) before topping
 up orch completions, since orch completions reference the same
 `prefix_hash` keys.
 
-## Workspace requirement
+## Workspace
 
-`--workspace <name>` maps to a rumil Project — no default; the user
-must name one. For the orch variant to do better than a fresh draft,
-that workspace should have material relevant to the essays' topics
-(matches the judge skill's expectation).
+`--workspace <name>` maps to a rumil Project. **Defaults to `versus`**
+— a dedicated workspace exists locally and on prod; reuse it unless
+the user explicitly wants a separate scratch workspace. For the orch
+variant to do better than a fresh draft, the workspace should have
+material relevant to the essays' topics.
 
-**Prod has a dedicated `versus` workspace** for orch runs. Pass
-`--workspace versus --prod` to use it. New workspaces must be created
-via rumil's `main.py` first — the resolver fails-loud on missing
-names.
+Pass `--workspace versus --prod` to use the prod versus workspace.
+New workspaces must be created via rumil's `main.py` first — the
+resolver fails-loud on missing names.
 
 By default orch completions are **staged** (`staged=True` on rumil's
 DB). Workflow scratchwork (intermediate drafts, critic outputs,
@@ -147,10 +147,10 @@ Versus has its own `pyproject.toml` and isn't installed in rumil's
 
 Typical invocations (substitute the user's chosen workspace for `<WS>`):
 
-- `--orch two_phase --workspace <WS> --budget 4 --model sonnet --dry-run` — list pending two_phase orch completions on the active essay set
-- `--orch two_phase --workspace <WS> --budget 4 --model sonnet --limit 3` — run on 3 pending essays
-- `--orch draft_and_edit --workspace <WS> --budget 4 --model opus --essay forethought__broad-timelines` — run draft-and-edit on one essay
-- `--orch draft_and_edit --workspace <WS> --budget 8 --model opus --include-stale` — also runs on off-feed essays
+- `--orch two_phase --workspace versus --budget 4 --model sonnet --dry-run` — list pending two_phase orch completions on the active essay set
+- `--orch two_phase --workspace versus --budget 4 --model sonnet --limit 3` — run on 3 pending essays
+- `--orch draft_and_edit --workspace versus --budget 4 --model opus --essay forethought__broad-timelines` — run draft-and-edit on one essay
+- `--orch draft_and_edit --workspace versus --budget 8 --model opus --include-stale` — also runs on off-feed essays
 
 The `--essay` and `--prefix-label` filters mirror `rumil-versus-generate`.
 `--include-stale` is the same opt-out from the active-essay-set default.

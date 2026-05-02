@@ -2,7 +2,7 @@
 name: rumil-versus-judge
 description: Run pairwise judgments on versus essay-continuation pairs. Default mode is the unified blind path (single-turn LLM call, no tools, no DB) — claude-* models route direct to Anthropic, others through OpenRouter. --variant orch fires a full TwoPhaseOrchestrator run per pair. Use when the user wants to measure how rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare blind judges against workspace-aware ones, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "[--variant orch] [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
+argument-hint: "[--variant orch] [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -164,16 +164,16 @@ This plans exactly 3 pairs: (flash, human), (gpt-5.4, human),
 (mini, human) — covers the quality spectrum on one essay. Repeat
 `--essay` to span multiple essays on the same pattern.
 
-## Workspace requirement (orch)
+## Workspace (orch)
 
-The `--workspace <name>` argument maps to a rumil Project — no
-default; the user must name one. For the `orch` variant to do
-better than text-only judgment, that workspace should have material
-relevant to the essays' topics.
+The `--workspace <name>` argument maps to a rumil Project. **Defaults
+to `versus`** — a dedicated workspace exists locally and on prod;
+reuse it unless the user explicitly wants a separate scratch workspace.
+For the `orch` variant to do better than text-only judgment, the
+workspace should have material relevant to the essays' topics.
 
-**Prod has a dedicated `versus` workspace** (intentionally empty) for
-orch runs from versus. Pass `--workspace versus --prod` to use it.
-Reusing one shared workspace keeps the staged subtrees from each run
+Pass `--workspace versus --prod` to use the prod versus workspace.
+Reusing one shared workspace keeps staged subtrees from each run
 discoverable in one place. New workspaces must be created explicitly
 via rumil's main.py before a `--prod` orch run — the resolver
 fails-loud on missing names (typo protection).
@@ -208,10 +208,10 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 
 - `--dry-run` — list pending blind judgments (uses `cfg.judging.models`)
 - `--model sonnet --dry-run` — pending blind judgments restricted to sonnet
-- `--variant orch --workspace <WS> --dry-run` — list pending orch judgments
-- `--variant orch --workspace <WS> --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
-- `--variant orch --workspace <WS> --budget 4 --model sonnet --limit 5` — run on sonnet instead of opus
-- `--variant orch --workspace <WS> --budget 4 --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
+- `--variant orch --workspace versus --dry-run` — list pending orch judgments
+- `--variant orch --workspace versus --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
+- `--variant orch --workspace versus --budget 4 --model sonnet --limit 5` — run on sonnet instead of opus
+- `--variant orch --workspace versus --budget 4 --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
 
 ## What to surface
 

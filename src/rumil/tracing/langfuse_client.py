@@ -122,10 +122,26 @@ def phase_span(name: str) -> Iterator[None]:
 
     No-op when Langfuse is disabled. Use this to add named spans without
     refactoring callers into their own decorated functions.
+
+    Telemetry must NEVER block the calling rumil code path — if the SDK
+    raises during span enter or exit (transient network blip, malformed
+    credentials), swallow it and let the wrapped body run / propagate
+    its own exceptions normally.
     """
-    client = get_langfuse()
-    if client is None:
+    span_cm = None
+    try:
+        client = get_langfuse()
+        if client is not None:
+            span_cm = client.start_as_current_observation(name=name, as_type="span")
+            span_cm.__enter__()
+    except Exception as exc:
+        logging.getLogger(__name__).debug("phase_span enter suppressed: %s", exc)
+        span_cm = None
+    try:
         yield
-        return
-    with client.start_as_current_observation(name=name, as_type="span"):
-        yield
+    finally:
+        if span_cm is not None:
+            try:
+                span_cm.__exit__(None, None, None)
+            except Exception as exc:
+                logging.getLogger(__name__).debug("phase_span exit suppressed: %s", exc)

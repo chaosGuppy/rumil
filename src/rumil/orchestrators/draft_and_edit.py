@@ -327,26 +327,46 @@ class DraftAndEditWorkflow:
         prefix = _extract_prefix_from_question_body(question.content)
         target_length = _extract_target_length_chars(question.content)
 
+        # Persist both the raw constructor overrides (None for any knob
+        # left at default — the reproducibility record) and the effective
+        # values that the run actually used (resolved model ids, prompt
+        # hashes, effective round cap). The trace UI renders this dict
+        # verbatim, so adding the resolved values turns "null/null/null"
+        # rows into something a reader can interpret without cross-
+        # referencing the workflow source.
+        call_params: dict[str, object] = {
+            "workflow": self.name,
+            "budget": self.budget,
+            "n_critics": self.n_critics,
+            "max_rounds": self.max_rounds,
+            "effective_max_rounds": (
+                self.max_rounds
+                if self.max_rounds is not None
+                else f"budget-bounded ({self.budget})"
+            ),
+            "drafter_model": self.drafter_model,
+            "critic_model": self.critic_model,
+            "editor_model": self.editor_model,
+            "effective_drafter_model": self._resolve_model(self.drafter_model),
+            "effective_critic_model": self._resolve_model(self.critic_model),
+            "effective_editor_model": self._resolve_model(self.editor_model),
+            "drafter_prompt_path": (
+                str(self.drafter_prompt_path) if self.drafter_prompt_path else None
+            ),
+            "critic_prompt_path": (
+                str(self.critic_prompt_path) if self.critic_prompt_path else None
+            ),
+            "editor_prompt_path": (
+                str(self.editor_prompt_path) if self.editor_prompt_path else None
+            ),
+            "drafter_prompt_hash": _sha8(self.drafter_prompt),
+            "critic_prompt_hash": _sha8(self.critic_prompt),
+            "editor_prompt_hash": _sha8(self.editor_prompt),
+        }
         call = await db.create_call(
             call_type=CallType.VERSUS_COMPLETE,
             scope_page_id=question_id,
-            call_params={
-                "workflow": self.name,
-                "n_critics": self.n_critics,
-                "max_rounds": self.max_rounds,
-                "drafter_model": self.drafter_model,
-                "critic_model": self.critic_model,
-                "editor_model": self.editor_model,
-                "drafter_prompt_path": (
-                    str(self.drafter_prompt_path) if self.drafter_prompt_path else None
-                ),
-                "critic_prompt_path": (
-                    str(self.critic_prompt_path) if self.critic_prompt_path else None
-                ),
-                "editor_prompt_path": (
-                    str(self.editor_prompt_path) if self.editor_prompt_path else None
-                ),
-            },
+            call_params=call_params,
         )
         await db.update_call_status(call.id, CallStatus.RUNNING)
         trace = CallTrace(call.id, db, broadcaster=broadcaster)

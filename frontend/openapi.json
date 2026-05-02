@@ -2653,6 +2653,15 @@
                         "$ref": "#/components/schemas/EditStartedEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/ReadStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ReflectStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/VerdictStartedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/DraftEventOut"
                       },
                       {
@@ -2702,6 +2711,9 @@
                         "draft_started": "#/components/schemas/DraftStartedEventOut",
                         "critique_started": "#/components/schemas/CritiqueStartedEventOut",
                         "edit_started": "#/components/schemas/EditStartedEventOut",
+                        "read_started": "#/components/schemas/ReadStartedEventOut",
+                        "reflect_started": "#/components/schemas/ReflectStartedEventOut",
+                        "verdict_started": "#/components/schemas/VerdictStartedEventOut",
                         "draft": "#/components/schemas/DraftEventOut",
                         "critique_round": "#/components/schemas/CritiqueRoundEventOut",
                         "edit": "#/components/schemas/EditEventOut"
@@ -8494,6 +8506,37 @@
         ],
         "title": "QuestionStatsOut"
       },
+      "ReadStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "read_started",
+            "title": "Event",
+            "default": "read_started"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "model"
+        ],
+        "title": "ReadStartedEventOut"
+      },
       "RealtimeConfigOut": {
         "properties": {
           "url": {
@@ -8559,6 +8602,43 @@
           "child_call_id"
         ],
         "title": "ReassessTriggeredEventOut"
+      },
+      "ReflectStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "reflect_started",
+            "title": "Event",
+            "default": "reflect_started"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "prior_read_chars": {
+            "type": "integer",
+            "title": "Prior Read Chars",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "model",
+          "prior_read_chars"
+        ],
+        "title": "ReflectStartedEventOut"
       },
       "RenderQuestionSubgraphEventOut": {
         "properties": {
@@ -9794,6 +9874,49 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VerdictStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "verdict_started",
+            "title": "Event",
+            "default": "verdict_started"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "prior_read_chars": {
+            "type": "integer",
+            "title": "Prior Read Chars",
+            "default": 0
+          },
+          "prior_reflect_chars": {
+            "type": "integer",
+            "title": "Prior Reflect Chars",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "model",
+          "prior_read_chars",
+          "prior_reflect_chars"
+        ],
+        "title": "VerdictStartedEventOut"
       },
       "ViewCreatedEventOut": {
         "properties": {

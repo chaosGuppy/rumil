@@ -377,6 +377,36 @@ class CritiqueStartedEvent(BaseModel):
     model: str = ""
 
 
+class ReadStartedEvent(BaseModel):
+    """Emitted by ReflectiveJudgeWorkflow right before the read-stage
+    LLM call. Live-trace counterpart to the read llm_exchange that
+    fires on completion."""
+
+    event: Literal["read_started"] = "read_started"
+    model: str = ""
+
+
+class ReflectStartedEvent(BaseModel):
+    """Emitted by ReflectiveJudgeWorkflow right before the reflect-stage
+    LLM call. Carries the prior read length so the UI has something
+    concrete to show during the wait."""
+
+    event: Literal["reflect_started"] = "reflect_started"
+    model: str = ""
+    prior_read_chars: int = 0
+
+
+class VerdictStartedEvent(BaseModel):
+    """Emitted by ReflectiveJudgeWorkflow right before the verdict-stage
+    LLM call. Carries the prior read + reflect lengths so the UI
+    surfaces what the verdict stage is synthesizing."""
+
+    event: Literal["verdict_started"] = "verdict_started"
+    model: str = ""
+    prior_read_chars: int = 0
+    prior_reflect_chars: int = 0
+
+
 class EditStartedEvent(BaseModel):
     """Emitted by DraftAndEditWorkflow right before the editor LLM call
     kicks off. Carries the inputs the editor will see (current draft
@@ -469,6 +499,9 @@ TraceEvent = Annotated[
     | DraftStartedEvent
     | CritiqueStartedEvent
     | EditStartedEvent
+    | ReadStartedEvent
+    | ReflectStartedEvent
+    | VerdictStartedEvent
     | DraftEvent
     | CritiqueRoundEvent
     | EditEvent,

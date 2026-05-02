@@ -39,7 +39,9 @@ from rumil.tracing.trace_events import (
     MovesExecutedEvent,
     PhaseSkippedEvent,
     QuestionDedupeEvent,
+    ReadStartedEvent,
     ReassessTriggeredEvent,
+    ReflectStartedEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
     RoundStartedEvent,
@@ -50,6 +52,7 @@ from rumil.tracing.trace_events import (
     UpdatePlanCreatedEvent,
     UpdateSubgraphComputedEvent,
     UpdateViewPhaseCompletedEvent,
+    VerdictStartedEvent,
     ViewCreatedEvent,
     WarningEvent,
     WebResearchCompleteEvent,
@@ -234,6 +237,18 @@ class EditStartedEventOut(EditStartedEvent, _TraceEnvelopeMixin):
     pass
 
 
+class ReadStartedEventOut(ReadStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ReflectStartedEventOut(ReflectStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class VerdictStartedEventOut(VerdictStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class DraftEventOut(DraftEvent, _TraceEnvelopeMixin):
     pass
 
@@ -284,6 +299,9 @@ TraceEventOut = Annotated[
     | DraftStartedEventOut
     | CritiqueStartedEventOut
     | EditStartedEventOut
+    | ReadStartedEventOut
+    | ReflectStartedEventOut
+    | VerdictStartedEventOut
     | DraftEventOut
     | CritiqueRoundEventOut
     | EditEventOut,

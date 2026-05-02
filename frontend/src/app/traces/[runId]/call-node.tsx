@@ -1595,6 +1595,57 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "read_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">stage</span>
+            <span className="trace-kv-value">read</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "reflect_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">stage</span>
+            <span className="trace-kv-value">reflect</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>prior read</span>
+            <span className="trace-kv-value">{event.prior_read_chars.toLocaleString()} ch</span>
+          </div>
+        </div>
+      )}
+
+      {event.event === "verdict_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">stage</span>
+            <span className="trace-kv-value">verdict</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>prior read</span>
+            <span className="trace-kv-value">{event.prior_read_chars.toLocaleString()} ch</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>prior reflect</span>
+            <span className="trace-kv-value">{event.prior_reflect_chars.toLocaleString()} ch</span>
+          </div>
+        </div>
+      )}
+
       {event.event === "draft" && (
         <div className="trace-event-body">
           <div className="trace-kv">

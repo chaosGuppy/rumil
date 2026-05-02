@@ -3239,6 +3239,28 @@ export type QuestionStatsOut = {
 };
 
 /**
+ * ReadStartedEventOut
+ */
+export type ReadStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'read_started';
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
  * RealtimeConfigOut
  */
 export type RealtimeConfigOut = {
@@ -3280,6 +3302,32 @@ export type ReassessTriggeredEventOut = {
      * Child Call Id
      */
     child_call_id: string | null;
+};
+
+/**
+ * ReflectStartedEventOut
+ */
+export type ReflectStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'reflect_started';
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Prior Read Chars
+     */
+    prior_read_chars: number;
 };
 
 /**
@@ -4057,6 +4105,36 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * VerdictStartedEventOut
+ */
+export type VerdictStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'verdict_started';
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Prior Read Chars
+     */
+    prior_read_chars: number;
+    /**
+     * Prior Reflect Chars
+     */
+    prior_reflect_chars: number;
 };
 
 /**
@@ -5669,6 +5747,12 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & CritiqueStartedEventOut) | ({
         event: 'edit_started';
     } & EditStartedEventOut) | ({
+        event: 'read_started';
+    } & ReadStartedEventOut) | ({
+        event: 'reflect_started';
+    } & ReflectStartedEventOut) | ({
+        event: 'verdict_started';
+    } & VerdictStartedEventOut) | ({
         event: 'draft';
     } & DraftEventOut) | ({
         event: 'critique_round';

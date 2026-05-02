@@ -63,6 +63,11 @@ from rumil.llm import LLMExchangeMetadata, text_call
 from rumil.models import CallStatus, CallType
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
+from rumil.tracing.trace_events import (
+    ReadStartedEvent,
+    ReflectStartedEvent,
+    VerdictStartedEvent,
+)
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
 _DEFAULT_READ_PROMPT = (
@@ -257,6 +262,7 @@ class ReflectiveJudgeWorkflow:
         try:
             verdict_text = await self._run_stages(
                 db=db,
+                trace=trace,
                 call_id=call.id,
                 pair_content=pair_content,
             )
@@ -272,6 +278,7 @@ class ReflectiveJudgeWorkflow:
         self,
         *,
         db: DB,
+        trace: CallTrace,
         call_id: str,
         pair_content: str,
     ) -> str:
@@ -279,12 +286,14 @@ class ReflectiveJudgeWorkflow:
         pair_block = f"<pair>\n{pair_content}\n</pair>"
 
         read_user_message = f"{rubric_block}\n\n{pair_block}\n\nProduce the initial read."
+        read_model = self._resolve_model(self.reader_model)
+        await trace.record(ReadStartedEvent(model=read_model))
         read_text = await text_call(
             self.read_prompt,
             read_user_message,
             metadata=LLMExchangeMetadata(call_id=call_id, phase="read", round_num=0),
             db=db,
-            model=self._resolve_model(self.reader_model),
+            model=read_model,
             cache=True,
         )
 
@@ -296,12 +305,16 @@ class ReflectiveJudgeWorkflow:
             "</prior-read>\n\n"
             "Interrogate the prior read."
         )
+        reflect_model = self._resolve_model(self.reflector_model)
+        await trace.record(
+            ReflectStartedEvent(model=reflect_model, prior_read_chars=len(read_text))
+        )
         reflect_text = await text_call(
             self.reflect_prompt,
             reflect_user_message,
             metadata=LLMExchangeMetadata(call_id=call_id, phase="reflect", round_num=1),
             db=db,
-            model=self._resolve_model(self.reflector_model),
+            model=reflect_model,
             cache=True,
         )
 
@@ -316,12 +329,20 @@ class ReflectiveJudgeWorkflow:
             "</prior-reflection>\n\n"
             "Produce the final verdict and the 7-point preference label."
         )
+        verdict_model = self._resolve_model(self.verdict_model)
+        await trace.record(
+            VerdictStartedEvent(
+                model=verdict_model,
+                prior_read_chars=len(read_text),
+                prior_reflect_chars=len(reflect_text),
+            )
+        )
         verdict_text = await text_call(
             self.verdict_prompt,
             verdict_user_message,
             metadata=LLMExchangeMetadata(call_id=call_id, phase="verdict", round_num=2),
             db=db,
-            model=self._resolve_model(self.verdict_model),
+            model=verdict_model,
             cache=True,
         )
         return verdict_text

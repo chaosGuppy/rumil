@@ -276,23 +276,40 @@ async def run_orch(
     current_only: bool = False,
     prefix_cfg: config.PrefixCfg | None = None,
     prod: bool = False,
+    variant: str = "orch",
+    reader_model: str | None = None,
+    reflector_model: str | None = None,
+    verdict_model: str | None = None,
+    read_prompt_path: str | None = None,
+    reflect_prompt_path: str | None = None,
+    verdict_prompt_path: str | None = None,
 ) -> None:
-    """Run the orchestrator rumil judge against pending pairs.
+    """Run a workspace-aware rumil judge variant against pending pairs.
 
-    ``model`` is the Anthropic model id the bridge (and the
-    orchestrator's nested LLM calls) runs on; passed explicitly so
-    versus controls it without env-var ordering gymnastics.
+    ``variant`` selects the judge workflow:
+    - ``"orch"`` (default): TwoPhaseOrchestrator + closer. ``budget``
+      is the orch's research call cap.
+    - ``"reflective"``: ReflectiveJudgeWorkflow (read → reflect →
+      verdict, fixed 3 LLM calls; ``budget`` is ignored). The
+      ``reader_model`` / ``reflector_model`` / ``verdict_model`` and
+      ``*_prompt_path`` kwargs are this variant's iteration knobs.
+
+    ``model`` is the Anthropic model id the bridge (and the workflow's
+    internal LLM calls) runs on; passed explicitly so versus controls
+    it without env-var ordering gymnastics.
 
     Each pair × task gets its own rumil Run with a fresh run_id so the
-    orchestrator's trace hangs naturally under /traces/<run_id>. The
-    closing call's call_id is what lands in the mirrored row.
+    workflow's trace hangs naturally under /traces/<run_id>.
     """
     import uuid
 
     from rumil.database import DB
     from rumil.settings import get_settings
-    from rumil.versus_bridge import PairContext, judge_pair_orch
+    from rumil.versus_bridge import PairContext, judge_pair_orch, judge_pair_reflective
     from versus.rumil_completion import short_model
+
+    if variant not in ("orch", "reflective"):
+        raise ValueError(f"unknown variant: {variant!r}; expected 'orch' or 'reflective'")
 
     settings = get_settings()
     # Gap 2 run-name disambiguation: when no prefix variant is configured,
@@ -343,17 +360,31 @@ async def run_orch(
     def _compose_config(task_name: str, is_versus_crit: bool) -> tuple[dict, str, str]:
         dim = f"versus_{task_name}" if is_versus_crit else task_name
         ph = prompt_hash_cache[(task_name, is_versus_crit)]
+        if variant == "orch":
+            return make_judge_config(
+                "orch",
+                model=model,
+                dimension=dim,
+                model_config=mc,
+                prompt_hash=ph,
+                tool_prompt_hash=thash,
+                pair_surface_hash=qhash,
+                workspace_id=ws_short,
+                budget=budget,
+                closer_hash=chash,
+                workspace_state_hash=workspace_state_hash,
+            )
+        # reflective: no closer, no tools — drop those fingerprint inputs.
+        # Per-role models and prompt path overrides are folded in via the
+        # workflow's fingerprint inside make_judge_config.
         return make_judge_config(
-            "orch",
+            "reflective",
             model=model,
             dimension=dim,
             model_config=mc,
             prompt_hash=ph,
-            tool_prompt_hash=thash,
             pair_surface_hash=qhash,
             workspace_id=ws_short,
-            budget=budget,
-            closer_hash=chash,
             workspace_state_hash=workspace_state_hash,
         )
 
@@ -441,11 +472,18 @@ async def run_orch(
                 # tracks lifting that), so the workflow segment is
                 # hard-coded here for now and will become a real arg
                 # when the judge-side workflow CLI lands.
-                workflow_name_judge = "two_phase"
+                if variant == "orch":
+                    workflow_name_judge = "two_phase"
+                    budget_segment = f"b{budget}"
+                else:
+                    workflow_name_judge = "reflective"
+                    # Reflective has no budget knob; emit a fixed segment
+                    # so the run-name shape stays parseable.
+                    budget_segment = "b3-fixed"
                 run_name = (
-                    f"versus-orch-judge:{workspace}:{pair.essay_id}"
+                    f"versus-{variant}-judge:{workspace}:{pair.essay_id}"
                     f"@{prefix_label}:{workflow_name_judge}/"
-                    f"{short_model(model)}/b{budget}/{task_name}"
+                    f"{short_model(model)}/{budget_segment}/{task_name}"
                 )
                 await db.create_run(
                     name=run_name,
@@ -474,14 +512,29 @@ async def run_orch(
                     },
                 )
                 print(f"[run] {settings.frontend_url.rstrip('/')}/traces/{run_id}")
-                result = await judge_pair_orch(
-                    db,
-                    pair_ctx,
-                    task_body=task_body,
-                    model=model,
-                    budget=budget,
-                    model_config=mc,
-                )
+                if variant == "orch":
+                    result = await judge_pair_orch(
+                        db,
+                        pair_ctx,
+                        task_body=task_body,
+                        model=model,
+                        budget=budget,
+                        model_config=mc,
+                    )
+                else:
+                    result = await judge_pair_reflective(
+                        db,
+                        pair_ctx,
+                        task_body=task_body,
+                        model=model,
+                        model_config=mc,
+                        reader_model=reader_model,
+                        reflector_model=reflector_model,
+                        verdict_model=verdict_model,
+                        read_prompt_path=read_prompt_path,
+                        reflect_prompt_path=reflect_prompt_path,
+                        verdict_prompt_path=verdict_prompt_path,
+                    )
             except Exception as e:
                 print(f"[err ] {pair.essay_id} {task_name}: {type(e).__name__}: {e}")
                 summary.record_error()
@@ -494,7 +547,7 @@ async def run_orch(
                 result,
                 t0=t0,
                 judge_inputs=pj.base_config,
-                variant="orch",
+                variant=variant,
             )
             async with lock:
                 versus_db.insert_judgment(

@@ -33,7 +33,7 @@ from typing import Any, Literal
 
 from rumil.model_config import ModelConfig
 
-Variant = Literal["blind", "orch"]
+Variant = Literal["blind", "orch", "reflective"]
 
 
 def _repo_root() -> pathlib.Path:
@@ -356,6 +356,37 @@ class _ShimJudgePairTaskOrch:
         }
 
 
+class _ShimJudgePairTaskReflective:
+    """Slimmed JudgePair fingerprint for the reflective shim path.
+
+    Reflective uses no closer (the workflow produces the artifact
+    directly) and no tools, so the fingerprint carries dimension +
+    prompt_hash + pair_surface_hash only. Mirrors the orch shim's
+    shape minus the closer_hash and tool_prompt_hash fields.
+    """
+
+    name = "judge_pair"
+
+    def __init__(
+        self,
+        *,
+        dimension: str,
+        prompt_hash: str,
+        pair_surface_hash: str,
+    ) -> None:
+        self.dimension = dimension
+        self.prompt_hash = prompt_hash
+        self.pair_surface_hash = pair_surface_hash
+
+    def fingerprint(self, _inputs: Any) -> Mapping[str, str | int | bool | None]:
+        return {
+            "kind": self.name,
+            "dimension": self.dimension,
+            "prompt_hash": self.prompt_hash,
+            "pair_surface_hash": self.pair_surface_hash,
+        }
+
+
 def make_judge_config(
     variant: Variant,
     *,
@@ -433,6 +464,40 @@ def make_judge_config(
         return make_versus_config(
             workflow=orch_workflow,
             task=orch_task,
+            inputs=None,
+            model=model,
+            model_config=model_config,
+            workspace_id=workspace_id,
+            workspace_state_hash=workspace_state_hash,
+            code_fingerprint=code_fingerprint,
+        )
+    if variant == "reflective":
+        if pair_surface_hash is None:
+            raise ValueError("variant='reflective' requires pair_surface_hash")
+        # Local import to avoid the same circular-import risk as orch.
+        from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
+
+        # The reflective workflow needs a non-empty dimension_body for
+        # construction, but we only have its prompt_hash here. The hash
+        # is what fingerprints the workflow; the body content is fixed
+        # via that hash and the path the caller gave to the bridge. Use
+        # a sentinel body — the fingerprint carries the real content
+        # via dimension_body_hash on the orch path, but the reflective
+        # workflow recomputes its hash from the body string. To keep
+        # config_hash stable across runs that use the same dimension,
+        # pass a deterministic sentinel; the actual body is never read
+        # by make_versus_config (it only calls fingerprint()).
+        reflective_workflow = ReflectiveJudgeWorkflow(
+            dimension_body=f"<sentinel:{prompt_hash}>",
+        )
+        reflective_task = _ShimJudgePairTaskReflective(
+            dimension=dimension,
+            prompt_hash=prompt_hash,
+            pair_surface_hash=pair_surface_hash,
+        )
+        return make_versus_config(
+            workflow=reflective_workflow,
+            task=reflective_task,
             inputs=None,
             model=model,
             model_config=model_config,

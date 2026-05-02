@@ -70,11 +70,14 @@ def main() -> None:
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--variant",
-        choices=("orch",),
+        choices=("orch", "reflective"),
         default=None,
         help=(
-            "Tool-using variant. Omit for the default blind judge path. "
-            "orch requires --workspace and running Supabase."
+            "Workflow variant. Omit for the default blind judge path. "
+            "orch fires TwoPhaseOrchestrator (research + closer); "
+            "reflective fires ReflectiveJudgeWorkflow (read → reflect → "
+            "verdict, no research). Both require --workspace and "
+            "running Supabase."
         ),
     )
     ap.add_argument(
@@ -205,6 +208,43 @@ def main() -> None:
             "view -- invisible to other readers of the workspace."
         ),
     )
+    # Reflective-variant per-stage knobs. All optional; default None
+    # inherits the workflow's built-in prompts and the bridge-set
+    # rumil_model_override for the model. Ignored on --variant orch.
+    ap.add_argument(
+        "--reader-model",
+        default=None,
+        help="Reflective: override the read-stage model. Anthropic id or short alias.",
+    )
+    ap.add_argument(
+        "--reflector-model",
+        default=None,
+        help="Reflective: override the reflect-stage model.",
+    )
+    ap.add_argument(
+        "--verdict-model",
+        default=None,
+        help="Reflective: override the verdict-stage model.",
+    )
+    ap.add_argument(
+        "--read-prompt-path",
+        default=None,
+        help=(
+            "Reflective: path to a markdown file replacing the built-in "
+            "read prompt. Loaded at construction; the loaded text is "
+            "what fingerprints. Empty / whitespace-only files are rejected."
+        ),
+    )
+    ap.add_argument(
+        "--reflect-prompt-path",
+        default=None,
+        help="Reflective: path to a markdown file replacing the built-in reflect prompt.",
+    )
+    ap.add_argument(
+        "--verdict-prompt-path",
+        default=None,
+        help="Reflective: path to a markdown file replacing the built-in verdict prompt.",
+    )
     args = ap.parse_args()
 
     contestants = (
@@ -276,6 +316,24 @@ def main() -> None:
 
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
 
+    # Reflective-only flags must be unset on the orch path so the
+    # CLI surface stays unambiguous about which variant they apply to.
+    if args.variant == "orch":
+        for flag, value in (
+            ("--reader-model", args.reader_model),
+            ("--reflector-model", args.reflector_model),
+            ("--verdict-model", args.verdict_model),
+            ("--read-prompt-path", args.read_prompt_path),
+            ("--reflect-prompt-path", args.reflect_prompt_path),
+            ("--verdict-prompt-path", args.verdict_prompt_path),
+        ):
+            if value is not None:
+                ap.error(f"{flag} is only valid with --variant reflective")
+
+    reader_model = resolve_model_alias(args.reader_model) if args.reader_model else None
+    reflector_model = resolve_model_alias(args.reflector_model) if args.reflector_model else None
+    verdict_model = resolve_model_alias(args.verdict_model) if args.verdict_model else None
+
     asyncio.run(
         rumil_judge.run_orch(
             cfg,
@@ -293,6 +351,13 @@ def main() -> None:
             prefix_cfg=prefix_cfg_one,
             persist=args.persist,
             prod=args.prod,
+            variant=args.variant,
+            reader_model=reader_model,
+            reflector_model=reflector_model,
+            verdict_model=verdict_model,
+            read_prompt_path=args.read_prompt_path,
+            reflect_prompt_path=args.reflect_prompt_path,
+            verdict_prompt_path=args.verdict_prompt_path,
         )
     )
 

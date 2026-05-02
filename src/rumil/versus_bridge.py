@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from versus.tasks.judge_pair import (  # noqa: F401
     JudgeArtifact,
@@ -38,6 +39,7 @@ from versus.tasks.judge_pair import (  # noqa: F401
 from rumil.database import DB
 from rumil.model_config import ModelConfig
 from rumil.models import Call, CallType
+from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
 from rumil.tracing.broadcast import Broadcaster
 from rumil.versus_closer import run_closer_agent
 
@@ -204,6 +206,80 @@ async def judge_pair_orch(
     )
 
 
+async def judge_pair_reflective(
+    db: DB,
+    pair: PairContext,
+    *,
+    task_body: str,
+    model: str,
+    broadcaster: Broadcaster | None = None,
+    model_config: ModelConfig | None = None,
+    reader_model: str | None = None,
+    reflector_model: str | None = None,
+    verdict_model: str | None = None,
+    read_prompt_path: str | Path | None = None,
+    reflect_prompt_path: str | Path | None = None,
+    verdict_prompt_path: str | Path | None = None,
+) -> JudgeResult:
+    """Run ReflectiveJudgeWorkflow on a pair — read → reflect → verdict.
+
+    Mirrors :func:`judge_pair_orch`'s signature where it overlaps. No
+    ``budget`` parameter — the workflow has a fixed 3 LLM calls. The
+    per-role ``*_model`` overrides and ``*_prompt_path`` overrides are
+    the iterate skill's primary levers; default ``None`` inherits from
+    the bridge-set ``rumil_model_override`` and the workflow's built-in
+    prompts respectively.
+
+    ``task_body`` is the dimension rubric (e.g. the contents of
+    ``versus-general-quality.md``) — the same surface fed to the orch
+    and blind paths, so verdicts across variants are apples-to-apples
+    for the same rubric.
+
+    Returned :class:`JudgeResult` mirrors :func:`judge_pair_orch`.
+    """
+    workflow = ReflectiveJudgeWorkflow(
+        dimension_body=task_body,
+        reader_model=reader_model,
+        reflector_model=reflector_model,
+        verdict_model=verdict_model,
+        read_prompt_path=read_prompt_path,
+        reflect_prompt_path=reflect_prompt_path,
+        verdict_prompt_path=verdict_prompt_path,
+    )
+    task = JudgePairTask(dimension=pair.task_name, dimension_body=task_body)
+    try:
+        result = await run_versus(
+            db,
+            workflow=workflow,
+            task=task,
+            inputs=pair,
+            model=model,
+            broadcaster=broadcaster,
+            model_config=model_config,
+        )
+    except Exception:
+        log.exception(
+            "versus reflective_judge failed (essay=%s, pair=%s/%s, task=%s)",
+            pair.essay_id,
+            pair.source_a_id,
+            pair.source_b_id,
+            pair.task_name,
+        )
+        raise
+    return JudgeResult(
+        verdict=result.artifact.verdict,
+        preference_label=result.artifact.preference_label,
+        reasoning_text=result.artifact.reasoning_text,
+        trace_url=result.trace_url,
+        call_id=result.call_id,
+        run_id=result.run_id,
+        question_id=result.question_id,
+        cost_usd=result.cost_usd,
+        system_prompt=result.system_prompt,
+        user_prompt=result.user_prompt,
+    )
+
+
 __all__ = (
     "PREFERENCE_LABELS",
     "JudgeArtifact",
@@ -220,5 +296,6 @@ __all__ = (
     "extract_preference",
     "get_rumil_dimension_body",
     "judge_pair_orch",
+    "judge_pair_reflective",
     "label_to_verdict",
 )

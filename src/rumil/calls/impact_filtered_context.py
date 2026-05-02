@@ -313,6 +313,21 @@ class ImpactFilteredContext(ContextBuilder):
         # / tier IDs (e.g. CreateViewContext's existing view items), and
         # paring renders dropped pages too. Re-scoring any of these wastes
         # an LLM call.
+        #
+        # Design choice — paring-dropped pages are also excluded here, even
+        # though they're no longer in the prompt sonnet sees. The argument
+        # for re-scoring them: paring's absolute-importance verdict and the
+        # impact filter's marginal-value verdict are different judgements,
+        # so a page paring dropped could in principle have non-trivial
+        # marginal value against the now-smaller context. The argument for
+        # excluding them (what we do): they were just rated by Opus against
+        # the same question and lost to other pages we kept; spending
+        # another sonnet call to re-litigate that choice is poor budget
+        # use, and in practice the BFS surfaces plenty of fresher
+        # candidates that haven't yet been seen by either model. If you
+        # want the other behaviour, swap _pare_inner_context's track_tag
+        # so kept pages get one source tag and dropped pages get another,
+        # and only fold the kept-source into excluded_ids here.
         excluded_ids: set[str] = set(infra.trace.page_ids_by_source_prefix(""))
         excluded_ids.update(pared_result.working_page_ids)
         excluded_ids.update(pared_result.preloaded_ids)

@@ -49,6 +49,13 @@ runs (forks-on-existing-runs is cheap; fresh runs aren't).
 
 ## Phases
 
+**Order: completions before judging**, throughout. Judging consumes
+completions as inputs (the pair contestants), so iterating on
+judging against bad completions wastes signal — improvements you
+find may just be the judge compensating for completion noise.
+Fresh-runs phase, run selection, agent dispatch, and consolidation
+all surface completion findings first.
+
 ### Phase 0 — fresh runs (only if `--fresh` or runs are stale)
 
 If `--fresh` is passed OR if the workspace has no recent runs matching

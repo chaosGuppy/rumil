@@ -14,6 +14,8 @@ Specifically — go through these in order, and don't skip a step just because t
 
 5. **What can't you actually verify?** Mark facts you'd want to check, rubric ambiguities, places where the evidence is genuinely close.
 
+6. **Calibrate the size of your push.** Be honest about what the gauntlet actually produced. If the read's verdict was strong-and-clean and your steps 1-5 turned up no real cracks (just style nits, or steelmans you yourself find weak), say "endorsed without narrowing" — don't deliver "the gap is narrower" rhetoric without specific cracks. Conversely, if you found genuine confounders or missed moves that survive scrutiny, name them as such so the verdict stage can apply its step-down rule. Performed skepticism — narrowing language with no substantive cracks — is worse than honest endorsement.
+
 Endorse the read only after running it through that gauntlet. If after all that you mostly endorse it, say so explicitly — but don't manufacture disagreement either; honest endorsement is fine after honest pushback.
 
 Free-form prose. No 7-point preference label here.

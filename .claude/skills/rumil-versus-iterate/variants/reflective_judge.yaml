@@ -49,3 +49,14 @@ variants:
       disagreement on clearly-asymmetric pairs — that would be a
       regression).
     reflect_prompt_path: .claude/skills/rumil-versus-iterate/prompts/reflective_judge/reflect_skeptical.md
+
+  - name: read_no_verdict
+    description: |
+      Replaces the read prompt with a version that explicitly
+      forbids "X is stronger overall" / "X wins" phrasing and forces
+      symmetric per-criterion strength/weakness bullets. Tests
+      whether removing the read's implicit verdict gives the reflect
+      stage real room to push back (round-1 trace investigation found
+      the default read commits to a verdict despite being told not
+      to, neutralizing the step-down discipline downstream).
+    read_prompt_path: .claude/skills/rumil-versus-iterate/prompts/reflective_judge/read_no_verdict.md

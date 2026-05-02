@@ -71,12 +71,21 @@ _DEFAULT_DRAFTER_PROMPT = (
     "argumentative thread.\n\n"
     "Match the opening's voice and register. Advance the argument — "
     "don't restate the opening, don't hedge performatively, don't drift "
-    "generic. Aim for the target length but prefer a tighter, sharper "
-    "continuation over padding.\n\n"
+    "generic.\n\n"
+    "**Length is a hard ceiling, not a floor.** The user message gives "
+    "a target character count. Treat that target as a *maximum*, not a "
+    "minimum. Going materially over is a failure mode — most drafts "
+    "that overshoot are padded with restatement, hedging, or "
+    "under-developed elaboration. A tight draft at 80% of target beats "
+    "a sprawling draft at 130%.\n\n"
+    "Before the continuation, output a one-line plan in this form:\n"
+    "  Plan: ~N chars, M moves: <comma-separated moves>\n"
+    "where N is your self-set budget (at-or-under target) and M is the "
+    "number of distinct argumentative moves you intend to make. Then "
+    "write the continuation, staying at-or-under the planned N.\n\n"
     "Wrap the final continuation in <continuation>...</continuation> "
-    "tags. You may use scratch space before the tagged block to plan, "
-    "outline, or note dead ends; only the content inside the tags is "
-    "kept."
+    "tags. Scratch space before the tagged block (including the Plan "
+    "line) is fine; only the content inside the tags is kept."
 )
 
 
@@ -112,18 +121,32 @@ _DEFAULT_EDITOR_PROMPT = (
     "briefly which critic notes you're acting on and which you're "
     "declining (and why).\n\n"
     "**Length discipline.** The user message gives both the current "
-    "draft length and the target length. If the current draft is "
-    "already at or above target, your job is to TIGHTEN, not expand. "
-    "Cuts count as edits — name what you cut. Restate fewer ideas, "
-    "more decisively. If current is close to target, edit at roughly "
-    "neutral length. Only expand when the current draft is meaningfully "
-    "below target and a critic identified a missing argument worth "
-    "adding.\n\n"
+    "draft length and the target length. If the current draft is at or "
+    "above target, your job is to TIGHTEN. Cutting is the primary "
+    "edit. The revised continuation must be at-or-under the target. "
+    "If current is close to target, edit at roughly neutral length. "
+    "Only expand when the current draft is meaningfully below target "
+    "and a critic identified a missing argument worth adding.\n\n"
+    "**Required output format.** Before the <continuation> block, "
+    "output two structured blocks in order:\n"
+    "  1. <preserved>...</preserved> — a one-line note naming any "
+    "passages a critic flagged as the draft's strongest move that you "
+    "are keeping. Do not cut critic-flagged-strong material for "
+    "length; cut elsewhere instead.\n"
+    "  2. <cuts>...</cuts> — at least 3 specific cuts, one per line, "
+    "in the form:\n"
+    '       - Cut: "<verbatim phrase or short passage from current '
+    'draft>" — Reason: <which critic note this acts on, or '
+    '"redundant with X", or "over-elaborated">.\n'
+    "     If you genuinely have nothing to cut (current is well below "
+    "target and no critic flagged padding), say so explicitly with "
+    "<cuts>none — current draft is below target and no padding "
+    "flagged</cuts>.\n\n"
     "Match the opening's voice and register. Don't restate the "
     "opening.\n\n"
     "Wrap the revised continuation in <continuation>...</continuation> "
-    "tags. Scratch space before the tagged block is fine; only the "
-    "content inside the tags is kept."
+    "tags after the <preserved> and <cuts> blocks; only the content "
+    "inside the <continuation> tags is kept."
 )
 
 
@@ -232,7 +255,7 @@ class DraftAndEditWorkflow:
         self,
         *,
         budget: int,
-        n_critics: int = 2,
+        n_critics: int = 1,
         max_rounds: int | None = None,
         drafter_model: str | None = None,
         critic_model: str | None = None,

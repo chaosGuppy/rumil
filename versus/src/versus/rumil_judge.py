@@ -375,8 +375,11 @@ async def run_orch(
                 workspace_state_hash=workspace_state_hash,
             )
         # reflective: no closer, no tools — drop those fingerprint inputs.
-        # Per-role models and prompt path overrides are folded in via the
-        # workflow's fingerprint inside make_judge_config.
+        # Per-role models and prompt path overrides are threaded into
+        # make_judge_config so the workflow's fingerprint reflects the
+        # variant's actual knobs (otherwise two variants differing only
+        # in e.g. verdict_model would fingerprint identically and dedup
+        # against each other).
         return make_judge_config(
             "reflective",
             model=model,
@@ -386,6 +389,12 @@ async def run_orch(
             pair_surface_hash=qhash,
             workspace_id=ws_short,
             workspace_state_hash=workspace_state_hash,
+            reader_model=reader_model,
+            reflector_model=reflector_model,
+            verdict_model=verdict_model,
+            read_prompt_path=read_prompt_path,
+            reflect_prompt_path=reflect_prompt_path,
+            verdict_prompt_path=verdict_prompt_path,
         )
 
     tasks = _plan_rumil_pairs(

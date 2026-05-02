@@ -401,6 +401,17 @@ def make_judge_config(
     closer_hash: str | None = None,
     code_fingerprint: dict[str, str] | None = None,
     workspace_state_hash: str | None = None,
+    # Reflective-variant only. Threaded into the workflow at
+    # construction so the workflow's fingerprint reflects the variant's
+    # actual knobs, not a default-constructed shim. Without these, two
+    # reflective variants that differ only in (say) verdict_model would
+    # fingerprint identically and dedup against each other.
+    reader_model: str | None = None,
+    reflector_model: str | None = None,
+    verdict_model: str | None = None,
+    read_prompt_path: Any = None,
+    reflect_prompt_path: Any = None,
+    verdict_prompt_path: Any = None,
 ) -> tuple[dict[str, Any], str, str]:
     """Back-compat shim — translates old kwargs into ``make_versus_config``.
 
@@ -481,14 +492,22 @@ def make_judge_config(
         # construction, but we only have its prompt_hash here. The hash
         # is what fingerprints the workflow; the body content is fixed
         # via that hash and the path the caller gave to the bridge. Use
-        # a sentinel body — the fingerprint carries the real content
-        # via dimension_body_hash on the orch path, but the reflective
-        # workflow recomputes its hash from the body string. To keep
-        # config_hash stable across runs that use the same dimension,
-        # pass a deterministic sentinel; the actual body is never read
-        # by make_versus_config (it only calls fingerprint()).
+        # a sentinel body — the actual body is never read by
+        # make_versus_config (it only calls fingerprint()).
+        #
+        # The per-role models and prompt-path overrides MUST be threaded
+        # in here, not defaulted, so the workflow's fingerprint reflects
+        # the actual variant. Two variants differing only in e.g.
+        # verdict_model would otherwise fingerprint identically and
+        # dedup against each other in versus_judgments.
         reflective_workflow = ReflectiveJudgeWorkflow(
             dimension_body=f"<sentinel:{prompt_hash}>",
+            reader_model=reader_model,
+            reflector_model=reflector_model,
+            verdict_model=verdict_model,
+            read_prompt_path=read_prompt_path,
+            reflect_prompt_path=reflect_prompt_path,
+            verdict_prompt_path=verdict_prompt_path,
         )
         reflective_task = _ShimJudgePairTaskReflective(
             dimension=dimension,

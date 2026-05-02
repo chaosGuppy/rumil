@@ -7,7 +7,7 @@ Composite response types and trace event envelope types. Core models
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -376,6 +376,27 @@ class ABEvalReportListItemOut(BaseModel):
     overall_assessment_preview: str = ""
     preferences: list[ABEvalDimensionSummaryOut]
     created_at: str
+
+
+class AbEvalExperimentOut(ABEvalReportListItemOut):
+    kind: Literal["ab_eval"] = "ab_eval"
+
+
+class RunCallExperimentOut(BaseModel):
+    kind: Literal["run_call"] = "run_call"
+    run_id: str
+    name: str
+    question_id: str = ""
+    question_headline: str = ""
+    config_summary: dict = {}
+    staged: bool = False
+    created_at: str
+
+
+ExperimentListItemOut = Annotated[
+    AbEvalExperimentOut | RunCallExperimentOut,
+    Field(discriminator="kind"),
+]
 
 
 class RealtimeConfigOut(BaseModel):

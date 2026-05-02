@@ -3063,6 +3063,7 @@ class DB:
         name: str,
         question_id: str | None,
         config: dict | None = None,
+        entrypoint: str | None = None,
     ) -> None:
         """Insert a row in the runs table for this DB's run_id."""
         await self._execute(
@@ -3074,6 +3075,7 @@ class DB:
                     "question_id": question_id,
                     "config": config or {},
                     "staged": self.staged,
+                    "entrypoint": entrypoint,
                 }
             )
         )
@@ -3331,6 +3333,42 @@ class DB:
                 "id, run_id_a, run_id_b, question_id_a, question_id_b, "
                 "overall_assessment, dimension_reports, created_at, project_id"
             )
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
+    async def list_run_call_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List runs created by `scripts/run_call.py`, newest first.
+
+        Filtered by `entrypoint = 'run_call'`. Like `list_ab_eval_reports`,
+        applies `self.project_id` when set and supports an
+        `owner_user_id` cross-user safety filter via
+        `projects.owner_user_id`.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "run_call")
             .order("created_at", desc=True)
         )
         if self.project_id:

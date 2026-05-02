@@ -38,8 +38,8 @@ export default async function ABEvalDetailPage({
   if (!report) {
     return (
       <main className="ab-eval-detail">
-        <Link href="/ab-evals" className="ab-eval-back">
-          &larr; Back to evaluations
+        <Link href="/experiments" className="ab-eval-back">
+          &larr; Back to experiments
         </Link>
         <p>Evaluation not found: {evalId}</p>
       </main>
@@ -48,8 +48,8 @@ export default async function ABEvalDetailPage({
 
   return (
     <main className="ab-eval-detail">
-      <Link href="/ab-evals" className="ab-eval-back">
-        &larr; All evaluations
+      <Link href="/experiments" className="ab-eval-back">
+        &larr; All experiments
       </Link>
       <EvalDetail report={report} />
     </main>

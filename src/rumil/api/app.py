@@ -23,7 +23,7 @@ from rumil.api.jobs import router as jobs_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
     ABEvalDimensionSummaryOut,
-    ABEvalReportListItemOut,
+    AbEvalExperimentOut,
     ABEvalReportOut,
     AuthUserOut,
     CallNodeOut,
@@ -31,6 +31,7 @@ from rumil.api.schemas import (
     ContextBuiltEventOut,
     ContextEvalArmOut,
     ContextEvalDiffOut,
+    ExperimentListItemOut,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
@@ -43,6 +44,7 @@ from rumil.api.schemas import (
     ProjectStatsOut,
     QuestionStatsOut,
     RealtimeConfigOut,
+    RunCallExperimentOut,
     RunListItemOut,
     RunSummaryOut,
     RunTraceTreeOut,
@@ -535,30 +537,46 @@ async def get_call_events(
     return await _parse_trace_events(db, call_id)
 
 
+_RUN_CALL_CONFIG_KEYS = ("model", "assess_call_variant", "available_moves")
+
+
+def _config_summary(config: dict | None) -> dict:
+    if not config:
+        return {}
+    return {k: config[k] for k in _RUN_CALL_CONFIG_KEYS if k in config}
+
+
 @app.get(
-    "/api/ab-evals",
-    response_model=list[ABEvalReportListItemOut],
+    "/api/experiments",
+    response_model=list[ExperimentListItemOut],
 )
-async def list_ab_evals(
+async def list_experiments(
     _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
-    rows = await db.list_ab_eval_reports()
+    ab_rows = await db.list_ab_eval_reports()
+    run_rows = await db.list_run_call_experiments()
 
-    question_ids = {
-        qid for row in rows for qid in (row.get("question_id_a"), row.get("question_id_b")) if qid
-    }
+    question_ids: set[str] = set()
+    for row in ab_rows:
+        for qid in (row.get("question_id_a"), row.get("question_id_b")):
+            if qid:
+                question_ids.add(qid)
+    for row in run_rows:
+        qid = row.get("question_id")
+        if qid:
+            question_ids.add(qid)
     pages_by_id: dict[str, Page] = {}
     if question_ids:
         pages_by_id = await db.get_pages_by_ids(list(question_ids))
 
-    results: list[ABEvalReportListItemOut] = []
-    for row in rows:
+    items: list[AbEvalExperimentOut | RunCallExperimentOut] = []
+    for row in ab_rows:
         qid = row.get("question_id_a") or row.get("question_id_b") or ""
         q_page = pages_by_id.get(qid)
         dims = row.get("dimension_reports") or []
-        results.append(
-            ABEvalReportListItemOut(
+        items.append(
+            AbEvalExperimentOut(
                 id=row["id"],
                 run_id_a=row["run_id_a"],
                 run_id_b=row["run_id_b"],
@@ -577,7 +595,22 @@ async def list_ab_evals(
                 created_at=row.get("created_at", ""),
             )
         )
-    return results
+    for row in run_rows:
+        qid = row.get("question_id") or ""
+        q_page = pages_by_id.get(qid)
+        items.append(
+            RunCallExperimentOut(
+                run_id=row["id"],
+                name=row.get("name") or "",
+                question_id=qid,
+                question_headline=q_page.headline if q_page else "",
+                config_summary=_config_summary(row.get("config")),
+                staged=bool(row.get("staged")),
+                created_at=row.get("created_at", ""),
+            )
+        )
+    items.sort(key=lambda x: x.created_at, reverse=True)
+    return items
 
 
 @app.get(

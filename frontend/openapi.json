@@ -6103,6 +6103,17 @@
               }
             ],
             "title": "Phash"
+          },
+          "wf_phash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wf Phash"
           }
         },
         "type": "object",

@@ -1842,6 +1842,10 @@ export type JudgeLabel = {
      * Phash
      */
     phash: string | null;
+    /**
+     * Wf Phash
+     */
+    wf_phash?: string | null;
 };
 
 /**

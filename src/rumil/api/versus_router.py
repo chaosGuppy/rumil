@@ -528,6 +528,7 @@ class JudgeLabel(pydantic.BaseModel):
     model: str
     task: str | None
     phash: str | None
+    wf_phash: str | None = None
 
 
 class Cell(pydantic.BaseModel):

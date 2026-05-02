@@ -9,6 +9,7 @@ into SQL.
 from __future__ import annotations
 
 import collections
+import hashlib
 from collections.abc import Iterable
 from typing import Any
 
@@ -116,13 +117,48 @@ def model_sort_key(judge: str) -> tuple:
     return (family, strength, base_low, variant, judge)
 
 
+_WORKFLOW_PHASH_KEYS = (
+    "read_prompt_hash",
+    "reflect_prompt_hash",
+    "verdict_prompt_hash",
+    "shell_hash",
+    "preamble_hash",
+    "dimension_body_hash",
+    "reader_model",
+    "reflector_model",
+    "verdict_model",
+)
+
+
+def _workflow_phash(workflow: dict) -> str | None:
+    """Hash of the workflow-level fields that distinguish variants of the
+    same workflow kind sharing the same task/rubric prompt — read /
+    reflect / verdict prompt hashes for reflective_judge, shell /
+    preamble hashes and per-stage model overrides for orch variants.
+
+    Returned as an 8-char hex projection so it slots into the column
+    header as a single short token rather than 3+ separate hashes.
+    Returns None when there's nothing distinguishing — caller hides the
+    field in that case so blind/legacy rows stay uncluttered.
+    """
+    parts = [f"{k}={workflow[k]}" for k in _WORKFLOW_PHASH_KEYS if workflow.get(k) is not None]
+    if not parts:
+        return None
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:8]
+
+
 def label_from_config(cfg: dict) -> dict:
     """Derive the stacked column-header dict from a judge_inputs blob.
 
-    Returns ``{variant, model, task, phash}``. Drives the FE
+    Returns ``{variant, model, task, phash, wf_phash}``. Drives the FE
     column-header layout. Orch carries its budget tag. The ``ws``
     branch is kept to render historical rows; new rows only ever
     have workflow.kind ∈ {blind, two_phase, ...}.
+
+    ``wf_phash`` is a short combo hash of workflow-level fields (read /
+    reflect / verdict prompt hashes for reflective_judge, etc.) so two
+    variants of the same workflow that share dimension/rubric still get
+    visually distinct columns.
 
     Handles both pre-#424 flat-dict rows and post-#424 structured rows
     (``workflow`` / ``task`` subdicts) so the panel renders correctly
@@ -136,6 +172,7 @@ def label_from_config(cfg: dict) -> dict:
         dim = task.get("dimension", "")
         ph = task.get("prompt_hash", "")
         phash = f"p{ph}" if ph else ""
+        wf_ph = _workflow_phash(workflow)
         if workflow_kind == "blind":
             head = model.split("/", 1)[0] if "/" in model else "anthropic"
         else:
@@ -145,7 +182,13 @@ def label_from_config(cfg: dict) -> dict:
                 if budget is not None
                 else f"rumil:{workflow_kind}"
             )
-        return {"variant": head, "model": model, "task": dim, "phash": phash}
+        return {
+            "variant": head,
+            "model": model,
+            "task": dim,
+            "phash": phash,
+            "wf_phash": f"w{wf_ph}" if wf_ph else None,
+        }
     # Legacy flat-dict shape (pre-#424 rows in versus_judgments).
     variant = cfg["variant"]
     dim = cfg["dimension"]
@@ -156,7 +199,13 @@ def label_from_config(cfg: dict) -> dict:
         head = "rumil:ws"
     else:
         head = model.split("/", 1)[0] if "/" in model else "anthropic"
-    return {"variant": head, "model": model, "task": dim, "phash": phash}
+    return {
+        "variant": head,
+        "model": model,
+        "task": dim,
+        "phash": phash,
+        "wf_phash": None,
+    }
 
 
 def cell_color(pct: float) -> str:

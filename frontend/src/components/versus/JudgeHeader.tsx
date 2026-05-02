@@ -15,6 +15,7 @@ export function JudgeHeader({
       <div className="judge-th-model">{label.model}</div>
       {includeTask && label.task && <div className="judge-th-task">{label.task}</div>}
       {includeTask && label.phash && <div className="judge-th-hash">{label.phash}</div>}
+      {includeTask && label.wf_phash && <div className="judge-th-hash">{label.wf_phash}</div>}
     </th>
   );
 }

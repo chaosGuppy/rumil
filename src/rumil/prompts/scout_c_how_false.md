@@ -1,31 +1,52 @@
-# Scout How-False Stories
+## the task
 
-## Your Task
+you're doing a **scout how-false** call — identifying plausible
+causal stories that are *compatible with the observed evidence* but
+in which the scope claim is false. these are not about poking holes
+in evidence — they're concrete alternative pictures of what might
+actually be going on, where the same observations hold but the
+claim does not.
 
-You are performing a **Scout How-False** call — an exploration focused on identifying plausible causal stories that are compatible with the observed evidence but in which the scope claim is false. These are not about poking holes in evidence — they are concrete alternative pictures of what might actually be going on, where the same observations hold but the claim does not.
+## a few moves
 
-## What to Produce
+before producing stories, name the cached take. what's the obvious
+"this could be wrong because..." story a sharp person would reach
+for? write it down. for each candidate, ask: does this story
+actually **explain the observations** — could a reasonable person
+believe it given what we see? alternative stories that fail the
+"compatible with observations" test are strawmen, not real
+how-false stories.
 
-For each how-false story (aim for 2-4):
+attack each candidate by checking it isn't just "the claim is
+wrong" with no mechanism. a real how-false story names what *is*
+true in the alternative picture, not just what isn't.
 
-1. **A claim** describing the alternative causal story: what is actually going on in the world, why it is compatible with observed evidence, and why the scope claim is nevertheless false under this story. Link it as a consideration to the scope claim.
+## what to produce
 
-2. Be specific about what the alternative world looks like and why it produces the same observations.
+for each how-false story (aim for **2-4**):
 
-Use `CREATE_CLAIM` to create each story and `LINK_CONSIDERATION` to link it to the scope claim. Set the consideration direction to `opposes`.
+1. **a claim** describing the alternative causal story: what is
+   actually going on in the world, why it's compatible with observed
+   evidence, and why the scope claim is nevertheless false under
+   this story. `link_consideration` to the scope claim with
+   direction `opposes`.
 
-## How to Proceed
+2. be specific about what the alternative world looks like and why
+   it produces the same observations.
 
-1. Read the scope claim, any existing how-true stories, and other context carefully.
-2. Identify alternative explanations that account for the same evidence without the claim being true.
-3. For each, create a claim describing the alternative story with appropriate credence and robustness.
-4. Write the claims as though the mechanism is correct. It might not be, but that's handled by credence and robustness.
-5. Focus on stories that are genuinely different from ones already identified and plausible enough to be worth taking seriously.
+write the claims as though the alternative mechanism is correct. it
+might not be, but that's handled by credence and robustness.
 
-## Quality Bar
+## quality bar
 
-- **Plausible alternatives, not strawmen.** Each story should be something a reasonable person could believe given the evidence.
-- **Compatible with observations.** The story must explain why we see what we see, not just assert the claim is wrong.
-- **Concrete mechanisms.** Spell out what is actually happening in this alternative picture.
-- **Do not duplicate** stories already present in the workspace (but it's okay to have variations which patch important weak points).
-- **Set credence and robustness honestly, with reasoning.** These are initial assessments — low robustness is expected. Every score needs its paired reasoning field per the preamble rubric.
+- **plausible alternatives, not strawmen.** each story should be
+  something a reasonable person could believe given the evidence.
+- **compatible with observations.** the story must explain why we
+  see what we see, not just assert the claim is wrong.
+- **concrete mechanisms.** spell out what is actually happening in
+  this alternative picture.
+- **don't duplicate** stories already in the workspace (variations
+  that patch important weak points are fine).
+- **set credence and robustness honestly, with reasoning.** low
+  robustness is expected. every score needs its paired reasoning
+  field.

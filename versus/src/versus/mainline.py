@@ -45,7 +45,11 @@ AXIS_DESCRIPTIONS: dict[str, str] = {
         "body, with or without the workspace-tools section). Bumps "
         "when any of the source files change."
     ),
-    "judge_sampling_hash": ("Hash of model sampling params (temperature, max_tokens, top_p)."),
+    "judge_model_config_hash": (
+        "Hash of the per-model registry config (sampling, thinking, effort, "
+        "max_thinking_tokens, service_tier) — the full ``ModelConfig`` "
+        "snapshot. Bumps on any registry edit for the judge model."
+    ),
     "judge_tool_hash": (
         "Hash of the {tool_name -> description} map for the workspace "
         "exploration tools. ws/orch only."
@@ -117,6 +121,7 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
     )
     from versus import judge as versus_judge
     from versus.judge_config import make_judge_config, project_config_to_axes
+    from versus.model_config import get_judge_model_config
 
     out: dict[str, set[str]] = {axis: set() for axis in AXES_ORDER}
     thash = compute_tool_prompt_hash()
@@ -125,14 +130,14 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
 
     for criterion in cfg.judging.criteria:
         for model in cfg.judging.models:
-            provider, canonical = versus_judge.route_judge_model(model)
-            sampling = versus_judge._sampling_for(provider, canonical, cfg.judging.max_tokens)
+            _, canonical = versus_judge.route_judge_model(model)
+            mc = get_judge_model_config(model, cfg=cfg)
             samples = []
             blind_cfg, _, _ = make_judge_config(
                 "blind",
                 model=canonical,
                 dimension=criterion,
-                sampling=sampling,
+                model_config=mc,
                 prompt_hash=versus_judge.compute_judge_prompt_hash(criterion, with_tools=False),
             )
             samples.append(blind_cfg)
@@ -141,7 +146,7 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
                 "ws",
                 model=canonical,
                 dimension=criterion,
-                sampling=sampling,
+                model_config=mc,
                 prompt_hash=tools_ph,
                 tool_prompt_hash=thash,
                 pair_surface_hash=qhash,
@@ -154,7 +159,7 @@ def current_values_summary(cfg: versus_config.Config) -> dict[str, list[str]]:
                 "orch",
                 model=canonical,
                 dimension=criterion,
-                sampling=sampling,
+                model_config=mc,
                 prompt_hash=tools_ph,
                 tool_prompt_hash=thash,
                 pair_surface_hash=qhash,

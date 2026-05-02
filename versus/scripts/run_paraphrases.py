@@ -1,11 +1,12 @@
-"""Generate model paraphrases for all cached essays.
+"""Generate model paraphrases for the canonical active essay set.
+
+Default scope is the same gate ``/versus`` applies: current
+``schema_version`` and not in ``cfg.essays.exclude_ids``. Pass
+``--include-stale`` to instead run over every essay returned by the
+source fetchers (minus ``exclude_ids``).
 
   --essay <id>    (repeatable)  restrict to specific essays
-  --active                      canonical eval set only (current schema, not excluded)
-
-``cfg.essays.exclude_ids`` is always honored, so excluded essays never
-get paraphrases even without ``--active``. Run from any cwd — paths
-resolve relative to versus/.
+  --include-stale               run over all fetched essays, not just the active set
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import pathlib
 import sys
 
 VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
+RUMIL_ROOT = VERSUS_ROOT.parent
 
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
@@ -24,11 +26,17 @@ except ModuleNotFoundError:
     sys.stderr.write(
         "[err] rumil isn't importable from this venv. Run from the rumil "
         "repo root, not versus/:\n"
-        f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/run_paraphrases.py ...\n"
+        f"      cd {RUMIL_ROOT} && uv run python versus/scripts/run_paraphrases.py ...\n"
     )
     raise SystemExit(1) from None
 
-from versus import config, paraphrase, prepare, sources  # noqa: E402
+from versus import config, envcascade, paraphrase, prepare, sources  # noqa: E402
+
+envcascade.apply(
+    ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"),
+    versus_root=VERSUS_ROOT,
+    rumil_root=RUMIL_ROOT,
+)
 
 
 def main() -> None:
@@ -41,12 +49,20 @@ def main() -> None:
         help="Restrict to specified essay_id(s). Repeatable.",
     )
     ap.add_argument(
-        "--active",
+        "--include-stale",
         action="store_true",
         help=(
-            "Restrict to the canonical active set: current schema_version and "
-            "not in cfg.essays.exclude_ids. Same gate /versus applies."
+            "Default behavior is the canonical active set (current "
+            "schema_version, not in cfg.essays.exclude_ids — same gate "
+            "/versus applies). Pass this to run over every fetched essay "
+            "instead, including off-feed or old-schema rows. "
+            "exclude_ids is still honored."
         ),
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the planned paraphrase calls and exit without firing API requests.",
     )
     args = ap.parse_args()
 
@@ -66,14 +82,14 @@ def main() -> None:
     exclude = set(cfg.essays.exclude_ids)
     essays = [e for e in essays if e.id not in exclude]
 
-    if args.active:
+    if not args.include_stale:
         active = prepare.active_essay_ids(cfg.essays.exclude_ids)
         essays = [e for e in essays if e.id in active]
     if args.essay:
         keep = set(args.essay)
         essays = [e for e in essays if e.id in keep]
 
-    paraphrase.run(cfg, essays)
+    paraphrase.run(cfg, essays, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

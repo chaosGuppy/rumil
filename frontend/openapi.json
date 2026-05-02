@@ -2837,6 +2837,80 @@
         }
       }
     },
+    "/api/context-evals/{gold_run_id}/vs/{candidate_run_id}": {
+      "get": {
+        "summary": "Get Context Eval Diff",
+        "operationId": "get_context_eval_diff_api_context_evals__gold_run_id__vs__candidate_run_id__get",
+        "parameters": [
+          {
+            "name": "gold_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Gold Run Id"
+            }
+          },
+          {
+            "name": "candidate_run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextEvalDiffOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/calls/{call_id}/llm-exchanges": {
       "get": {
         "summary": "List Llm Exchanges",
@@ -3562,6 +3636,18 @@
           "thinking_off": {
             "type": "boolean",
             "title": "Thinking Off"
+          },
+          "original_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Config"
           }
         },
         "type": "object",
@@ -3576,7 +3662,8 @@
           "temperature",
           "max_tokens",
           "has_thinking",
-          "thinking_off"
+          "thinking_off",
+          "original_config"
         ],
         "title": "BaseExchangeOut",
         "description": "Reconstructed base exchange \u2014 what the fork editor pre-populates."
@@ -3950,7 +4037,8 @@
           "refine_spec",
           "red_team",
           "claude_code_direct",
-          "versus_judge"
+          "versus_judge",
+          "context_builder_eval"
         ],
         "title": "CallType"
       },
@@ -4381,6 +4469,102 @@
           "context_text_chars"
         ],
         "title": "ContextBuiltEventOut"
+      },
+      "ContextEvalArmOut": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "builder_name": {
+            "type": "string",
+            "title": "Builder Name"
+          },
+          "context_built": {
+            "$ref": "#/components/schemas/ContextBuiltEventOut"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "call_id",
+          "builder_name",
+          "context_built"
+        ],
+        "title": "ContextEvalArmOut",
+        "description": "One arm (gold or candidate) of a context-builder eval."
+      },
+      "ContextEvalDiffOut": {
+        "properties": {
+          "question": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Page"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gold": {
+            "$ref": "#/components/schemas/ContextEvalArmOut"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/ContextEvalArmOut"
+          },
+          "pages_only_in_gold": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Pages Only In Gold",
+            "default": []
+          },
+          "pages_only_in_candidate": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Pages Only In Candidate",
+            "default": []
+          },
+          "pages_in_both": {
+            "items": {
+              "$ref": "#/components/schemas/PageRef"
+            },
+            "type": "array",
+            "title": "Pages In Both",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "gold",
+          "candidate"
+        ],
+        "title": "ContextEvalDiffOut",
+        "description": "Side-by-side diff of two context-builder runs on the same question.\n\npages_only_in_gold/pages_only_in_candidate/pages_in_both are the result\nof diffing the union of working_context, preloaded, and scope-linked\npages from each arm's context_built event. Headlines are carried via\nPageRef so the UI can render links without an extra lookup."
       },
       "CriterionMatrix": {
         "properties": {
@@ -5815,6 +5999,18 @@
             "type": "object",
             "title": "Sampling"
           },
+          "model_config_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Config Snapshot"
+          },
           "criterion": {
             "type": "string",
             "title": "Criterion"
@@ -5991,6 +6187,7 @@
           "config_hash",
           "prompt_hash",
           "sampling",
+          "model_config_snapshot",
           "criterion",
           "source_a",
           "source_b",
@@ -6070,6 +6267,18 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Sampling"
+          },
+          "model_config_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Config Snapshot"
           },
           "verdict": {
             "anyOf": [
@@ -6250,6 +6459,7 @@
           "config_hash",
           "prompt_hash",
           "sampling",
+          "model_config_snapshot",
           "verdict",
           "winner_source",
           "preference_label",

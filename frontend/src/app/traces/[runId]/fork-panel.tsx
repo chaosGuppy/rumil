@@ -65,6 +65,52 @@ function modelHasAdaptiveThinking(model: string): boolean {
   );
 }
 
+// Original-config readout helpers — show what the captured exchange
+// actually applied on the wire, so the fork editor exposes the full
+// condition (not just temperature/max_tokens). Each returns null on
+// legacy rows whose ``original_config`` is missing or whose field is
+// unset, so the row is simply skipped from the meta display.
+function renderThinking(orig: { [k: string]: unknown } | null | undefined): string {
+  const t = orig?.["thinking"];
+  if (!t || typeof t !== "object") return "on";
+  const th = t as { type?: string; display?: string };
+  if (!th.type) return "on";
+  return th.display ? `${th.type} (${th.display})` : th.type;
+}
+
+function renderEffortRow(orig: { [k: string]: unknown } | null | undefined) {
+  const e = orig?.["effort"];
+  if (typeof e !== "string") return null;
+  return (
+    <>
+      <span className="fork-readonly-meta-label">effort</span>
+      <span className="fork-readonly-meta-value">{e}</span>
+    </>
+  );
+}
+
+function renderMaxThinkingTokensRow(orig: { [k: string]: unknown } | null | undefined) {
+  const m = orig?.["max_thinking_tokens"];
+  if (typeof m !== "number") return null;
+  return (
+    <>
+      <span className="fork-readonly-meta-label">max_thinking_tokens</span>
+      <span className="fork-readonly-meta-value">{m}</span>
+    </>
+  );
+}
+
+function renderServiceTierRow(orig: { [k: string]: unknown } | null | undefined) {
+  const s = orig?.["service_tier"];
+  if (typeof s !== "string") return null;
+  return (
+    <>
+      <span className="fork-readonly-meta-label">service_tier</span>
+      <span className="fork-readonly-meta-value">{s}</span>
+    </>
+  );
+}
+
 type Tool = { name: string; description: string; input_schema: unknown };
 type Msg = { role: string; content: unknown };
 
@@ -772,10 +818,13 @@ function RequestView({ base }: { base: BaseExchangeOut | null }) {
               <>
                 <span className="fork-readonly-meta-label">adaptive thinking</span>
                 <span className="fork-readonly-meta-value">
-                  {base.thinking_off ? "off" : "on"}
+                  {base.thinking_off ? "off" : renderThinking(base.original_config)}
                 </span>
               </>
             )}
+            {renderEffortRow(base.original_config)}
+            {renderMaxThinkingTokensRow(base.original_config)}
+            {renderServiceTierRow(base.original_config)}
           </div>
         </div>
       )}

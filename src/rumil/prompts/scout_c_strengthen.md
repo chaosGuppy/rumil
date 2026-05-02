@@ -1,43 +1,77 @@
-# Scout Strengthen
+## the task
 
-## Your Task
+you're doing a **scout strengthen** call. the scope claim already
+has high credence — it's believed to be robustly true. your job is
+to suggest variations that are **more precise, specific, or
+stronger** while maintaining that high credence.
 
-You are performing a **Scout Strengthen** call — the scope claim already has high credence (it is believed to be robustly true). Your job is to suggest variations that are more precise, specific, or stronger while maintaining that high credence.
+this is the opposite of robustification: instead of weakening for
+safety, you're tightening for informativeness.
 
-This is the opposite of robustification: instead of weakening for safety, you are tightening for informativeness.
+## a few moves
 
-## What to Produce
+before producing variants, look at the existing how-false stories
+and assessment results. where is the claim weaker than it needs to
+be given the evidence? a stronger version says *more* — narrower
+error bars, tighter bounds, removed hedges, added conjuncts that
+the evidence supports.
 
-For each strengthened variation (aim for 1 or 2):
+attack each candidate by asking: does this maintain high credence,
+or am i over-tightening? if you can't maintain credence ≥8 after
+strengthening, the variant is too aggressive — back off.
 
-1. **A claim** describing the stronger version. Use `CREATE_CLAIM` to create the variant, then use `LINK_VARIANT` to link it back to the original scope claim.
+## what to produce
 
-2. In the claim body, explain what was strengthened and why credence should remain high.
+for each strengthened variation (aim for **1 or 2**):
 
-## Strengthening Strategies
+1. **a claim** describing the stronger version. use `create_claim`
+   to create the variant, then `link_variant` to link it back to
+   the original scope claim.
 
-Consider these approaches (use whichever are most appropriate):
+2. in the claim body, explain what was strengthened and why credence
+   should remain high.
 
-- **Add quantitative bounds.** If the original says "X increases Y", try "X increases Y by at least Z%."
-- **Narrow error bars.** If the original says "at least 30%", can the evidence support "at least 40%"?
-- **Strengthen quantifiers.** If "most Fs are G" and the evidence is strong, can it be "nearly all Fs are G"?
-- **Add specificity.** If the original says "in domain D", can you name specific sub-domains or conditions where it holds even more strongly?
-- **Remove unnecessary hedges.** If a conditional ("if A, then X") has A well-established, state X directly.
-- **Add a conjunct.** If the original asserts A and B, and C is also well-supported, assert A and B and C.
+## strengthening strategies
 
-## How to Proceed
+(use whichever are appropriate):
 
-1. Read the scope claim and existing context carefully — especially the how-false stories and assessment results.
-2. Identify where the claim is weaker than it needs to be given the evidence.
-3. For each weakness, suggest a variation that strengthens the claim.
-4. After creating each variation, use `LINK_VARIANT` to link the new claim to the scope claim.
-5. Set credence at least as high as the original — if you cannot maintain high credence, the strengthening is too aggressive.
-6. Set robustness at least as high as the original.
-7. Pair every score with its reasoning field per the preamble rubric — in credence_reasoning, explain why the stronger wording is still supported; in robustness_reasoning, say what would further firm it up or what could still move it.
+- **add quantitative bounds.** "X increases Y by at least Z%"
+  instead of "X increases Y."
+- **narrow error bars.** if the original says "at least 30%", can
+  the evidence support "at least 40%"?
+- **strengthen quantifiers.** "nearly all Fs are G" instead of
+  "most Fs are G", if the evidence supports it.
+- **add specificity.** name specific sub-domains or conditions
+  where the claim holds even more strongly.
+- **remove unnecessary hedges.** if a conditional ("if A, then X")
+  has A well-established, state X directly.
+- **add a conjunct.** if A and B are well-supported and C is also
+  well-supported, assert A and B and C.
 
-## Quality Bar
+## how to proceed
 
-- **Maintain credence.** The whole point is that the strengthened version should still be highly credible. If strengthening drops credence below 8, you have gone too far.
-- **Genuinely stronger.** The variation should say more, not just rephrase the same thing. More precision, more specificity, tighter bounds.
-- **Evidence-based.** Only strengthen where the existing research and context support it. Do not speculate.
-- **Do not duplicate** variations already present in the workspace.
+1. read the scope claim and existing context carefully — especially
+   the how-false stories and assessment results.
+2. identify where the claim is weaker than it needs to be given the
+   evidence.
+3. for each weakness, suggest a variation that strengthens the
+   claim.
+4. after creating each variation, use `link_variant` to link the new
+   claim to the scope claim.
+5. set credence at least as high as the original — if you can't
+   maintain high credence, the strengthening is too aggressive.
+6. set robustness at least as high as the original.
+7. pair every score with its reasoning field. in
+   `credence_reasoning`, explain why the stronger wording is still
+   supported; in `robustness_reasoning`, say what would further firm
+   it up or what could still move it.
+
+## quality bar
+
+- **maintain credence.** if strengthening drops credence below 8,
+  you've gone too far.
+- **genuinely stronger.** the variation should say more, not just
+  rephrase. more precision, more specificity, tighter bounds.
+- **evidence-based.** only strengthen where the existing research
+  and context support it. don't speculate.
+- **don't duplicate** variations already in the workspace.

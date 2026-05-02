@@ -1,31 +1,55 @@
-# Scout Cruxes
+## the task
 
-## Your Task
+you're doing a **scout cruxes** call. your job is to identify
+specific points where the how-true and how-false stories for the
+scope claim diverge — points such that resolving them would tell
+you which story is closer to the truth.
 
-You are performing a **Scout Cruxes** call — an exploration focused on identifying specific points where the how-true and how-false stories for the scope claim diverge, such that resolving them would tell you which story is closer to the truth.
+a crux is a point of disagreement between stories that is both
+**important** (resolving it would shift your view significantly)
+and **tractable** (it's feasible to investigate).
 
-A crux is a point of disagreement between stories that is both important (resolving it would shift your view significantly) and tractable (it is feasible to investigate).
+## a few moves
 
-## What to Produce
+before producing cruxes, read the existing how-true and how-false
+stories carefully. name the cached cruxes — the ones a sharp person
+would reach for on autopilot. write them down. for each, ask: do
+the two stories *actually* diverge here, or am i pattern-matching
+on a generic "this is the kind of thing that's contested" feeling?
+a real crux makes specific, different predictions under the two
+stories.
 
-For each crux (aim for 2-4):
+if the cached cruxes are exactly right, fine — stake them. if they
+miss the actually-load-bearing disagreement, find your way to the
+better cruxes by working through where the two stories make
+contradictory predictions.
 
-1. **A claim** if the crux takes the form of an assertion whose truth is load-bearing (e.g. "The rate of X is above Y" or "Mechanism Z is the primary driver"). Link it as a consideration to the scope claim.
+## what to produce
 
-2. **A question** if the crux takes the form of something whose answer would discriminate between stories (e.g. "What is the actual rate of X?" or "Does mechanism Z operate in context W?"). The question will be automatically linked to the scope claim.
+aim for **2-4 cruxes**. for each:
 
-Use `CREATE_CLAIM` or `CREATE_QUESTION` as appropriate, and `LINK_CONSIDERATION` to link to the scope claim.
+1. **a claim** if the crux is an assertion whose truth is
+   load-bearing ("the rate of X is above Y", "mechanism Z is the
+   primary driver"). use `create_claim`, link with
+   `link_consideration` to the scope claim.
 
-## How to Proceed
+2. **a question** if the crux is something whose answer would
+   discriminate between stories ("what is the actual rate of X?",
+   "does mechanism Z operate in context W?"). use `create_question`
+   — it auto-links to the scope claim.
 
-1. Read the scope claim, existing how-true stories, how-false stories, and other context carefully.
-2. For each pair of competing stories, identify where they make different predictions or rely on different assumptions.
-3. Rank by a combination of importance (how much resolving this would shift the overall assessment) and tractability (how feasible it is to investigate).
-4. For each crux, explain: what exactly is the disagreement? What would you expect to observe under each story? How feasible is it to investigate?
+for each, the content should explain: what exactly is the
+disagreement? what would you expect to observe under each story?
+how feasible is it to investigate?
 
-## Quality Bar
+## quality bar
 
-- **Discriminating power.** A good crux is one where the how-true and how-false stories predict different things. A point they agree on is not a crux.
-- **Specificity.** "Whether the evidence is reliable" is too vague. "Whether study X's sample was representative of population Y" is a crux.
-- **Tractability.** Prioritize cruxes that could actually be investigated over ones that are important but irresolvable.
-- **Do not duplicate** cruxes already present in the workspace.
+- **discriminating power.** a real crux is one where the how-true
+  and how-false stories predict different things. a point they agree
+  on is not a crux.
+- **specificity.** "whether the evidence is reliable" is too vague.
+  "whether study X's sample was representative of population Y" is
+  a crux.
+- **tractability.** prioritise cruxes that could actually be
+  investigated over ones that are important but irresolvable.
+- **don't duplicate** cruxes already in the workspace.

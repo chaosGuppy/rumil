@@ -26,6 +26,8 @@ import pathlib
 from collections.abc import Sequence
 from typing import Any, Literal
 
+from rumil.model_config import ModelConfig
+
 Variant = Literal["blind", "ws", "orch"]
 
 
@@ -142,31 +144,12 @@ def compute_config_hash(config: dict[str, Any]) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
-def compute_sampling_hash(sampling: dict | None) -> str | None:
-    """Short deterministic hash of sampling params for judge_model dedup.
-
-    Sorted-key JSON so key order doesn't fork the hash. Returns None when
-    ``sampling`` is None. 8 hex chars is enough to distinguish
-    temperature / max_tokens combos without cluttering the key.
-
-    Per CLAUDE.local.md: "if some judgements were made at 0 or at 0.2
-    temp, we want that to be in the data." Without folding sampling
-    into the dedup key, a ``--topup`` at a different temperature
-    silently no-ops against existing rows judged at the old
-    temperature.
-    """
-    if sampling is None:
-        return None
-    blob = json.dumps(sampling, sort_keys=True, default=str)
-    return hashlib.sha256(blob.encode()).hexdigest()[:8]
-
-
 def make_judge_config(
     variant: Variant,
     *,
     model: str,
     dimension: str,
-    sampling: dict[str, Any] | None,
+    model_config: ModelConfig,
     prompt_hash: str,
     tool_prompt_hash: str | None = None,
     pair_surface_hash: str | None = None,
@@ -183,8 +166,15 @@ def make_judge_config(
     primitive, ``judge_model`` is a short human-readable display
     string.
 
+    ``model_config`` is the full rumil ``ModelConfig`` versus applied
+    on the wire — sampling, thinking, effort, max_thinking_tokens,
+    service_tier. Stored canonically as a nested ``model_config`` dict
+    on the row; the dedup hash forks naturally on any field change.
+    Direct paths (blind) build it from the versus model registry;
+    bridge paths (ws/orch) do too — single source of truth.
+
     Per-variant required args (asserted):
-    - blind: ``sampling``, ``prompt_hash``
+    - blind: ``model_config``, ``prompt_hash``
     - ws: blind + ``workspace_id``, ``tool_prompt_hash``, ``pair_surface_hash``,
       ``code_fingerprint``, ``workspace_state_hash``
     - orch: ws + ``budget``, ``closer_hash``
@@ -193,7 +183,7 @@ def make_judge_config(
         "variant": variant,
         "model": model,
         "dimension": dimension,
-        "sampling": dict(sampling) if sampling is not None else None,
+        "model_config": model_config.to_record_dict(),
         "prompts": {"shell_hash": prompt_hash},
     }
     if variant in ("ws", "orch"):
@@ -256,8 +246,14 @@ def project_config_to_axes(
         "judge_dimension": config["dimension"],
         "judge_prompt_hash": f"p{config['prompts']['shell_hash']}",
     }
-    if (sh := compute_sampling_hash(config.get("sampling"))) is not None:
-        out["judge_sampling_hash"] = f"s{sh}"
+    # The full ModelConfig hash collapses sampling/thinking/effort/etc
+    # into one axis. Editing any field of the registry forks this hash
+    # naturally, so cross-config rollups stay distinct.
+    if (mc := config.get("model_config")) is not None:
+        mc_hash = hashlib.sha256(json.dumps(mc, sort_keys=True, default=str).encode()).hexdigest()[
+            :8
+        ]
+        out["judge_model_config_hash"] = f"m{mc_hash}"
     if variant in ("ws", "orch"):
         out["judge_workspace_id"] = config["workspace_id"]
         out["judge_tool_hash"] = f"t{config['tool_descriptions_hash']}"

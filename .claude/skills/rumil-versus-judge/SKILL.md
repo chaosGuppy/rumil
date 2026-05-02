@@ -2,7 +2,7 @@
 name: rumil-versus-judge
 description: Run pairwise judgments on versus essay-continuation pairs. Default mode is the unified blind path (single-turn LLM call, no tools, no DB) — claude-* models route direct to Anthropic, others through OpenRouter. --variant ws adds a rumil SDK agent with workspace-exploration tools; --variant orch fires a full TwoPhaseOrchestrator run per pair. Use when the user wants to measure how rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare blind judges against workspace-aware ones, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "[--variant ws|orch] [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
+argument-hint: "[--variant ws|orch] [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -32,11 +32,15 @@ template — see `rumil/versus_prompts.py` for the substitution dicts.
 Each row carries a structured `judge_inputs: dict`; the DB generates
 `judge_inputs_hash` from its canonical-form JSON. The blob is built by
 `versus.judge_config.make_judge_config` and covers every input the
-judge saw — model, sampling, prompt content, tool descriptions, pair
-surface, code fingerprint, workspace state, budget, closer config —
-plus `text_a_id` / `text_b_id` and `order` added at write time. Any
-change in any of those auto-forks the hash; no manual version bump to
-remember. See `versus/AGENT.md` for the full schema.
+judge saw — model, dimension, the per-model `model_config` snapshot
+(sampling, thinking, effort, max_thinking_tokens, service_tier — full
+`ModelConfig.to_record_dict()` from the registry), prompt content,
+tool descriptions, pair surface, code fingerprint, workspace state,
+budget, closer config — plus `text_a_id` / `text_b_id` and `order`
+added at write time. Editing the registry, swapping a prompt, or
+touching any code the fingerprint covers auto-forks the hash; no
+manual version bump to remember. See `versus/AGENT.md` for the full
+schema and the registry shape.
 
 ## When to use
 
@@ -120,6 +124,12 @@ essay. For focused comparisons (especially expensive paths like orch)
 use these filters — all shared across ws and orch:
 
 - `--essay <id>` (repeatable) — restrict to specific essays.
+- `--include-stale` — opt out of the active-set default. By default
+  the planner restricts to the canonical active essay set (current
+  `schema_version`, not in `cfg.essays.exclude_ids` — same gate
+  `/versus` applies). Pass this to widen to every essay with rows in
+  `versus_texts`, including off-feed or older-schema rows. Composes
+  with `--essay` (intersected when not stale).
 - `--contestants <csv>` — only pairs where BOTH source_ids are in the
   list. Controls which contestants get compared against each other.
 - `--vs-human` — only pairs where one side is `human`.
@@ -143,17 +153,30 @@ default; the user must name one. For the `ws` / `orch` variants to do
 better than text-only judgment, that workspace should have material
 relevant to the essays' topics.
 
-By default `ws` / `orch` runs are **staged** (`staged=True` on
-rumil's DB). The agent still reads baseline workspace material
-normally, but any pages versus creates during the run (the per-pair
-Question, plus the orchestrator's research subtree for `orch`) are
-scoped to the run's staged view — invisible to other readers of the
-workspace. Pass `--persist` to disable staging and write pages to the
-baseline. Pages are also tagged `extra.source = "versus"` in both
-modes, so filtering after the fact is possible.
+**Prod has a dedicated `versus` workspace** (intentionally empty) for
+ws/orch runs from versus. Pass `--workspace versus --prod` to use it.
+Reusing one shared workspace keeps the staged subtrees from each run
+discoverable in one place. New workspaces must be created explicitly
+via rumil's main.py before a `--prod` ws/orch run — the resolver
+fails-loud on missing names (typo protection).
 
-Supabase must be running locally (`supabase start` in the rumil repo)
-for both `ws` and `orch` variants.
+By default `ws` / `orch` runs are **staged** (`staged=True` on
+rumil's DB) on both local and prod. The agent still reads baseline
+workspace material normally, but any pages versus creates during the
+run (the per-pair Question, plus the orchestrator's research subtree
+for `orch`) are scoped to the run's staged view — invisible to other
+readers of the workspace. Pass `--persist` to disable staging and
+write pages to the baseline. Pages are also tagged
+`extra.source = "versus"` in both modes, so filtering after the fact
+is possible.
+
+For local runs, Supabase must be running (`supabase start` in the
+rumil repo). For `--prod` runs, no local Supabase needed — the script
+writes to prod versus_db AND prod rumil DB. Note: with prod runs, the
+trace URL printed (`/traces/<run_id>`) points at the local frontend's
+configured `frontend_url` — you may need to point your local frontend
+at the prod API or visit `rumil.ink/traces/<run_id>` directly to see
+the trace.
 
 ## Invocation
 
@@ -282,10 +305,13 @@ over-read any single number:
   (`TwoPhaseOrchestrator` rejects anything smaller with a clear
   error).
 - **Re-running is free.** Dedup keys include the variant, model,
-  workspace, dimension (or versus criterion), budget, sampling params
-  (via `:s<hash>`), tool-prompt contents (via `:t<hash>` for ws/orch),
+  workspace, dimension (or versus criterion), budget, the full
+  per-model `model_config` snapshot from the registry (via
+  `:m<hash>`), tool-prompt contents (via `:t<hash>` for ws/orch),
   and `order` slot — so any combination change produces fresh rows
-  without clobbering existing ones. `order` is currently always
+  without clobbering existing ones. Editing `versus/config.yaml`
+  `models:` for the judge model forks the hash naturally; old rows
+  stay valid as the prior config. `order` is currently always
   single-order; the slot exists so mirror-mode can be switched on
   without a migration.
 - **Rumil trace UI requires rumil's frontend** (`./scripts/dev-api.sh`

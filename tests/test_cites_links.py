@@ -21,13 +21,22 @@ from rumil.moves.create_claim import MoveType
 
 @pytest_asyncio.fixture
 async def source_page(tmp_db):
+    content = (
+        "A 2024 study by Acemoglu and Restrepo estimates that LLM-based tools "
+        "have already automated roughly 5% of routine cognitive labour in "
+        "white-collar industries, and projects that share could rise to 25% "
+        "by 2030 under continued frontier-model progress. The authors note "
+        "that the pace is gated by integration friction (procurement cycles, "
+        "regulatory review, internal change management) more than by raw "
+        "capability."
+    )
     page = Page(
         page_type=PageType.SOURCE,
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
-        content="The sky appears blue due to Rayleigh scattering of sunlight.",
-        headline="Rayleigh scattering explains blue sky",
-        extra={"filename": "sky-science.txt", "char_count": 58},
+        content=content,
+        headline="LLMs and the pace of cognitive-labour automation (Acemoglu & Restrepo 2024)",
+        extra={"filename": "acemoglu-restrepo-2024.txt", "char_count": len(content)},
     )
     await tmp_db.save_page(page)
     return page
@@ -35,13 +44,18 @@ async def source_page(tmp_db):
 
 @pytest_asyncio.fixture
 async def second_source_page(tmp_db):
+    content = (
+        "Internal benchmark data from a major consulting firm shows that "
+        "junior-level analyst tasks now take 40% less time when augmented "
+        "with frontier LLMs, while senior strategy work shows little speedup."
+    )
     page = Page(
         page_type=PageType.SOURCE,
         layer=PageLayer.SQUIDGY,
         workspace=Workspace.RESEARCH,
-        content="Shorter wavelengths scatter more in the atmosphere.",
-        headline="Wavelength dependence of atmospheric scattering",
-        extra={"filename": "optics-101.txt", "char_count": 50},
+        content=content,
+        headline="Consulting-firm benchmark: LLM speedups concentrate at junior levels",
+        extra={"filename": "consulting-benchmark.txt", "char_count": len(content)},
     )
     await tmp_db.save_page(page)
     return page
@@ -53,10 +67,10 @@ async def test_cites_link_created_for_source(tmp_db, scout_call, source_page):
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
     await tool.fn(
         {
-            "headline": "Blue sky from scattering",
-            "content": "Rayleigh scattering causes blue sky.",
+            "headline": "LLMs already automate ~5% of routine cognitive labour",
+            "content": "Frontier LLMs have already displaced a measurable share of routine white-collar tasks.",
             "credence": 6,
-            "credence_reasoning": "Rayleigh scattering is textbook physics.",
+            "credence_reasoning": "Headline figure from a recent Acemoglu/Restrepo estimate.",
             "robustness": 3,
             "robustness_reasoning": "Sourced from a single page; cross-check would firm it.",
             "source_urls": [source_page.id[:8]],
@@ -108,8 +122,8 @@ async def test_multiple_cites_links(
     tool = MOVES[MoveType.CREATE_CLAIM].bind(state)
     await tool.fn(
         {
-            "headline": "Combined scattering evidence",
-            "content": "Multiple sources confirm scattering.",
+            "headline": "LLM speedups concentrate at junior-analyst tasks",
+            "content": "Independent estimates and firm-internal benchmarks both show LLM gains skewed toward routine junior work.",
             "credence": 6,
             "credence_reasoning": "Multiple converging sources.",
             "robustness": 3,

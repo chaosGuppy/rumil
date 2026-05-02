@@ -80,6 +80,38 @@ function shortModel(id: string): string {
   return id.startsWith("paraphrase:") ? `para:${shortModel(modelOf(id))}` : after;
 }
 
+/** Trailing config-hash chunk on a legacy compound judge_model_id, e.g.
+ *  "blind:claude-haiku-4-5:general_quality:c19517145" → "c19517145". Returns
+ *  the empty string when the id has no recognizable suffix (raw model id). */
+function configHashSuffix(judgeModelId: string): string {
+  const parts = judgeModelId.split(":");
+  const last = parts[parts.length - 1];
+  return last.startsWith("c") && last.length > 1 ? last : "";
+}
+
+/** Build a map id → display label, appending the config-hash suffix when two
+ *  ids would otherwise share the same short name. Used so thinking/effort
+ *  variants of the same model render as distinct columns instead of two
+ *  visually-identical labels. */
+function disambiguatedLabels(judgeModelIds: string[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  const baseCounts = new Map<string, number>();
+  for (const id of judgeModelIds) {
+    const base = shortModel(id);
+    baseCounts.set(base, (baseCounts.get(base) ?? 0) + 1);
+  }
+  for (const id of judgeModelIds) {
+    const base = shortModel(id);
+    if ((baseCounts.get(base) ?? 0) > 1) {
+      const suffix = configHashSuffix(id);
+      labels.set(id, suffix ? `${base}:${suffix}` : base);
+    } else {
+      labels.set(id, base);
+    }
+  }
+  return labels;
+}
+
 type VariantBundle = {
   id: string;
   detail: EssayDetail;
@@ -451,24 +483,23 @@ export default async function VersusInspectPage({
 }
 
 type WinAccum = {
-  wins: number;
+  humanWins: number;
   ties: number;
-  losses: number;
+  genWins: number;
   n: number;
   score7Sum: number;
   score7N: number;
 };
 
 function emptyAccum(): WinAccum {
-  return { wins: 0, ties: 0, losses: 0, n: 0, score7Sum: 0, score7N: 0 };
+  return { humanWins: 0, ties: 0, genWins: 0, n: 0, score7Sum: 0, score7N: 0 };
 }
 
 /** Aggregate one judgment into a (gen, judge) accum where gen is the
- *  non-human side and the verdict is reframed as: gen wins iff
- *  winner_source == gen, gen loses iff winner_source == "human", tie
- *  otherwise. Returns null when neither side is human (block 1 only
- *  cares about gen-vs-human pairings). */
-function genVsHumanAccum(j: Judgment): { gen: string; outcome: "win" | "tie" | "loss" } | null {
+ *  non-human side. Outcome is human-centric ("human" wins, "gen" wins,
+ *  or tie) so downstream cell formulas can compute pick-human rate
+ *  without re-inverting. Returns null when neither side is human. */
+function genVsHumanAccum(j: Judgment): { gen: string; outcome: "human" | "tie" | "gen" } | null {
   const aHuman = j.source_a === "human";
   const bHuman = j.source_b === "human";
   if (aHuman === bHuman) return null;
@@ -476,8 +507,8 @@ function genVsHumanAccum(j: Judgment): { gen: string; outcome: "win" | "tie" | "
   if (j.verdict === "tie" || j.winner_source === "tie" || !j.winner_source) {
     return { gen, outcome: "tie" };
   }
-  if (j.winner_source === "human") return { gen, outcome: "loss" };
-  return { gen, outcome: "win" };
+  if (j.winner_source === "human") return { gen, outcome: "human" };
+  return { gen, outcome: "gen" };
 }
 
 /** Mirrors versus.analyze.cell_color so inspect win-matrix cells use
@@ -601,22 +632,22 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
           const acc = new Map<string, Map<string, WinAccum>>();
           const judgesSet = new Set<string>();
           const gensSet = new Set<string>();
-          // Local config_hash -> judge_model_id map so column headers
-          // render the model name rather than the opaque hex hash.
-          const judgeModelIdByHash = new Map<string, string>();
           for (const j of v.judgments) {
-            judgeModelIdByHash.set(j.config_hash, j.judge_model_id);
             const r = genVsHumanAccum(j);
             if (!r) continue;
-            const judge = j.config_hash;
+            // Group columns by judge identity (judge_model_id), not the
+            // per-row judge_inputs_hash exposed as config_hash — otherwise
+            // every judgment gets its own column and identical-judge cells
+            // appear duplicated.
+            const judge = j.judge_model_id;
             judgesSet.add(judge);
             gensSet.add(r.gen);
             const row = acc.get(r.gen) ?? new Map<string, WinAccum>();
             const cell = row.get(judge) ?? emptyAccum();
             cell.n += 1;
-            if (r.outcome === "win") cell.wins += 1;
+            if (r.outcome === "human") cell.humanWins += 1;
             else if (r.outcome === "tie") cell.ties += 1;
-            else cell.losses += 1;
+            else cell.genWins += 1;
             const s7 = humanScore7pt(j);
             if (s7 !== null) {
               cell.score7Sum += s7;
@@ -644,11 +675,14 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                   <thead>
                     <tr>
                       <th></th>
-                      {judges.map((jb) => (
-                        <th key={jb} title={jb}>
-                          {shortModel(judgeModelIdByHash.get(jb) ?? jb)}
-                        </th>
-                      ))}
+                      {(() => {
+                        const labels = disambiguatedLabels(judges);
+                        return judges.map((jb) => (
+                          <th key={jb} title={jb}>
+                            {labels.get(jb) ?? shortModel(jb)}
+                          </th>
+                        ));
+                      })()}
                     </tr>
                   </thead>
                   <tbody>
@@ -664,13 +698,13 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                           if (!cell || cell.n === 0) {
                             return <td key={jb} className="matrix-cell-empty"></td>;
                           }
-                          const pct = (cell.wins + 0.5 * cell.ties) / cell.n;
+                          const pct = (cell.humanWins + 0.5 * cell.ties) / cell.n;
                           const colors = pctColor(pct, cell.n);
                           const lowN = cell.n < 5;
                           const pct7 = cell.score7N > 0 ? cell.score7Sum / cell.score7N : null;
                           const tooltip =
                             `pick-human ${Math.round(pct * 100)}% (binary, ties=½) · n=${cell.n}` +
-                            ` (${cell.wins}H / ${cell.ties}T / ${cell.losses}M)` +
+                            ` (${cell.humanWins}H / ${cell.ties}T / ${cell.genWins}M)` +
                             (pct7 !== null
                               ? ` · 7pt-avg ${(pct7 * 100).toFixed(1)}% (n=${cell.score7N})`
                               : "");
@@ -842,15 +876,15 @@ function ResultsOutlier({
       if (!r) continue;
       const slot = perGen.get(r.gen) ?? emptyAccum();
       slot.n += 1;
-      if (r.outcome === "win") slot.wins += 1;
-      else if (r.outcome === "loss") slot.losses += 1;
+      if (r.outcome === "human") slot.humanWins += 1;
+      else if (r.outcome === "gen") slot.genWins += 1;
       else slot.ties += 1;
       perGen.set(r.gen, slot);
     }
     const corpus = corpusByVariant.get(v.id);
     for (const [gen, acc] of perGen) {
       if (acc.n === 0) continue;
-      const essayPct = (acc.wins + 0.5 * acc.ties) / acc.n;
+      const essayPct = (acc.humanWins + 0.5 * acc.ties) / acc.n;
       const corpusPct = corpus?.get(gen) ?? null;
       const deltaPp = corpusPct === null ? null : (essayPct - corpusPct) * 100;
       rows.push({ variantId: v.id, gen, essayPct, corpusPct, deltaPp, n: acc.n });
@@ -943,11 +977,14 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
   const byKey = new Map<string, Pair>();
   for (const v of variantBundles) {
     for (const j of v.judgments) {
-      const k = `${j.config_hash}|${j.criterion}|${j.source_a}|${j.source_b}`;
+      // Bucket by judge_model_id so the same (judge identity, pair, criterion)
+      // groups across variants — using per-row config_hash would never match
+      // across variants and the section would always report 0 comparable.
+      const k = `${j.judge_model_id}|${j.criterion}|${j.source_a}|${j.source_b}`;
       const slot = byKey.get(k) ?? {
         gen: [j.source_a, j.source_b].filter((s) => s !== "human").map(modelOf).join("+") ||
           "human",
-        judge: j.config_hash,
+        judge: j.judge_model_id,
         criterion: j.criterion,
         source_a: j.source_a,
         source_b: j.source_b,
@@ -978,7 +1015,9 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
       </p>
       {flips.length > 0 && (
         <ul className="inspect-flip-list">
-          {flips.map((p, idx) => {
+          {(() => {
+            const judgeLabels = disambiguatedLabels(flips.map((p) => p.judge));
+            return flips.map((p, idx) => {
             const sides = [p.source_a, p.source_b].filter((s) => s !== "human").map(modelOf);
             const dataModel = sides.length > 0 ? sides.join(" ") : "";
             const alwaysShow = sides.length === 0 ? "1" : undefined;
@@ -991,7 +1030,7 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
                 data-always-show={alwaysShow}
               >
                 <div className="inspect-flip-pair">
-                  <span className="versus-mono">{shortModel(p.judge)}</span>{" "}
+                  <span className="versus-mono">{judgeLabels.get(p.judge) ?? shortModel(p.judge)}</span>{" "}
                   <span className="versus-muted">·</span>{" "}
                   <span className="versus-muted" style={{ fontSize: 11 }}>{p.criterion}</span>{" "}
                   <span className="versus-muted">·</span>{" "}
@@ -1017,7 +1056,8 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
                 </div>
               </li>
             );
-          })}
+            });
+          })()}
         </ul>
       )}
     </section>
@@ -1148,9 +1188,9 @@ function JudgmentRow({
               {sample.prompt_hash}
             </span>
           )}
-          {sample.sampling && (
+          {(sample.model_config_snapshot || sample.sampling) && (
             <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
-              {samplingTag(sample.sampling)}
+              {modelConfigTag(sample.model_config_snapshot, sample.sampling)}
             </span>
           )}
         </div>
@@ -1322,18 +1362,25 @@ function InspectToc({
           <li>
             <a href="#judgments">judgments</a>
             <ul>
-              {judgeOrder.map((jb) => (
-                <li
-                  key={jb}
-                  data-filterable
-                  data-model={jb}
-                  data-always-show="1"
-                >
-                  <a href={`#${anchorId("judge", jb)}`}>
-                    {shortModel(judgeModelIdByHash.get(jb) ?? jb)}
-                  </a>
-                </li>
-              ))}
+              {(() => {
+                const ids = judgeOrder.map((jb) => judgeModelIdByHash.get(jb) ?? jb);
+                const labels = disambiguatedLabels(ids);
+                return judgeOrder.map((jb) => {
+                  const id = judgeModelIdByHash.get(jb) ?? jb;
+                  return (
+                    <li
+                      key={jb}
+                      data-filterable
+                      data-model={jb}
+                      data-always-show="1"
+                    >
+                      <a href={`#${anchorId("judge", jb)}`}>
+                        {labels.get(id) ?? shortModel(id)}
+                      </a>
+                    </li>
+                  );
+                });
+              })()}
             </ul>
           </li>
         )}
@@ -1345,12 +1392,37 @@ function InspectToc({
   );
 }
 
-function samplingTag(sampling: { [k: string]: unknown }): string {
+function modelConfigTag(
+  modelConfig: { [k: string]: unknown } | null | undefined,
+  sampling: { [k: string]: unknown } | null | undefined,
+): string {
+  // Prefer the full ModelConfig snapshot (post-registry rows). Fall back
+  // to the legacy sampling-only field for rows written before the schema
+  // migration. Renders the per-row condition compactly:
+  //   T=0 · mt=32000 · think=adaptive · effort=xhigh · tier=priority
+  // Empty bits are dropped so the tag stays short on plain rows.
+  const src = modelConfig ?? sampling ?? {};
   const bits: string[] = [];
-  const t = sampling["temperature"];
-  const m = sampling["max_tokens"];
+  const t = src["temperature"];
+  const m = src["max_tokens"];
   if (t !== undefined && t !== null) bits.push(`T=${t as number | string}`);
   if (m !== undefined && m !== null) bits.push(`mt=${m as number | string}`);
+  const thinking = src["thinking"];
+  if (thinking && typeof thinking === "object") {
+    const th = thinking as { type?: string; display?: string };
+    const label = th.type
+      ? th.display
+        ? `${th.type}/${th.display}`
+        : th.type
+      : "on";
+    bits.push(`think=${label}`);
+  }
+  const effort = src["effort"];
+  if (typeof effort === "string") bits.push(`effort=${effort}`);
+  const mtt = src["max_thinking_tokens"];
+  if (typeof mtt === "number") bits.push(`mtt=${mtt}`);
+  const tier = src["service_tier"];
+  if (typeof tier === "string") bits.push(`tier=${tier}`);
   return bits.join(" · ");
 }
 

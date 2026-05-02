@@ -2,6 +2,7 @@
 db/
 /pages/
 /reports/
+/tmp/
 frontend/package-lock.json
 .claude/settings.local.json
 .claude/state/

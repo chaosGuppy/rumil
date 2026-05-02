@@ -1,29 +1,55 @@
-# Scout Relevant Evidence
+## the task
 
-## Your Task
+you're doing a **scout relevant evidence** call — identifying
+evidence worth gathering that bears on the most important cruxes of
+the scope claim. each piece of evidence you identify should be
+framed as a question that, if answered, would help discriminate
+between competing stories.
 
-You are performing a **Scout Relevant Evidence** call — an exploration focused on identifying evidence worth gathering that bears on the most important cruxes of the scope claim. Each piece of evidence you identify should be framed as a question that, if answered, would help discriminate between competing stories.
+## a few moves
 
-## What to Produce
+before producing evidence questions, scan the existing how-true and
+how-false stories. for each, ask: what observation would
+discriminate between this and its alternatives? the load-bearing
+evidence questions are the ones where *different answers favor
+different stories* — not the ones where any answer would be
+consistent with everything.
 
-For each evidence question (aim for 2-4):
+attack each candidate by asking: is this **specific and
+answerable**, or is it a vague gesture toward "more research"? "is
+X true?" is too vague. "what is the documented rate of X in context
+Y according to Z?" is answerable.
 
-1. **A question** framing the evidence to gather: "What does the literature say about X?", "What is the actual rate of Y?", "Are there documented cases of Z?" The question will be automatically linked to the scope claim.
+## what to produce
 
-2. For each question, note which crux it bears on, which story would be favored by which answer, and how concrete and answerable the question is.
+for each evidence question (aim for **2-4**):
 
-Use `CREATE_QUESTION` to create each evidence question.
+1. **a question** framing the evidence to gather ("what does the
+   literature say about X?", "what is the actual rate of Y?",
+   "are there documented cases of Z?"). use `create_question` —
+   it auto-links to the scope claim.
 
-## How to Proceed
+2. for each, note which crux it bears on, which story would be
+   favoured by which answer, and how concrete/answerable the
+   question is.
 
-1. Read the scope claim, existing how-true and how-false stories, identified cruxes, and other context carefully.
-2. For each important crux, identify what evidence would help resolve it.
-3. Frame each as a specific, answerable question.
-4. Prioritize questions that would discriminate between stories over questions whose answers would merely be consistent with one.
+## how to proceed
 
-## Quality Bar
+1. read the scope claim, existing how-true and how-false stories,
+   identified cruxes, and other context carefully.
+2. for each important crux, identify what evidence would help
+   resolve it.
+3. frame each as a specific, answerable question.
+4. prioritise questions that would discriminate between stories
+   over questions whose answers would merely be consistent with one.
 
-- **Discriminating power.** The best evidence questions are ones where different answers favor different stories. A question whose answer would be consistent with all stories is less useful.
-- **Specificity and answerability.** "Is X true?" is too vague. "What is the documented rate of X in context Y according to Z?" is answerable.
-- **Crux-connected.** Each question should clearly bear on an identified crux or disagreement between stories.
-- **Do not duplicate** questions already present in the workspace.
+## quality bar
+
+- **discriminating power.** the best evidence questions are ones
+  where different answers favor different stories.
+- **specificity and answerability.** "is X true?" is too vague.
+  "what is the documented rate of X in context Y according to Z?"
+  is answerable.
+- **crux-connected.** each question should clearly bear on an
+  identified crux or disagreement between stories.
+- **don't duplicate** questions already in the workspace.

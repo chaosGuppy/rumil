@@ -30,6 +30,14 @@ class BaseExchangeOut(BaseModel):
     max_tokens: int
     has_thinking: bool
     thinking_off: bool
+    # Full ``ModelConfig`` snapshot captured on
+    # ``call_llm_exchanges.request_kwargs`` at exchange-write time, or
+    # null on legacy rows that predate the request_kwargs migration.
+    # Carries thinking / effort / max_thinking_tokens / service_tier
+    # alongside the flat sampling fields above so the fork UI can show
+    # the full original condition without having to re-derive from
+    # current rules.
+    original_config: dict | None
 
 
 class ForkOut(BaseModel):
@@ -85,6 +93,7 @@ async def get_base(exchange_id: str, db: DB = Depends(_get_admin_db)) -> BaseExc
         max_tokens=base.max_tokens,
         has_thinking=base.has_thinking,
         thinking_off=base.thinking_off,
+        original_config=base.original_config.to_record_dict() if base.original_config else None,
     )
 
 

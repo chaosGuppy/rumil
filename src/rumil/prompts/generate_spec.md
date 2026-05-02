@@ -1,55 +1,129 @@
-# Generate Spec Call Instructions
+## the task
 
-## Your Task
+you're doing a **generate spec** call — the first step of a
+generator-refiner workflow that will produce an artefact (a plan,
+document, design, or other long-form object) in response to the
+artefact-task question.
 
-You are performing a **Generate Spec** call — the first step of a generator-refiner workflow that will produce an artefact (a plan, document, design, or other long-form object) in response to the artefact-task question.
+your job here is **not** to write the artefact. your job is to
+write a **spec**: a set of prescriptive rules the artefact will be
+held to. downstream, a separate call will generate the artefact
+from this spec alone — seeing no workspace, no context, no broader
+conversation. whatever the artefact should contain, avoid,
+emphasise, or structure: you must make it an explicit spec item
+here, or it will not appear.
 
-Your job here is **not** to write the artefact. Your job is to write a **spec**: a set of prescriptive rules the artefact will be held to. Downstream, a separate call will generate the artefact from this spec alone — seeing no workspace, no context, no broader conversation. Whatever the artefact should contain, avoid, emphasise, or structure: you must make it an explicit spec item here, or it will not appear.
+## a few moves
 
-## What to Produce
+before writing spec items, name the cached take. what would a sharp
+person reach for as the obvious shape of the artefact? write it
+down. now ask: does this shape actually serve the task as posed, or
+is it a generic-artefact-shaped template? the load-bearing spec
+items are the ones the generator wouldn't infer from the headline
+alone — the *workspace-specific* findings, positions, and pitfalls.
 
-Call `add_spec_item` once per rule. Each spec item has:
+attack each draft spec item by checking: would a generator with no
+context know what to do with this? if the rule is "be clear" or
+"discuss growth," it isn't a spec item — it's a placeholder. the
+generator needs *prescription*, not gesture.
+
+## what to produce
+
+call `add_spec_item` once per rule. each spec item has:
 
 - **headline** — a short, sharp label (10-15 words) naming the rule.
-- **content** — one precise prescriptive statement about the artefact.
+- **content** — one precise prescriptive statement about the
+  artefact.
 
-Examples of good spec items:
+examples of good spec items:
 
-- "The artefact should state that self-driving-car uptake in 2027 will be substantially higher than in 2026, and anchor everything else to that framing."
-- "Walk through why prior estimates underweighted regulatory easing as a cause of acceleration."
-- "Recommend option A over option B, citing cost as the primary reason; don't leave the decision open."
-- "Name the 2024 benchmark result (roughly 37% on the held-out set) when describing current capability, rather than hedging with 'substantial progress'."
-- "The plan should name, for each step, who owns it and the trigger that starts it."
-- "Structure the document as numbered steps, not prose paragraphs."
-- "Avoid the phrase 'best practices' anywhere in the artefact; name the specific practice."
-- "Write in clear prose for a professional audience."
+- "the artefact should state that self-driving-car uptake in 2027
+  will be substantially higher than in 2026, and anchor everything
+  else to that framing."
+- "walk through why prior estimates underweighted regulatory easing
+  as a cause of acceleration."
+- "recommend option A over option B, citing cost as the primary
+  reason; don't leave the decision open."
+- "name the 2024 benchmark result (roughly 37% on the held-out set)
+  when describing current capability, rather than hedging with
+  'substantial progress'."
+- "the plan should name, for each step, who owns it and the trigger
+  that starts it."
+- "structure the document as numbered steps, not prose paragraphs."
+- "avoid the phrase 'best practices' anywhere in the artefact; name
+  the specific practice."
+- "write in clear prose for a professional audience."
 
-Most spec items convey *content* — specific positions, findings, claims, or framings the artefact must carry. Structural and stylistic rules matter too, but they are usually the minority.
+most spec items convey *content* — specific positions, findings,
+claims, or framings the artefact must carry. structural and
+stylistic rules matter too, but they're usually the minority.
 
-## What Makes a Good Spec
+## what makes a good spec
 
-- **Usually one rule per item — but don't be precious about it.** Default to one rule per item; that keeps things easy to revise and supersede later. But if a rule is genuinely about a single coherent point that takes a few sentences to explain (with motivation, an example, or a nuance the generator needs to honour), one richer item beats two anaemic ones. If you find yourself writing a connecting "and" between unrelated points, that's two items.
-- **Prescriptive, not descriptive.** A spec item tells the artefact what to do — whether that's asserting something specific ("the artefact should state X"), committing to a position, structuring itself a particular way, or avoiding a failure mode. It is not a bare description of the world on its own; the artefact is where those descriptions land.
-- **Actionable by a generator with no context.** If a generator saw only your spec, would it know what shape the artefact takes? What specific things it should say? What style? What depth? What to leave out?
-- **Grounded in the workspace.** You have full workspace context. Use it to surface rules that a generator could not infer from the artefact-task headline alone — specific findings the artefact must carry, positions already reached, known pitfalls, project-specific conventions, constraints the user has previously voiced.
-- **Specific.** "Be clear" is not a spec item; "Prefer 1-2 sentence paragraphs; never nest lists more than two levels" is. Likewise, "Discuss growth" is not a spec item; "State that 2027 growth will be substantially higher than 2026, and give at least one concrete reason" is.
+- **usually one rule per item — but don't be precious about it.**
+  default to one rule per item; that keeps things easy to revise
+  and supersede later. but if a rule is genuinely about a single
+  coherent point that takes a few sentences to explain (with
+  motivation, an example, or a nuance the generator needs to
+  honour), one richer item beats two anaemic ones. if you find
+  yourself writing a connecting "and" between unrelated points,
+  that's two items.
+- **prescriptive, not descriptive.** a spec item tells the artefact
+  what to do — whether that's asserting something specific ("the
+  artefact should state X"), committing to a position, structuring
+  itself a particular way, or avoiding a failure mode. it's not a
+  bare description of the world on its own; the artefact is where
+  those descriptions land.
+- **actionable by a generator with no context.** if a generator saw
+  only your spec, would it know what shape the artefact takes? what
+  specific things it should say? what style? what depth? what to
+  leave out?
+- **grounded in the workspace.** you have full workspace context.
+  use it to surface rules that a generator could not infer from the
+  artefact-task headline alone — specific findings the artefact
+  must carry, positions already reached, known pitfalls,
+  project-specific conventions, constraints the user has
+  previously voiced.
+- **specific.** "be clear" is not a spec item; "prefer 1-2 sentence
+  paragraphs; never nest lists more than two levels" is. likewise,
+  "discuss growth" is not a spec item; "state that 2027 growth
+  will be substantially higher than 2026, and give at least one
+  concrete reason" is.
 
-## Coverage
+## coverage
 
-Aim for a spec rich enough that, handed the spec alone, a capable generator could produce a faithful first draft. This typically means covering:
+aim for a spec rich enough that, handed the spec alone, a capable
+generator could produce a faithful first draft. this typically
+means covering:
 
-- **Substantive content** — what specific claims, positions, findings, or recommendations must the artefact convey? What framing should it commit to? What should it explicitly *not* say?
-- **Shape and structure** — what kind of artefact is this, what sections or components must it have?
-- **Style and tone** — how should it read, what voice, what register?
-- **Anchors to the request** — what specific parts of the original request the artefact must directly serve?
-- **Known pitfalls** — failure modes the workspace suggests are worth explicitly guarding against.
+- **substantive content** — what specific claims, positions,
+  findings, or recommendations must the artefact convey? what
+  framing should it commit to? what should it explicitly *not* say?
+- **shape and structure** — what kind of artefact is this, what
+  sections or components must it have?
+- **style and tone** — how should it read, what voice, what
+  register?
+- **anchors to the request** — what specific parts of the original
+  request the artefact must directly serve?
+- **known pitfalls** — failure modes the workspace suggests are
+  worth explicitly guarding against.
 
-Err on the side of more spec items in cases where there's content in the workspace that you think should make it into the artefact (but it's okay if some content doesn't make it in!). The instance writing the artefact will not have access to the workspace.
+err on the side of more spec items in cases where there's content
+in the workspace that you think should make it into the artefact
+(but it's okay if some content doesn't make it in!). the instance
+writing the artefact will not have access to the workspace.
 
-That said, keep the spec to a manageable size. **Aim for roughly 10–20 items.** A spec with 40+ items may be a problem — usually a sign of either over-decomposing one rule into many narrow ones, or speculating about content the workspace doesn't really push for. If you're heading past that, prefer combining related items into single richer ones, and drop items that aren't load-bearing.
+that said, keep the spec to a manageable size. **aim for roughly
+10-20 items.** a spec with 40+ items is usually a sign of either
+over-decomposing one rule into many narrow ones, or speculating
+about content the workspace doesn't really push for. if you're
+heading past that, prefer combining related items into single
+richer ones, and drop items that aren't load-bearing.
 
-## Not Your Job
+## not your job
 
-- You are **not** writing the artefact itself.
-- You are **not** creating claims, questions, or judgements. Only spec items via `add_spec_item`.
-- You are **not** required to justify each spec item — the item's `content` field is the rule; keep it tight.
+- you are **not** writing the artefact itself.
+- you are **not** creating claims, questions, or judgements. only
+  spec items via `add_spec_item`.
+- you are **not** required to justify each spec item — the item's
+  `content` field is the rule; keep it tight.

@@ -4,11 +4,14 @@ These call the real LLM (Haiku in test mode) to verify the loop
 works end-to-end without coupling to Anthropic response internals.
 """
 
+from unittest.mock import AsyncMock
+
+import anthropic.types
 import pytest
 from pydantic import BaseModel, Field
 
 from rumil.calls.common import run_agent_loop
-from rumil.llm import Tool, structured_call, text_call
+from rumil.llm import APIResponse, Tool, structured_call, text_call
 from rumil.moves.base import MoveState
 
 
@@ -122,6 +125,90 @@ async def test_max_rounds_limits_tool_calls(tmp_db, scout_call):
     )
     # max_rounds=2 means at most 3 rounds (0, 1, 2), so tool calls are bounded
     assert len(call_count) <= 4
+
+
+async def test_end_turn_with_tool_uses_still_executes_them(tmp_db, scout_call, mocker, caplog):
+    """If the API returns stop_reason=end_turn together with tool_use blocks
+    (which extended-thinking Opus 4.7 has been observed to do), the agent loop
+    must still execute the tool calls rather than dropping them on the floor."""
+    add_calls: list[dict] = []
+
+    async def add_recording(inp: dict) -> str:
+        add_calls.append(inp)
+        return str(inp["a"] + inp["b"])
+
+    add_tool = Tool(
+        name="add",
+        description="Add two numbers.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer"},
+                "b": {"type": "integer"},
+            },
+            "required": ["a", "b"],
+        },
+        fn=add_recording,
+    )
+
+    end_turn_with_tool = APIResponse(
+        message=anthropic.types.Message(
+            id="msg_round0",
+            type="message",
+            role="assistant",
+            content=[
+                anthropic.types.TextBlock(type="text", text="Calling add."),
+                anthropic.types.ToolUseBlock(
+                    type="tool_use",
+                    id="toolu_01",
+                    name="add",
+                    input={"a": 3, "b": 7},
+                ),
+            ],
+            model="claude-opus-4-7",
+            stop_reason="end_turn",
+            usage=anthropic.types.Usage(input_tokens=10, output_tokens=5),
+        ),
+        duration_ms=1,
+    )
+    end_turn_no_tool = APIResponse(
+        message=anthropic.types.Message(
+            id="msg_round1",
+            type="message",
+            role="assistant",
+            content=[anthropic.types.TextBlock(type="text", text="Done.")],
+            model="claude-opus-4-7",
+            stop_reason="end_turn",
+            usage=anthropic.types.Usage(input_tokens=12, output_tokens=2),
+        ),
+        duration_ms=1,
+    )
+    mock_api = AsyncMock(side_effect=[end_turn_with_tool, end_turn_no_tool])
+    mocker.patch("rumil.calls.common.call_anthropic_api", mock_api)
+    mocker.patch("rumil.settings.Settings.require_anthropic_key", return_value="fake")
+
+    state = MoveState(scout_call, tmp_db)
+    with caplog.at_level("WARNING", logger="rumil.calls.common"):
+        result = await run_agent_loop(
+            "You are a calculator.",
+            "Add 3 and 7.",
+            tools=[add_tool],
+            call_id=scout_call.id,
+            db=tmp_db,
+            state=state,
+            max_rounds=3,
+        )
+
+    assert add_calls == [{"a": 3, "b": 7}], (
+        "tool_use must be executed even when stop_reason is end_turn"
+    )
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].name == "add"
+    assert result.tool_calls[0].result == "10"
+    assert any(
+        "stop_reason=end_turn" in rec.message and "pending tool call" in rec.message
+        for rec in caplog.records
+    ), "expected a warning when end_turn arrives with pending tool calls"
 
 
 @pytest.mark.llm

@@ -121,8 +121,6 @@ _WORKFLOW_PHASH_KEYS = (
     "read_prompt_hash",
     "reflect_prompt_hash",
     "verdict_prompt_hash",
-    "shell_hash",
-    "preamble_hash",
     "dimension_body_hash",
     "reader_model",
     "reflector_model",
@@ -132,9 +130,9 @@ _WORKFLOW_PHASH_KEYS = (
 
 def _workflow_phash(workflow: dict) -> str | None:
     """Hash of the workflow-level fields that distinguish variants of the
-    same workflow kind sharing the same task/rubric prompt — read /
-    reflect / verdict prompt hashes for reflective_judge, shell /
-    preamble hashes and per-stage model overrides for orch variants.
+    same workflow kind sharing the same task/rubric prompt — today,
+    reflective_judge's per-stage prompt hashes, dimension body hash,
+    and per-stage model overrides.
 
     Returned as an 8-char hex projection so it slots into the column
     header as a single short token rather than 3+ separate hashes.

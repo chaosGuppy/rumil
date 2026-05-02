@@ -93,10 +93,12 @@ async def run_versus(
     ``model_config`` (optional) pins thinking / effort / max_thinking_tokens
     for the closing call AND is forwarded into ``workflow.run`` so
     artifact-producing workflows (e.g. ``ReflectiveJudgeWorkflow``) can
-    apply it to their own ``text_call`` stages. Workflows that don't
-    plumb it through (e.g. budgeted orchestrators, ``DraftAndEditWorkflow``)
-    accept-and-ignore — sampling there falls back to rumil's per-model
-    defaults.
+    apply it to their own ``text_call`` stages. Non-artifact budgeted
+    orchestrators ignore it on the workflow side (the closer is the
+    consumer). ``DraftAndEditWorkflow`` is artifact-producing but does
+    not yet thread ``model_config`` through its drafter/critic/editor
+    sites; it raises ``NotImplementedError`` rather than silently
+    dropping the override.
     """
     # rumil_model_override only accepts bare anthropic ids
     # (claude-{opus,sonnet,haiku}-...). versus's completion model

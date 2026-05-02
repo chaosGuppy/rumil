@@ -126,10 +126,11 @@ class _BudgetedOrchWorkflow:
         *,
         model_config: ModelConfig | None = None,
     ) -> None:
-        # Budgeted orchestrators pick up sampling/thinking from rumil's
-        # own per-call defaults; ``model_config`` is accepted for
-        # protocol parity with artifact workflows but not currently
-        # threaded through the orch's nested call surface.
+        # Budgeted orchestrators are non-artifact workflows: their final
+        # text comes from the closer call in run_versus, which consumes
+        # ``model_config`` directly. The orch's nested calls use rumil's
+        # per-call defaults — ``model_config`` is intentionally not
+        # threaded through this surface.
         del model_config
         orch = self.orch_cls(db=db, broadcaster=broadcaster, budget_cap=self.budget)
         await orch.run(question_id)

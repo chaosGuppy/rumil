@@ -58,6 +58,7 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from rumil.calls.common import mark_call_completed
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, text_call
 from rumil.model_config import ModelConfig
@@ -268,8 +269,6 @@ class ReflectiveJudgeWorkflow:
             },
         )
         await db.update_call_status(call.id, CallStatus.RUNNING)
-        from rumil.calls.common import mark_call_completed
-
         trace = CallTrace(call.id, db, broadcaster=broadcaster)
         trace_token = set_trace(trace)
         try:

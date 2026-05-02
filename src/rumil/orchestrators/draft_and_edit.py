@@ -320,12 +320,12 @@ class DraftAndEditWorkflow:
         *,
         model_config: ModelConfig | None = None,
     ) -> None:
-        # Accepted for protocol parity with ReflectiveJudgeWorkflow but
-        # not currently threaded into the drafter/critic/editor text_call
-        # sites — those use rumil's per-model defaults. If a caller needs
-        # thinking/effort overrides for d&e, plumb model_config through
-        # _run_loop / _draft_round / _critique_round / _edit_round.
-        del model_config
+        if model_config is not None:
+            raise NotImplementedError(
+                "DraftAndEditWorkflow does not yet thread model_config into "
+                "the drafter/critic/editor text_call sites. Plumb it through "
+                "_run_loop / _draft / _critique_round / _edit before passing."
+            )
         question = await db.get_page(question_id)
         if question is None:
             raise RuntimeError(f"DraftAndEditWorkflow: question {question_id} missing")

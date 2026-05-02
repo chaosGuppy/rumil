@@ -1046,6 +1046,12 @@ async def text_call(
                 "Google branch; only the Anthropic path supports an explicit "
                 "max_tokens override."
             )
+        if model_config is not None:
+            raise NotImplementedError(
+                "text_call(model_config=...) is not yet plumbed through the "
+                "Google branch; only the Anthropic path applies model_config "
+                "overrides."
+            )
         google_resp = await call_google_api(
             effective_model,
             system_prompt,

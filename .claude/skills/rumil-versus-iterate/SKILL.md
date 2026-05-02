@@ -108,10 +108,17 @@ When firing fresh, run:
 2. **Orch completions** via `rumil-versus-complete`:
    ```
    uv run python versus/scripts/run_completions.py \
-       --workspace versus --staged \
-       --orch two_phase --orch draft_and_edit \
-       --essay <essay_id> --model <model_id> --budget <N>
+       --workspace versus \
+       --orch draft_and_edit \
+       --essay <essay_id> --model anthropic/claude-sonnet-4-6 --budget <N>
    ```
+   Two CLI gotchas vs the judge script:
+   - `run_completions.py` does NOT have `--staged`; only the judge
+     script does. Completion rows always land in baseline `versus_texts`.
+   - `run_completions.py` requires the full provider/model id
+     (`anthropic/claude-sonnet-4-6`), not the short alias (`sonnet`).
+     The judge script accepts both via `resolve_model_alias`; the
+     completion script does its own lookup against `config.yaml`.
 
 3. **Judgments** via `rumil-versus-judge` — both blind and orch:
    ```
@@ -161,6 +168,14 @@ How to dispatch:
    becomes its own rumil Run (and its own row in
    `versus_texts` / `versus_judgments`), so trace+fork analysis
    downstream can compare across variants directly.
+   - **Lock variants to the same pair** with `--contestants
+     <source_a>,<source_b>` (judge) or by passing the same `--essay`
+     and `--prefix-label` (completion). Without this, each variant
+     invocation picks the next pending pair the planner finds, which
+     means variants may land on different pairs and the per-variant
+     verdicts aren't directly comparable. Smoke-test confirmed: a
+     variant fan-out without `--contestants` produced 4 rows on 2
+     different pairs; only 3 of the 4 were on a comparable pair.
 4. When all variants complete, hand the run_ids to the Phase 2 trace
    investigators — one per variant — so the trace agents can compare
    what each variant did differently.

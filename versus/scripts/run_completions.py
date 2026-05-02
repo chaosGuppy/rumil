@@ -263,13 +263,6 @@ def main() -> None:
             print(f"[essay] {missing_id}: loaded from cache (off live feed)")
             essays.append(cached)
         essays = [e for e in essays if e.id in keep]
-    if args.model:
-        keep_models = set(args.model)
-        cfg.completion.models = [m for m in cfg.completion.models if m.id in keep_models]
-        if not cfg.completion.models:
-            print(f"[err] no models matched --model {args.model}; check config.yaml")
-            sys.exit(1)
-
     target = "prod" if args.prod else "local"
 
     if args.orch is not None:
@@ -321,6 +314,13 @@ def main() -> None:
                 )
             )
         return
+
+    if args.model:
+        keep_models = set(args.model)
+        cfg.completion.models = [m for m in cfg.completion.models if m.id in keep_models]
+        if not cfg.completion.models:
+            print(f"[err] no models matched --model {args.model}; check config.yaml")
+            sys.exit(1)
 
     for prefix_cfg in prefix_cfgs:
         print(f"[prefix] using variant {prefix_cfg.id!r} (db={target})")

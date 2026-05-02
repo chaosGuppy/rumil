@@ -110,10 +110,12 @@ When firing fresh, run:
        --essay <essay_id> \
        --model <model_id> [--model <model2_id>...]
    ```
-   `run_completions.py` requires the full provider/model id
-   (`anthropic/claude-sonnet-4-6`), not the short alias (`sonnet`).
-   The judge script accepts both via `resolve_model_alias`; the
-   completion script does its own lookup against `config.yaml`.
+   With `--orch`, `run_completions.py` accepts short rumil aliases
+   (`sonnet` / `opus` / `haiku`) just like the judge script. For
+   single-shot completions (no `--orch`), `--model` must match a
+   `cfg.completion.models[].id` verbatim
+   (`anthropic/claude-sonnet-4-6`, etc.) — that branch filters on
+   config ids rather than resolving aliases.
 
 2. **Blind judgments** via `rumil-versus-judge` (cheap, ground-truth
    reference for the reflective-judge variants in Phase 0.5):

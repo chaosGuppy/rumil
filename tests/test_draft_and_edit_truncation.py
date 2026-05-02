@@ -26,10 +26,12 @@ _VERSUS_SRC = Path(__file__).resolve().parents[1] / "versus" / "src"
 if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
+from rumil.model_config import ModelConfig  # noqa: E402
 from rumil.orchestrators.draft_and_edit import (  # noqa: E402
     DraftAndEditWorkflow,
     _is_truncated_continuation,
 )
+from rumil.settings import override_settings  # noqa: E402
 
 # Truncation detector — pure function, no mocks needed.
 
@@ -70,7 +72,6 @@ def test_is_truncated_empty_string_returns_false():
 @pytest.fixture(autouse=True)
 def _model_override():
     """`_resolve_model` requires a per-role override or settings.rumil_model_override."""
-    from rumil.settings import override_settings
 
     with override_settings(rumil_model_override="claude-sonnet-4-6"):
         yield
@@ -227,7 +228,6 @@ async def test_editor_caps_thinking_when_model_config_supplied(mocker):
     even when adaptive thinking maxes out, so the editor can't return
     0-char responses (the failure mode that bit aiep × n_critics_3
     stability re-fires)."""
-    from rumil.model_config import ModelConfig
 
     fake_text_call = mocker.patch(
         "rumil.orchestrators.draft_and_edit.text_call",

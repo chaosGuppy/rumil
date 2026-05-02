@@ -103,9 +103,8 @@ def test_closer_prompts_returns_system_and_user_strings():
     system, user = task.closer_prompts(rendered, prefix)
     assert isinstance(system, str)
     assert isinstance(user, str)
-    assert system  # non-empty
+    assert system
     assert rendered in user
-    # Length target propagates from the input.
     assert "4000" in user
 
 
@@ -114,6 +113,17 @@ def test_closer_prompts_user_includes_continuation_directive():
     _, user = task.closer_prompts("rendered", _make_prefix())
     assert "<continuation>" in user
     assert "</continuation>" in user
+
+
+def test_closer_prompts_user_includes_prefix_text():
+    """The closer needs the essay opening to write a continuation. After
+    Gap 7 the prefix lives on a linked Source page, not the Question
+    content, so closer_prompts must inject inputs.prefix_text directly.
+    """
+    task = CompleteEssayTask()
+    prefix = _make_prefix(prefix_text="MY_DISTINCTIVE_PREFIX_SENTINEL")
+    _, user = task.closer_prompts("rendered", prefix)
+    assert "MY_DISTINCTIVE_PREFIX_SENTINEL" in user
 
 
 @pytest.mark.parametrize(
@@ -145,39 +155,128 @@ def test_extract_artifact_strips_continuation_tags(text, expected_clean):
     assert artifact.raw_response == text
 
 
-@pytest.mark.asyncio
-async def test_create_question_persists_question_page(mocker):
+def _make_db_mock():
     db = MagicMock()
     db.project_id = "proj-1"
     db.run_id = "run-1"
     db.save_page = AsyncMock()
+    db.save_link = AsyncMock()
+    return db
+
+
+def _saved_pages_by_type(db) -> dict:
+    """Return saved pages grouped by ``page_type`` for inspection."""
+    from rumil.models import PageType  # local import to avoid top-level coupling
+
+    out: dict[PageType, list] = {}
+    for call in db.save_page.call_args_list:
+        page = call.args[0]
+        out.setdefault(page.page_type, []).append(page)
+    return out
+
+
+@pytest.mark.asyncio
+async def test_create_question_persists_question_page():
+    from rumil.models import PageType
+
+    db = _make_db_mock()
     task = CompleteEssayTask()
     prefix = _make_prefix()
     qid = await task.create_question(db, prefix)
-    db.save_page.assert_called_once()
-    saved_page = db.save_page.call_args.args[0]
-    assert qid == saved_page.id
-    # Headline is source-free — no leak of essay_id namespace.
-    assert "forethought" not in saved_page.headline
-    # But the prefix_hash[:8] tag is present for audit.
-    assert prefix.prefix_hash[:8] in saved_page.headline
-    # The essay opening lives in the page body.
-    assert prefix.prefix_text in saved_page.content
+    saved = _saved_pages_by_type(db)
+    assert PageType.QUESTION in saved
+    question = saved[PageType.QUESTION][0]
+    assert qid == question.id
+    assert "forethought" not in question.headline
+    assert prefix.prefix_hash[:8] in question.headline
 
 
 @pytest.mark.asyncio
-async def test_create_question_extra_excludes_essay_id(mocker):
-    db = MagicMock()
-    db.project_id = "proj-1"
-    db.run_id = "run-1"
-    db.save_page = AsyncMock()
+async def test_create_question_extra_excludes_essay_id():
+    from rumil.models import PageType
+
+    db = _make_db_mock()
     await CompleteEssayTask().create_question(db, _make_prefix())
-    saved_page = db.save_page.call_args.args[0]
-    # essay_id leaks the source via <source>__<slug> naming.
-    assert "essay_id" not in saved_page.extra
-    # task tag is present so future filterability works.
-    assert saved_page.extra.get("task") == "complete_essay"
-    assert saved_page.extra.get("source") == "versus"
+    saved = _saved_pages_by_type(db)
+    question = saved[PageType.QUESTION][0]
+    assert "essay_id" not in question.extra
+    assert question.extra.get("task") == "complete_essay"
+    assert question.extra.get("source") == "versus"
+
+
+@pytest.mark.asyncio
+async def test_create_question_creates_source_page_with_full_prefix():
+    """After Gap 7 the essay opening lives on a linked Source page so
+    orch sub-calls find it via embedding-based context retrieval, not
+    via load_page recovery on the question.
+    """
+    from rumil.models import PageType
+
+    db = _make_db_mock()
+    prefix = _make_prefix(prefix_text="THE FULL ESSAY OPENING SENTINEL " * 20)
+    await CompleteEssayTask().create_question(db, prefix)
+    saved = _saved_pages_by_type(db)
+    assert PageType.SOURCE in saved
+    source = saved[PageType.SOURCE][0]
+    assert source.content == prefix.prefix_text
+
+
+@pytest.mark.asyncio
+async def test_create_question_question_content_omits_prefix_text():
+    """Regression for Gap 7. The Question's content is framing only —
+    the essay opening lives on the linked Source page.
+    """
+    from rumil.models import PageType
+
+    db = _make_db_mock()
+    prefix = _make_prefix(prefix_text="THE_DISTINCTIVE_ESSAY_OPENING_SENTINEL")
+    await CompleteEssayTask().create_question(db, prefix)
+    saved = _saved_pages_by_type(db)
+    question = saved[PageType.QUESTION][0]
+    assert prefix.prefix_text not in question.content
+
+
+@pytest.mark.asyncio
+async def test_create_question_links_source_to_question():
+    from rumil.models import LinkType, PageType
+
+    db = _make_db_mock()
+    qid = await CompleteEssayTask().create_question(db, _make_prefix())
+    saved = _saved_pages_by_type(db)
+    source = saved[PageType.SOURCE][0]
+    db.save_link.assert_called_once()
+    link = db.save_link.call_args.args[0]
+    assert link.from_page_id == source.id
+    assert link.to_page_id == qid
+    assert link.link_type == LinkType.RELATED
+
+
+@pytest.mark.asyncio
+async def test_create_question_source_headline_is_source_blind():
+    """Source page's headline must not leak the essay_id namespace —
+    same blindness rule as the Question headline.
+    """
+    from rumil.models import PageType
+
+    db = _make_db_mock()
+    prefix = _make_prefix(essay_id="forethought__some-leaky-slug")
+    await CompleteEssayTask().create_question(db, prefix)
+    saved = _saved_pages_by_type(db)
+    source = saved[PageType.SOURCE][0]
+    assert "forethought" not in source.headline
+    assert "some-leaky-slug" not in source.headline
+    assert prefix.prefix_hash[:8] in source.headline
+
+
+@pytest.mark.asyncio
+async def test_create_question_source_extra_excludes_essay_id():
+    from rumil.models import PageType
+
+    db = _make_db_mock()
+    await CompleteEssayTask().create_question(db, _make_prefix())
+    saved = _saved_pages_by_type(db)
+    source = saved[PageType.SOURCE][0]
+    assert "essay_id" not in source.extra
 
 
 @pytest.mark.asyncio

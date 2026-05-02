@@ -40,7 +40,7 @@ from rumil.budget import _consume_budget
 from rumil.calls.common import mark_call_completed
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, text_call
-from rumil.models import CallStatus, CallType
+from rumil.models import CallStatus, CallType, LinkType, PageType
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
@@ -119,34 +119,35 @@ def _extract_continuation(text: str) -> str:
     return text.strip()
 
 
-_PREFIX_OPEN = "## Essay opening\n\n"
-_PREFIX_CLOSE = "\n\n## Goal"
+async def _load_prefix_from_linked_source(db: DB, question_id: str) -> str:
+    """Pull the essay opening from the Source page linked to the Question.
 
-
-def _extract_prefix_from_question_content(content: str) -> str:
-    """Pull the essay opening text out of the Question body.
-
-    :class:`versus.tasks.complete_essay._format_prefix_content` writes
-    the prefix between an ``## Essay opening`` header and a ``## Goal``
-    footer. Round-trip the same markers here so the workflow can hand
-    the bare prefix to its drafter / critic / editor without leaking
-    the surrounding framing copy.
+    :class:`versus.tasks.complete_essay.CompleteEssayTask.create_question`
+    writes the prefix to a separate Source page and links it to the
+    Question via ``LinkType.RELATED`` (source -> question). We round-trip
+    the same shape here so the workflow can hand the bare prefix to its
+    drafter / critic / editor.
     """
-    start = content.find(_PREFIX_OPEN)
-    if start == -1:
+    incoming = await db.get_links_to(question_id)
+    source_link_ids = [link.from_page_id for link in incoming if link.link_type == LinkType.RELATED]
+    if not source_link_ids:
         raise ValueError(
-            "DraftAndEditWorkflow: question content has no '## Essay opening' "
-            "section; was the question created by CompleteEssayTask?"
+            "DraftAndEditWorkflow: no RELATED link into the question; "
+            "was the question created by CompleteEssayTask?"
         )
-    body_start = start + len(_PREFIX_OPEN)
-    end = content.find(_PREFIX_CLOSE, body_start)
-    if end == -1:
+    pages = await db.get_pages_by_ids(source_link_ids)
+    sources = [p for p in pages.values() if p.page_type == PageType.SOURCE]
+    if not sources:
         raise ValueError(
-            "DraftAndEditWorkflow: question content has no '## Goal' "
-            "section after the prefix; was the question created by "
-            "CompleteEssayTask?"
+            "DraftAndEditWorkflow: no linked Source page on the question; "
+            "was the question created by CompleteEssayTask?"
         )
-    return content[body_start:end]
+    if len(sources) > 1:
+        raise ValueError(
+            "DraftAndEditWorkflow: multiple Source pages linked to the "
+            f"question (found {len(sources)}); ambiguous prefix lookup."
+        )
+    return sources[0].content
 
 
 _TARGET_LENGTH_RE = re.compile(r"Approximately\s+(\d+)\s+characters\.")
@@ -155,7 +156,7 @@ _TARGET_LENGTH_RE = re.compile(r"Approximately\s+(\d+)\s+characters\.")
 def _extract_target_length_chars(content: str) -> int | None:
     """Pull the target-length hint out of the Question body.
 
-    :class:`versus.tasks.complete_essay._format_prefix_content` writes
+    :class:`versus.tasks.complete_essay._format_prefix_framing` writes
     ``Approximately {N} characters.`` under a ``## Target length``
     header. We surface it to the drafter / editor so they can aim at
     the same length single-shot completions target.
@@ -232,7 +233,7 @@ class DraftAndEditWorkflow:
         question = await db.get_page(question_id)
         if question is None:
             raise RuntimeError(f"DraftAndEditWorkflow: question {question_id} missing")
-        prefix = _extract_prefix_from_question_content(question.content)
+        prefix = await _load_prefix_from_linked_source(db, question_id)
         target_length = _extract_target_length_chars(question.content)
 
         call = await db.create_call(

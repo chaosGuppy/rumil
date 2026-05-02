@@ -97,7 +97,14 @@ async def run_versus(
     ``call_anthropic_api`` too, but we don't currently override those —
     they pick up rumil's defaults for the model.
     """
-    with override_settings(rumil_model_override=model):
+    # rumil_model_override only accepts bare anthropic ids
+    # (claude-{opus,sonnet,haiku}-...). versus's completion model
+    # registry uses provider-namespaced ids ('anthropic/claude-...');
+    # strip here so the orch path can pass either form. Keeps the
+    # namespaced form in make_versus_config / source_id; only the
+    # rumil-settings boundary needs the bare form.
+    override_target = model.split("/", 1)[1] if "/" in model else model
+    with override_settings(rumil_model_override=override_target):
         question_id = await task.create_question(db, inputs)
         await workflow.setup(db, question_id)
         await workflow.run(db, question_id, broadcaster)

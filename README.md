@@ -86,9 +86,14 @@ uv run python main.py "Your question here" --budget 20 --summary
 # Generate a multi-section research report
 uv run python main.py --report QUESTION_ID
 
-# Scan a completed investigation for the most important and surprising
-# findings. Outputs a ranked list of memo candidates (title, content
-# sketch, relevant page IDs, epistemic signals) as JSON to
+# End-to-end memo pipeline: scan → draft → publish a SUMMARY page that
+# indexes each drafted memo and links to it from the root question.
+# Per-memo markdown files still land under pages/memos/{root_short}/.
+uv run python main.py --memos QUESTION_ID
+
+# Lower-level: scan a completed investigation for the most important and
+# surprising findings. Outputs a ranked list of memo candidates (title,
+# content sketch, relevant page IDs, epistemic signals) as JSON to
 # pages/memo-scans/, ready for a downstream memo drafter.
 uv run python main.py --scan-memos QUESTION_ID
 

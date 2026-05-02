@@ -326,6 +326,35 @@ def is_refusal(row: dict) -> bool:
     return not text or len(text.split()) < _MIN_RESPONSE_WORDS
 
 
+def is_truncated(row: dict) -> bool:
+    """True if this completion hit the provider's max_tokens cap.
+
+    A truncated continuation ends mid-clause and gives the judge a
+    structurally-incomplete artifact — picking it as a contestant
+    confounds prose-quality signal with output-length signal. Skip
+    such rows when a non-truncated alternative exists for the same
+    (essay, prefix, source).
+
+    Anthropic-direct surfaces truncation as ``response.stop_reason ==
+    "max_tokens"``; OpenAI-shape providers (incl. OpenRouter) use
+    ``choices[0].finish_reason == "length"`` and some report
+    ``native_finish_reason == "MAX_TOKENS"``.
+    """
+    if row.get("kind") == "human":
+        return False
+    rr = row.get("response") or {}
+    if rr.get("stop_reason") == "max_tokens":
+        return True
+    choices = rr.get("choices") or []
+    if choices:
+        ch = choices[0] or {}
+        if ch.get("finish_reason") == "length":
+            return True
+        if (ch.get("native_finish_reason") or "").upper() == "MAX_TOKENS":
+            return True
+    return False
+
+
 def _prefix_text_from_request(request: dict | None) -> str:
     """Recover the prefix text that was shown in a completion's request body.
 
@@ -368,12 +397,19 @@ def load_sources_by_essay(
     last-row-wins by created_at — pair enumeration uses one canonical
     text per source. Re-running the judge against a *specific* replicate
     is a separate flow that doesn't go through this helper.
+
+    A truncated row (provider hit max_tokens) is only used as the
+    canonical text if no non-truncated row exists for the same
+    (essay, prefix, source) — a complete continuation is preferred
+    over a truncated one regardless of created_at order, since the
+    judge's signal is confounded by mid-clause endings.
     """
     if client is None:
         client = versus_db.get_client()
     groups: dict[tuple[str, str], dict[str, Source]] = {}
     prefix_text_by_group: dict[tuple[str, str], str] = {}
     skipped: list[tuple[str, str]] = []
+    truncated_keys: set[tuple[str, str, str]] = set()
     for row in versus_db.iter_texts(client):
         prefix_hash = row.get("prefix_hash")
         if prefix_hash is None:
@@ -388,6 +424,16 @@ def load_sources_by_essay(
         if exclude_refusals and is_refusal(row):
             skipped.append((row["essay_id"], row["source_id"]))
             continue
+        source_key = (row["essay_id"], prefix_hash, row["source_id"])
+        row_truncated = is_truncated(row)
+        existing = groups.get(k, {}).get(row["source_id"])
+        if existing is not None and source_key not in truncated_keys and row_truncated:
+            # Existing canonical is non-truncated; don't overwrite with truncated.
+            continue
+        if row_truncated:
+            truncated_keys.add(source_key)
+        else:
+            truncated_keys.discard(source_key)
         groups.setdefault(k, {})[row["source_id"]] = Source(
             source_id=row["source_id"],
             text=row["text"],

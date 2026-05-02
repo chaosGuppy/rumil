@@ -68,6 +68,24 @@ class _PendingCompletion:
     base_config: dict[str, Any]
 
 
+def short_model(model: str) -> str:
+    """Compact display form of a model id for run-name labeling.
+
+    Reverses :data:`rumil.settings.RUMIL_MODEL_ALIASES` so e.g.
+    ``"claude-sonnet-4-6"`` renders as ``"sonnet"``. Falls back to the
+    last ``/``-separated segment for namespaced ids
+    (``"anthropic/claude-..."``), and to the bare id otherwise. Used by
+    run-name builders (versus orch completions and orch judging) to
+    distinguish runs at a glance — see Gap 2 in
+    ``planning/orch-experiment-gaps.md``.
+    """
+    from rumil.settings import RUMIL_MODEL_ALIASES
+
+    reverse = {v: k for k, v in RUMIL_MODEL_ALIASES.items()}
+    stripped = model.split("/", 1)[1] if "/" in model else model
+    return reverse.get(stripped, model.rsplit("/", 1)[-1])
+
+
 def build_source_id(workflow_name: str, model: str, config_hash: str) -> str:
     """Compose the canonical ``versus_texts.source_id`` for an orch row.
 
@@ -416,8 +434,19 @@ async def run_orch_completion(
                     prefix_text=pc.task.prefix_markdown,
                     target_length_chars=len(pc.task.remainder_markdown),
                 )
+                # Run-name template (Gap 2): include the differentiators
+                # that actually distinguish runs in the traces list —
+                # prefix variant, workflow, model alias, and budget. The
+                # old "{workspace}:{essay_id}" shape collided across
+                # prefix variants / workflows / models / budgets and
+                # made the traces list useless for picking out a
+                # specific run.
+                run_name = (
+                    f"versus-orch-completion:{workspace}:{pc.task.essay_id}"
+                    f"@{prefix_cfg.id}:{workflow_name}/{short_model(model)}/b{budget}"
+                )
                 await db.create_run(
-                    name=f"versus-rumil-orch-completion:{workspace}:{pc.task.essay_id}",
+                    name=run_name,
                     question_id=None,
                     config={
                         "origin": "versus",

@@ -210,3 +210,60 @@ async def test_render_for_closer_raises_when_question_missing(mocker):
     task = JudgePairTask(dimension="general_quality", dimension_body="x")
     with pytest.raises(RuntimeError, match="missing"):
         await task.render_for_closer(db, "q-missing")
+
+
+@pytest.mark.asyncio
+async def test_render_for_closer_excludes_view_from_format_page_links(mocker):
+    """Gap 9 regression: when a View exists, render_for_closer must pass
+    its id to format_page's exclude_page_ids so the view isn't double-
+    rendered (once via format_page's "Current take on this question"
+    linked rendering and again via the dedicated render_view call below).
+    """
+    fake_question = MagicMock()
+    fake_view = MagicMock()
+    fake_view.id = "view-1"
+    fake_items = [MagicMock(), MagicMock()]
+    db = MagicMock()
+    db.get_page = AsyncMock(return_value=fake_question)
+    db.get_view_for_question = AsyncMock(return_value=fake_view)
+    db.get_view_items = AsyncMock(return_value=fake_items)
+    fmt = mocker.patch(
+        "versus.tasks.judge_pair.format_page",
+        new=AsyncMock(return_value="QUESTION_BODY"),
+    )
+    mocker.patch(
+        "versus.tasks.judge_pair.render_view",
+        new=AsyncMock(return_value="VIEW_BODY"),
+    )
+    task = JudgePairTask(dimension="general_quality", dimension_body="x")
+    await task.render_for_closer(db, "q-1")
+    fmt.assert_called_once()
+    assert fmt.call_args.kwargs["exclude_page_ids"] == {"view-1"}
+
+
+@pytest.mark.asyncio
+async def test_render_for_closer_user_prompt_has_no_doubled_view_prefix():
+    """Gap 9 regression: the closer's user_prompt must not contain
+    "View: View:" — the doubled prefix that previously appeared because
+    render_view emits "## View: {view.headline}" and view headlines
+    themselves start with "View: " (set in calls/create_view.py).
+    """
+    from rumil.context import render_view
+    from rumil.models import Page, PageLayer, PageType, Workspace
+
+    view = Page(
+        page_type=PageType.VIEW,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        headline="View: Versus judgment: general_quality [0737f74a]",
+        content="The central reconstruction here ...",
+    )
+    rendered = await render_view(view, [], min_importance=5)
+
+    # Render the closer user prompt the same way the task does.
+    from versus.tasks.judge_pair import _CLOSER_USER_PROMPT_TEMPLATE
+
+    user_prompt = _CLOSER_USER_PROMPT_TEMPLATE.format(rendered=rendered)
+    assert "View: View:" not in user_prompt
+    # Sanity: the canonical header is still there once.
+    assert "## View: Versus judgment: general_quality [0737f74a]" in user_prompt

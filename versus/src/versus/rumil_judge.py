@@ -292,8 +292,14 @@ async def run_orch(
     from rumil.database import DB
     from rumil.settings import get_settings
     from rumil.versus_bridge import PairContext, judge_pair_orch
+    from versus.rumil_completion import short_model
 
     settings = get_settings()
+    # Gap 2 run-name disambiguation: when no prefix variant is configured,
+    # PrefixCfg.id defaults to "default" — surface that in the run name
+    # so the @prefix_label segment is always present and parses cleanly,
+    # rather than being absent for the default case.
+    prefix_label = prefix_cfg.id if prefix_cfg is not None else "default"
     tasks_spec: list[tuple[str, bool]] = [(d, False) for d in dimensions]
     if not tasks_spec:
         print("[info] no dimensions specified for orch variant; nothing to do")
@@ -426,8 +432,23 @@ async def run_orch(
                 # runs.config is surfaced via the traces UI but is NOT
                 # fed to the agent during the run. Safe to embed
                 # per-pair metadata for forensic traceability.
+                # Run-name template (Gap 2): include the differentiators
+                # that actually distinguish runs in the traces list —
+                # prefix variant, workflow, model alias, budget, and
+                # dimension. The old "{workspace}:{essay_id}" shape
+                # produced identical labels across every variant. The
+                # judge path is currently locked to TwoPhase (Gap 14
+                # tracks lifting that), so the workflow segment is
+                # hard-coded here for now and will become a real arg
+                # when the judge-side workflow CLI lands.
+                workflow_name_judge = "two_phase"
+                run_name = (
+                    f"versus-orch-judge:{workspace}:{pair.essay_id}"
+                    f"@{prefix_label}:{workflow_name_judge}/"
+                    f"{short_model(model)}/b{budget}/{task_name}"
+                )
                 await db.create_run(
-                    name=f"versus-rumil-orch:{workspace}:{pair.essay_id}",
+                    name=run_name,
                     question_id=None,
                     config={
                         "origin": "versus",

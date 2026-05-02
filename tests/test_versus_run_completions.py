@@ -383,3 +383,229 @@ async def test_run_orch_completion_resolves_workspace_or_exits(mocker):
             budget=4,
             prefix_cfg=prefix_cfg,
         )
+
+
+def test_short_model_known_alias_reverses_to_short_form():
+    assert rumil_completion.short_model("claude-opus-4-7") == "opus"
+    assert rumil_completion.short_model("claude-sonnet-4-6") == "sonnet"
+    assert rumil_completion.short_model("claude-haiku-4-5-20251001") == "haiku"
+
+
+def test_short_model_namespaced_id_strips_provider_prefix():
+    """OpenRouter-style ``provider/model`` ids resolve to the alias when
+    the bare segment is registered, else fall back to the bare segment."""
+    assert rumil_completion.short_model("anthropic/claude-opus-4-7") == "opus"
+    assert rumil_completion.short_model("openai/gpt-5") == "gpt-5"
+
+
+def test_short_model_unknown_id_falls_back_to_bare():
+    assert rumil_completion.short_model("gpt-5") == "gpt-5"
+
+
+@pytest.mark.asyncio
+async def test_run_orch_completion_run_name_carries_differentiators(mocker):
+    """Gap 2 regression: the run name passed to ``db.create_run`` must
+    include workspace, essay_id, prefix label, workflow, model alias, and
+    budget so the traces list disambiguates runs at a glance.
+    """
+    cfg = MagicMock()
+    cfg.completion.length_tolerance = 0.1
+
+    from versus import config as versus_config
+
+    prefix_cfg = versus_config.PrefixCfg(id="no_headers", n_paragraphs=3, include_headers=False)
+
+    fake_essay = MagicMock()
+    fake_essay.id = "essay-1"
+
+    fake_prepared = MagicMock()
+    fake_prepared.essay_id = "essay-1"
+    fake_prepared.prefix_config_hash = "abc123def456ghi7"
+    fake_prepared.prefix_markdown = "Essay opening text"
+    fake_prepared.remainder_markdown = "x" * 2000
+    fake_prepared.target_words = 400
+    mocker.patch("versus.rumil_completion.prepare.prepare", return_value=fake_prepared)
+
+    fake_project = MagicMock()
+    fake_project.id = "project-uuid-12345678"
+    fake_project.name = "ws-display"
+
+    probe_db = MagicMock()
+    probe_db.list_projects = AsyncMock(return_value=[fake_project])
+    per_run_db = MagicMock()
+    per_run_db.create_run = AsyncMock()
+
+    create_mock = AsyncMock(side_effect=[probe_db, per_run_db])
+    mocker.patch("rumil.database.DB.create", new=create_mock)
+
+    mocker.patch(
+        "versus.versus_config.compute_workspace_state_hash",
+        new=AsyncMock(return_value="ws-state-hash"),
+    )
+    mocker.patch(
+        "versus.versus_config.compute_shared_code_fingerprint",
+        return_value={},
+    )
+    mocker.patch(
+        "versus.model_config.get_model_config",
+        return_value=MagicMock(to_record_dict=MagicMock(return_value={"temperature": 1.0})),
+    )
+    mocker.patch(
+        "versus.rumil_completion.versus_db.get_client",
+        return_value=MagicMock(),
+    )
+    mocker.patch(
+        "versus.rumil_completion.versus_db.iter_texts",
+        return_value=iter([]),
+    )
+    mocker.patch(
+        "versus.rumil_completion.versus_db.insert_text",
+    )
+    mocker.patch(
+        "versus.versus_config.make_versus_config",
+        return_value=({"workflow": "two_phase"}, "deadbeef0123abcd", "fake-judge-model"),
+    )
+
+    fake_result = MagicMock()
+    fake_result.artifact.text = "ARTIFACT TEXT"
+    fake_result.artifact.raw_response = "RAW"
+    fake_result.call_id = "call-1"
+    fake_result.question_id = "q-1"
+    fake_result.cost_usd = 0.01
+    fake_result.trace_url = "http://x/traces/1"
+    fake_result.status = "completed"
+    mocker.patch(
+        "rumil.versus_runner.run_versus",
+        new=AsyncMock(return_value=fake_result),
+    )
+
+    await rumil_completion.run_orch_completion(
+        cfg,
+        essays=[fake_essay],
+        workspace="ws-display",
+        workflow_name="two_phase",
+        model="claude-sonnet-4-6",
+        budget=7,
+        prefix_cfg=prefix_cfg,
+    )
+
+    per_run_db.create_run.assert_awaited_once()
+    kwargs = per_run_db.create_run.await_args.kwargs
+    name = kwargs["name"]
+    assert name.startswith("versus-orch-completion:")
+    assert "ws-display" in name
+    assert "essay-1" in name
+    assert "@no_headers" in name
+    assert "two_phase" in name
+    assert "/sonnet/" in name
+    assert "/b7" in name
+
+
+@pytest.mark.asyncio
+async def test_run_orch_judge_run_name_carries_differentiators(mocker):
+    """Gap 2 regression on the judge path: the run name must include
+    workspace, essay_id, prefix label, workflow, model alias, budget,
+    and dimension."""
+    from versus import config as versus_config
+    from versus import rumil_judge
+
+    cfg = MagicMock()
+    cfg.judging.include_human_as_contestant = True
+
+    prefix_cfg = versus_config.PrefixCfg(id="default", n_paragraphs=3, include_headers=True)
+
+    fake_project = MagicMock()
+    fake_project.id = "project-uuid-12345678"
+    fake_project.name = "ws-display"
+    probe_db = MagicMock()
+    probe_db.list_projects = AsyncMock(return_value=[fake_project])
+    per_run_db = MagicMock()
+    per_run_db.create_run = AsyncMock()
+    create_mock = AsyncMock(side_effect=[probe_db, per_run_db])
+    mocker.patch("rumil.database.DB.create", new=create_mock)
+
+    mocker.patch(
+        "versus.versus_config.compute_workspace_state_hash",
+        new=AsyncMock(return_value="ws-state-hash"),
+    )
+    mocker.patch("rumil.versus_bridge.compute_orch_closer_hash", return_value="closerhh")
+    mocker.patch("rumil.versus_bridge.compute_pair_surface_hash", return_value="pairsurf")
+    mocker.patch("rumil.versus_bridge.compute_prompt_hash", return_value="prompthh")
+    mocker.patch("rumil.versus_bridge.compute_tool_prompt_hash", return_value="toolhash")
+    mocker.patch("rumil.versus_bridge.get_rumil_dimension_body", return_value="dimbody")
+    mocker.patch(
+        "versus.model_config.get_judge_model_config",
+        return_value=MagicMock(to_record_dict=MagicMock(return_value={})),
+    )
+    mocker.patch(
+        "versus.versus_config.make_judge_config",
+        return_value=({"judge": "config"}, "ihash", "rumil:orch:m:d:c01"),
+    )
+
+    fake_pair = rumil_judge._PendingPair(
+        essay_id="essay-1",
+        prefix_hash="prefix-hash",
+        prefix_text="prefix",
+        source_a_id="human",
+        source_a_text="A",
+        source_a_text_id="ta",
+        source_b_id="orch:two_phase:m:cdeadbeef",
+        source_b_text="B",
+        source_b_text_id="tb",
+        display_first_id="human",
+        display_first_text="A",
+        display_second_id="orch:two_phase:m:cdeadbeef",
+        display_second_text="B",
+    )
+    fake_pj = rumil_judge._PendingJudgment(
+        pair=fake_pair,
+        task_name="general_quality",
+        is_versus_crit=False,
+        judge_model="rumil:orch:m:d:c01",
+        base_config={"judge": "config"},
+    )
+    mocker.patch(
+        "versus.rumil_judge._plan_rumil_pairs",
+        return_value=[fake_pj],
+    )
+    mocker.patch(
+        "versus.rumil_judge.versus_db.get_client",
+        return_value=MagicMock(),
+    )
+    mocker.patch(
+        "versus.rumil_judge.versus_db.insert_judgment",
+    )
+
+    fake_result = MagicMock()
+    fake_result.verdict = "A"
+    fake_result.preference_label = "A somewhat preferred"
+    fake_result.reasoning_text = "..."
+    fake_result.call_id = "c1"
+    fake_result.run_id = "r1"
+    fake_result.question_id = "q1"
+    fake_result.cost_usd = 0.05
+    fake_result.trace_url = "http://x/traces/r1"
+    mocker.patch(
+        "rumil.versus_bridge.judge_pair_orch",
+        new=AsyncMock(return_value=fake_result),
+    )
+
+    await rumil_judge.run_orch(
+        cfg,
+        workspace="ws-display",
+        model="claude-opus-4-7",
+        dimensions=("general_quality",),
+        budget=4,
+        prefix_cfg=prefix_cfg,
+    )
+
+    per_run_db.create_run.assert_awaited_once()
+    name = per_run_db.create_run.await_args.kwargs["name"]
+    assert name.startswith("versus-orch-judge:")
+    assert "ws-display" in name
+    assert "essay-1" in name
+    assert "@default" in name
+    assert "two_phase" in name
+    assert "/opus/" in name
+    assert "/b4/" in name
+    assert "general_quality" in name

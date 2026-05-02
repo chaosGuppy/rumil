@@ -453,8 +453,16 @@ async def render_view(
 
     Whenever items are rendered programmatically, importance-5 items are
     always included alongside lower-tier ones.
+
+    The header is built as ``## View: {headline}``. View headlines are
+    constructed with a ``"View: "`` prefix at creation time (see
+    ``calls/create_view.py``), so we strip a leading ``"View: "`` here
+    to avoid emitting a doubled ``## View: View: ...`` header.
     """
-    parts: list[str] = [f"## View: {view.headline}", ""]
+    headline = view.headline
+    if headline.startswith("View: "):
+        headline = headline[len("View: ") :]
+    parts: list[str] = [f"## View: {headline}", ""]
 
     if view.content:
         parts.append(view.content)
@@ -513,8 +521,14 @@ async def render_freeform_view(
     Sections are rendered in the order specified by ``view.sections``;
     unknown sections fall after them in arbitrary order. Items without
     section metadata are skipped.
+
+    See :func:`render_view` for the matching ``"View: "`` prefix-strip
+    rationale (FreeformView headlines share the same construction).
     """
-    parts: list[str] = [f"## View: {view.headline}", ""]
+    headline = view.headline
+    if headline.startswith("View: "):
+        headline = headline[len("View: ") :]
+    parts: list[str] = [f"## View: {headline}", ""]
 
     sections_order = view.sections or []
     section_index = {s: i for i, s in enumerate(sections_order)}

@@ -352,13 +352,21 @@ class JudgePairTask:
         question = await db.get_page(question_id)
         if question is None:
             raise RuntimeError(f"question {question_id} missing after orch run")
+        view = await db.get_view_for_question(question_id)
+        # Exclude the view from format_page's linked rendering so it
+        # isn't double-rendered: format_page surfaces the active view as
+        # "Current take on this question" at CONTENT detail (~3 paragraphs
+        # of view content), and we then render the view in full via
+        # render_view below. The dedicated render is the canonical one
+        # for the closer (carries the view items at min_importance=2).
+        exclude = {view.id} if view is not None else None
         body = await format_page(
             question,
             PageDetail.CONTENT,
             linked_detail=PageDetail.CONTENT,
             db=db,
+            exclude_page_ids=exclude,
         )
-        view = await db.get_view_for_question(question_id)
         if view is None:
             return body
         items = await db.get_view_items(view.id, min_importance=2)

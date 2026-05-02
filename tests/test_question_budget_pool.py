@@ -135,6 +135,68 @@ async def test_recurse_charges_parent_and_registers_child(
 
 
 @pytest.mark.asyncio
+async def test_refund_reverses_recurse(tmp_db, question_page, child_question_page):
+    """qbp_refund inverts a qbp_recurse: parent.consumed and child.contributed
+    both decrease by amount, restoring baseline state."""
+    await tmp_db.qbp_register(question_page.id, 20)
+    await tmp_db.qbp_recurse(question_page.id, child_question_page.id, 5)
+
+    await tmp_db.qbp_refund(question_page.id, child_question_page.id, 5)
+
+    parent_pool = await tmp_db.qbp_get(question_page.id)
+    child_pool = await tmp_db.qbp_get(child_question_page.id)
+    assert parent_pool.consumed == 0
+    assert parent_pool.remaining == 20
+    assert child_pool.contributed == 0
+
+
+@pytest.mark.asyncio
+async def test_refund_partial_amount(tmp_db, question_page, child_question_page):
+    """Refunding less than the original recurse leaves the rest charged.
+
+    Mirrors the case where a child cycle consumed some of its allocation
+    before failing — only the unspent portion comes back to the parent.
+    """
+    await tmp_db.qbp_register(question_page.id, 20)
+    await tmp_db.qbp_recurse(question_page.id, child_question_page.id, 5)
+
+    await tmp_db.qbp_refund(question_page.id, child_question_page.id, 3)
+
+    parent_pool = await tmp_db.qbp_get(question_page.id)
+    child_pool = await tmp_db.qbp_get(child_question_page.id)
+    assert parent_pool.consumed == 2
+    assert child_pool.contributed == 2
+
+
+@pytest.mark.asyncio
+async def test_refund_floors_at_zero(tmp_db, question_page, child_question_page):
+    """Over-refund clamps at zero rather than producing negative values."""
+    await tmp_db.qbp_register(question_page.id, 20)
+    await tmp_db.qbp_recurse(question_page.id, child_question_page.id, 5)
+
+    await tmp_db.qbp_refund(question_page.id, child_question_page.id, 100)
+
+    parent_pool = await tmp_db.qbp_get(question_page.id)
+    child_pool = await tmp_db.qbp_get(child_question_page.id)
+    assert parent_pool.consumed == 0
+    assert child_pool.contributed == 0
+
+
+@pytest.mark.asyncio
+async def test_refund_zero_amount_is_noop(tmp_db, question_page, child_question_page):
+    """Zero-amount refund makes no DB calls and changes nothing."""
+    await tmp_db.qbp_register(question_page.id, 20)
+    await tmp_db.qbp_recurse(question_page.id, child_question_page.id, 5)
+
+    await tmp_db.qbp_refund(question_page.id, child_question_page.id, 0)
+
+    parent_pool = await tmp_db.qbp_get(question_page.id)
+    child_pool = await tmp_db.qbp_get(child_question_page.id)
+    assert parent_pool.consumed == 5
+    assert child_pool.contributed == 5
+
+
+@pytest.mark.asyncio
 async def test_get_active_calls_returns_pending_and_running_excludes_self(tmp_db, question_page):
     """Active call query returns pending+running, filters by exclude_call_id."""
     pending_call = Call(

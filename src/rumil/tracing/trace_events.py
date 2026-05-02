@@ -102,6 +102,25 @@ class ErrorEvent(BaseModel):
     phase: str = ""
 
 
+class RecurseFailedEvent(BaseModel):
+    """Recorded on the parent prioritization trace when a planned recursive
+    child cycle (recurse_into_subquestion / recurse_into_claim_investigation)
+    raised before completing. Reports the failed child's call id, scope page
+    id, allocated budget, and how much of the allocation was refunded back to
+    the parent pool — making the silent-failure mode visible to the next
+    prioritization round.
+    """
+
+    event: Literal["recurse_failed"] = "recurse_failed"
+    child_call_id: str
+    child_question_id: str
+    child_question_headline: str = ""
+    allocated_budget: int
+    refunded_budget: int
+    error_type: str = ""
+    error_message: str = ""
+
+
 class SubquestionScoreItem(BaseModel):
     question_id: str
     headline: str = ""
@@ -353,6 +372,7 @@ TraceEvent = Annotated[
     | LLMExchangeEvent
     | WarningEvent
     | ErrorEvent
+    | RecurseFailedEvent
     | ScoringCompletedEvent
     | ExperimentalScoringCompletedEvent
     | DispatchesPlannedEvent

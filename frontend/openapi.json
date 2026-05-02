@@ -2560,6 +2560,9 @@
                         "$ref": "#/components/schemas/ErrorEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/RecurseFailedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/ScoringCompletedEventOut"
                       },
                       {
@@ -2650,6 +2653,7 @@
                         "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                         "warning": "#/components/schemas/WarningEventOut",
                         "error": "#/components/schemas/ErrorEventOut",
+                        "recurse_failed": "#/components/schemas/RecurseFailedEventOut",
                         "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
                         "experimental_scoring_completed": "#/components/schemas/ExperimentalScoringCompletedEventOut",
                         "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
@@ -8432,6 +8436,69 @@
           "child_call_id"
         ],
         "title": "ReassessTriggeredEventOut"
+      },
+      "RecurseFailedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "recurse_failed",
+            "title": "Event",
+            "default": "recurse_failed"
+          },
+          "child_call_id": {
+            "type": "string",
+            "title": "Child Call Id"
+          },
+          "child_question_id": {
+            "type": "string",
+            "title": "Child Question Id"
+          },
+          "child_question_headline": {
+            "type": "string",
+            "title": "Child Question Headline",
+            "default": ""
+          },
+          "allocated_budget": {
+            "type": "integer",
+            "title": "Allocated Budget"
+          },
+          "refunded_budget": {
+            "type": "integer",
+            "title": "Refunded Budget"
+          },
+          "error_type": {
+            "type": "string",
+            "title": "Error Type",
+            "default": ""
+          },
+          "error_message": {
+            "type": "string",
+            "title": "Error Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "child_call_id",
+          "child_question_id",
+          "child_question_headline",
+          "allocated_budget",
+          "refunded_budget",
+          "error_type",
+          "error_message"
+        ],
+        "title": "RecurseFailedEventOut"
       },
       "RenderQuestionSubgraphEventOut": {
         "properties": {

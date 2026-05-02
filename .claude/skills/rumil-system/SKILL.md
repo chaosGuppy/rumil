@@ -182,6 +182,29 @@ This is here so you don't burn round-trips guessing column names and
 hitting `column "X" does not exist`. If you add or rename a column,
 update this section in the same change.
 
+#### Common short-name traps (read this before writing a query)
+
+Columns that have an obvious-looking short name that **does not**
+exist on the actual table. Picking the short name will fail with a
+Postgres `42703` error after a full Python boot — wasteful.
+
+- `calls.cost` ❌ → use **`calls.cost_usd`** (float, dollars)
+- `calls.params` ❌ → use **`calls.call_params`** (jsonb)
+- `runs.cost` / `runs.cost_usd` ❌ → use **`runs.cost_usd_cents`**
+  (int, **cents** — different unit from `calls.cost_usd`)
+- `pages.short_id` ❌ — there is no short id column; do `.id[:8]` in
+  Python or accept the full UUID
+- `versus_texts.run_id` / `project_id` ❌ — `versus_texts` has
+  neither; it's workspace-global and dedup'd by `request_hash`
+
+Postgres operator traps:
+- `.like('id', '<prefix>%')` on a uuid column → `operator does not
+  exist: uuid ~~ unknown`. Fix: fetch the candidate set with a coarse
+  filter (e.g. `eq('project_id', ...)`) and do prefix-matching in
+  Python, or cast the column with a select expression.
+- `.in_(big_list)` on uuid columns: works, but URL-encode quirks
+  cap practical list size around ~500 ids per call.
+
 **`runs`** — one row per run (orch run, dispatch, versus job, etc.)
 - `id`, `name`, `project_id`, `question_id`, `created_at`, `started_at`, `finished_at`
 - `config` (jsonb — shape depends on lane; see "config shape" below)

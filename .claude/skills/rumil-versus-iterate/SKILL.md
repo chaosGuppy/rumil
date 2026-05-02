@@ -2,7 +2,7 @@
 name: rumil-versus-iterate
 description: Iterate on versus's pipeline — review recent (or freshly-fired) completion / judging runs, identify concrete improvement opportunities, test them via /rumil-forks, and consolidate findings into a ranked punch list. Spawns parallel agents for trace investigation and fork experiments so wall-clock stays low. Use when the user wants to "review the recent versus runs and find improvements," "play with these traces," "see what we could do better in d&e / two_phase," or anytime after a versus generation/judging batch when it's worth turning the runs into actionable code/prompt changes. Default scope is one forethought essay × Sonnet × budget 4, but every input is overridable.
 allowed-tools: Bash, Read, Write, Edit, Agent
-argument-hint: "[--fresh] [--workspace <name>] [--essay <essay_id>] [--model <model_id>] [--budget N] [--scope completion|judge|both] [--max-forks N]"
+argument-hint: "[--reuse] [--workspace <name>] [--essay <essay_id>] [--model <model_id>] [--budget N] [--scope completion|judge|both] [--max-forks N]"
 ---
 
 # rumil-versus-iterate
@@ -77,10 +77,24 @@ find may just be the judge compensating for completion noise.
 Fresh-runs phase, run selection, agent dispatch, and consolidation
 all surface completion findings first.
 
-### Phase 0 — fresh runs (only if `--fresh` or runs are stale)
+### Phase 0 — fresh runs (default; skip with `--reuse`)
 
-If `--fresh` is passed OR if the workspace has no recent runs matching
-the requested scope, fire generation first:
+**Default behavior is to fire fresh runs.** The user typically
+invokes this skill to learn something new, and existing runs in the
+workspace have often already been iterated on — running the same
+trace+fork loop against them re-derives findings the user already
+acted on. Burning $5-15 on fresh runs is usually worth it for a
+clean slate.
+
+Skip Phase 0 only if:
+- `--reuse` is passed (user explicitly wants to iterate on existing
+  runs — e.g. they just fired a batch in another session and want to
+  analyze without paying again).
+- The user named a specific run id to investigate.
+- The conversation context makes clear the user wants existing-only
+  analysis (e.g. "look at run X, find improvements").
+
+When firing fresh, run:
 
 1. **Single-shot completions** (cheap baseline contestants) via
    `rumil-versus-generate`:

@@ -245,6 +245,11 @@ _OPAQUE_TO_FINGERPRINT = {
     "produces_artifact",
     "relevant_settings",
     "last_status",
+    # Prompt path attrs are pure telemetry; identical content via
+    # different paths fingerprints the same via *_prompt_hash.
+    "drafter_prompt_path",
+    "critic_prompt_path",
+    "editor_prompt_path",
 }
 
 
@@ -261,7 +266,7 @@ def _public_attrs(workflow: object) -> set[str]:
 
 
 def _fingerprint_keys_normalized(fp: Mapping[str, object]) -> set[str]:
-    keys = {k.removeprefix("settings.") for k in fp}
+    keys = {k.removeprefix("settings.").removesuffix("_hash") for k in fp}
     if "kind" in keys:
         keys.add("name")
     return keys

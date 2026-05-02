@@ -27,6 +27,14 @@ Design notes (full sketch in ``planning/draft-and-edit-workflow-sketch.md``):
   constructor kwargs; ``None`` means "inherit the rumil_model_override
   from settings", which is what ``run_versus`` sets from the caller's
   ``--model``.
+- **Per-stage prompt overrides**: each role's prompt may be replaced
+  by passing a path to a markdown file (``drafter_prompt_path`` /
+  ``critic_prompt_path`` / ``editor_prompt_path``). When unset, the
+  built-in ``_DEFAULT_*_PROMPT`` constants are used. The fingerprint
+  hashes the actual loaded text so two variants pointed at the same
+  content via different paths fingerprint identically. This is the
+  iterate skill's primary lever for A/B-ing prompt-text variants
+  without forking the workflow file.
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ import asyncio
 import hashlib
 import re
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from rumil.budget import _consume_budget
 from rumil.calls.common import mark_call_completed
@@ -51,7 +60,7 @@ from rumil.tracing.trace_events import (
 )
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
-_DRAFTER_PROMPT = (
+_DEFAULT_DRAFTER_PROMPT = (
     "You are continuing an essay. The user message will give you the "
     "opening of an essay (the prefix) plus a target length. Your job is "
     "to write a substantive continuation that picks up the opening's "
@@ -67,7 +76,7 @@ _DRAFTER_PROMPT = (
 )
 
 
-_CRITIC_PROMPT = (
+_DEFAULT_CRITIC_PROMPT = (
     "You are reviewing a draft essay continuation. The user message "
     "will give you the essay opening (the prefix) and the current "
     "draft continuation. Identify problems: weak arguments, factual "
@@ -83,7 +92,7 @@ _CRITIC_PROMPT = (
 )
 
 
-_EDITOR_PROMPT = (
+_DEFAULT_EDITOR_PROMPT = (
     "You are revising a draft essay continuation. The user message "
     "will give you the essay opening (the prefix), the current draft, "
     "and a set of critiques from independent reviewers. Produce a "
@@ -196,6 +205,21 @@ def _sha8(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
 
 
+def _load_prompt(path: str | Path | None, default: str) -> str:
+    """Resolve a prompt: load from path if given, else fall back to default.
+
+    Path is read as UTF-8 text. Empty / whitespace-only files are an
+    error — the iterate skill should not silently fingerprint a workflow
+    against an unwritten prompt file.
+    """
+    if path is None:
+        return default
+    text = Path(path).read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError(f"prompt file is empty or whitespace-only: {path}")
+    return text
+
+
 class DraftAndEditWorkflow:
     """SDK-driven essay completion via draft → critique → edit loops.
 
@@ -217,6 +241,9 @@ class DraftAndEditWorkflow:
         drafter_model: str | None = None,
         critic_model: str | None = None,
         editor_model: str | None = None,
+        drafter_prompt_path: str | Path | None = None,
+        critic_prompt_path: str | Path | None = None,
+        editor_prompt_path: str | Path | None = None,
     ) -> None:
         if budget < 1:
             raise ValueError(f"budget must be >= 1, got {budget}")
@@ -230,6 +257,14 @@ class DraftAndEditWorkflow:
         self.drafter_model = drafter_model
         self.critic_model = critic_model
         self.editor_model = editor_model
+        # Resolve prompt content at construction so fingerprint() and
+        # the stage methods see the same bytes; record paths for telemetry.
+        self.drafter_prompt_path = drafter_prompt_path
+        self.critic_prompt_path = critic_prompt_path
+        self.editor_prompt_path = editor_prompt_path
+        self.drafter_prompt = _load_prompt(drafter_prompt_path, _DEFAULT_DRAFTER_PROMPT)
+        self.critic_prompt = _load_prompt(critic_prompt_path, _DEFAULT_CRITIC_PROMPT)
+        self.editor_prompt = _load_prompt(editor_prompt_path, _DEFAULT_EDITOR_PROMPT)
         self.last_status: str = "complete"
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]:
@@ -241,9 +276,9 @@ class DraftAndEditWorkflow:
             "drafter_model": self.drafter_model,
             "critic_model": self.critic_model,
             "editor_model": self.editor_model,
-            "drafter_prompt_hash": _sha8(_DRAFTER_PROMPT),
-            "critic_prompt_hash": _sha8(_CRITIC_PROMPT),
-            "editor_prompt_hash": _sha8(_EDITOR_PROMPT),
+            "drafter_prompt_hash": _sha8(self.drafter_prompt),
+            "critic_prompt_hash": _sha8(self.critic_prompt),
+            "editor_prompt_hash": _sha8(self.editor_prompt),
         }
 
     async def setup(self, db: DB, question_id: str) -> None:
@@ -271,6 +306,15 @@ class DraftAndEditWorkflow:
                 "drafter_model": self.drafter_model,
                 "critic_model": self.critic_model,
                 "editor_model": self.editor_model,
+                "drafter_prompt_path": (
+                    str(self.drafter_prompt_path) if self.drafter_prompt_path else None
+                ),
+                "critic_prompt_path": (
+                    str(self.critic_prompt_path) if self.critic_prompt_path else None
+                ),
+                "editor_prompt_path": (
+                    str(self.editor_prompt_path) if self.editor_prompt_path else None
+                ),
             },
         )
         await db.update_call_status(call.id, CallStatus.RUNNING)
@@ -374,7 +418,7 @@ class DraftAndEditWorkflow:
             f"{target_clause}".strip()
         )
         text = await text_call(
-            _DRAFTER_PROMPT,
+            self.drafter_prompt,
             user_message,
             metadata=LLMExchangeMetadata(
                 call_id=call_id,
@@ -419,7 +463,7 @@ class DraftAndEditWorkflow:
                 "Critique this draft. Be specific and concrete."
             )
             return await text_call(
-                _CRITIC_PROMPT,
+                self.critic_prompt,
                 user_message,
                 metadata=LLMExchangeMetadata(
                     call_id=call_id,
@@ -485,7 +529,7 @@ class DraftAndEditWorkflow:
             "expand when meaningfully below target."
         )
         text = await text_call(
-            _EDITOR_PROMPT,
+            self.editor_prompt,
             user_message,
             metadata=LLMExchangeMetadata(
                 call_id=call_id,

@@ -329,16 +329,19 @@ Be intentional about where wins from this loop get applied.
     2. Change how the **closer** consumes its output — strip
        View from closer context, render claims differently, etc.
        (`render_for_closer` and friends).
-- **Judging: there is no iteration-friendly judge workflow yet.**
-  Currently versus judging has two paths — blind one-shot and
-  `TwoPhaseOrchestrator --variant orch`. Same constraint as above:
-  two_phase is shared with rumil, don't fiddle. **TODO**: add a
-  versus-specific judging workflow (analogous to DraftAndEdit on the
-  completion side) so lessons from the trace+fork loop on **judging**
-  runs have somewhere to land. Flag this to the user when they're
-  iterating on judge runs and findings would otherwise want to change
-  two_phase internals — the right move is "build the new judge
-  workflow, then apply" rather than "patch two_phase."
+- **Judging: `ReflectiveJudgeWorkflow` is the iteration target.**
+  Lives at `src/rumil/orchestrators/reflective_judge.py`. Three
+  sequential stages (read → reflect → verdict), each a plain
+  ``text_call`` with its own system prompt. Wholly independent of
+  two_phase — no shared prompts, helpers, or stage logic. Edit any
+  of the three stage prompts, swap a model per role, or add stages
+  freely. Lessons from the trace+fork loop on **judging** runs land
+  here.
+- **Judging: `TwoPhaseOrchestrator --variant orch` is shared with
+  normal rumil — leave its internals alone.** Same rule as the
+  completion side. Iterate on inputs (the pair Question's framing,
+  task body) and on closer consumption, not on the orch itself. If a
+  finding would change two_phase internals, escalate.
 
 If a finding really wants to change two_phase internals, escalate
 explicitly: name the change, why it's load-bearing, what it spills

@@ -3141,6 +3141,52 @@ export type ReassessTriggeredEventOut = {
 };
 
 /**
+ * RecurseFailedEventOut
+ */
+export type RecurseFailedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'recurse_failed';
+    /**
+     * Child Call Id
+     */
+    child_call_id: string;
+    /**
+     * Child Question Id
+     */
+    child_question_id: string;
+    /**
+     * Child Question Headline
+     */
+    child_question_headline: string;
+    /**
+     * Allocated Budget
+     */
+    allocated_budget: number;
+    /**
+     * Refunded Budget
+     */
+    refunded_budget: number;
+    /**
+     * Error Type
+     */
+    error_type: string;
+    /**
+     * Error Message
+     */
+    error_message: string;
+};
+
+/**
  * RenderQuestionSubgraphEventOut
  */
 export type RenderQuestionSubgraphEventOut = {
@@ -5483,6 +5529,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & WarningEventOut) | ({
         event: 'error';
     } & ErrorEventOut) | ({
+        event: 'recurse_failed';
+    } & RecurseFailedEventOut) | ({
         event: 'scoring_completed';
     } & ScoringCompletedEventOut) | ({
         event: 'experimental_scoring_completed';

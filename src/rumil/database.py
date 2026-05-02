@@ -2125,6 +2125,29 @@ class DB:
             )
         )
 
+    async def qbp_refund(
+        self,
+        parent_question_id: str,
+        child_question_id: str,
+        amount: int,
+    ) -> None:
+        """Inverse of ``qbp_recurse``: return ``amount`` from a failed child
+        cycle's allocation back to the parent pool. No-op when amount<=0.
+        """
+        if amount <= 0:
+            return
+        await self._execute(
+            self.client.rpc(
+                "qbp_refund",
+                {
+                    "rid": self.run_id,
+                    "parent_qid": parent_question_id,
+                    "child_qid": child_question_id,
+                    "amount": amount,
+                },
+            )
+        )
+
     async def get_active_calls_for_question(
         self,
         question_id: str,

@@ -164,6 +164,27 @@ _CONTINUATION_RE = re.compile(r"<continuation>(.*?)</continuation>", re.DOTALL |
 _OPEN_CONTINUATION_RE = re.compile(r"<continuation>(.*)\Z", re.DOTALL | re.IGNORECASE)
 
 
+def _is_truncated_continuation(text: str) -> bool:
+    """True when ``text`` opens a ``<continuation>`` block but never closes it.
+
+    The editor stage hits this when ``max_tokens`` cuts the response off
+    mid-revision: the model emits the structured ``<preserved>`` /
+    ``<cuts>`` scaffolding and starts the ``<continuation>`` body, then
+    the API stops mid-paragraph before the closing tag. The recorded
+    continuation gets accepted as-is and judges read a partial essay
+    that ends mid-sentence — observed as "strongly preferred for human"
+    on character × harsher_critic in the round 1 iterate session, where
+    fresh re-fires of the same exchange produced complete continuations.
+
+    Closed-block-then-open-tag is treated as not truncated — the
+    closed block already carries a usable revision; the trailing open
+    tag is scratch.
+    """
+    if _CONTINUATION_RE.search(text):
+        return False
+    return bool(_OPEN_CONTINUATION_RE.search(text))
+
+
 def _extract_continuation(text: str) -> str:
     """Pull the final ``<continuation>...</continuation>`` block.
 
@@ -646,12 +667,28 @@ class DraftAndEditWorkflow:
             model=model,
             **editor_kwargs,
         )
+        # If the editor's response was cut off before the closing
+        # </continuation> tag, ask it to finish from where it stopped.
+        # The editor's verbose <preserved> + <cuts> scaffolding is a
+        # token sink; on long essays it can consume enough of the
+        # max_tokens budget that the continuation body trails off
+        # mid-sentence. Without this loop the partial body gets
+        # accepted as-is and a judge reads a half-essay that ends in
+        # the middle of a clause.
+        text = await self._continue_editor_until_complete(
+            db=db,
+            trace=trace,
+            call_id=call_id,
+            round_idx=round_idx,
+            initial_user_message=user_message,
+            initial_response=text,
+            model=model,
+            editor_kwargs=editor_kwargs,
+        )
         revised = _extract_continuation(text)
-        # Truncated edit (closing tag missing) → fallback returns scratch
-        # text or whatever survived the cap. Refuse to overwrite the prior
-        # draft with that — better to carry forward and let the next
-        # critique round work against real content than to feed empty /
-        # malformed input downstream.
+        # Truncated edit (closing tag still missing after continuation
+        # loop, or model emitted no tags at all) → fallback. Refuse to
+        # overwrite the prior draft with empty / malformed input.
         if not revised:
             revised = current_draft
         await trace.record(
@@ -663,6 +700,67 @@ class DraftAndEditWorkflow:
             )
         )
         return revised
+
+    async def _continue_editor_until_complete(
+        self,
+        *,
+        db: DB,
+        trace: CallTrace,
+        call_id: str,
+        round_idx: int,
+        initial_user_message: str,
+        initial_response: str,
+        model: str,
+        editor_kwargs: dict,
+        max_attempts: int = 2,
+    ) -> str:
+        """Re-fire the editor turn-by-turn until ``<continuation>`` closes.
+
+        When the editor's response opens ``<continuation>`` but never
+        emits the closing tag, the body was cut off mid-revision by
+        ``max_tokens``. The fix is a multi-turn extension: pass the
+        original user message + the partial assistant reply + a brief
+        "continue from where you stopped" nudge, append the new
+        response, and check again. Bounded by ``max_attempts`` so a
+        pathologically verbose model can't loop indefinitely.
+
+        Returns the concatenated assistant text. Caller still passes
+        the result through ``_extract_continuation`` — that function
+        already tolerates an open trailing tag.
+        """
+        full = initial_response
+        for attempt in range(max_attempts):
+            if not _is_truncated_continuation(full):
+                return full
+            messages: list[dict] = [
+                {"role": "user", "content": initial_user_message},
+                {"role": "assistant", "content": full},
+                {
+                    "role": "user",
+                    "content": (
+                        "Your previous response was cut off mid-continuation — "
+                        "the closing </continuation> tag is missing. Continue "
+                        "from exactly where you stopped (mid-sentence is fine; "
+                        "do not restate or summarize the part you already wrote). "
+                        "Finish the remaining sections and end with the closing "
+                        "</continuation> tag."
+                    ),
+                },
+            ]
+            more = await text_call(
+                self.editor_prompt,
+                messages=messages,
+                metadata=LLMExchangeMetadata(
+                    call_id=call_id,
+                    phase=f"edit_r{round_idx}_continue{attempt + 1}",
+                    round_num=round_idx,
+                ),
+                db=db,
+                model=model,
+                **editor_kwargs,
+            )
+            full = full + more
+        return full
 
     def _resolve_model(self, override: str | None) -> str:
         """Resolve a per-role model override.

@@ -19,10 +19,13 @@ from rumil.tracing.trace_events import (
     ClaimReassessedEvent,
     ContextBuiltEvent,
     CritiqueRoundEvent,
+    CritiqueStartedEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
     DraftEvent,
+    DraftStartedEvent,
     EditEvent,
+    EditStartedEvent,
     ErrorEvent,
     EvaluationCompleteEvent,
     ExperimentalScoringCompletedEvent,
@@ -39,6 +42,7 @@ from rumil.tracing.trace_events import (
     ReassessTriggeredEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
+    RoundStartedEvent,
     ScoringCompletedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
@@ -214,6 +218,22 @@ class ImpactFilterEventOut(ImpactFilterEvent, _TraceEnvelopeMixin):
     pass
 
 
+class RoundStartedEventOut(RoundStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class DraftStartedEventOut(DraftStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CritiqueStartedEventOut(CritiqueStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EditStartedEventOut(EditStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 class DraftEventOut(DraftEvent, _TraceEnvelopeMixin):
     pass
 
@@ -260,6 +280,10 @@ TraceEventOut = Annotated[
     | UpdateViewPhaseCompletedEventOut
     | QuestionDedupeEventOut
     | ImpactFilterEventOut
+    | RoundStartedEventOut
+    | DraftStartedEventOut
+    | CritiqueStartedEventOut
+    | EditStartedEventOut
     | DraftEventOut
     | CritiqueRoundEventOut
     | EditEventOut,

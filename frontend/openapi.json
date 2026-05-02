@@ -2641,6 +2641,18 @@
                         "$ref": "#/components/schemas/ImpactFilterEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/RoundStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DraftStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/CritiqueStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/EditStartedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/DraftEventOut"
                       },
                       {
@@ -2686,6 +2698,10 @@
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
                         "question_dedupe": "#/components/schemas/QuestionDedupeEventOut",
                         "impact_filter": "#/components/schemas/ImpactFilterEventOut",
+                        "round_started": "#/components/schemas/RoundStartedEventOut",
+                        "draft_started": "#/components/schemas/DraftStartedEventOut",
+                        "critique_started": "#/components/schemas/CritiqueStartedEventOut",
+                        "edit_started": "#/components/schemas/EditStartedEventOut",
                         "draft": "#/components/schemas/DraftEventOut",
                         "critique_round": "#/components/schemas/CritiqueRoundEventOut",
                         "edit": "#/components/schemas/EditEventOut"
@@ -4471,6 +4487,49 @@
         ],
         "title": "CritiqueRoundEventOut"
       },
+      "CritiqueStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "critique_started",
+            "title": "Event",
+            "default": "critique_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "critic_index": {
+            "type": "integer",
+            "title": "Critic Index",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "critic_index",
+          "model"
+        ],
+        "title": "CritiqueStartedEventOut"
+      },
       "DedupeCandidateItem": {
         "properties": {
           "id": {
@@ -4710,6 +4769,43 @@
         ],
         "title": "DraftEventOut"
       },
+      "DraftStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "draft_started",
+            "title": "Event",
+            "default": "draft_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "model"
+        ],
+        "title": "DraftStartedEventOut"
+      },
       "EditEventOut": {
         "properties": {
           "ts": {
@@ -4758,6 +4854,55 @@
           "model"
         ],
         "title": "EditEventOut"
+      },
+      "EditStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "edit_started",
+            "title": "Event",
+            "default": "edit_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "current_chars": {
+            "type": "integer",
+            "title": "Current Chars",
+            "default": 0
+          },
+          "n_critiques": {
+            "type": "integer",
+            "title": "N Critiques",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "model",
+          "current_chars",
+          "n_critiques"
+        ],
+        "title": "EditStartedEventOut"
       },
       "ErrorEventOut": {
         "properties": {
@@ -8669,6 +8814,37 @@
           "confidence"
         ],
         "title": "ReviewCompleteEventOut"
+      },
+      "RoundStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "round_started",
+            "title": "Event",
+            "default": "round_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round"
+        ],
+        "title": "RoundStartedEventOut"
       },
       "RowFilter": {
         "properties": {

@@ -49,14 +49,18 @@ from rumil.budget import _consume_budget
 from rumil.calls.common import mark_call_completed
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, text_call
-from rumil.models import CallStatus, CallType, LinkType, PageType
+from rumil.models import CallStatus, CallType
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
     CritiqueItem,
     CritiqueRoundEvent,
+    CritiqueStartedEvent,
     DraftEvent,
+    DraftStartedEvent,
     EditEvent,
+    EditStartedEvent,
+    RoundStartedEvent,
 )
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
@@ -153,35 +157,27 @@ def _extract_continuation(text: str) -> str:
     return text.strip()
 
 
-async def _load_prefix_from_linked_source(db: DB, question_id: str) -> str:
-    """Pull the essay opening from the Source page linked to the Question.
+_PREFIX_RE = re.compile(r"## Essay opening\n\n(.+?)\n\n## Target length", re.DOTALL)
+
+
+def _extract_prefix_from_question_body(content: str) -> str:
+    """Pull the essay opening out of the Question body.
 
     :class:`versus.tasks.complete_essay.CompleteEssayTask.create_question`
-    writes the prefix to a separate Source page and links it to the
-    Question via ``LinkType.RELATED`` (source -> question). We round-trip
-    the same shape here so the workflow can hand the bare prefix to its
-    drafter / critic / editor.
+    writes the prefix into the Question's content under a ``## Essay
+    opening`` header followed by a ``## Target length`` block. We scrape
+    it back here so the workflow can hand the bare prefix to its
+    drafter / critic / editor without depending on a separate Source
+    page.
     """
-    incoming = await db.get_links_to(question_id)
-    source_link_ids = [link.from_page_id for link in incoming if link.link_type == LinkType.RELATED]
-    if not source_link_ids:
+    m = _PREFIX_RE.search(content)
+    if m is None:
         raise ValueError(
-            "DraftAndEditWorkflow: no RELATED link into the question; "
-            "was the question created by CompleteEssayTask?"
+            "DraftAndEditWorkflow: no '## Essay opening' / '## Target length' "
+            "block in question content; was the question created by "
+            "CompleteEssayTask?"
         )
-    pages = await db.get_pages_by_ids(source_link_ids)
-    sources = [p for p in pages.values() if p.page_type == PageType.SOURCE]
-    if not sources:
-        raise ValueError(
-            "DraftAndEditWorkflow: no linked Source page on the question; "
-            "was the question created by CompleteEssayTask?"
-        )
-    if len(sources) > 1:
-        raise ValueError(
-            "DraftAndEditWorkflow: multiple Source pages linked to the "
-            f"question (found {len(sources)}); ambiguous prefix lookup."
-        )
-    return sources[0].content
+    return m.group(1).strip()
 
 
 _TARGET_LENGTH_RE = re.compile(r"Approximately\s+(\d+)\s+characters\.")
@@ -293,7 +289,7 @@ class DraftAndEditWorkflow:
         question = await db.get_page(question_id)
         if question is None:
             raise RuntimeError(f"DraftAndEditWorkflow: question {question_id} missing")
-        prefix = await _load_prefix_from_linked_source(db, question_id)
+        prefix = _extract_prefix_from_question_body(question.content)
         target_length = _extract_target_length_chars(question.content)
 
         call = await db.create_call(
@@ -360,6 +356,8 @@ class DraftAndEditWorkflow:
                     self.last_status = "incomplete"
                 break
 
+            await trace.record(RoundStartedEvent(round=round_idx))
+
             if round_idx == 0:
                 current_draft = await self._draft(
                     db=db,
@@ -417,6 +415,7 @@ class DraftAndEditWorkflow:
             "advance the argument. "
             f"{target_clause}".strip()
         )
+        await trace.record(DraftStartedEvent(round=round_idx, model=model))
         text = await text_call(
             self.drafter_prompt,
             user_message,
@@ -461,6 +460,9 @@ class DraftAndEditWorkflow:
                 f"{draft}\n"
                 "</draft-continuation>\n\n"
                 "Critique this draft. Be specific and concrete."
+            )
+            await trace.record(
+                CritiqueStartedEvent(round=round_idx, critic_index=critic_idx, model=model)
             )
             return await text_call(
                 self.critic_prompt,
@@ -527,6 +529,14 @@ class DraftAndEditWorkflow:
             "from the system prompt: tighten when current is already "
             "at-or-above target, edit at neutral length when close, only "
             "expand when meaningfully below target."
+        )
+        await trace.record(
+            EditStartedEvent(
+                round=round_idx,
+                model=model,
+                current_chars=current_chars,
+                n_critiques=len(critiques),
+            )
         )
         text = await text_call(
             self.editor_prompt,

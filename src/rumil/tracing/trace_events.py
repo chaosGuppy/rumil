@@ -346,6 +346,49 @@ class ImpactFilterEvent(BaseModel):
     pare_model: str | None = None
 
 
+class RoundStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow at the top of each loop iteration.
+    Mirrors two_phase's per-phase event pattern — gives the UI a
+    boundary marker so it can group subsequent phase events under the
+    round before any LLM call returns."""
+
+    event: Literal["round_started"] = "round_started"
+    round: int = 0
+
+
+class DraftStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the drafter LLM call
+    kicks off. Lets the UI show "Drafting…" immediately instead of
+    waiting on the (potentially multi-minute) call to return."""
+
+    event: Literal["draft_started"] = "draft_started"
+    round: int = 0
+    model: str = ""
+
+
+class CritiqueStartedEvent(BaseModel):
+    """Emitted per critic, right before each critic LLM call kicks off.
+    Critics run in parallel so this fires N times back-to-back at the
+    start of a critique round."""
+
+    event: Literal["critique_started"] = "critique_started"
+    round: int = 0
+    critic_index: int = 0
+    model: str = ""
+
+
+class EditStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the editor LLM call
+    kicks off. Carries the inputs the editor will see (current draft
+    length, critique count) so the UI can show meaningful progress."""
+
+    event: Literal["edit_started"] = "edit_started"
+    round: int = 0
+    model: str = ""
+    current_chars: int = 0
+    n_critiques: int = 0
+
+
 class DraftEvent(BaseModel):
     """Emitted by DraftAndEditWorkflow when the drafter produces (or
     re-produces) a continuation. Round 0 is the initial draft; later
@@ -422,6 +465,10 @@ TraceEvent = Annotated[
     | UpdateViewPhaseCompletedEvent
     | QuestionDedupeEvent
     | ImpactFilterEvent
+    | RoundStartedEvent
+    | DraftStartedEvent
+    | CritiqueStartedEvent
+    | EditStartedEvent
     | DraftEvent
     | CritiqueRoundEvent
     | EditEvent,

@@ -1535,6 +1535,66 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         </div>
       )}
 
+      {event.event === "round_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+          </div>
+        </div>
+      )}
+
+      {event.event === "draft_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "critique_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>critic</span>
+            <span className="trace-kv-value">{event.critic_index}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "edit_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>current</span>
+            <span className="trace-kv-value">{event.current_chars.toLocaleString()} ch</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>critiques</span>
+            <span className="trace-kv-value">{event.n_critiques}</span>
+          </div>
+        </div>
+      )}
+
       {event.event === "draft" && (
         <div className="trace-event-body">
           <div className="trace-kv">

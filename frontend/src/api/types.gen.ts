@@ -793,6 +793,36 @@ export type CritiqueRoundEventOut = {
 };
 
 /**
+ * CritiqueStartedEventOut
+ */
+export type CritiqueStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'critique_started';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Critic Index
+     */
+    critic_index: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
  * DedupeCandidateItem
  */
 export type DedupeCandidateItem = {
@@ -961,6 +991,32 @@ export type DraftEventOut = {
 };
 
 /**
+ * DraftStartedEventOut
+ */
+export type DraftStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'draft_started';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
  * EditEventOut
  */
 export type EditEventOut = {
@@ -992,6 +1048,40 @@ export type EditEventOut = {
      * Model
      */
     model: string;
+};
+
+/**
+ * EditStartedEventOut
+ */
+export type EditStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'edit_started';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Current Chars
+     */
+    current_chars: number;
+    /**
+     * N Critiques
+     */
+    n_critiques: number;
 };
 
 /**
@@ -3343,6 +3433,28 @@ export type ReviewCompleteEventOut = {
 };
 
 /**
+ * RoundStartedEventOut
+ */
+export type RoundStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'round_started';
+    /**
+     * Round
+     */
+    round: number;
+};
+
+/**
  * RowFilter
  *
  * Echoed back on ResultsBundle when the row list is filtered.
@@ -5549,6 +5661,14 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & QuestionDedupeEventOut) | ({
         event: 'impact_filter';
     } & ImpactFilterEventOut) | ({
+        event: 'round_started';
+    } & RoundStartedEventOut) | ({
+        event: 'draft_started';
+    } & DraftStartedEventOut) | ({
+        event: 'critique_started';
+    } & CritiqueStartedEventOut) | ({
+        event: 'edit_started';
+    } & EditStartedEventOut) | ({
         event: 'draft';
     } & DraftEventOut) | ({
         event: 'critique_round';

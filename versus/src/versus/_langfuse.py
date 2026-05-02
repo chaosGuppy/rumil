@@ -13,10 +13,11 @@ firing requests.
 from __future__ import annotations
 
 import contextlib
+import functools
 import logging
 import os
 from collections.abc import Callable, Iterator
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 log = logging.getLogger(__name__)
 
@@ -70,16 +71,36 @@ if _HAS_LANGFUSE and not os.environ.get("LANGFUSE_HOST"):
 
 
 def observe(**kwargs: Any) -> Callable[[F], F]:
-    """`@observe(...)` passthrough; no-op when langfuse isn't enabled.
+    """`@observe(...)` passthrough that defers the enabled-check to call time.
 
     Disabled = package missing OR ``LANGFUSE_PUBLIC_KEY`` unset. The langfuse
     SDK's real ``@observe`` tries to create spans against a disabled client and
-    logs auth + context errors per call site, so we shadow it with a real
-    no-op decorator in that case.
+    logs auth + context errors per call site, so we shadow it with a plain
+    pass-through call in that case.
+
+    The check runs at *call* time, not decoration time. Modules that use
+    ``@observe`` (``anthropic_client``, ``openrouter``) are imported by
+    scripts before those scripts call ``envcascade.apply()`` to load
+    ``LANGFUSE_PUBLIC_KEY`` from ``.env`` into the environment. A
+    decoration-time check would lock in the disabled verdict for the
+    whole process whenever the key lives only in ``.env``.
     """
-    if not _enabled():
+    if not _HAS_LANGFUSE:
         return _noop_decorator(**kwargs)
-    return _observe(**kwargs)
+    real_decorator = _observe(**kwargs)
+
+    def decorator(fn: F) -> F:
+        observed_fn = real_decorator(fn)
+
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kw: Any) -> Any:
+            if _enabled():
+                return observed_fn(*args, **kw)
+            return fn(*args, **kw)
+
+        return cast(F, wrapper)
+
+    return decorator
 
 
 def update_generation(**kwargs: Any) -> None:

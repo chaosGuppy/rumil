@@ -31,6 +31,7 @@ from rumil.tracing.trace_events import (
     LLMExchangeEvent,
     LoadPageEvent,
     MovesExecutedEvent,
+    PageRef,
     PhaseSkippedEvent,
     QuestionDedupeEvent,
     ReassessTriggeredEvent,
@@ -472,3 +473,31 @@ class PageLoadStatsOut(BaseModel):
     total: int
     total_unique: int
     question_headlines: dict[str, str]
+
+
+class ContextEvalArmOut(BaseModel):
+    """One arm (gold or candidate) of a context-builder eval."""
+
+    run_id: str
+    call_id: str
+    builder_name: str
+    context_built: ContextBuiltEventOut
+    cost_usd: float | None = None
+    config: dict = {}
+
+
+class ContextEvalDiffOut(BaseModel):
+    """Side-by-side diff of two context-builder runs on the same question.
+
+    pages_only_in_gold/pages_only_in_candidate/pages_in_both are the result
+    of diffing the union of working_context, preloaded, and scope-linked
+    pages from each arm's context_built event. Headlines are carried via
+    PageRef so the UI can render links without an extra lookup.
+    """
+
+    question: Page | None = None
+    gold: ContextEvalArmOut
+    candidate: ContextEvalArmOut
+    pages_only_in_gold: list[PageRef] = []
+    pages_only_in_candidate: list[PageRef] = []
+    pages_in_both: list[PageRef] = []

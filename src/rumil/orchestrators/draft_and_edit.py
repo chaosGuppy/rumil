@@ -91,12 +91,20 @@ _DEFAULT_DRAFTER_PROMPT = (
 
 _DEFAULT_CRITIC_PROMPT = (
     "You are reviewing a draft essay continuation. The user message "
-    "will give you the essay opening (the prefix) and the current "
-    "draft continuation. Identify problems: weak arguments, factual "
-    "errors, style mismatches, missed opportunities, places where the "
-    "draft drifts from the opening's thread or tone. Be specific — "
-    "name passages, quote phrases, point at concrete moves the writer "
+    "will give you the essay opening (the prefix), the current "
+    "draft continuation, and a length status (current vs target "
+    "characters). Identify problems: weak arguments, factual errors, "
+    "style mismatches, missed opportunities, places where the draft "
+    "drifts from the opening's thread or tone. Be specific — name "
+    "passages, quote phrases, point at concrete moves the writer "
     "could make.\n\n"
+    "**Length awareness.** When the draft is at or above target, "
+    "prefer cut suggestions over expansion suggestions — quote "
+    "specific paragraphs or passages to drop, identify ideas that "
+    "could be stated once instead of restated, flag tangents the "
+    "piece doesn't need. Critics that only suggest additions push "
+    "the editor into runaway expansion. When the draft is "
+    "meaningfully below target, expansion suggestions are fine.\n\n"
     "You're not writing the next draft — an editor will read your "
     "critique alongside the others and decide what to act on. Don't "
     "hedge; don't pad with praise; don't restate what the draft "
@@ -418,6 +426,7 @@ class DraftAndEditWorkflow:
                     round_idx=round_idx,
                     prefix=prefix,
                     draft=current_draft,
+                    target_length=target_length,
                 )
             round_idx += 1
 
@@ -480,8 +489,18 @@ class DraftAndEditWorkflow:
         round_idx: int,
         prefix: str,
         draft: str,
+        target_length: int | None,
     ) -> Sequence[str]:
         model = self._resolve_model(self.critic_model)
+        current_chars = len(draft)
+        if target_length:
+            length_status = (
+                f"Current draft: {current_chars} characters. "
+                f"Target: {target_length} characters. "
+                f"Delta: {current_chars - target_length:+d}."
+            )
+        else:
+            length_status = f"Current draft: {current_chars} characters. (No explicit target.)"
 
         async def _one_critic(critic_idx: int) -> str:
             user_message = (
@@ -491,6 +510,7 @@ class DraftAndEditWorkflow:
                 "<draft-continuation>\n"
                 f"{draft}\n"
                 "</draft-continuation>\n\n"
+                f"## Length\n\n{length_status}\n\n"
                 "Critique this draft. Be specific and concrete."
             )
             await trace.record(

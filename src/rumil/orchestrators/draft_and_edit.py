@@ -281,7 +281,7 @@ class DraftAndEditWorkflow:
         consumed at the top of each round so we never stop mid-round.
         """
         current_draft: str = ""
-        critiques: list[str] = []
+        critiques: Sequence[str] = []
         round_idx = 0
         while True:
             if self.max_rounds is not None and round_idx >= self.max_rounds:
@@ -380,7 +380,7 @@ class DraftAndEditWorkflow:
         round_idx: int,
         prefix: str,
         draft: str,
-    ) -> list[str]:
+    ) -> Sequence[str]:
         model = self._resolve_model(self.critic_model)
 
         async def _one_critic(critic_idx: int) -> str:
@@ -416,7 +416,7 @@ class DraftAndEditWorkflow:
                 ],
             )
         )
-        return list(critiques)
+        return critiques
 
     async def _edit(
         self,
@@ -473,6 +473,25 @@ class DraftAndEditWorkflow:
         return revised
 
     def _resolve_model(self, override: str | None) -> str:
+        """Resolve a per-role model override.
+
+        Precedence: explicit constructor kwarg → ``rumil_model_override``
+        (the standard ``run_versus`` path sets this via
+        :func:`override_settings`) → fail-loud. Per ``versus/AGENT.md``:
+        "Model for orch is passed explicitly through the bridge ... do
+        not rely on ``settings.model``." Silently falling back to ambient
+        ``settings.model`` would let non-bridge instantiations (tests,
+        future scripts) use whatever happened to be in settings; better
+        to fail fast.
+        """
         if override is not None:
             return override
-        return get_settings().model
+        rmo = get_settings().rumil_model_override
+        if rmo:
+            return rmo
+        raise RuntimeError(
+            "DraftAndEditWorkflow requires a model — pass via constructor "
+            "(drafter_model / critic_model / editor_model) or via "
+            "override_settings(rumil_model_override=...) (the run_versus "
+            "path sets this automatically from its `model` arg)."
+        )

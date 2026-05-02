@@ -269,7 +269,6 @@ def _plan_pending(
     prefix_cfg: config.PrefixCfg,
     workspace_id: str,
     workspace_state_hash: str,
-    code_fingerprint: dict[str, str],
     prod: bool,
     workflow_kwargs: dict[str, Any] | None = None,
 ) -> list[_PendingCompletion]:
@@ -302,6 +301,10 @@ def _plan_pending(
             prefix_text=prepared.prefix_markdown,
             target_length_chars=len(prepared.remainder_markdown),
         )
+        # Don't pass code_fingerprint — let make_versus_config auto-
+        # compute the post-#425 split shape (shared + per-workflow).
+        # Passing the legacy flat key short-circuits the split and
+        # leaves rows missing workflow_code_fingerprint.
         base_config, config_hash, _judge_model = make_versus_config(
             workflow=workflow,
             task=task,
@@ -310,7 +313,6 @@ def _plan_pending(
             model_config=mc,
             workspace_id=workspace_id,
             workspace_state_hash=workspace_state_hash,
-            code_fingerprint=code_fingerprint,
         )
         source_id = build_source_id(workflow_name, model, config_hash)
         already = _existing_source_ids(
@@ -358,7 +360,7 @@ async def run_orch_completion(
     from rumil.settings import get_settings
     from rumil.versus_runner import run_versus
     from versus.model_config import get_model_config
-    from versus.versus_config import compute_shared_code_fingerprint, compute_workspace_state_hash
+    from versus.versus_config import compute_workspace_state_hash
 
     settings = get_settings()
 
@@ -374,7 +376,6 @@ async def run_orch_completion(
     ws_short = project.id[:8]
 
     workspace_state_hash = await compute_workspace_state_hash(probe_db)
-    code_fingerprint = compute_shared_code_fingerprint()
     mc = get_model_config(model, cfg=cfg)
 
     pending = _plan_pending(
@@ -386,7 +387,6 @@ async def run_orch_completion(
         prefix_cfg=prefix_cfg,
         workspace_id=ws_short,
         workspace_state_hash=workspace_state_hash,
-        code_fingerprint=code_fingerprint,
         prod=prod,
         workflow_kwargs=workflow_kwargs,
     )

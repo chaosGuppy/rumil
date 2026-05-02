@@ -38,6 +38,21 @@ from rumil.orchestrators.draft_and_edit import (  # noqa: E402
     _extract_target_length_chars,
     _load_prefix_from_linked_source,
 )
+from rumil.settings import override_settings  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _stub_rumil_model_override():
+    """The workflow's ``_resolve_model`` requires either a per-role
+    constructor override or ``rumil_model_override`` set in settings
+    (the production ``run_versus`` path sets the latter). Tests
+    construct workflows directly without per-role models; stub the
+    override globally so ``_resolve_model`` doesn't fail-loud.
+    """
+    with override_settings(rumil_model_override="claude-sonnet-4-6"):
+        yield
+
+
 from rumil.versus_workflow import Workflow  # noqa: E402
 
 _QUESTION_FRAMING_TEMPLATE = (

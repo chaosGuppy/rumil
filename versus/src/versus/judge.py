@@ -193,23 +193,37 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
         # - post-#425 split: ``shared_code_fingerprint`` +
         #   ``workflow_code_fingerprint`` at top level
         if "shared_code_fingerprint" in inputs or "workflow_code_fingerprint" in inputs:
-            # circular: rumil.versus_workflow imports orchestrators
-            from rumil.versus_workflow import TwoPhaseWorkflow
+            # circular import via rumil_completion → versus_workflow → orchestrators
+            from versus.rumil_completion import WORKFLOW_REGISTRY
 
             if inputs.get("shared_code_fingerprint") != compute_shared_code_fingerprint():
                 return False
-            # Reconstruct the workflow from its kind to know which
-            # ``code_paths`` to fingerprint. Today only ``two_phase`` is
-            # in the wild; extend when more workflows ship judgment rows.
+            # Reconstruct the workflow from its kind via the registry —
+            # any workflow that ships judgment rows is reachable here as
+            # long as it's registered. Budget doesn't affect code_paths,
+            # so a placeholder budget value is fine for fingerprint
+            # reconstruction (the registry's default kwargs may also
+            # need overriding, but kwargs that don't affect code_paths
+            # don't matter for this comparison).
             workflow_kind = (inputs.get("workflow") or {}).get("kind")
-            if workflow_kind == "two_phase":
-                # budget doesn't affect code_paths so any value works.
-                wf = TwoPhaseWorkflow(budget=int((inputs.get("workflow") or {}).get("budget") or 1))
-                if inputs.get("workflow_code_fingerprint") != compute_workflow_code_fingerprint(wf):
-                    return False
-            else:
+            registry_entry = WORKFLOW_REGISTRY.get(workflow_kind) if workflow_kind else None
+            if registry_entry is None:
                 # Unknown workflow kind — can't reproduce its
                 # fingerprint. Treat as stale rather than guessing.
+                return False
+            workflow_cls, default_kwargs = registry_entry
+            try:
+                wf = workflow_cls(
+                    **{
+                        **default_kwargs,
+                        "budget": int((inputs.get("workflow") or {}).get("budget") or 1),
+                    }
+                )
+            except TypeError:
+                # Constructor signature drift (e.g. required kwarg
+                # added since this row landed). Stale by definition.
+                return False
+            if inputs.get("workflow_code_fingerprint") != compute_workflow_code_fingerprint(wf):
                 return False
         else:
             # Legacy flat fingerprint or shim-frozen fingerprint. Pre-#425

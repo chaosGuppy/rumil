@@ -122,6 +122,31 @@ def _format_prefix_framing(prefix: EssayPrefixContext) -> str:
     )
 
 
+def _build_abstract(prefix: EssayPrefixContext) -> str:
+    """Compose the Versus completion Question's ``abstract``.
+
+    Read by parent-context renderers — notably
+    :func:`rumil.orchestrators.common.score_items_sequentially`, which
+    only renders ``headline + abstract + view_text`` for the parent
+    Question during prioritization scoring. It does NOT load linked
+    Source pages, so the parent-scoring agent would see only the
+    synthetic headline (``Versus completion: continue essay [hash]``)
+    without an abstract.
+
+    Mirror of :func:`versus.tasks.judge_pair._build_abstract`. Fixed-
+    shape, no essay text spliced in (silent string truncation in LLM-
+    facing surfaces is a documented hazard — see ``CLAUDE.local.md``).
+    The Source-page restructure (Gap 7) covers research-shape calls
+    that genuinely need the essay; this abstract covers the parent-
+    scoring path that doesn't load Sources.
+    """
+    return (
+        "Versus essay-completion task. Score considerations by their "
+        "relevance to producing a high-quality continuation of the "
+        "linked essay opening."
+    )
+
+
 def _versus_extra(prefix: EssayPrefixContext) -> dict:
     # IMPORTANT: every key in page.extra is rendered verbatim by
     # rumil.context.format_page() (as "key: value" lines inline with
@@ -176,6 +201,7 @@ def compute_question_surface_hash() -> str:
         {
             "question_headline": _build_headline(sentinel),
             "question_content": _format_prefix_framing(sentinel),
+            "question_abstract": _build_abstract(sentinel),
             "question_extra_keys": sorted(_versus_extra(sentinel).keys()),
             "source_headline": _build_source_headline(sentinel),
             # The Source's content is exactly the prefix text — covered
@@ -313,6 +339,7 @@ class CompleteEssayTask:
             workspace=Workspace.RESEARCH,
             content=_format_prefix_framing(inputs),
             headline=_build_headline(inputs),
+            abstract=_build_abstract(inputs),
             project_id=db.project_id,
             provenance_model="versus-bridge",
             provenance_call_type=CallType.VERSUS_JUDGE.value,
@@ -347,13 +374,19 @@ class CompleteEssayTask:
         question = await db.get_page(question_id)
         if question is None:
             raise RuntimeError(f"question {question_id} missing after orch run")
+        view = await db.get_view_for_question(question_id)
+        # Exclude the View from format_page so it isn't rendered twice
+        # (once as a linked "Current take on this question" body, once
+        # via render_view below). Mirror of JudgePairTask's fix in
+        # commit 576ba585; same structural duplication via the same
+        # render path.
         body = await format_page(
             question,
             PageDetail.CONTENT,
             linked_detail=PageDetail.CONTENT,
             db=db,
+            exclude_page_ids={view.id} if view is not None else None,
         )
-        view = await db.get_view_for_question(question_id)
         if view is None:
             return body
         items = await db.get_view_items(view.id, min_importance=2)

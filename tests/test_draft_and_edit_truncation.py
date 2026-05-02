@@ -270,8 +270,10 @@ async def test_editor_caps_thinking_when_model_config_supplied(mocker):
     cfg = kwargs["model_config"]
     assert cfg.max_tokens == 64_000
     assert cfg.max_thinking_tokens == 48_000
-    # Other condition fields preserved from the supplied config.
-    assert cfg.thinking == {"type": "adaptive"}
+    # Editor switches thinking from adaptive (no cap) to enabled (cap-
+    # respecting) — the Anthropic API rejects budget_tokens on
+    # type=adaptive, so capping requires changing the thinking type.
+    assert cfg.thinking == {"type": "enabled"}
     del sys_pkg  # keep ruff quiet
 
 

@@ -738,11 +738,21 @@ class DraftAndEditWorkflow:
         # otherwise use the discrete kwarg path (which leaves thinking at
         # the per-model default — that path is the non-bridge case and
         # doesn't currently fire from versus).
+        # Switch thinking from "adaptive" (no cap) to "enabled" with an
+        # explicit budget_tokens. The Anthropic API rejects
+        # ``budget_tokens`` on type=adaptive — the original 5deb00ea
+        # cloned the bridge's adaptive thinking config + max_thinking
+        # _tokens=48_000, which is invalid and 400's. "enabled" thinking
+        # accepts the budget cap and gives us the same guarantee
+        # (>=16k of output text after at most 48k of thinking). Other
+        # condition fields (effort, service_tier, top_p, temperature)
+        # are preserved from the supplied config.
         editor_kwargs: dict = {"cache": True}
         if model_config is not None:
             editor_kwargs["model_config"] = dataclasses.replace(
                 model_config,
                 max_tokens=64_000,
+                thinking={"type": "enabled"},
                 max_thinking_tokens=48_000,
             )
         else:

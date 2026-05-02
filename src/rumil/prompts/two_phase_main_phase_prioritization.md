@@ -137,6 +137,19 @@ you'll be shown scoring data from a preliminary assessment:
   it get baked into a view. this is most important for the few
   numbers a downstream reader would actually act on; don't burn
   budget grounding every figure.
+- **high-credence ≠ verified.** a claim with credence 6+ whose
+  provenance is a `scout_*` call is, by definition, the model's
+  unverified retrieval from training data — confidence about a
+  pre-cutoff prior, not about a checked fact. these claims feel
+  load-bearing precisely because they sound concrete, which is the
+  failure mode `web_research` exists to fix. there is a real bias
+  toward "more scouting feels like more progress than verifying
+  what we already have"; resist it. if the workspace already holds
+  several confident-but-unsourced claims, a `dispatch_web_factcheck`
+  on the most load-bearing of them is usually higher-EV than another
+  scout round — even when the scout's fruit score looks competitive.
+  the orchestrator may surface a count of such claims as a Note;
+  treat that as a hint, not a quota.
 
 ### guidance on how much budget to use
 

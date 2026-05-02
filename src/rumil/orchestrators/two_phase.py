@@ -55,6 +55,12 @@ from rumil.views import get_active_view
 log = logging.getLogger(__name__)
 
 
+# When the workspace has at least this many active claims at credence ≥6 with
+# no source citation, the main-phase prioritizer gets a hint to consider
+# `web_research` / `dispatch_web_factcheck` instead of more `scout_*` work.
+UNSOURCED_HIGH_CREDENCE_THRESHOLD = 5
+
+
 class TwoPhaseOrchestrator(BaseOrchestrator):
     """Two-phase orchestrator for new questions.
 
@@ -631,6 +637,19 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             ingest_hint = f"\n\n**Note:** {self.ingest_hint}"
             self.ingest_hint = ""
 
+        unsourced_count = await self.db.count_unsourced_high_credence_claims()
+        unsourced_hint = ""
+        if unsourced_count >= UNSOURCED_HIGH_CREDENCE_THRESHOLD:
+            unsourced_hint = (
+                f"\n\n**Note:** the workspace currently has **{unsourced_count} active "
+                "claims with credence ≥6 that cite no source page** — by default these "
+                "are unverified retrievals from training data (typically produced by "
+                "`scout_*` calls). Consider whether `dispatch_web_factcheck` against "
+                "high-priority `scout_web_questions` outputs, or `web_research` on "
+                "load-bearing numeric claims, is in fact higher-EV than further "
+                "scouting."
+            )
+
         task = (
             f"{budget_line}\n\n"
             f"Scope question ID: `{question_id}`\n\n"
@@ -649,6 +668,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             "in parallel with all others you intend to dispatch at this point. "
             f"Each recurse call must have a budget of at least {MIN_TWOPHASE_BUDGET}."
             f"{ingest_hint}"
+            f"{unsourced_hint}"
         )
         if get_settings().force_twophase_recurse:
             task += (

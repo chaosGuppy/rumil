@@ -59,6 +59,15 @@ def _enabled() -> bool:
 if _HAS_LANGFUSE and not os.environ.get("LANGFUSE_PUBLIC_KEY"):
     logging.getLogger("langfuse").setLevel(logging.ERROR)
 
+# rumil.settings stores the host under ``langfuse_base_url`` and exports it
+# to ``LANGFUSE_HOST`` only when get_langfuse() runs (which versus paths
+# don't trigger). Mirror that mapping here so the SDK reads the right
+# region — without this, US keys sent to the SDK's default host 401.
+if _HAS_LANGFUSE and not os.environ.get("LANGFUSE_HOST"):
+    base_url = os.environ.get("LANGFUSE_BASE_URL")
+    if base_url:
+        os.environ["LANGFUSE_HOST"] = base_url
+
 
 def observe(**kwargs: Any) -> Callable[[F], F]:
     """`@observe(...)` passthrough; no-op when langfuse isn't enabled.

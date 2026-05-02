@@ -67,6 +67,10 @@ envcascade.apply(
         "LANGFUSE_PUBLIC_KEY",
         "LANGFUSE_SECRET_KEY",
         "LANGFUSE_HOST",
+        # rumil settings store the host as LANGFUSE_BASE_URL; versus._langfuse
+        # maps BASE_URL → HOST at module load if HOST isn't set. Cascade both
+        # so either name in .env reaches os.environ.
+        "LANGFUSE_BASE_URL",
     ),
     versus_root=VERSUS_ROOT,
     rumil_root=RUMIL_ROOT,

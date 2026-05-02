@@ -53,6 +53,7 @@ envcascade.apply(
         "LANGFUSE_PUBLIC_KEY",
         "LANGFUSE_SECRET_KEY",
         "LANGFUSE_HOST",
+        "LANGFUSE_BASE_URL",
     ),
     versus_root=VERSUS_ROOT,
     rumil_root=RUMIL_ROOT,

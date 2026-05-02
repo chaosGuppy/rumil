@@ -390,8 +390,10 @@ Be intentional about where wins from this loop get applied.
   versus-specific workflow whose drafter / N critics / editor loop
   does not touch the rest of rumil — change the prompts, the round
   structure, the editor's max_tokens, add an arbiter exchange, etc.,
-  freely. Lessons from the trace+fork loop on **completion** runs
-  should be applied here.
+  freely. Removing, reordering, or wholesale restructuring stages
+  is also fair game — this workflow exists to be restructured.
+  Lessons from the trace+fork loop on **completion** runs should be
+  applied here.
 - **Completions: `TwoPhaseOrchestrator` is shared with normal rumil
   runs — leave its internals alone.** It runs research questions
   outside versus too, so changing prioritization / scout / view logic
@@ -408,9 +410,11 @@ Be intentional about where wins from this loop get applied.
   sequential stages (read → reflect → verdict), each a plain
   ``text_call`` with its own system prompt. Wholly independent of
   two_phase — no shared prompts, helpers, or stage logic. Edit any
-  of the three stage prompts, swap a model per role, or add stages
-  freely. Lessons from the trace+fork loop on **judging** runs land
-  here.
+  of the three stage prompts, add stages, or remove/reorder/restructure
+  the flow freely — this workflow exists to be restructured. Hold
+  the model constant across stages by default; per-role model swaps
+  add a confound to trace+fork comparisons. Lessons from the
+  trace+fork loop on **judging** runs land here.
 - **Judging: `TwoPhaseOrchestrator --variant orch` is shared with
   normal rumil — leave its internals alone.** Same rule as the
   completion side. Iterate on inputs (the pair Question's framing,

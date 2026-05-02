@@ -34,13 +34,6 @@ variants:
       All defaults — sonnet across all stages, built-in prompts.
       Reference point for every other variant in this file.
 
-  - name: opus_verdict
-    description: |
-      Sonnet read+reflect, Opus on the verdict stage. Tests whether
-      the verdict synthesis benefits from a stronger model when the
-      evidence-gathering stages stay cheaper.
-    verdict_model: claude-opus-4-7
-
   - name: terse_read
     description: |
       Replaces the read prompt with a tighter, no-padding version.

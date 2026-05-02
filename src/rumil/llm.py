@@ -1005,6 +1005,7 @@ async def text_call(
     model: str | None = None,
     cache: bool = False,
     effort: str | None = None,
+    max_tokens: int | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
@@ -1016,7 +1017,10 @@ async def text_call(
     a prompt-cache breakpoint on the last message (Anthropic only — the Google
     branch ignores it). Pass `effort` (e.g. ``"max"``) to override the default
     effort level derived from the model; ignored for models that do not support
-    the effort parameter.
+    the effort parameter. Pass ``max_tokens`` to override the default output
+    cap (``DEFAULT_MAX_TOKENS``); needed for long-form generations like d&e
+    editor revisions where the default 20k cap silently truncates and breaks
+    downstream parsing.
     """
     settings = get_settings()
     effective_model = model or settings.model
@@ -1026,6 +1030,12 @@ async def text_call(
     log.debug("text_call: messages=%d, model=%s", len(msg_list), effective_model)
 
     if is_google_model(effective_model):
+        if max_tokens is not None:
+            raise NotImplementedError(
+                "text_call(max_tokens=...) is not yet plumbed through the "
+                "Google branch; only the Anthropic path supports an explicit "
+                "max_tokens override."
+            )
         google_resp = await call_google_api(
             effective_model,
             system_prompt,
@@ -1038,16 +1048,31 @@ async def text_call(
 
     api_key = settings.require_anthropic_key()
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    api_resp = await call_anthropic_api(
-        client,
-        effective_model,
-        system_prompt,
-        msg_list,
-        metadata=metadata,
-        db=db,
-        cache=cache,
-        effort=effort,
-    )
+    if max_tokens is not None:
+        cfg = derive_model_config(effective_model, max_tokens=max_tokens)
+        if effort is not None and cfg.effort is not None:
+            cfg = replace(cfg, effort=effort)
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            model_config=cfg,
+        )
+    else:
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            effort=effort,
+        )
     for block in api_resp.message.content:
         if isinstance(block, TextBlock):
             log.debug("text_call returned %d chars", len(block.text))

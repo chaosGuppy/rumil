@@ -107,13 +107,29 @@ def _format_prefix_framing(prefix: EssayPrefixContext) -> str:
     full prefix in the Question's content. Length target lives in the
     body so workflows reading the Question pick it up; the closer
     prompt also restates it for emphasis.
+
+    The framing names the linked Source page explicitly because pre-Gap-7
+    traces showed scouts speculating about essay content (or trying to
+    ``load_page`` on the prefix_hash, which is not a page id) instead
+    of fetching the actual prefix. Telling the model the prefix lives
+    on a linked Source — and that the right move is to load that
+    Source before reasoning — reliably routes it to real text.
     """
     return (
         "This question was created by the versus essay-completion harness. "
-        "An essay opening is provided as a linked Source page; the goal of "
+        "An essay opening is provided as a Source page linked to this "
+        "question via a RELATED edge (source -> question). The goal of "
         "this run is to produce a high-quality continuation that engages "
-        "with the opening's topic. Workspace material may be consulted if "
-        "it bears on the subject.\n\n"
+        "with the opening's topic.\n\n"
+        "## Where to find the essay opening\n\n"
+        "The full essay opening is on the linked Source page, **not** in "
+        "this question's body. Before reasoning about the essay's "
+        "content, fetch the linked Source — use whatever workspace "
+        "tooling you have to traverse incoming RELATED links from this "
+        "question and read the linked Source page's content. Do not "
+        "speculate about the essay text without first reading it. Do "
+        "not interpret bare hex strings (e.g. a `prefix_hash` value) "
+        "as page ids — they are not.\n\n"
         f"## Target length\n\nApproximately {prefix.target_length_chars} characters.\n\n"
         "## Goal\n\n"
         "Continue the linked essay opening. Aim for substantive, specific "

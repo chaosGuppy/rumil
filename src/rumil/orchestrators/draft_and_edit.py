@@ -89,13 +89,25 @@ _EDITOR_PROMPT = (
     "and a set of critiques from independent reviewers. Produce a "
     "revised continuation that incorporates the most important "
     "improvements while preserving what worked.\n\n"
-    "You may ignore critiques you disagree with — critics sometimes "
-    "contradict each other or push in directions that hurt the piece. "
-    "Use judgement; don't whiplash the draft trying to satisfy "
-    "everyone.\n\n"
+    "**Push back on critics when they're wrong.** Critics sometimes "
+    "demand changes that would hurt the piece — they may attack a move "
+    "that's actually correct, push toward generic prose, or pull in "
+    "incompatible directions. You are the final author. If a critic's "
+    "suggestion would weaken the draft, ignore it. If two critics "
+    "disagree, pick the one whose reading is closer to the opening's "
+    "actual argument. Don't whiplash to satisfy every note. State "
+    "briefly which critic notes you're acting on and which you're "
+    "declining (and why).\n\n"
+    "**Length discipline.** The user message gives both the current "
+    "draft length and the target length. If the current draft is "
+    "already at or above target, your job is to TIGHTEN, not expand. "
+    "Cuts count as edits — name what you cut. Restate fewer ideas, "
+    "more decisively. If current is close to target, edit at roughly "
+    "neutral length. Only expand when the current draft is meaningfully "
+    "below target and a critic identified a missing argument worth "
+    "adding.\n\n"
     "Match the opening's voice and register. Don't restate the "
-    "opening. Aim for roughly the target length given in the user "
-    "message.\n\n"
+    "opening.\n\n"
     "Wrap the revised continuation in <continuation>...</continuation> "
     "tags. Scratch space before the tagged block is fine; only the "
     "content inside the tags is kept."
@@ -103,12 +115,22 @@ _EDITOR_PROMPT = (
 
 
 _CONTINUATION_RE = re.compile(r"<continuation>(.*?)</continuation>", re.DOTALL | re.IGNORECASE)
+_OPEN_CONTINUATION_RE = re.compile(r"<continuation>(.*)\Z", re.DOTALL | re.IGNORECASE)
 
 
 def _extract_continuation(text: str) -> str:
     """Pull the final ``<continuation>...</continuation>`` block.
 
-    Falls back to the whole text (stripped) when no tags are present.
+    Three cases:
+
+    1. Closed block present → return its contents (stripped).
+    2. Open ``<continuation>`` tag with no closer (max_tokens truncation
+       with the closing tag chopped off) → return everything after the
+       opener. Better than discarding hours of generation; the partial
+       continuation may be salvageable.
+    3. No tags at all (extremely unstructured response) → return the
+       whole text stripped.
+
     Mirrors :func:`versus.tasks.complete_essay._extract_continuation_text`
     so the workflow's draft format matches what the task expects to
     read off ``question.content``.
@@ -116,6 +138,9 @@ def _extract_continuation(text: str) -> str:
     matches = _CONTINUATION_RE.findall(text)
     if matches:
         return matches[-1].strip()
+    open_match = _OPEN_CONTINUATION_RE.search(text)
+    if open_match:
+        return open_match.group(1).strip()
     return text.strip()
 
 
@@ -434,9 +459,15 @@ class DraftAndEditWorkflow:
         critiques_block = "\n\n---\n\n".join(
             f"## Critic {i + 1}\n\n{c}" for i, c in enumerate(critiques)
         )
-        target_clause = (
-            f"Aim for approximately {target_length} characters." if target_length else ""
-        )
+        current_chars = len(current_draft)
+        if target_length:
+            length_status = (
+                f"Current draft: {current_chars} characters. "
+                f"Target: {target_length} characters. "
+                f"Delta: {current_chars - target_length:+d}."
+            )
+        else:
+            length_status = f"Current draft: {current_chars} characters. (No explicit target.)"
         user_message = (
             "<essay-prefix>\n"
             f"{prefix}\n"
@@ -447,7 +478,11 @@ class DraftAndEditWorkflow:
             "<critiques>\n"
             f"{critiques_block}\n"
             "</critiques>\n\n"
-            f"Produce a revised continuation. {target_clause}".strip()
+            f"## Length\n\n{length_status}\n\n"
+            "Produce a revised continuation. Apply the length discipline "
+            "from the system prompt: tighten when current is already "
+            "at-or-above target, edit at neutral length when close, only "
+            "expand when meaningfully below target."
         )
         text = await text_call(
             _EDITOR_PROMPT,
@@ -460,8 +495,16 @@ class DraftAndEditWorkflow:
             db=db,
             model=model,
             cache=True,
+            max_tokens=32_000,
         )
         revised = _extract_continuation(text)
+        # Truncated edit (closing tag missing) → fallback returns scratch
+        # text or whatever survived the cap. Refuse to overwrite the prior
+        # draft with that — better to carry forward and let the next
+        # critique round work against real content than to feed empty /
+        # malformed input downstream.
+        if not revised:
+            revised = current_draft
         await trace.record(
             EditEvent(
                 round=round_idx,

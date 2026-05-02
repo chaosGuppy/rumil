@@ -546,6 +546,27 @@ def test_extract_continuation_uses_last_block_when_multiple():
     assert _extract_continuation(text) == "second"
 
 
+def test_extract_continuation_recovers_from_unclosed_tag():
+    """max_tokens truncation lops off the closing ``</continuation>``.
+
+    The fallback used to dump the scratch text that comes BEFORE the
+    opening tag, hiding the partially-generated continuation entirely
+    (and causing downstream rounds to critique an empty draft). It now
+    returns everything after the opener so the partial output is
+    salvageable.
+    """
+    text = (
+        "Plan: outline three sections, hit target length, match opening voice.\n\n"
+        "<continuation>The argument hinges on a single observation: refusal "
+        "without character is fragile. The system that refuses to spread "
+        "misinformation only because it has been told to refuse will, given "
+        "sufficient prompting"
+    )
+    assert _extract_continuation(text).startswith("The argument hinges")
+    assert "Plan: outline" not in _extract_continuation(text)
+    assert _extract_continuation(text).endswith("sufficient prompting")
+
+
 @pytest.mark.asyncio
 async def test_load_prefix_round_trips_through_linked_source(mocker):
     """The workflow's prefix lookup pulls content off a Source page

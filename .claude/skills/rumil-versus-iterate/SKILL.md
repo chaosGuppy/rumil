@@ -94,6 +94,12 @@ Skip Phase 0 only if:
 - The conversation context makes clear the user wants existing-only
   analysis (e.g. "look at run X, find improvements").
 
+Phase 0 fires only the **prerequisites** for the iteration-target
+runs (single-shot contestants and blind judgments). The
+iteration-target runs themselves — `DraftAndEditWorkflow` completions
+and `ReflectiveJudgeWorkflow` judgments — are fired as variant
+fan-outs in Phase 0.5, not here.
+
 When firing fresh, run:
 
 1. **Single-shot completions** (cheap baseline contestants) via
@@ -104,37 +110,27 @@ When firing fresh, run:
        --essay <essay_id> \
        --model <model_id> [--model <model2_id>...]
    ```
+   `run_completions.py` requires the full provider/model id
+   (`anthropic/claude-sonnet-4-6`), not the short alias (`sonnet`).
+   The judge script accepts both via `resolve_model_alias`; the
+   completion script does its own lookup against `config.yaml`.
 
-2. **Orch completions** via `rumil-versus-complete`:
+2. **Blind judgments** via `rumil-versus-judge` (cheap, ground-truth
+   reference for the reflective-judge variants in Phase 0.5):
    ```
-   uv run python versus/scripts/run_completions.py \
-       --workspace versus \
-       --orch draft_and_edit \
-       --essay <essay_id> --model anthropic/claude-sonnet-4-6 --budget <N>
-   ```
-   Two CLI gotchas vs the judge script:
-   - `run_completions.py` does NOT have `--staged`; only the judge
-     script does. Completion rows always land in baseline `versus_texts`.
-   - `run_completions.py` requires the full provider/model id
-     (`anthropic/claude-sonnet-4-6`), not the short alias (`sonnet`).
-     The judge script accepts both via `resolve_model_alias`; the
-     completion script does its own lookup against `config.yaml`.
-
-3. **Judgments** via `rumil-versus-judge` — both blind and orch:
-   ```
-   # blind (cheap, ground truth for comparison)
    uv run python versus/scripts/run_judgments.py \
        --workspace versus --essay <essay_id> --judge-model <model_id>
-   # orch (expensive, the thing we're auditing)
-   uv run python versus/scripts/run_judgments.py \
-       --workspace versus --staged --variant orch \
-       --essay <essay_id> --judge-model <model_id> --budget <N>
    ```
 
-Use `--staged` for orch runs so you don't pollute the canonical
-`versus_texts` / `versus_judgments` rows during exploration. Confirm
-total estimated $ before firing. A typical full-fresh round is
-~$8-15 depending on model + essay length.
+Confirm total estimated $ before firing. A typical Phase 0 round is
+~$1-3; the iteration-target fan-outs in Phase 0.5 are the bulk of
+the cost (~$5-12 depending on variant count and budget).
+
+`TwoPhaseOrchestrator --variant orch` for judging (and `--orch
+two_phase` for completions) is **not canonical** in this skill — it
+shares internals with normal rumil and is off-limits to iterate on
+(see "Where lessons land" below). Fire it only if the user
+explicitly asks for a TwoPhase audit run as a comparison point.
 
 ### Phase 0.5 — variant fan-out for the iteration-target workflows
 
@@ -203,40 +199,21 @@ generic prose"), commit the new prompt file to the iterate skill's
 `prompts/` dir and add a variant entry to the relevant YAML. Future
 iterate runs will sweep against the new variant automatically.
 
-### Phase 1 — select representative runs
+### Phase 1 — collect run ids for trace investigation
 
-Query the workspace DB for runs in scope. The schema cheat sheet in
-`rumil-system` covers column names; representative selection:
+**If Phase 0.5 just ran**: you already have the variant run ids from
+the fan-out. Take **all of them** to Phase 2 (one trace investigator
+per variant) — comparing across variants is the whole point. Skip
+the rest of this phase.
 
-```python
-import asyncio
-from rumil.database import DB
+**If `--reuse` was passed** (no fresh runs): use `/rumil-load-run` or
+the rumil UI to find recent runs in scope. Pick one run per
+(workflow × task_name) combination — typically:
 
-async def main():
-    db = await DB.create(run_id="scratch", prod=False, staged=False)
-    proj = await db.get_or_create_project("versus")
-    db.project_id = proj.id
-    res = await db._execute(
-        db.client.table("runs").select("id,created_at,config")
-        .eq("project_id", db.project_id)
-        .order("created_at", desc=True).limit(40)
-    )
-    for r in res.data:
-        cfg = r.get("config") or {}
-        print(r["id"][:8], cfg.get("workflow"), cfg.get("task_name"),
-              cfg.get("essay_id", "")[:25])
-
-asyncio.run(main())
-```
-
-Pick **one run per (workflow × task_name)** combination in scope:
-
-- `two_phase` × `complete_essay`
 - `draft_and_edit` × `complete_essay`
-- `two_phase` × `general_quality` (or whichever judge dimension)
+- `reflective_judge` × `<dimension>` (e.g. `general_quality`)
 
-Skip runs with 0 calls — those are dedup'd shells, not real work.
-Verify by checking `calls.count` for each candidate.
+Skip runs with 0 calls (dedup'd shells, not real work).
 
 ### Phase 2 — spawn parallel trace investigators
 
@@ -375,7 +352,10 @@ to the user. Structure:
 For each item:
 - One-line statement of the problem
 - Cite supporting trace finding + fork id
-- Concrete fix (file path, prompt edit, knob change)
+- Concrete fix — one of: prompt edit, knob change, structural change
+  (new variant entry in `variants/*.yaml`, validated by re-running
+  Phase 0.5), or input/closer-rendering change for the
+  TwoPhase-shared paths
 - Estimated impact ($ saved per run, quality delta, etc.)
 
 End with a one-line offer to draft any of the P0 items as PRs.
@@ -392,8 +372,11 @@ Be intentional about where wins from this loop get applied.
   structure, the editor's max_tokens, add an arbiter exchange, etc.,
   freely. Removing, reordering, or wholesale restructuring stages
   is also fair game — this workflow exists to be restructured.
-  Lessons from the trace+fork loop on **completion** runs should be
-  applied here.
+  Structural changes can't be validated via Phase 3 forks (forks are
+  single-turn, side-effect-free); land them as a new entry in
+  `variants/draft_and_edit.yaml` and re-run Phase 0.5 to compare
+  against baseline. Lessons from the trace+fork loop on
+  **completion** runs should be applied here.
 - **Completions: `TwoPhaseOrchestrator` is shared with normal rumil
   runs — leave its internals alone.** It runs research questions
   outside versus too, so changing prioritization / scout / view logic
@@ -411,10 +394,14 @@ Be intentional about where wins from this loop get applied.
   ``text_call`` with its own system prompt. Wholly independent of
   two_phase — no shared prompts, helpers, or stage logic. Edit any
   of the three stage prompts, add stages, or remove/reorder/restructure
-  the flow freely — this workflow exists to be restructured. Hold
-  the model constant across stages by default; per-role model swaps
-  add a confound to trace+fork comparisons. Lessons from the
-  trace+fork loop on **judging** runs land here.
+  the flow freely — this workflow exists to be restructured.
+  Structural changes can't be validated via Phase 3 forks (forks are
+  single-turn, side-effect-free); land them as a new entry in
+  `variants/reflective_judge.yaml` and re-run Phase 0.5 to compare
+  against baseline. Hold the model constant across stages by
+  default; per-role model swaps add a confound to trace+fork
+  comparisons. Lessons from the trace+fork loop on **judging** runs
+  land here.
 - **Judging: `TwoPhaseOrchestrator --variant orch` is shared with
   normal rumil — leave its internals alone.** Same rule as the
   completion side. Iterate on inputs (the pair Question's framing,
@@ -477,7 +464,7 @@ A successful end-to-end run produces:
 - 4-6 fork agent reports, each with fork ids + cost
 - A single consolidated punch list with P0/P1/P2/P3 sections
 - Total wall-clock: 5-15 min depending on fork count and trace size
-- Total $: $0.50-3 for forks (no fresh-runs); $5-15 if `--fresh`
+- Total $: $0.50-3 for forks alone (`--reuse`); $5-15 with fresh runs (default)
 
 If you're under 30 seconds wall-clock, you're not actually waiting
 for agents — you skipped Phase 2 or 3.

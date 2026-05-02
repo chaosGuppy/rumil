@@ -645,16 +645,38 @@ class DraftAndEditWorkflow:
                 n_critiques=len(critiques),
             )
         )
-        # Editor needs a higher output cap than the per-model default to
-        # avoid mid-revision truncation. text_call disallows mixing
-        # model_config with discrete max_tokens, so when a config is
-        # provided clone it with the bumped cap; otherwise use the
-        # discrete kwarg path.
+        # Editor budget shape:
+        #   max_tokens          = 64 000  (total response cap: thinking + output)
+        #   max_thinking_tokens = 48 000  (cap on thinking; leaves ≥16k for output text)
+        #
+        # The editor's <preserved> + <cuts> scaffolding is a token sink and
+        # the editor's task (re-write a long continuation incorporating
+        # critique) is hard enough that adaptive thinking can swallow the
+        # entire response budget without ever emitting visible text. With
+        # the previous 32k cap and uncapped thinking, ~5/9 round-1 d&e
+        # editor exchanges hit max_tokens; on stability re-fires of the
+        # aiep x n_critics_3 final edit, both n=2 samples maxed out — one
+        # truncated mid-paragraph at 847 words, one returned 0 chars
+        # because thinking ate the full 32k.
+        #
+        # The new shape guarantees ≥16k tokens of output text. If the
+        # editor's actual output text exceeds that 16k floor we end up
+        # in open-tag state, which the truncation-recovery loop below
+        # catches and re-fires multi-turn until the closing tag lands.
+        # text_call disallows mixing model_config with discrete max_tokens,
+        # so when a config is provided clone it with the new caps;
+        # otherwise use the discrete kwarg path (which leaves thinking at
+        # the per-model default — that path is the non-bridge case and
+        # doesn't currently fire from versus).
         editor_kwargs: dict = {"cache": True}
         if model_config is not None:
-            editor_kwargs["model_config"] = dataclasses.replace(model_config, max_tokens=32_000)
+            editor_kwargs["model_config"] = dataclasses.replace(
+                model_config,
+                max_tokens=64_000,
+                max_thinking_tokens=48_000,
+            )
         else:
-            editor_kwargs["max_tokens"] = 32_000
+            editor_kwargs["max_tokens"] = 64_000
         text = await text_call(
             self.editor_prompt,
             user_message,

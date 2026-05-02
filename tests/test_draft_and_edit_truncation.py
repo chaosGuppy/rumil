@@ -214,3 +214,97 @@ async def test_followup_message_stack_is_multi_turn(mocker):
     assert messages[2]["role"] == "user"
     # The nudge must reference continuing — exact wording can change.
     assert "continu" in messages[2]["content"].lower()
+
+
+# Editor budget caps — guards against thinking eating the entire output budget.
+
+
+@pytest.mark.asyncio
+async def test_editor_caps_thinking_when_model_config_supplied(mocker):
+    """When the bridge supplies a model_config with adaptive thinking
+    and no thinking cap, the editor must clone it with max_tokens=64k
+    and max_thinking_tokens=48k. That guarantees ≥16k of output text
+    even when adaptive thinking maxes out, so the editor can't return
+    0-char responses (the failure mode that bit aiep × n_critics_3
+    stability re-fires)."""
+    from rumil.model_config import ModelConfig
+
+    fake_text_call = mocker.patch(
+        "rumil.orchestrators.draft_and_edit.text_call",
+        new=AsyncMock(return_value="<continuation>edited</continuation>"),
+    )
+    sys_pkg = sys.modules["rumil.orchestrators.draft_and_edit"]
+    db = MagicMock()
+    db.create_call = AsyncMock(return_value=MagicMock(id="call-1"))
+    db.update_call_status = AsyncMock()
+    db.save_call = AsyncMock()
+    db.save_call_trace = AsyncMock()
+    trace = MagicMock()
+    trace.record = AsyncMock()
+    wf = _make_workflow()
+
+    bridge_config = ModelConfig(
+        temperature=None,
+        max_tokens=20_000,  # bridge default — much smaller than what editor needs
+        thinking={"type": "adaptive"},
+        max_thinking_tokens=None,  # uncapped — the failure mode
+    )
+
+    await wf._edit(
+        db=db,
+        trace=trace,
+        call_id="call-1",
+        round_idx=2,
+        prefix="prefix",
+        target_length=10_000,
+        current_draft="draft",
+        critiques=["critic prose"],
+        model_config=bridge_config,
+    )
+
+    # The editor's text_call should have received a model_config (not
+    # discrete max_tokens) carrying the bumped caps.
+    fake_text_call.assert_awaited_once()
+    kwargs = fake_text_call.await_args.kwargs
+    assert "max_tokens" not in kwargs, "should pass via model_config, not discrete arg"
+    cfg = kwargs["model_config"]
+    assert cfg.max_tokens == 64_000
+    assert cfg.max_thinking_tokens == 48_000
+    # Other condition fields preserved from the supplied config.
+    assert cfg.thinking == {"type": "adaptive"}
+    del sys_pkg  # keep ruff quiet
+
+
+@pytest.mark.asyncio
+async def test_editor_uses_discrete_max_tokens_when_no_model_config(mocker):
+    """Non-bridge callers don't supply a model_config. The editor
+    falls back to the discrete max_tokens arg at the same 64k cap."""
+    fake_text_call = mocker.patch(
+        "rumil.orchestrators.draft_and_edit.text_call",
+        new=AsyncMock(return_value="<continuation>edited</continuation>"),
+    )
+    db = MagicMock()
+    db.create_call = AsyncMock(return_value=MagicMock(id="call-1"))
+    db.update_call_status = AsyncMock()
+    db.save_call = AsyncMock()
+    db.save_call_trace = AsyncMock()
+    trace = MagicMock()
+    trace.record = AsyncMock()
+    wf = _make_workflow()
+
+    await wf._edit(
+        db=db,
+        trace=trace,
+        call_id="call-1",
+        round_idx=2,
+        prefix="prefix",
+        target_length=10_000,
+        current_draft="draft",
+        critiques=["critic prose"],
+        model_config=None,
+    )
+
+    fake_text_call.assert_awaited_once()
+    kwargs = fake_text_call.await_args.kwargs
+    assert kwargs.get("max_tokens") == 64_000
+    assert "model_config" not in kwargs or kwargs["model_config"] is None

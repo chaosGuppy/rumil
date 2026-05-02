@@ -59,6 +59,23 @@ class _StubInnerBuilder(ContextBuilder):
         return self._result
 
 
+def _scoring_call_text(kwargs: dict) -> str:
+    """Concatenate the text of every content block in a scoring call's
+    `messages` kwarg, so existing tests can substring-search for
+    candidate-specific markers without caring about block layout."""
+    messages = kwargs.get("messages") or []
+    chunks: list[str] = []
+    for msg in messages:
+        content = msg.get("content")
+        if isinstance(content, str):
+            chunks.append(content)
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    chunks.append(block.get("text", ""))
+    return "".join(chunks)
+
+
 @pytest_asyncio.fixture
 async def view_call(tmp_db, question_page):
     call = Call(
@@ -128,7 +145,7 @@ async def test_excludes_inner_pages_from_candidates(mocker, tmp_db, question_pag
 
     async def fake_structured_call(**kwargs):
         # Capture which page got scored (look for a unique fragment in user msg)
-        msg = kwargs["user_message"]
+        msg = _scoring_call_text(kwargs)
         if inner_page.headline in msg:
             seen_ids.append(inner_page.id)
         if candidate.headline in msg:
@@ -149,6 +166,77 @@ async def test_excludes_inner_pages_from_candidates(mocker, tmp_db, question_pag
 
     assert candidate.id in seen_ids
     assert inner_page.id not in seen_ids
+
+
+async def test_scoring_calls_share_cached_prefix(mocker, tmp_db, question_page, view_call):
+    """Every scoring call must put cache_control on a prefix block that's
+    byte-identical across candidates, so calls 2..N hit the prompt cache.
+
+    Regression test for the rate-limit storm we hit when running the impact
+    filter on big questions: the old code passed the question + standard
+    context + per-candidate content as one user_message string with
+    cache=True, which puts the cache breakpoint at the END (per-candidate,
+    never reused). Each call paid full input cost on the ~50k-token shared
+    prefix → TPM blowout → 429s → SDK + tenacity retries → call count well
+    above the candidate count.
+    """
+    candidates = [_make_evidence(f"Candidate {i}", f"Body {i}" * 20) for i in range(3)]
+    inner = ContextResult(
+        context_text="A" * 500,
+        working_page_ids=[],
+    )
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.bfs_evidence_pages_within_distance",
+        new_callable=mocker.AsyncMock,
+        return_value=candidates,
+    )
+
+    captured: list[dict] = []
+
+    async def fake_structured_call(**kwargs):
+        captured.append(kwargs)
+        return _FakeStructuredCallResult(
+            ImpactVerdict(new_information="x", impact_reasoning="y", impact_percentile=50)
+        )
+
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.structured_call",
+        side_effect=fake_structured_call,
+    )
+
+    wrapper = ImpactFilteredContext(inner_builder=_StubInnerBuilder(inner))
+    infra = _make_infra(tmp_db, view_call, question_page)
+    with override_settings(rumil_smoke_test=""):
+        await wrapper.build_context(infra)
+
+    assert len(captured) == len(candidates)
+    prefix_texts: list[str] = []
+    for kwargs in captured:
+        # Must use the messages= path, not user_message= (the old single-string
+        # path can't place cache_control on a shared prefix block).
+        assert kwargs.get("user_message") in (None, ""), (
+            "scoring call must pass `messages=` so cache_control sits on the "
+            "shared prefix; the user_message= path collapses everything into "
+            "one block and defeats caching"
+        )
+        messages = kwargs["messages"]
+        assert len(messages) == 1
+        content = messages[0]["content"]
+        assert isinstance(content, list) and len(content) >= 2
+        prefix_block, *rest = content
+        assert prefix_block["cache_control"] == {"type": "ephemeral"}
+        assert "cache_control" not in rest[-1], (
+            "per-candidate suffix block must not carry cache_control — that's "
+            "what reproduces the original miss"
+        )
+        prefix_texts.append(prefix_block["text"])
+
+    assert len(set(prefix_texts)) == 1, (
+        "shared prefix text differs across calls — it would not cache-hit"
+    )
+    assert candidates[0].headline not in prefix_texts[0], (
+        "candidate-specific text leaked into the cached prefix"
+    )
 
 
 async def test_excludes_excluded_page_ids(mocker, tmp_db, question_page, view_call):
@@ -174,7 +262,7 @@ async def test_excludes_excluded_page_ids(mocker, tmp_db, question_page, view_ca
     seen_ids: list[str] = []
 
     async def fake_structured_call(**kwargs):
-        msg = kwargs["user_message"]
+        msg = _scoring_call_text(kwargs)
         if cited_page.headline in msg:
             seen_ids.append(cited_page.id)
         if candidate.headline in msg:
@@ -197,6 +285,63 @@ async def test_excludes_excluded_page_ids(mocker, tmp_db, question_page, view_ca
     assert cited_page.id not in seen_ids
 
 
+async def test_excludes_pages_tracked_via_trace(mocker, tmp_db, question_page, view_call):
+    """Pages rendered by the inner builder via format_page(track=True) are
+    excluded even when the builder doesn't surface their IDs in
+    working_page_ids / tier IDs / excluded_page_ids.
+
+    CreateViewContext renders existing view items into the context but
+    doesn't track their page IDs in any returned list. The wrapper must
+    still exclude them via the trace's page-load record so sonnet doesn't
+    waste a call re-scoring a page that's already in the prompt.
+    """
+    untracked_page = _make_evidence("Rendered but untracked", "U" * 200)
+    candidate = _make_evidence("Fresh candidate", "Y" * 200)
+
+    class _TraceRecordingInnerBuilder(ContextBuilder):
+        async def build_context(self, infra: CallInfra) -> ContextResult:
+            infra.trace.record_page_load(
+                untracked_page.id,
+                "content",
+                {"source": "embedding_full"},
+            )
+            return ContextResult(
+                context_text="STANDARD CONTEXT (incl. untracked page)",
+                working_page_ids=[],
+            )
+
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.bfs_evidence_pages_within_distance",
+        new_callable=mocker.AsyncMock,
+        return_value=[untracked_page, candidate],
+    )
+
+    seen_ids: list[str] = []
+
+    async def fake_structured_call(**kwargs):
+        msg = _scoring_call_text(kwargs)
+        if untracked_page.headline in msg:
+            seen_ids.append(untracked_page.id)
+        if candidate.headline in msg:
+            seen_ids.append(candidate.id)
+        return _FakeStructuredCallResult(
+            ImpactVerdict(new_information="x", impact_reasoning="y", impact_percentile=50)
+        )
+
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.structured_call",
+        side_effect=fake_structured_call,
+    )
+
+    wrapper = ImpactFilteredContext(inner_builder=_TraceRecordingInnerBuilder())
+    infra = _make_infra(tmp_db, view_call, question_page)
+    with override_settings(rumil_smoke_test=""):
+        await wrapper.build_context(infra)
+
+    assert candidate.id in seen_ids
+    assert untracked_page.id not in seen_ids
+
+
 async def test_floor_percentile_drops_low_scores(mocker, tmp_db, question_page, view_call):
     """Pages scored below floor_percentile are not included even if budget allows."""
     inner = ContextResult(context_text="ctx", working_page_ids=[])
@@ -209,7 +354,7 @@ async def test_floor_percentile_drops_low_scores(mocker, tmp_db, question_page, 
     )
 
     async def fake_structured_call(**kwargs):
-        msg = kwargs["user_message"]
+        msg = _scoring_call_text(kwargs)
         score = 80 if "High impact" in msg else 10
         return _FakeStructuredCallResult(
             ImpactVerdict(new_information="x", impact_reasoning="y", impact_percentile=score)
@@ -250,7 +395,7 @@ async def test_budget_caps_acceptance(mocker, tmp_db, question_page, view_call):
         return any(p.id == pid and p.headline in msg for p in pages)
 
     async def fake_structured_call(**kwargs):
-        msg = kwargs["user_message"]
+        msg = _scoring_call_text(kwargs)
         score = next(s for p, s in page_scores.items() if p in msg or _name_in(msg, p, big_pages))
         return _FakeStructuredCallResult(
             ImpactVerdict(new_information="x", impact_reasoning="y", impact_percentile=score)

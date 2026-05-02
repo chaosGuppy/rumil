@@ -7,7 +7,7 @@ Composite response types and trace event envelope types. Core models
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,6 +37,7 @@ from rumil.tracing.trace_events import (
     LLMExchangeEvent,
     LoadPageEvent,
     MovesExecutedEvent,
+    PageRef,
     PhaseSkippedEvent,
     QuestionDedupeEvent,
     ReadStartedEvent,
@@ -437,6 +438,27 @@ class ABEvalReportListItemOut(BaseModel):
     created_at: str
 
 
+class AbEvalExperimentOut(ABEvalReportListItemOut):
+    kind: Literal["ab_eval"] = "ab_eval"
+
+
+class RunCallExperimentOut(BaseModel):
+    kind: Literal["run_call"] = "run_call"
+    run_id: str
+    name: str
+    question_id: str = ""
+    question_headline: str = ""
+    config_summary: dict = {}
+    staged: bool = False
+    created_at: str
+
+
+ExperimentListItemOut = Annotated[
+    AbEvalExperimentOut | RunCallExperimentOut,
+    Field(discriminator="kind"),
+]
+
+
 class RealtimeConfigOut(BaseModel):
     url: str
     anon_key: str
@@ -532,3 +554,31 @@ class PageLoadStatsOut(BaseModel):
     total: int
     total_unique: int
     question_headlines: dict[str, str]
+
+
+class ContextEvalArmOut(BaseModel):
+    """One arm (gold or candidate) of a context-builder eval."""
+
+    run_id: str
+    call_id: str
+    builder_name: str
+    context_built: ContextBuiltEventOut
+    cost_usd: float | None = None
+    config: dict = {}
+
+
+class ContextEvalDiffOut(BaseModel):
+    """Side-by-side diff of two context-builder runs on the same question.
+
+    pages_only_in_gold/pages_only_in_candidate/pages_in_both are the result
+    of diffing the union of working_context, preloaded, and scope-linked
+    pages from each arm's context_built event. Headlines are carried via
+    PageRef so the UI can render links without an extra lookup.
+    """
+
+    question: Page | None = None
+    gold: ContextEvalArmOut
+    candidate: ContextEvalArmOut
+    pages_only_in_gold: list[PageRef] = []
+    pages_only_in_candidate: list[PageRef] = []
+    pages_in_both: list[PageRef] = []

@@ -184,7 +184,7 @@ export default async function Home() {
         {isAdmin && (
           <nav className="ws-nav">
             <Link className="ws-nav-link" href="/jobs">jobs</Link>
-            <Link className="ws-nav-link" href="/ab-evals">a/b evals</Link>
+            <Link className="ws-nav-link" href="/experiments">experiments</Link>
           </nav>
         )}
       </div>

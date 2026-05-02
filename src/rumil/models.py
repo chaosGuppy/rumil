@@ -108,6 +108,11 @@ class CallType(str, Enum):
     # (single-shot or via a Workflow like DraftAndEdit). Distinct from
     # VERSUS_JUDGE so completion runs don't pollute judge analytics.
     VERSUS_COMPLETE = "versus_complete"
+    # Lightweight build_context-only call used by the context-builder
+    # evaluation workflow (see scripts/run_context_eval.py). Each eval run
+    # has one of these calls — gold (ImpactFilteredContext) or candidate
+    # (named builder under test). Never dispatchable from prioritization.
+    CONTEXT_BUILDER_EVAL = "context_builder_eval"
 
 
 # The subset of CallTypes that prioritization can dispatch.

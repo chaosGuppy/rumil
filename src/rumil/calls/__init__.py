@@ -2,6 +2,12 @@
 
 from rumil.calls.assess import AssessCall, BigAssessCall
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+from rumil.calls.context_builder_eval import (
+    EVAL_CONTEXT_BUILDERS,
+    GOLD_CONTEXT_BUILDER,
+    ContextBuilderEvalCall,
+    make_eval_context_builder,
+)
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.create_view_max_effort import CreateViewMaxEffortCall
 from rumil.calls.critique_artefact import CritiqueArtefactCall
@@ -37,9 +43,12 @@ from rumil.calls.web_research import WebResearchCall
 
 __all__ = [
     "ASSESS_CALL_CLASSES",
+    "EVAL_CONTEXT_BUILDERS",
+    "GOLD_CONTEXT_BUILDER",
     "AssessCall",
     "BigAssessCall",
     "CallRunner",
+    "ContextBuilderEvalCall",
     "CreateFreeformViewCall",
     "CreateViewCall",
     "CreateViewMaxEffortCall",
@@ -72,4 +81,5 @@ __all__ = [
     "UpdateViewCall",
     "UpdateViewMaxEffortCall",
     "WebResearchCall",
+    "make_eval_context_builder",
 ]

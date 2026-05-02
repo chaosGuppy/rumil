@@ -61,7 +61,13 @@ from versus import complete, config, envcascade, prepare, sources, versus_db  # 
 from versus import essay as versus_essay  # noqa: E402
 
 envcascade.apply(
-    ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"),
+    (
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_HOST",
+    ),
     versus_root=VERSUS_ROOT,
     rumil_root=RUMIL_ROOT,
 )

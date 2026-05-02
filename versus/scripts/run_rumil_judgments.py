@@ -47,7 +47,13 @@ except ModuleNotFoundError:
 from versus import envcascade  # noqa: E402
 
 envcascade.apply(
-    ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"),
+    (
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_HOST",
+    ),
     versus_root=VERSUS_ROOT,
     rumil_root=RUMIL_ROOT,
 )

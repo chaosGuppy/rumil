@@ -16,6 +16,21 @@ This skill orchestrates other skills (`rumil-versus-generate`,
 `rumil-forks`) and parallel `Agent` calls. The actual work happens in
 those tools; this skill is the recipe.
 
+## Step 0 — load rumil-system first
+
+**Before any other step**, invoke the `rumil-system` skill via
+the Skill tool. It loads the schema cheat sheet (column names for
+runs / calls / pages / versus_texts / versus_judgments), the
+short-name traps (e.g. it's `calls.cost_usd` not `calls.cost`,
+`calls.call_params` not `calls.params`), the uuid-LIKE-operator
+gotcha, and the two-lane provenance model. You will write DB queries
+in Phase 1 and your sub-agents will too — skipping this step burns
+round-trips on `column "X" does not exist` errors.
+
+If you're already in a session where rumil-system has been loaded
+recently (e.g. the user just ran another rumil skill), you can skip;
+otherwise load it.
+
 ## When to use
 
 - "Review the recent versus runs, find improvements."
@@ -172,6 +187,14 @@ For each selected run, spawn one `Agent` (background) with
 >     `src/rumil/orchestrators/draft_and_edit.py`.
 >   - The trace will be large; be selective — read prioritization +
 >     a couple of scouts + the closer; don't read every exchange.
+>
+> DB query gotchas (if you write any inline `db._execute` queries):
+>   - `calls.cost_usd` (NOT `calls.cost`); `calls.call_params` (NOT
+>     `calls.params`); `runs.cost_usd_cents` (cents, not dollars).
+>   - `versus_texts` has no `run_id` / `project_id` — it's
+>     workspace-global, dedup'd by `request_hash`.
+>   - Postgres `.like()` does not work on uuid columns; fetch a
+>     candidate set with eq filters and prefix-match in Python.
 >
 > Return:
 >   1. Top 3 concrete improvements ranked by expected impact, each

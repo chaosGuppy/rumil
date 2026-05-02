@@ -190,8 +190,9 @@ Postgres `42703` error after a full Python boot — wasteful.
 
 - `calls.cost` ❌ → use **`calls.cost_usd`** (float, dollars)
 - `calls.params` ❌ → use **`calls.call_params`** (jsonb)
-- `runs.cost` / `runs.cost_usd` ❌ → use **`runs.cost_usd_cents`**
-  (int, **cents** — different unit from `calls.cost_usd`)
+- `runs` has **no** cost / status / lifecycle columns. Per-run cost
+  comes from summing `calls.cost_usd` for the run; there is no
+  `started_at` / `finished_at` / `cost_usd_cents` to query.
 - `pages.short_id` ❌ — there is no short id column; do `.id[:8]` in
   Python or accept the full UUID
 - `versus_texts.run_id` / `project_id` ❌ — `versus_texts` has
@@ -206,10 +207,12 @@ Postgres operator traps:
   cap practical list size around ~500 ids per call.
 
 **`runs`** — one row per run (orch run, dispatch, versus job, etc.)
-- `id`, `name`, `project_id`, `question_id`, `created_at`, `started_at`, `finished_at`
+- `id`, `name`, `project_id`, `question_id`, `created_at`
 - `config` (jsonb — shape depends on lane; see "config shape" below)
-- `staged` (bool), `hidden`, `status`, `paused_at`, `cancel_reason`
-- `cost_usd_cents` (int — **cents**, NOT dollars)
+- `staged` (bool)
+- No lifecycle columns: status / started_at / finished_at / cost_usd_cents
+  do not exist on this branch. Cost rolls up from `calls.cost_usd`;
+  liveness from `calls.status` / `calls.completed_at`.
 
 **`calls`** — one row per LLM call dispatched within a run
 - `id`, `call_type`, `status`, `run_id`, `project_id`, `workspace`

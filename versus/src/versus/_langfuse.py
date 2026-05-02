@@ -40,12 +40,36 @@ except ImportError:
         return None
 
 
+def _noop_decorator(**_kwargs: Any) -> Callable[[F], F]:
+    def decorator(fn: F) -> F:
+        return fn
+
+    return decorator
+
+
 def _enabled() -> bool:
     return _HAS_LANGFUSE and bool(os.environ.get("LANGFUSE_PUBLIC_KEY"))
 
 
+# Silence the langfuse SDK's per-process "auth error: no public_key" warning
+# when keys are deliberately unset. Without this, every versus run prints the
+# SDK's complaint at first client construction, plus a "no active span"
+# context-error each time an @observe-decorated function fires. Mirrors the
+# treatment in rumil.tracing.langfuse_client.get_langfuse.
+if _HAS_LANGFUSE and not os.environ.get("LANGFUSE_PUBLIC_KEY"):
+    logging.getLogger("langfuse").setLevel(logging.ERROR)
+
+
 def observe(**kwargs: Any) -> Callable[[F], F]:
-    """`@observe(...)` passthrough; no-op when langfuse isn't installed."""
+    """`@observe(...)` passthrough; no-op when langfuse isn't enabled.
+
+    Disabled = package missing OR ``LANGFUSE_PUBLIC_KEY`` unset. The langfuse
+    SDK's real ``@observe`` tries to create spans against a disabled client and
+    logs auth + context errors per call site, so we shadow it with a real
+    no-op decorator in that case.
+    """
+    if not _enabled():
+        return _noop_decorator(**kwargs)
     return _observe(**kwargs)
 
 

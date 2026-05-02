@@ -273,6 +273,9 @@ Postgres operator traps:
   `contamination_note`, `duration_s`
 - `project_id`, `run_id`, `rumil_call_id`, `rumil_question_id`,
   `rumil_cost_usd`
+- **Decoding a row**: read `winner_source` + `preference_label`,
+  not `verdict` — `verdict` is relative to display order. See
+  `versus/AGENT.md` "Judging contract" for the full breakdown.
 
 #### `runs.config` shape
 

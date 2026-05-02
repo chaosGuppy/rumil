@@ -77,6 +77,8 @@ Source ids can literally be `"human"`, so any surface the judge sees (prompt, Qu
 - `canonical_source_first` / `canonical_source_second` in `runs.config`, and `source_a` / `source_b` in the judgment row, are the **alphabetical** dedup-key order (`sorted([x, y])`). They don't tell you which side the judge saw as "Continuation A".
 - `display_first` on the judgment row is the actual display order. The `judge_inputs.order` field (`ab` or `ba`) encodes how display order maps onto canonical order; `judge.order_from_display_first` computes it.
 
+**When reading a row to learn who won, always go through `winner_source` (and `preference_label` for strength).** A third axis layered on the previous two is `verdict ∈ {A, B, null}`, which records the judge's pick *relative to display order* — `A` means the judge preferred whatever was shown as "Continuation A" (= `display_first`). Combining `verdict` with `display_first` and `(source_a, source_b)` mentally to recover the actual winner is fragile; the easiest way to flip your interpretation of every result in a batch is to read `verdict='A'` and assume `source_a` won. The DB already does the resolution: `winner_source` is a generated column carrying the literal winning side (a model id, the string `"human"`, `"tie"`, or null for refusals/unparsed), and `preference_label` is the parsed 7-point strength (`"A strongly preferred"`, `"B somewhat preferred"`, etc.). Read those.
+
 ## Project / run linkage for orch judgments
 
 Judgments produced inside a rumil orchestrator call carry soft references back to rumil:

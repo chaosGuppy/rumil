@@ -257,11 +257,18 @@ For each selected run, spawn one `Agent` (background) with
 >
 > DB query gotchas (if you write any inline `db._execute` queries):
 >   - `calls.cost_usd` (NOT `calls.cost`); `calls.call_params` (NOT
->     `calls.params`); `runs.cost_usd_cents` (cents, not dollars).
+>     `calls.params`).
 >   - `versus_texts` has no `run_id` / `project_id` — it's
 >     workspace-global, dedup'd by `request_hash`.
 >   - Postgres `.like()` does not work on uuid columns; fetch a
 >     candidate set with eq filters and prefix-match in Python.
+>   - When reading `versus_judgments` to decide who won a pair, read
+>     `winner_source` (and `preference_label` for strength) — NOT
+>     `verdict` alone. `verdict='A'` means "the side shown as
+>     Continuation A won", which is `display_first` (deterministic but
+>     order-dependent), not `source_a` (alphabetical dedup-key order).
+>     Full breakdown in `versus/AGENT.md` "Judging contract" /
+>     "Canonical vs display order".
 >
 > Return:
 >   1. Top 3 concrete improvements ranked by expected impact, each

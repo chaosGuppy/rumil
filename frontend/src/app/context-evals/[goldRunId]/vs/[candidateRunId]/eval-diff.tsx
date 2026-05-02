@@ -6,6 +6,7 @@ import {
   ContextBuiltBody,
   PageList,
 } from "@/components/context-built-body";
+import "../../../../traces/[runId]/trace.css";
 import "./context-eval-diff.css";
 
 function PageBucket({

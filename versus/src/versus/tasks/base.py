@@ -37,6 +37,7 @@ from collections.abc import Mapping
 from typing import Protocol, TypeVar, runtime_checkable
 
 from rumil.database import DB
+from rumil.models import CallType
 
 TInputs = TypeVar("TInputs")
 TArtifact = TypeVar("TArtifact")
@@ -47,6 +48,11 @@ class VersusTask(Protocol[TInputs, TArtifact]):
     """One pluggable versus task — together with a Workflow, fully drives a run."""
 
     name: str
+    # CallType written for the closer call (and the source/scope pages
+    # this task creates). Lets the runner stay task-agnostic while keeping
+    # judge runs tagged VERSUS_JUDGE and completion runs tagged
+    # VERSUS_COMPLETE in calls + provenance.
+    call_type: CallType
 
     def fingerprint(self, inputs: TInputs) -> Mapping[str, str | int | bool | None]: ...
 

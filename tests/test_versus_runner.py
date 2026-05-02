@@ -18,6 +18,7 @@ _VERSUS_SRC = Path(__file__).resolve().parents[1] / "versus" / "src"
 if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
+from rumil.models import CallType  # noqa: E402
 from rumil.versus_runner import VersusResult, run_versus  # noqa: E402
 
 
@@ -47,6 +48,7 @@ def _make_task(mocker, *, system="SYS", user="USR"):
     task.sdk_max_turns = 5
     task.disallowed_tools = ("Write",)
     task.tool_server_name = "test-server"
+    task.call_type = CallType.VERSUS_JUDGE
     return task
 
 
@@ -287,3 +289,28 @@ async def test_run_versus_threads_task_closer_overrides_into_helper(mocker):
     assert kwargs["max_turns"] == 9
     assert kwargs["disallowed_tools"] == ("X", "Y")
     assert kwargs["server_name"] == "my-server"
+
+
+@pytest.mark.asyncio
+async def test_run_versus_forwards_task_call_type_to_closer(mocker):
+    """The runner is task-agnostic on call_type: judge tasks land as
+    VERSUS_JUDGE, completion tasks as VERSUS_COMPLETE. Verifies the
+    attribute propagates rather than the runner picking a default."""
+    workflow = _make_workflow(mocker)
+    task = _make_task(mocker)
+    task.call_type = CallType.VERSUS_COMPLETE
+    db = _make_db(mocker)
+    fake_call = MagicMock()
+    fake_call.id = "call-1"
+    closer = mocker.patch(
+        "rumil.versus_runner.run_closer_agent",
+        new=AsyncMock(return_value=("text", fake_call)),
+    )
+    await run_versus(
+        db,
+        workflow=workflow,
+        task=task,
+        inputs=None,
+        model="claude-haiku-4-5",
+    )
+    assert closer.call_args.kwargs["call_type"] == CallType.VERSUS_COMPLETE

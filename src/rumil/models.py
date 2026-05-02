@@ -104,6 +104,10 @@ class CallType(str, Enum):
     # external `versus` harness. Uses single-arm workspace-exploration
     # tools; does not write to ab_eval_reports.
     VERSUS_JUDGE = "versus_judge"
+    # Essay continuation produced by the external `versus` harness
+    # (single-shot or via a Workflow like DraftAndEdit). Distinct from
+    # VERSUS_JUDGE so completion runs don't pollute judge analytics.
+    VERSUS_COMPLETE = "versus_complete"
 
 
 # The subset of CallTypes that prioritization can dispatch.

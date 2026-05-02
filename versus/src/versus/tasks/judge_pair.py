@@ -287,6 +287,7 @@ class JudgePairTask:
     """Pairwise-preference judging task — produces a 7-point label."""
 
     name = "judge_pair"
+    call_type: CallType = CallType.VERSUS_JUDGE
     # Defaults shared with the closer machinery in rumil.versus_closer.
     sdk_max_turns: int = _CLOSER_SDK_MAX_TURNS
     disallowed_tools: tuple[str, ...] = _CLOSER_DISALLOWED_TOOLS
@@ -325,7 +326,7 @@ class JudgePairTask:
             abstract=_build_abstract(inputs),
             project_id=db.project_id,
             provenance_model="versus-bridge",
-            provenance_call_type=CallType.VERSUS_JUDGE.value,
+            provenance_call_type=self.call_type.value,
             run_id=db.run_id,
             extra=_versus_extra(inputs),
         )

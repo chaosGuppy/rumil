@@ -237,7 +237,7 @@ class DraftAndEditWorkflow:
         target_length = _extract_target_length_chars(question.content)
 
         call = await db.create_call(
-            call_type=CallType.VERSUS_JUDGE,
+            call_type=CallType.VERSUS_COMPLETE,
             scope_page_id=question_id,
             call_params={
                 "workflow": self.name,

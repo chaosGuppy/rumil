@@ -3955,7 +3955,8 @@
           "refine_spec",
           "red_team",
           "claude_code_direct",
-          "versus_judge"
+          "versus_judge",
+          "versus_complete"
         ],
         "title": "CallType"
       },

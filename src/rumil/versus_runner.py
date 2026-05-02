@@ -33,7 +33,6 @@ from typing import Generic, Literal, TypeVar
 
 from rumil.database import DB
 from rumil.model_config import ModelConfig
-from rumil.models import CallType
 from rumil.settings import get_settings, override_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.versus_closer import run_closer_agent
@@ -84,7 +83,6 @@ async def run_versus(
     model: str,
     broadcaster: Broadcaster | None = None,
     model_config: ModelConfig | None = None,
-    call_type: CallType = CallType.VERSUS_JUDGE,
 ) -> VersusResult:
     """Drive workflow + task end-to-end against ``db``.
 
@@ -133,7 +131,7 @@ async def run_versus(
                 question_id=question_id,
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                call_type=call_type,
+                call_type=task.call_type,
                 max_turns=getattr(task, "sdk_max_turns", 5),
                 disallowed_tools=getattr(task, "disallowed_tools", ("Write", "Edit", "Glob")),
                 server_name=getattr(task, "tool_server_name", "versus-judge-tools"),

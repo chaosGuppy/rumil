@@ -342,7 +342,8 @@ async def _do_call(
     client: anthropic.AsyncAnthropic, kwargs: dict
 ) -> tuple[anthropic.types.Message, int]:
     start = time.monotonic()
-    response = await client.messages.create(**kwargs)
+    async with client.messages.stream(**kwargs) as stream:
+        response = await stream.get_final_message()
     elapsed_ms = int((time.monotonic() - start) * 1000)
     return response, elapsed_ms
 

@@ -13,6 +13,20 @@
 # Naming convention: lower_snake_case, descriptive. The first variant
 # is conventionally `baseline` — defaults across the board. Subsequent
 # variants change one knob at a time so trace deltas are interpretable.
+#
+# Optional top-level `default_contestants:` field — if set, every
+# variant invocation locks to that pair (`source_a,source_b`). The
+# fan_out helper's `--contestants` CLI flag overrides if both are
+# present. Without either, each variant picks the next pending pair
+# the planner finds, which usually means variants drift to different
+# pairs and become non-comparable. Example:
+#
+#     default_contestants: anthropic/claude-haiku-4-5,anthropic/claude-opus-4-7
+#
+# Leave commented out for "use whatever pair is pending" behavior
+# (legitimate for first-time backfill of a new variant set).
+
+# default_contestants: <source_a>,<source_b>
 
 variants:
   - name: baseline

@@ -156,44 +156,40 @@ deltas are interpretable.
 
 How to dispatch:
 
-1. Parse the YAML for the workflow you're iterating on. (Use
-   `yaml.safe_load` via `uv run --with pyyaml python -c ...`, or just
-   read it with the standard library and trust the small surface.)
-2. For each variant, construct the CLI invocation. Map YAML keys to
-   the corresponding `--<flag>` on `run_rumil_judgments.py` (judge
-   side) or `run_completions.py` (completion side). Path values stay
-   relative to repo root; the CLI accepts them directly.
-3. Fire the invocations **in parallel** as separate Bash calls with
-   `run_in_background=true`, one variant per call. Each variant
-   becomes its own rumil Run (and its own row in
-   `versus_texts` / `versus_judgments`), so trace+fork analysis
-   downstream can compare across variants directly.
-   - **Lock variants to the same pair** with `--contestants
-     <source_a>,<source_b>` (judge) or by passing the same `--essay`
-     and `--prefix-label` (completion). Without this, each variant
-     invocation picks the next pending pair the planner finds, which
-     means variants may land on different pairs and the per-variant
-     verdicts aren't directly comparable. Smoke-test confirmed: a
-     variant fan-out without `--contestants` produced 4 rows on 2
-     different pairs; only 3 of the 4 were on a comparable pair.
+1. **Resolve the YAML into ready-to-fire CLI commands** with the
+   `fan_out` helper:
+   ```
+   PYTHONPATH=.claude/lib uv run python -m rumil_skills.fan_out \
+       --workflow reflective_judge \
+       --workspace versus \
+       --essay <essay_id> \
+       --dimension general_quality \
+       --model sonnet \
+       --limit 1 \
+       --contestants <source_a>,<source_b>
+   ```
+   Output is a JSON list — one entry per variant, each with `name`,
+   `description`, and a `cmd` array ready to dispatch as-is. Pass
+   `--variant <name>` (repeatable) to filter to specific variants.
+   The helper handles all the YAML→CLI translation: per-stage flag
+   mapping for reflective_judge, `--workflow-arg key=value`
+   passthrough for draft_and_edit, budget extraction from variant
+   entries, etc.
+2. **Lock variants to the same pair**: pass `--contestants
+   <source_a>,<source_b>` to the helper. Threaded into every
+   variant's command. Or set `default_contestants:` at the top of
+   the YAML for stable cross-session locking. Without either, each
+   variant invocation picks the next pending pair the planner finds
+   — variants drift apart and become non-comparable. Smoke-test
+   confirmed: a fan-out without `--contestants` produced 4 rows on 2
+   different pairs; only 3 of 4 were comparable.
+3. **Fire each `cmd` in parallel** as a separate Bash call with
+   `run_in_background=true`. Each variant becomes its own rumil Run
+   (its own row in `versus_texts` / `versus_judgments`), so trace +
+   fork analysis downstream can compare across variants directly.
 4. When all variants complete, hand the run_ids to the Phase 2 trace
    investigators — one per variant — so the trace agents can compare
    what each variant did differently.
-
-Example (reflective judge, baseline + 3 variants on one pair):
-
-```
-uv run python versus/scripts/run_rumil_judgments.py \
-    --variant reflective --workspace versus --essay <id> \
-    --essay <id>  # baseline
-uv run python versus/scripts/run_rumil_judgments.py \
-    --variant reflective --workspace versus --essay <id> \
-    --verdict-model claude-opus-4-7  # opus_verdict
-uv run python versus/scripts/run_rumil_judgments.py \
-    --variant reflective --workspace versus --essay <id> \
-    --read-prompt-path .claude/skills/rumil-versus-iterate/prompts/reflective_judge/read_terse.md
-# ... etc.
-```
 
 **When to skip variant fan-out**: if the user explicitly named a
 specific run to investigate, or if the conversation makes it clear

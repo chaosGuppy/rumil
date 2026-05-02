@@ -402,14 +402,23 @@ class DraftAndEditWorkflow:
                     critiques=critiques,
                 )
 
-            critiques = await self._critique_round(
-                db=db,
-                trace=trace,
-                call_id=call_id,
-                round_idx=round_idx,
-                prefix=prefix,
-                draft=current_draft,
-            )
+            # Skip the critique step on the final round: there's no
+            # subsequent edit to consume the critiques, so paying for
+            # them is dead loss. ~12% of d&e cost on a typical
+            # budget=4 run was the trailing critic_round whose output
+            # was never read by an editor.
+            will_break_next = (
+                self.max_rounds is not None and round_idx + 1 >= self.max_rounds
+            ) or await db.budget_remaining() <= 0
+            if not will_break_next:
+                critiques = await self._critique_round(
+                    db=db,
+                    trace=trace,
+                    call_id=call_id,
+                    round_idx=round_idx,
+                    prefix=prefix,
+                    draft=current_draft,
+                )
             round_idx += 1
 
         if not current_draft:

@@ -72,6 +72,7 @@ def _make_db(
     *,
     question_content: str | None = None,
     source_content: str = "Once upon a time...",
+    budget: int = 100,
 ):
     """Build a fully mocked DB that mimics what the workflow touches.
 
@@ -82,6 +83,12 @@ def _make_db(
     explicit ``question_content`` to drive error-path tests with a
     malformed body.
 
+    The mock tracks ``budget`` across ``consume_budget`` /
+    ``budget_remaining`` calls so the workflow's "skip critique on
+    final round" detection (which peeks ``budget_remaining``) sees
+    realistic values. Default budget is large enough to be a no-op
+    for tests that already cap rounds via ``max_rounds``.
+
     update_page_content writes back to the in-memory question so a test
     can read the persisted final-draft after run() returns.
     """
@@ -91,9 +98,20 @@ def _make_db(
     fake_question.content = question_content or _make_question_framing(prefix=source_content)
     db.get_page = AsyncMock(return_value=fake_question)
     db.init_budget = AsyncMock()
-    db.consume_budget = AsyncMock(return_value=True)
+    remaining = {"value": budget}
+
+    async def _consume(amount: int = 1) -> bool:
+        if remaining["value"] < amount:
+            return False
+        remaining["value"] -= amount
+        return True
+
+    async def _remaining() -> int:
+        return max(0, remaining["value"])
+
+    db.consume_budget = AsyncMock(side_effect=_consume)
     db.add_budget = AsyncMock()
-    db.budget_remaining = AsyncMock(return_value=0)
+    db.budget_remaining = AsyncMock(side_effect=_remaining)
     db.qbp_consume = AsyncMock()
     db.update_call_status = AsyncMock()
     db.save_call = AsyncMock()
@@ -278,9 +296,9 @@ async def test_setup_seeds_budget(mocker):
 
 @pytest.mark.asyncio
 async def test_run_one_round_writes_final_draft_to_question_content(mocker):
-    """budget=1, max_rounds=1: drafter fires once, critics fire in
-    parallel, no editor. The drafter's output lands on
-    question.content."""
+    """budget=1, max_rounds=1: drafter fires once, no critics (final
+    round → no editor will read them), no editor. The drafter's
+    output lands on question.content."""
     db, question, _call = _make_db(mocker)
     fake_text_call = _patch_text_call(
         mocker,
@@ -295,18 +313,20 @@ async def test_run_one_round_writes_final_draft_to_question_content(mocker):
     assert wf.last_status == "complete"
     db.update_page_content.assert_awaited_once_with("q-1", "DRAFT_R0")
     assert question.content == "DRAFT_R0"
-    # 1 drafter + 2 critics = 3 LLM calls; no editor.
-    assert fake_text_call.await_count == 3
+    # 1 drafter; no critics (round 0 is also the final round, so the
+    # critique step is skipped); no editor.
+    assert fake_text_call.await_count == 1
     phases = [c.kwargs["metadata"].phase for c in fake_text_call.await_args_list]
     assert phases.count("draft") == 1
-    assert sum(p.startswith("critic_r0") for p in phases) == 2
+    assert not any(p.startswith("critic") for p in phases)
     assert not any(p.startswith("edit") for p in phases)
 
 
 @pytest.mark.asyncio
 async def test_run_two_rounds_fires_editor_in_round_one(mocker):
     """budget=2, max_rounds=2: round 0 drafter+2 critics, round 1
-    editor+2 critics. Final content is the editor's output."""
+    editor (final round → no critics fire). Final content is the
+    editor's output."""
     db, question, _call = _make_db(mocker)
     fake_text_call = _patch_text_call(
         mocker,
@@ -321,19 +341,24 @@ async def test_run_two_rounds_fires_editor_in_round_one(mocker):
     assert wf.last_status == "complete"
     db.update_page_content.assert_awaited_once_with("q-1", "EDITED_R1")
     assert question.content == "EDITED_R1"
-    # 1 draft + 2 critics + 1 edit + 2 critics = 6 LLM calls.
-    assert fake_text_call.await_count == 6
+    # 1 draft + 2 critics + 1 edit = 4 LLM calls. The round-1
+    # critique would have been wasted (no round-2 editor to read it),
+    # so it's skipped.
+    assert fake_text_call.await_count == 4
     phases = [c.kwargs["metadata"].phase for c in fake_text_call.await_args_list]
     assert phases.count("draft") == 1
     assert sum(p.startswith("edit_r1") for p in phases) == 1
     assert sum(p.startswith("critic_r0") for p in phases) == 2
-    assert sum(p.startswith("critic_r1") for p in phases) == 2
+    assert not any(p.startswith("critic_r1") for p in phases)
 
 
 @pytest.mark.asyncio
 async def test_run_phases_in_order_per_round(mocker):
     """Within a round, drafter (or editor) must precede critics. Verify
-    via the order of phases in the captured call sequence."""
+    via the order of phases in the captured call sequence. With
+    budget=3 / max_rounds=3, round 0 and round 1 each fire critics;
+    round 2 (final) skips them.
+    """
     db, _question, _call = _make_db(mocker)
     fake_text_call = _patch_text_call(
         mocker,
@@ -342,7 +367,7 @@ async def test_run_phases_in_order_per_round(mocker):
         editor_text="e",
     )
 
-    wf = DraftAndEditWorkflow(budget=2, n_critics=2, max_rounds=2)
+    wf = DraftAndEditWorkflow(budget=3, n_critics=2, max_rounds=3)
     await wf.run(db, "q-1", broadcaster=None)
 
     phases = [c.kwargs["metadata"].phase for c in fake_text_call.await_args_list]
@@ -352,9 +377,12 @@ async def test_run_phases_in_order_per_round(mocker):
     round0_critic_indices = [i for i, p in enumerate(phases) if p.startswith("critic_r0")]
     assert all(i > 0 for i in round0_critic_indices)
     # Round 1 editor comes before round 1 critics.
-    edit_idx = phases.index("edit_r1")
+    edit_r1_idx = phases.index("edit_r1")
     round1_critic_indices = [i for i, p in enumerate(phases) if p.startswith("critic_r1")]
-    assert all(i > edit_idx for i in round1_critic_indices)
+    assert all(i > edit_r1_idx for i in round1_critic_indices)
+    # Round 2 (final) fires the editor but skips the critique step.
+    assert "edit_r2" in phases
+    assert not any(p.startswith("critic_r2") for p in phases)
 
 
 @pytest.mark.asyncio
@@ -416,7 +444,10 @@ async def test_run_completes_when_budget_exhausts_after_first_draft(mocker):
 async def test_run_critics_fire_in_parallel(mocker):
     """The N critics in one round run via ``asyncio.gather``: they
     don't await each other in sequence. Verify by tracking the
-    overlap between critic-call entry and exit."""
+    overlap between critic-call entry and exit. Use budget=2 /
+    max_rounds=2 so the round-0 critique step actually fires (the
+    final round skips its critique).
+    """
     db, _question, _call = _make_db(mocker)
 
     in_flight = 0
@@ -444,7 +475,7 @@ async def test_run_critics_fire_in_parallel(mocker):
         new=AsyncMock(side_effect=_fake),
     )
 
-    wf = DraftAndEditWorkflow(budget=1, n_critics=3, max_rounds=1)
+    wf = DraftAndEditWorkflow(budget=2, n_critics=3, max_rounds=2)
     await wf.run(db, "q-1", broadcaster=None)
 
     assert max_in_flight == 3, "critics did not run concurrently"
@@ -458,9 +489,9 @@ async def test_run_passes_per_role_models_to_text_call(mocker):
     fake_text_call = _patch_text_call(mocker, drafter_text="d", critic_text="c", editor_text="e")
 
     wf = DraftAndEditWorkflow(
-        budget=2,
+        budget=3,
         n_critics=2,
-        max_rounds=2,
+        max_rounds=3,
         drafter_model="model-A",
         critic_model="model-B",
         editor_model="model-C",
@@ -474,15 +505,19 @@ async def test_run_passes_per_role_models_to_text_call(mocker):
         by_phase.setdefault(phase, []).append(model)
     assert by_phase["draft"] == ["model-A"]
     assert by_phase["edit_r1"] == ["model-C"]
+    assert by_phase["edit_r2"] == ["model-C"]
     assert all(m == "model-B" for m in by_phase["critic_r0_n0"] + by_phase["critic_r0_n1"])
     assert all(m == "model-B" for m in by_phase["critic_r1_n0"] + by_phase["critic_r1_n1"])
 
 
 @pytest.mark.asyncio
 async def test_run_emits_draft_critique_edit_trace_events(mocker):
-    """Trace event surface: each round emits a DraftEvent (round 0) or
-    EditEvent (rounds 1+) plus one CritiqueRoundEvent. Verify via the
-    persisted trace entries."""
+    """Trace event surface: round 0 emits a DraftEvent + one
+    CritiqueRoundEvent (the round-0 critiques feed round-1's edit);
+    round 1 emits an EditEvent. The final round skips its critique
+    step, so for budget=2 / max_rounds=2 only one CritiqueRoundEvent
+    fires.
+    """
     db, _question, _call = _make_db(mocker)
     _patch_text_call(mocker, drafter_text="d", critic_text="c", editor_text="e")
 
@@ -492,7 +527,7 @@ async def test_run_emits_draft_critique_edit_trace_events(mocker):
     # Each save_call_trace call gets one event payload.
     events = [args.args[1][0]["event"] for args in db.save_call_trace.await_args_list]
     assert "draft" in events
-    assert events.count("critique_round") == 2
+    assert events.count("critique_round") == 1
     assert "edit" in events
 
 

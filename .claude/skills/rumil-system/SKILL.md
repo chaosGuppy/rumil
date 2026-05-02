@@ -175,11 +175,87 @@ async def main():
 asyncio.run(main())
 ```
 
-Schema gotchas:
-- `call_type` is on `calls`, not `runs`.
-- `runs.config` shape depends on lane — cc-mediated has
-  `{origin, skill, cc_session, git_head}`; rumil-mediated has the fields
-  from `Settings.capture_config()` (`model`, budgets, `git_commit`, …).
+### Schema cheat sheet
+
+Snapshot of load-bearing columns for the tables you'll query most.
+This is here so you don't burn round-trips guessing column names and
+hitting `column "X" does not exist`. If you add or rename a column,
+update this section in the same change.
+
+**`runs`** — one row per run (orch run, dispatch, versus job, etc.)
+- `id`, `name`, `project_id`, `question_id`, `created_at`, `started_at`, `finished_at`
+- `config` (jsonb — shape depends on lane; see "config shape" below)
+- `staged` (bool), `hidden`, `status`, `paused_at`, `cancel_reason`
+- `cost_usd_cents` (int — **cents**, NOT dollars)
+
+**`calls`** — one row per LLM call dispatched within a run
+- `id`, `call_type`, `status`, `run_id`, `project_id`, `workspace`
+- `parent_call_id`, `scope_page_id`, `context_page_ids`
+- `budget_allocated`, `budget_used`, `cost_usd` (float — **dollars**)
+- `created_at`, `completed_at`
+- `call_params` (jsonb), `result_summary`, `review_json`, `trace_json`
+- `primary_prompt_hash`, `primary_prompt_name`, `sequence_id`, `sequence_position`
+- `call_type` lives here, **not** on `runs`.
+
+**`pages`** — every page in the graph
+- `id`, `page_type`, `layer`, `workspace`, `project_id`, `run_id`
+- `content`, `headline`, `abstract`, `sections`, `extra`
+- `credence`, `robustness`, `credence_reasoning`, `robustness_reasoning`
+- `importance`, `meta_type`, `task_shape`, `fruit_remaining`
+- `epistemic_status`, `epistemic_type`
+- `provenance_model`, `provenance_call_type`, `provenance_call_id`
+- `superseded_by`, `is_superseded`, `is_human_created`, `hidden`
+- `staged` (bool — use with `run_id` for staged-run isolation)
+
+**`page_links`** — typed edges between pages
+- `id`, `from_page_id`, `to_page_id`, `link_type`, `direction`, `role`
+- `strength`, `reasoning`, `impact_on_parent_question`
+- `importance`, `section`, `position` (used by VIEW_ITEM links)
+- `run_id`, `staged` (same isolation pattern as `pages`)
+
+**`mutation_events`** — append-only log of mutations to existing state
+- `id`, `run_id`, `event_type`, `target_id`, `payload`, `created_at`
+- See "Staged Runs and the Mutation Log" in `CLAUDE.md`.
+
+**`page_ratings`**, **`page_flags`** — per-page eval/flag rows
+- Both have `run_id`, `staged`, `created_at`, `note`
+- Ratings: `page_id`, `call_id`, `score`
+- Flags: `flag_type`, `page_id`, `page_id_a`, `page_id_b`, `call_id`
+
+**`projects`** — workspace-as-isolation-boundary
+- `id`, `name`, `created_at`, `hidden`, `owner_user_id`
+- `--workspace <name>` resolves to a `projects.id` via
+  `db.get_or_create_project(name)`.
+
+**`budget`** — per-run budget counter (one row per run)
+- `run_id`, `total`, `used`
+
+#### versus tables
+
+**`versus_texts`** — essay completions / paraphrases (workspace-global)
+- `id`, `essay_id`, `kind` (completion | paraphrase | human),
+  `source_id` (model id, or `orch:<workflow>:<model>:<hash>`)
+- `prefix_hash`, `request_hash`, `model_config_hash`
+- `model_id`, `request`, `response`, `text`, `params`, `response_words`
+- **No `project_id`, no `run_id`.** Dedup is on `request_hash`.
+
+**`versus_judgments`** — pairwise verdicts (per-project)
+- `id`, `essay_id`, `prefix_hash`, `criterion`, `variant`
+- `source_a`, `source_b`, `text_a_id`, `text_b_id`, `display_first`
+- `judge_model`, `request`, `response`, `judge_inputs`, `judge_inputs_hash`
+- `verdict`, `preference_label`, `winner_source`, `reasoning_text`,
+  `contamination_note`, `duration_s`
+- `project_id`, `run_id`, `rumil_call_id`, `rumil_question_id`,
+  `rumil_cost_usd`
+
+#### `runs.config` shape
+
+Differs by lane:
+- cc-mediated: `{origin, skill, cc_session, git_head}`
+- rumil-mediated: fields from `Settings.capture_config()` —
+  `model`, budgets, `git_commit`, `available_calls`, …
+- versus: `{origin: "versus", staged, essay_id, task_name, workflow,
+  workspace, completion_config | judge_config}`
 
 ## When NOT to use these skills
 

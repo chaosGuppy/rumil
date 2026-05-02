@@ -106,12 +106,29 @@ _DEFAULT_CRITIC_PROMPT = (
     "could be stated once instead of restated, flag tangents the "
     "piece doesn't need. Critics that only suggest additions push "
     "the editor into runaway expansion. When the draft is "
-    "meaningfully below target, expansion suggestions are fine.\n\n"
+    "meaningfully below target, expansion suggestions are fine. "
+    "**Calibrate intensity to the length delta.** If the draft is "
+    "within ±5% of target and reads cleanly, surface only the 1-3 "
+    "highest-impact issues; do not manufacture a full punch list "
+    "when the draft is essentially fine. Late-round editor over-"
+    "correction has been observed when critics produce a long "
+    "issue list against a near-target draft.\n\n"
     "You're not writing the next draft — an editor will read your "
-    "critique alongside the others and decide what to act on. Don't "
-    "hedge; don't pad with praise; don't restate what the draft "
-    "already does. If a section works, it's fine to skip it.\n\n"
-    "Free-form prose is expected. No need for structured edits."
+    "critique and decide what to act on. Don't hedge; don't pad with "
+    "praise; don't restate what the draft already does. If a section "
+    "works, it's fine to skip it.\n\n"
+    "**Output format.** Free-form prose, EXCEPT every cut suggestion "
+    "must be a verbatim quote of the phrase or sentence to be removed. "
+    "The editor's downstream <cuts> block requires verbatim phrases; "
+    'if you describe cuts by paraphrase or section name ("the third '
+    'paragraph of section 2", "the calibration discussion") the '
+    "editor has to invent the quotes itself and the cut targets drift. "
+    "Use this shape for cuts:\n\n"
+    '  Cut: "<verbatim phrase or sentence from the draft>" '
+    "— Reason: <one-sentence why>\n\n"
+    "Quote in full when feasible. Multiple Cut: lines per critique "
+    "are fine. Other observations (style, structure, missing arguments) "
+    "stay free-form."
 )
 
 
@@ -173,7 +190,7 @@ def _is_truncated_continuation(text: str) -> bool:
     the API stops mid-paragraph before the closing tag. The recorded
     continuation gets accepted as-is and judges read a partial essay
     that ends mid-sentence — observed as "strongly preferred for human"
-    on character × harsher_critic in the round 1 iterate session, where
+    on character x harsher_critic in the round 1 iterate session, where
     fresh re-fires of the same exchange produced complete continuations.
 
     Closed-block-then-open-tag is treated as not truncated — the
@@ -183,6 +200,45 @@ def _is_truncated_continuation(text: str) -> bool:
     if _CONTINUATION_RE.search(text):
         return False
     return bool(_OPEN_CONTINUATION_RE.search(text))
+
+
+def _classify_editor_response(text: str) -> str:
+    """Classify an editor response for recovery routing.
+
+    Returns one of:
+    - ``"complete"`` — closed ``<continuation>`` block present; the
+      revision is usable as-is.
+    - ``"truncated"`` — open ``<continuation>`` tag with no closer;
+      the body started but ran out of tokens.
+    - ``"empty"`` — no ``<continuation>`` tag at all and the visible
+      text is too short to be a real revision. This is the "thinking
+      ate the entire output budget" failure mode: the API hit
+      ``max_tokens`` mid-thought, no text block ever emitted, and the
+      response_text we get back is empty or just a few stray chars of
+      structured-output preamble. With no continuation tag the
+      truncation-recovery loop's open-tag detector returns False, the
+      workflow's ``if not revised: revised = current_draft`` fallback
+      kicks in, and we lose the round's editor work entirely. Catching
+      this case explicitly lets the recovery loop fire a different
+      nudge ("you returned no visible output; emit the full blocks
+      now").
+
+    The "empty" threshold is generous (200 chars) to avoid catching
+    well-structured responses that are short on purpose. The editor's
+    ``<preserved>`` + ``<cuts>`` + ``<continuation>`` scaffolding is
+    always at least a few hundred chars when the model produces real
+    output.
+    """
+    if _CONTINUATION_RE.search(text):
+        return "complete"
+    if _OPEN_CONTINUATION_RE.search(text):
+        return "truncated"
+    if len(text.strip()) < 200:
+        return "empty"
+    # Long response, no continuation tag at all — model went off-script.
+    # Treat as empty for recovery purposes; the nudge will ask for the
+    # blocks explicitly.
+    return "empty"
 
 
 def _extract_continuation(text: str) -> str:
@@ -436,6 +492,7 @@ class DraftAndEditWorkflow:
 
             await trace.record(RoundStartedEvent(round=round_idx))
 
+            edit_was_noop = False
             if round_idx == 0:
                 current_draft = await self._draft(
                     db=db,
@@ -447,6 +504,7 @@ class DraftAndEditWorkflow:
                     model_config=model_config,
                 )
             else:
+                draft_before_edit = current_draft
                 current_draft = await self._edit(
                     db=db,
                     trace=trace,
@@ -458,16 +516,28 @@ class DraftAndEditWorkflow:
                     critiques=critiques,
                     model_config=model_config,
                 )
+                # If the editor returned the unchanged prior draft (the
+                # fallback path inside ``_edit`` triggers this when the
+                # editor's response yielded no usable revision), the draft
+                # for this round is byte-identical to the previous round's.
+                # Re-running the critic against an unchanged draft just
+                # produces a duplicate critique — observed in the d&e
+                # audit at ~$0.06 per duplicate. Skip the critique step
+                # this round and reuse the prior round's critiques on
+                # the next edit.
+                edit_was_noop = current_draft == draft_before_edit
 
             # Skip the critique step on the final round: there's no
             # subsequent edit to consume the critiques, so paying for
             # them is dead loss. ~12% of d&e cost on a typical
             # budget=4 run was the trailing critic_round whose output
-            # was never read by an editor.
+            # was never read by an editor. Also skip when the editor
+            # produced no real change — the prior critiques are still
+            # relevant and re-firing would just bill for a duplicate.
             will_break_next = (
                 self.max_rounds is not None and round_idx + 1 >= self.max_rounds
             ) or await db.budget_remaining() <= 0
-            if not will_break_next:
+            if not will_break_next and not edit_was_noop:
                 critiques = await self._critique_round(
                     db=db,
                     trace=trace,
@@ -738,36 +808,53 @@ class DraftAndEditWorkflow:
     ) -> str:
         """Re-fire the editor turn-by-turn until ``<continuation>`` closes.
 
-        When the editor's response opens ``<continuation>`` but never
-        emits the closing tag, the body was cut off mid-revision by
-        ``max_tokens``. The fix is a multi-turn extension: pass the
-        original user message + the partial assistant reply + a brief
-        "continue from where you stopped" nudge, append the new
-        response, and check again. Bounded by ``max_attempts`` so a
-        pathologically verbose model can't loop indefinitely.
+        Two failure modes both trigger recovery here:
 
-        Returns the concatenated assistant text. Caller still passes
-        the result through ``_extract_continuation`` — that function
-        already tolerates an open trailing tag.
+        - **Truncated**: response opens ``<continuation>`` but no closer.
+          The body started but max_tokens cut it off. The follow-up
+          nudge says "continue from where you stopped" and we
+          concatenate the new response onto the partial.
+        - **Empty**: no ``<continuation>`` tag at all and the visible
+          response is short or absent (the d&e audit caught this — an
+          editor turn billing $0.51 with 32k output tokens but no
+          visible text because adaptive thinking ate the entire
+          response budget). The follow-up nudge says "you returned no
+          visible output; emit the full blocks now" and we *replace*
+          the empty initial response with the new one.
+
+        Bounded by ``max_attempts`` so a pathologically verbose model
+        can't loop indefinitely. Returns the (possibly concatenated)
+        assistant text; caller still passes the result through
+        ``_extract_continuation`` which tolerates an open trailing tag.
         """
         full = initial_response
         for attempt in range(max_attempts):
-            if not _is_truncated_continuation(full):
+            kind = _classify_editor_response(full)
+            if kind == "complete":
                 return full
+            if kind == "truncated":
+                nudge = (
+                    "Your previous response was cut off mid-continuation — "
+                    "the closing </continuation> tag is missing. Continue "
+                    "from exactly where you stopped (mid-sentence is fine; "
+                    "do not restate or summarize the part you already wrote). "
+                    "Finish the remaining sections and end with the closing "
+                    "</continuation> tag."
+                )
+            else:  # "empty"
+                nudge = (
+                    "Your previous response had no visible output — the "
+                    "model spent its token budget without emitting the "
+                    "<preserved> / <cuts> / <continuation> blocks. "
+                    "Produce the full revision now: the <preserved> note, "
+                    "the <cuts> block, and the complete revised "
+                    "<continuation>...</continuation> body. Keep thinking "
+                    "minimal so the visible output fits within budget."
+                )
             messages: list[dict] = [
                 {"role": "user", "content": initial_user_message},
                 {"role": "assistant", "content": full},
-                {
-                    "role": "user",
-                    "content": (
-                        "Your previous response was cut off mid-continuation — "
-                        "the closing </continuation> tag is missing. Continue "
-                        "from exactly where you stopped (mid-sentence is fine; "
-                        "do not restate or summarize the part you already wrote). "
-                        "Finish the remaining sections and end with the closing "
-                        "</continuation> tag."
-                    ),
-                },
+                {"role": "user", "content": nudge},
             ]
             more = await text_call(
                 self.editor_prompt,
@@ -781,7 +868,9 @@ class DraftAndEditWorkflow:
                 model=model,
                 **editor_kwargs,
             )
-            full = full + more
+            # Truncated case: append. Empty case: replace (the prior
+            # response had no usable content to concatenate to).
+            full = full + more if kind == "truncated" else more
         return full
 
     def _resolve_model(self, override: str | None) -> str:

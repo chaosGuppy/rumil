@@ -445,6 +445,25 @@ The trace+fork loop is high-leverage but the sample size is tiny
 - **Blind-leak risk**: when forking judge exchanges, never let the
   override reveal source/human/AI labels. Stripping orch context to
   "blind-only" is fine; injecting source-id metadata is not.
+- **Not building human-vs-AI detection**: the goal is a judge that
+  recognizes higher quality on the rubric, not a judge that detects
+  which side is human vs AI. Concretely off-limits:
+    - Telling the judge "one of these may be AI-generated" or showing
+      it features expected of human prose vs AI prose (same blind-leak
+      family as above, but worth naming separately because it's a
+      tempting place to drift when the judge keeps preferring AI prose).
+    - Adding stages or bullets that ask the judge to flag "AI tells",
+      "manufactured analytical density", "performed concreteness" etc.
+      as a category — that's an AI-detector, not a quality judge.
+  Iterate on the read/reflect/verdict prompts to make the judge weigh
+  rubric criteria more discerningly, not to teach it side-detection.
+- **Don't change the rubric**: dimension prompts under
+  `src/rumil/prompts/versus-*.md` define what "general_quality" etc.
+  mean across the entire eval and across all judges. Editing them
+  retroactively reshapes the dataset's meaning and breaks comparison
+  with prior judgments. Iterate on the workflow stage prompts (read /
+  reflect / verdict) instead — those control HOW the judge applies
+  the rubric, not WHAT the rubric is.
 - **Don't promote prompts casually**: forks never edit
   `src/rumil/prompts/*.md` or orchestrator prompts. If a fork wins,
   surface it as a prompt-edit suggestion in the consolidation report;

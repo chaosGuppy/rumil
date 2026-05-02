@@ -129,6 +129,69 @@ Use `--staged` for orch runs so you don't pollute the canonical
 total estimated $ before firing. A typical full-fresh round is
 ~$8-15 depending on model + essay length.
 
+### Phase 0.5 — variant fan-out for the iteration-target workflows
+
+The iteration-target workflows (`DraftAndEditWorkflow` for completions,
+`ReflectiveJudgeWorkflow` for judging) ship with starter **variant
+sets** that fire in parallel within Phase 0. This is what gives the
+iterate loop generalizable signal — comparing a baseline variant
+against several one-knob-flipped siblings on the same essay × pair.
+
+Variant sets live at:
+
+- `.claude/skills/rumil-versus-iterate/variants/draft_and_edit.yaml`
+- `.claude/skills/rumil-versus-iterate/variants/reflective_judge.yaml`
+
+Each YAML lists named entries with constructor kwargs for the
+workflow. The first entry is conventionally `baseline` (all
+defaults); subsequent entries change one knob at a time so trace
+deltas are interpretable.
+
+How to dispatch:
+
+1. Parse the YAML for the workflow you're iterating on. (Use
+   `yaml.safe_load` via `uv run --with pyyaml python -c ...`, or just
+   read it with the standard library and trust the small surface.)
+2. For each variant, construct the CLI invocation. Map YAML keys to
+   the corresponding `--<flag>` on `run_rumil_judgments.py` (judge
+   side) or `run_completions.py` (completion side). Path values stay
+   relative to repo root; the CLI accepts them directly.
+3. Fire the invocations **in parallel** as separate Bash calls with
+   `run_in_background=true`, one variant per call. Each variant
+   becomes its own rumil Run (and its own row in
+   `versus_texts` / `versus_judgments`), so trace+fork analysis
+   downstream can compare across variants directly.
+4. When all variants complete, hand the run_ids to the Phase 2 trace
+   investigators — one per variant — so the trace agents can compare
+   what each variant did differently.
+
+Example (reflective judge, baseline + 3 variants on one pair):
+
+```
+uv run python versus/scripts/run_rumil_judgments.py \
+    --variant reflective --workspace versus --essay <id> \
+    --essay <id>  # baseline
+uv run python versus/scripts/run_rumil_judgments.py \
+    --variant reflective --workspace versus --essay <id> \
+    --verdict-model claude-opus-4-7  # opus_verdict
+uv run python versus/scripts/run_rumil_judgments.py \
+    --variant reflective --workspace versus --essay <id> \
+    --read-prompt-path .claude/skills/rumil-versus-iterate/prompts/reflective_judge/read_terse.md
+# ... etc.
+```
+
+**When to skip variant fan-out**: if the user explicitly named a
+specific run to investigate, or if the conversation makes it clear
+the focus is one workflow configuration, run a single invocation and
+skip the fan-out. The fan-out is the default for "iterate on this
+workflow" intent.
+
+**When to add a variant**: if a fork experiment in Phase 3 reveals a
+promising direction (e.g. "tighter critic prompt produces less
+generic prose"), commit the new prompt file to the iterate skill's
+`prompts/` dir and add a variant entry to the relevant YAML. Future
+iterate runs will sweep against the new variant automatically.
+
 ### Phase 1 — select representative runs
 
 Query the workspace DB for runs in scope. The schema cheat sheet in

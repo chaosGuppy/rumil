@@ -1,0 +1,44 @@
+# Variants for DraftAndEditWorkflow.
+#
+# Read by /rumil-versus-iterate. For each entry, the iterate skill
+# fires one rumil-versus-complete invocation, parallelized across
+# variants. Output rows land in versus_texts tagged with the
+# variant's source_id (auto-derived from the workflow's fingerprint),
+# so trace+fork analysis can compare variants directly.
+#
+# Each variant maps to constructor kwargs for DraftAndEditWorkflow
+# + CLI flags on versus/scripts/run_completions.py (via
+# --orch draft_and_edit and the --workflow-arg passthrough).
+# Path overrides are resolved relative to the repo root.
+
+variants:
+  - name: baseline
+    description: |
+      All defaults — sonnet drafter/critic/editor, built-in prompts,
+      n_critics=2, max_rounds unset (budget-bounded). Reference point.
+    budget: 4
+
+  - name: opus_editor
+    description: |
+      Sonnet drafter+critic, Opus editor. Tests whether the
+      synthesis-and-rewrite stage benefits from a stronger model when
+      the cheaper stages do the bulk of the cognition.
+    budget: 4
+    editor_model: claude-opus-4-7
+
+  - name: harsher_critic
+    description: |
+      Replaces the critic prompt with one that biases harder against
+      generic prose, AI tells, and hedging vocabulary. Tests whether
+      tougher critique drives more substantive editor revisions
+      without flipping into incoherent over-correction.
+    budget: 4
+    critic_prompt_path: .claude/skills/rumil-versus-iterate/prompts/draft_and_edit/critic_harsher.md
+
+  - name: n_critics_3
+    description: |
+      Bumps n_critics from default 2 to 3. Tests whether a third
+      independent critique surfaces issues the first two miss, or
+      just dilutes signal with redundancy.
+    budget: 5  # one extra round to absorb the extra critic
+    n_critics: 3

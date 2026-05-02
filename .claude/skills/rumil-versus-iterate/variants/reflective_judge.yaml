@@ -1,0 +1,44 @@
+# Variants for ReflectiveJudgeWorkflow.
+#
+# Read by /rumil-versus-iterate. For each entry, the iterate skill
+# fires one rumil-versus-judge invocation, parallelized across
+# variants. Output rows land in versus_judgments tagged with the
+# variant's source_id (auto-derived from the workflow's fingerprint),
+# so trace+fork analysis can compare variants directly.
+#
+# Each variant maps to constructor kwargs for ReflectiveJudgeWorkflow
+# + CLI flags on versus/scripts/run_rumil_judgments.py.
+# Path overrides are resolved relative to the repo root.
+#
+# Naming convention: lower_snake_case, descriptive. The first variant
+# is conventionally `baseline` — defaults across the board. Subsequent
+# variants change one knob at a time so trace deltas are interpretable.
+
+variants:
+  - name: baseline
+    description: |
+      All defaults — sonnet across all stages, built-in prompts.
+      Reference point for every other variant in this file.
+
+  - name: opus_verdict
+    description: |
+      Sonnet read+reflect, Opus on the verdict stage. Tests whether
+      the verdict synthesis benefits from a stronger model when the
+      evidence-gathering stages stay cheaper.
+    verdict_model: claude-opus-4-7
+
+  - name: terse_read
+    description: |
+      Replaces the read prompt with a tighter, no-padding version.
+      Tests whether brevity (forced to commit per criterion, no hedging
+      vocabulary) produces a sharper input for the reflect stage.
+    read_prompt_path: .claude/skills/rumil-versus-iterate/prompts/reflective_judge/read_terse.md
+
+  - name: skeptical_reflect
+    description: |
+      Replaces the reflect prompt with one that biases harder toward
+      pushback. Tests whether more aggressive self-criticism flips
+      verdicts on close pairs (and whether it manufactures
+      disagreement on clearly-asymmetric pairs — that would be a
+      regression).
+    reflect_prompt_path: .claude/skills/rumil-versus-iterate/prompts/reflective_judge/reflect_skeptical.md

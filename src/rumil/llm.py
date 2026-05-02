@@ -657,7 +657,13 @@ async def call_anthropic_api(
     @_api_retry
     async def _do_api_call() -> anthropic.types.Message:
         start = time.monotonic()
-        response = await client.messages.create(**kwargs)
+        # Stream and aggregate to the same Message shape `create` returns.
+        # The SDK rejects non-streaming calls whose predicted duration
+        # exceeds 10 minutes (Anthropic#long-requests), which breaks any
+        # call with large context + high max_tokens — e.g. d&e's editor
+        # stage on a long essay.
+        async with client.messages.stream(**kwargs) as stream:
+            response = await stream.get_final_message()
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
         return response

@@ -115,15 +115,21 @@ def test_closer_prompts_user_includes_continuation_directive():
     assert "</continuation>" in user
 
 
-def test_closer_prompts_user_includes_prefix_text():
-    """The closer needs the essay opening to write a continuation. After
-    Gap 7 the prefix lives on a linked Source page, not the Question
-    content, so closer_prompts must inject inputs.prefix_text directly.
+def test_closer_prompts_user_carries_prefix_via_rendered_block():
+    """The essay opening reaches the closer via the rendered Question
+    body (which carries it under ``## Essay opening``), not via a
+    separate ``prefix_text`` substitution. Pin this so a refactor that
+    re-inlines ``inputs.prefix_text`` into the user template — and
+    thereby duplicates the opening in the closer's context — surfaces
+    here.
     """
     task = CompleteEssayTask()
     prefix = _make_prefix(prefix_text="MY_DISTINCTIVE_PREFIX_SENTINEL")
-    _, user = task.closer_prompts("rendered", prefix)
-    assert "MY_DISTINCTIVE_PREFIX_SENTINEL" in user
+    rendered = "RENDERED_BODY_WITH_PREFIX: MY_DISTINCTIVE_PREFIX_SENTINEL"
+    _, user = task.closer_prompts(rendered, prefix)
+    assert rendered in user
+    # Exactly one occurrence — via rendered, not duplicated.
+    assert user.count("MY_DISTINCTIVE_PREFIX_SENTINEL") == 1
 
 
 @pytest.mark.parametrize(
@@ -160,8 +166,20 @@ def _make_db_mock():
     db.project_id = "proj-1"
     db.run_id = "run-1"
     db.save_page = AsyncMock()
-    db.save_link = AsyncMock()
     return db
+
+
+@pytest.fixture(autouse=True)
+def _stub_embed_and_store_page(mocker):
+    """``CompleteEssayTask.create_question`` calls
+    :func:`rumil.embeddings.embed_and_store_page` on the saved Question
+    so the page is findable via vector search. The real implementation
+    hits Voyage + Supabase; stub it out for unit tests.
+    """
+    return mocker.patch(
+        "versus.tasks.complete_essay.embed_and_store_page",
+        new=AsyncMock(),
+    )
 
 
 def _saved_pages_by_type(db) -> dict:
@@ -205,26 +223,11 @@ async def test_create_question_extra_excludes_essay_id():
 
 
 @pytest.mark.asyncio
-async def test_create_question_creates_source_page_with_full_prefix():
-    """After Gap 7 the essay opening lives on a linked Source page so
-    orch sub-calls find it via embedding-based context retrieval, not
-    via load_page recovery on the question.
-    """
-    from rumil.models import PageType
-
-    db = _make_db_mock()
-    prefix = _make_prefix(prefix_text="THE FULL ESSAY OPENING SENTINEL " * 20)
-    await CompleteEssayTask().create_question(db, prefix)
-    saved = _saved_pages_by_type(db)
-    assert PageType.SOURCE in saved
-    source = saved[PageType.SOURCE][0]
-    assert source.content == prefix.prefix_text
-
-
-@pytest.mark.asyncio
-async def test_create_question_question_content_omits_prefix_text():
-    """Regression for Gap 7. The Question's content is framing only —
-    the essay opening lives on the linked Source page.
+async def test_create_question_inlines_prefix_into_question_content():
+    """The essay opening lives directly in the Question's body so every
+    consumer that renders the page (closer at CONTENT detail, scouts /
+    create_view via embedding similarity, prioritization) sees the same
+    authoritative text without indirecting through a Source page.
     """
     from rumil.models import PageType
 
@@ -233,50 +236,54 @@ async def test_create_question_question_content_omits_prefix_text():
     await CompleteEssayTask().create_question(db, prefix)
     saved = _saved_pages_by_type(db)
     question = saved[PageType.QUESTION][0]
-    assert prefix.prefix_text not in question.content
+    assert prefix.prefix_text in question.content
+    assert "## Essay opening" in question.content
 
 
 @pytest.mark.asyncio
-async def test_create_question_links_source_to_question():
-    from rumil.models import LinkType, PageType
-
-    db = _make_db_mock()
-    qid = await CompleteEssayTask().create_question(db, _make_prefix())
-    saved = _saved_pages_by_type(db)
-    source = saved[PageType.SOURCE][0]
-    db.save_link.assert_called_once()
-    link = db.save_link.call_args.args[0]
-    assert link.from_page_id == source.id
-    assert link.to_page_id == qid
-    assert link.link_type == LinkType.RELATED
-
-
-@pytest.mark.asyncio
-async def test_create_question_source_headline_is_source_blind():
-    """Source page's headline must not leak the essay_id namespace —
-    same blindness rule as the Question headline.
+async def test_create_question_inlines_prefix_into_question_abstract():
+    """The abstract carries the prefix too: scouts/create_view see the
+    scope question at ABSTRACT detail, and the abstract field is what
+    embedding similarity is computed against.
     """
     from rumil.models import PageType
 
     db = _make_db_mock()
-    prefix = _make_prefix(essay_id="forethought__some-leaky-slug")
+    prefix = _make_prefix(prefix_text="THE_DISTINCTIVE_ESSAY_OPENING_SENTINEL")
     await CompleteEssayTask().create_question(db, prefix)
     saved = _saved_pages_by_type(db)
-    source = saved[PageType.SOURCE][0]
-    assert "forethought" not in source.headline
-    assert "some-leaky-slug" not in source.headline
-    assert prefix.prefix_hash[:8] in source.headline
+    question = saved[PageType.QUESTION][0]
+    assert prefix.prefix_text in (question.abstract or "")
 
 
 @pytest.mark.asyncio
-async def test_create_question_source_extra_excludes_essay_id():
+async def test_create_question_does_not_create_source_page():
+    """Regression: an earlier shape split the prefix onto a linked
+    Source page. That indirection is gone — only a Question page is
+    persisted.
+    """
     from rumil.models import PageType
 
     db = _make_db_mock()
     await CompleteEssayTask().create_question(db, _make_prefix())
     saved = _saved_pages_by_type(db)
-    source = saved[PageType.SOURCE][0]
-    assert "essay_id" not in source.extra
+    assert PageType.SOURCE not in saved
+    assert list(saved.keys()) == [PageType.QUESTION]
+
+
+@pytest.mark.asyncio
+async def test_create_question_embeds_question(_stub_embed_and_store_page):
+    """The Question must be embedded at save time — without this the
+    page is invisible to ``search_pages_by_vector`` and orch
+    sub-calls can't find it via similarity.
+    """
+    db = _make_db_mock()
+    qid = await CompleteEssayTask().create_question(db, _make_prefix())
+    _stub_embed_and_store_page.assert_awaited_once()
+    args, kwargs = _stub_embed_and_store_page.call_args
+    assert args[0] is db
+    assert args[1].id == qid
+    assert kwargs.get("field_name") == "abstract"
 
 
 @pytest.mark.asyncio

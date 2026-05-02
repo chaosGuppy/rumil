@@ -31,12 +31,11 @@ _VERSUS_SRC = Path(__file__).resolve().parents[1] / "versus" / "src"
 if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
-from rumil.models import LinkType, PageType  # noqa: E402
 from rumil.orchestrators.draft_and_edit import (  # noqa: E402
     DraftAndEditWorkflow,
     _extract_continuation,
+    _extract_prefix_from_question_body,
     _extract_target_length_chars,
-    _load_prefix_from_linked_source,
 )
 from rumil.settings import override_settings  # noqa: E402
 
@@ -57,15 +56,15 @@ from rumil.versus_workflow import Workflow  # noqa: E402
 
 _QUESTION_FRAMING_TEMPLATE = (
     "This question was created by the versus essay-completion harness. "
-    "An essay opening is provided as a linked Source page; the goal of "
-    "this run is to produce a high-quality continuation.\n\n"
+    "The goal of this run is to produce a high-quality continuation.\n\n"
+    "## Essay opening\n\n{prefix}\n\n"
     "## Target length\n\nApproximately {target} characters.\n\n"
-    "## Goal\n\nContinue the linked essay opening."
+    "## Goal\n\nContinue the essay opening above."
 )
 
 
-def _make_question_framing(target: int = 2000) -> str:
-    return _QUESTION_FRAMING_TEMPLATE.format(target=target)
+def _make_question_framing(target: int = 2000, prefix: str = "Once upon a time...") -> str:
+    return _QUESTION_FRAMING_TEMPLATE.format(target=target, prefix=prefix)
 
 
 def _make_db(
@@ -73,15 +72,15 @@ def _make_db(
     *,
     question_content: str | None = None,
     source_content: str = "Once upon a time...",
-    include_source_link: bool = True,
 ):
     """Build a fully mocked DB that mimics what the workflow touches.
 
-    The workflow now reads the essay opening from a Source page linked
-    to the Question via ``LinkType.RELATED`` (source -> question), so
-    the mock DB has to surface ``get_links_to`` + ``get_pages_by_ids``
-    for that lookup. ``include_source_link=False`` simulates a
-    misconfigured Question (no linked Source) for error-path tests.
+    The workflow now reads the essay opening directly out of the
+    Question's body (under a ``## Essay opening`` header). The mock
+    Question is built with ``source_content`` inlined into that
+    header so the workflow's prefix extractor finds it. Pass an
+    explicit ``question_content`` to drive error-path tests with a
+    malformed body.
 
     update_page_content writes back to the in-memory question so a test
     can read the persisted final-draft after run() returns.
@@ -89,7 +88,7 @@ def _make_db(
     db = MagicMock()
     db.run_id = "run-1"
     fake_question = MagicMock()
-    fake_question.content = question_content or _make_question_framing()
+    fake_question.content = question_content or _make_question_framing(prefix=source_content)
     db.get_page = AsyncMock(return_value=fake_question)
     db.init_budget = AsyncMock()
     db.consume_budget = AsyncMock(return_value=True)
@@ -99,22 +98,6 @@ def _make_db(
     db.update_call_status = AsyncMock()
     db.save_call = AsyncMock()
     db.save_call_trace = AsyncMock()
-
-    fake_source = MagicMock()
-    fake_source.id = "src-1"
-    fake_source.page_type = PageType.SOURCE
-    fake_source.content = source_content
-
-    if include_source_link:
-        fake_link = MagicMock()
-        fake_link.from_page_id = fake_source.id
-        fake_link.to_page_id = "q-1"
-        fake_link.link_type = LinkType.RELATED
-        db.get_links_to = AsyncMock(return_value=[fake_link])
-        db.get_pages_by_ids = AsyncMock(return_value={fake_source.id: fake_source})
-    else:
-        db.get_links_to = AsyncMock(return_value=[])
-        db.get_pages_by_ids = AsyncMock(return_value={})
 
     fake_call = MagicMock()
     fake_call.id = "call-de-1"
@@ -525,15 +508,15 @@ async def test_run_raises_when_question_missing(mocker):
 
 
 @pytest.mark.asyncio
-async def test_run_raises_when_question_has_no_linked_source(mocker):
-    """The workflow now reads the prefix from a Source page linked to
-    the Question. If the Question has no RELATED-linked Source, the
-    workflow can't find the essay opening and must error out
+async def test_run_raises_when_question_body_lacks_prefix_block(mocker):
+    """The workflow reads the prefix out of a ``## Essay opening`` /
+    ``## Target length`` block in the question body. If the body is
+    malformed (missing the block), the workflow must error out
     explicitly rather than running on an empty prefix.
     """
-    db, _question, _call = _make_db(mocker, include_source_link=False)
+    db, _question, _call = _make_db(mocker, question_content="no essay opening header here")
     wf = DraftAndEditWorkflow(budget=1)
-    with pytest.raises(ValueError, match=r"RELATED|Source"):
+    with pytest.raises(ValueError, match=r"Essay opening"):
         await wf.run(db, "q-1", broadcaster=None)
 
 
@@ -572,14 +555,12 @@ def test_extract_continuation_recovers_from_unclosed_tag():
     assert _extract_continuation(text).endswith("sufficient prompting")
 
 
-@pytest.mark.asyncio
-async def test_load_prefix_round_trips_through_linked_source(mocker):
-    """The workflow's prefix lookup pulls content off a Source page
-    linked to the Question via ``LinkType.RELATED`` (source -> question).
+def test_extract_prefix_pulls_essay_opening_from_question_body():
+    """The workflow scrapes the prefix back out of the Question body's
+    ``## Essay opening`` / ``## Target length`` block.
     """
-    db, _question, _call = _make_db(mocker, source_content="My essay opens with this.")
-    prefix = await _load_prefix_from_linked_source(db, "q-1")
-    assert prefix == "My essay opens with this."
+    body = _make_question_framing(prefix="My essay opens with this.")
+    assert _extract_prefix_from_question_body(body) == "My essay opens with this."
 
 
 def test_extract_target_length_pulls_int_from_content():

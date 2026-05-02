@@ -32,13 +32,12 @@ from dataclasses import dataclass, fields
 
 from rumil.context import format_page, render_view
 from rumil.database import DB
+from rumil.embeddings import embed_and_store_page
 from rumil.models import (
     CallType,
-    LinkType,
     Page,
     PageDetail,
     PageLayer,
-    PageLink,
     PageType,
     Workspace,
 )
@@ -87,79 +86,30 @@ def _build_headline(prefix: EssayPrefixContext) -> str:
     return f"Versus completion: continue essay [{prefix.prefix_hash[:8]}]"
 
 
-def _build_source_headline(prefix: EssayPrefixContext) -> str:
-    """Source-free headline for the linked Source page.
+def _format_question_body(prefix: EssayPrefixContext) -> str:
+    """Question body shown to the agent — framing plus the essay opening.
 
-    Same blindness rule as the Question headline: no ``essay_id``, no
-    source-identifying tokens. The ``prefix_hash[:8]`` tag matches the
-    Question's so an agent reading both surfaces can correlate them
-    without learning where the essay came from.
-    """
-    return f"Essay opening [{prefix.prefix_hash[:8]}]"
-
-
-def _format_prefix_framing(prefix: EssayPrefixContext) -> str:
-    """Question body shown to the agent — framing only, no essay text.
-
-    The essay opening itself lives on a linked Source page (see
-    :meth:`CompleteEssayTask.create_question`) so orch sub-calls pick it
-    up via embedding-based context retrieval rather than needing the
-    full prefix in the Question's content. Length target lives in the
-    body so workflows reading the Question pick it up; the closer
-    prompt also restates it for emphasis.
-
-    The framing names the linked Source page explicitly because pre-Gap-7
-    traces showed scouts speculating about essay content (or trying to
-    ``load_page`` on the prefix_hash, which is not a page id) instead
-    of fetching the actual prefix. Telling the model the prefix lives
-    on a linked Source — and that the right move is to load that
-    Source before reasoning — reliably routes it to real text.
+    The opening is inlined into the Question so every consumer that
+    renders the page (closer at CONTENT detail, scouts/create_view at
+    ABSTRACT detail via the abstract field, prioritization, embedding
+    similarity over the abstract field) sees the same authoritative
+    text. Earlier shapes split the prefix onto a linked Source page
+    and relied on embedding-based retrieval to surface it; that
+    indirection broke silently when the Source's embedding row was
+    absent (it was never created at save time), leaving research
+    sub-calls to speculate about the opening from inference.
     """
     return (
         "This question was created by the versus essay-completion harness. "
-        "An essay opening is provided as a Source page linked to this "
-        "question via a RELATED edge (source -> question). The goal of "
-        "this run is to produce a high-quality continuation that engages "
-        "with the opening's topic.\n\n"
-        "## Where to find the essay opening\n\n"
-        "The full essay opening is on the linked Source page, **not** in "
-        "this question's body. Before reasoning about the essay's "
-        "content, fetch the linked Source — use whatever workspace "
-        "tooling you have to traverse incoming RELATED links from this "
-        "question and read the linked Source page's content. Do not "
-        "speculate about the essay text without first reading it. Do "
-        "not interpret bare hex strings (e.g. a `prefix_hash` value) "
-        "as page ids — they are not.\n\n"
+        "The goal of this run is to produce a high-quality continuation "
+        "that engages with the opening's argument.\n\n"
+        f"## Essay opening\n\n{prefix.prefix_text}\n\n"
         f"## Target length\n\nApproximately {prefix.target_length_chars} characters.\n\n"
         "## Goal\n\n"
-        "Continue the linked essay opening. Aim for substantive, specific "
-        "prose that picks up the opening's argumentative thread without "
+        "Continue the essay opening above in the original author's voice "
+        "and argumentative style. Aim for substantive, specific prose "
+        "that picks up the opening's argumentative thread without "
         "restating it. Don't hedge performatively or drift generic."
-    )
-
-
-def _build_abstract(prefix: EssayPrefixContext) -> str:
-    """Compose the Versus completion Question's ``abstract``.
-
-    Read by parent-context renderers — notably
-    :func:`rumil.orchestrators.common.score_items_sequentially`, which
-    only renders ``headline + abstract + view_text`` for the parent
-    Question during prioritization scoring. It does NOT load linked
-    Source pages, so the parent-scoring agent would see only the
-    synthetic headline (``Versus completion: continue essay [hash]``)
-    without an abstract.
-
-    Mirror of :func:`versus.tasks.judge_pair._build_abstract`. Fixed-
-    shape, no essay text spliced in (silent string truncation in LLM-
-    facing surfaces is a documented hazard — see ``CLAUDE.local.md``).
-    The Source-page restructure (Gap 7) covers research-shape calls
-    that genuinely need the essay; this abstract covers the parent-
-    scoring path that doesn't load Sources.
-    """
-    return (
-        "Versus essay-completion task. Score considerations by their "
-        "relevance to producing a high-quality continuation of the "
-        "linked essay opening."
     )
 
 
@@ -202,31 +152,19 @@ def _question_surface_sentinel() -> dict[str, str | int]:
 
 
 def compute_question_surface_hash() -> str:
-    """Short deterministic hash of the Versus Question + Source surface.
+    """Short deterministic hash of the Versus Question surface.
 
     Folded into the task fingerprint so structural edits to the
-    agent-visible page surface auto-fork the dedup key. Covers both the
-    Question page (headline + framing content + extra-key shape) and
-    the linked Source page (headline + content shape + extra-key
-    shape) since the essay text now lives on the Source rather than
-    the Question. Mirrors :func:`versus.tasks.judge_pair.compute_pair_surface_hash`
-    shape.
+    agent-visible page surface auto-fork the dedup key. Covers the
+    Question page's headline, body, and extra-key shape. Mirrors
+    :func:`versus.tasks.judge_pair.compute_pair_surface_hash`.
     """
     sentinel = EssayPrefixContext(**_question_surface_sentinel())  # type: ignore[arg-type]
     blob = json.dumps(
         {
             "question_headline": _build_headline(sentinel),
-            "question_content": _format_prefix_framing(sentinel),
-            "question_abstract": _build_abstract(sentinel),
+            "question_body": _format_question_body(sentinel),
             "question_extra_keys": sorted(_versus_extra(sentinel).keys()),
-            "source_headline": _build_source_headline(sentinel),
-            # The Source's content is exactly the prefix text — covered
-            # via the sentinel marker rather than a separate template.
-            "source_content_marker": sentinel.prefix_text,
-            "source_extra_keys": sorted(_versus_extra(sentinel).keys()),
-            "link_type": LinkType.RELATED.value,
-            "link_direction_from": "source",
-            "link_direction_to": "question",
         },
         sort_keys=True,
     )
@@ -238,20 +176,18 @@ _TOOL_SERVER_NAME = "versus-complete-tools"
 _CLOSER_SYSTEM_PROMPT = (
     "You are a careful essay continuation writer. A research run has just "
     "finished investigating an essay opening; the user message contains "
-    "the essay opening followed by the rendered question (considerations / "
-    "claims / view items the orchestrator produced). Your job is to read "
-    "both and emit a finished continuation that engages with the opening's "
-    "argument. Do not restate the opening. Do not hedge performatively. "
-    "Do not drift generic. Workspace tools are available if further "
-    "material bears on the subject, but keep usage light — this is the "
-    "closing step, not a fresh investigation."
+    "the rendered question (which carries the opening) and the "
+    "considerations / claims / view items the orchestrator produced. "
+    "Read both and emit a finished continuation that engages with the "
+    "opening's argument. Do not restate the opening. Do not hedge "
+    "performatively. Do not drift generic. Workspace tools are available "
+    "if further material bears on the subject, but keep usage light — "
+    "this is the closing step, not a fresh investigation."
 )
 _CLOSER_USER_PROMPT_TEMPLATE = (
-    "## Essay opening\n\n"
-    "{prefix_text}\n\n"
     "## Research workspace\n\n"
     "{rendered}\n\n"
-    "Write a continuation of the essay opening above, approximately "
+    "Write a continuation of the essay opening shown above, approximately "
     "{target_length_chars} characters long. Wrap the final continuation "
     "in <continuation>...</continuation> tags; only the content inside "
     "those tags is recorded. You may use scratch space before the tagged "
@@ -326,37 +262,25 @@ class CompleteEssayTask:
         }
 
     async def create_question(self, db: DB, inputs: EssayPrefixContext) -> str:
-        """Create the scope Question + linked Source for one completion run.
+        """Create the scope Question for one completion run.
 
-        The essay opening lives on a separate Source page, linked to the
-        Question via :attr:`LinkType.RELATED` (source -> question, i.e.
-        "this source bears on this question"). Orch sub-calls (scouts,
-        find_considerations, create_view) surface the Source via their
-        embedding-based context builders rather than relying on a
-        per-call ``load_page`` recovery — see
-        ``planning/orch-experiment-gaps.md`` Gap 7.
+        The essay opening is inlined into both ``content`` and
+        ``abstract`` so every retrieval path (closer at CONTENT detail,
+        scouts/create_view at ABSTRACT detail, embedding similarity
+        over the abstract field) surfaces the actual opening rather
+        than relying on an indirection through a linked Source page.
+        Embedding the page at save time keeps retrieval consistent —
+        without an explicit ``embed_and_store_page`` the page is
+        invisible to ``search_pages_by_vector``.
         """
-        source = Page(
-            page_type=PageType.SOURCE,
-            layer=PageLayer.SQUIDGY,
-            workspace=Workspace.RESEARCH,
-            content=inputs.prefix_text,
-            headline=_build_source_headline(inputs),
-            project_id=db.project_id,
-            provenance_model="versus-bridge",
-            provenance_call_type=self.call_type.value,
-            run_id=db.run_id,
-            extra=_versus_extra(inputs),
-        )
-        await db.save_page(source)
-
+        body = _format_question_body(inputs)
         question = Page(
             page_type=PageType.QUESTION,
             layer=PageLayer.SQUIDGY,
             workspace=Workspace.RESEARCH,
-            content=_format_prefix_framing(inputs),
+            content=body,
             headline=_build_headline(inputs),
-            abstract=_build_abstract(inputs),
+            abstract=body,
             project_id=db.project_id,
             provenance_model="versus-bridge",
             provenance_call_type=self.call_type.value,
@@ -364,15 +288,7 @@ class CompleteEssayTask:
             extra=_versus_extra(inputs),
         )
         await db.save_page(question)
-
-        link = PageLink(
-            from_page_id=source.id,
-            to_page_id=question.id,
-            link_type=LinkType.RELATED,
-            reasoning="Essay opening provided as the source material for this completion question.",
-            run_id=db.run_id,
-        )
-        await db.save_link(link)
+        await embed_and_store_page(db, question, field_name="abstract")
         return question.id
 
     async def render_for_closer(self, db: DB, question_id: str) -> str:
@@ -413,16 +329,13 @@ class CompleteEssayTask:
     def closer_prompts(self, rendered: str, inputs: EssayPrefixContext) -> tuple[str, str]:
         """Build closer prompts.
 
-        The essay opening is now duplicated between the linked Source
-        page (which lives in the workspace and the rendered ``rendered``
-        block may or may not surface) and the user prompt itself —
-        intentional, see Gap 7. Putting ``inputs.prefix_text`` directly
-        in the user prompt avoids depending on whether the closer's
-        rendered context happens to expose the linked Source.
+        ``rendered`` already carries the essay opening (it's part of
+        the Question's body), so the user prompt template doesn't
+        re-inject ``inputs.prefix_text`` — that would just duplicate
+        the opening in the closer's context.
         """
         system = _CLOSER_SYSTEM_PROMPT
         user = _CLOSER_USER_PROMPT_TEMPLATE.format(
-            prefix_text=inputs.prefix_text,
             rendered=rendered,
             target_length_chars=inputs.target_length_chars,
         )

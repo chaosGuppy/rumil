@@ -40,6 +40,7 @@ Design notes (full sketch in ``planning/draft-and-edit-workflow-sketch.md``):
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import re
 from collections.abc import Mapping, Sequence
@@ -320,12 +321,6 @@ class DraftAndEditWorkflow:
         *,
         model_config: ModelConfig | None = None,
     ) -> None:
-        if model_config is not None:
-            raise NotImplementedError(
-                "DraftAndEditWorkflow does not yet thread model_config into "
-                "the drafter/critic/editor text_call sites. Plumb it through "
-                "_run_loop / _draft / _critique_round / _edit before passing."
-            )
         question = await db.get_page(question_id)
         if question is None:
             raise RuntimeError(f"DraftAndEditWorkflow: question {question_id} missing")
@@ -364,6 +359,7 @@ class DraftAndEditWorkflow:
                 question_id=question_id,
                 prefix=prefix,
                 target_length=target_length,
+                model_config=model_config,
             )
             await mark_call_completed(call, db, summary=f"draft_and_edit: {self.last_status}")
         finally:
@@ -378,6 +374,7 @@ class DraftAndEditWorkflow:
         question_id: str,
         prefix: str,
         target_length: int | None,
+        model_config: ModelConfig | None,
     ) -> None:
         """Iterate draft → critique → edit until budget or max_rounds bites.
 
@@ -406,6 +403,7 @@ class DraftAndEditWorkflow:
                     round_idx=round_idx,
                     prefix=prefix,
                     target_length=target_length,
+                    model_config=model_config,
                 )
             else:
                 current_draft = await self._edit(
@@ -417,6 +415,7 @@ class DraftAndEditWorkflow:
                     target_length=target_length,
                     current_draft=current_draft,
                     critiques=critiques,
+                    model_config=model_config,
                 )
 
             # Skip the critique step on the final round: there's no
@@ -436,6 +435,7 @@ class DraftAndEditWorkflow:
                     prefix=prefix,
                     draft=current_draft,
                     target_length=target_length,
+                    model_config=model_config,
                 )
             round_idx += 1
 
@@ -452,6 +452,7 @@ class DraftAndEditWorkflow:
         round_idx: int,
         prefix: str,
         target_length: int | None,
+        model_config: ModelConfig | None,
     ) -> str:
         model = self._resolve_model(self.drafter_model)
         target_clause = (
@@ -477,6 +478,7 @@ class DraftAndEditWorkflow:
             db=db,
             model=model,
             cache=True,
+            model_config=model_config,
         )
         draft = _extract_continuation(text)
         await trace.record(
@@ -499,6 +501,7 @@ class DraftAndEditWorkflow:
         prefix: str,
         draft: str,
         target_length: int | None,
+        model_config: ModelConfig | None,
     ) -> Sequence[str]:
         model = self._resolve_model(self.critic_model)
         current_chars = len(draft)
@@ -536,6 +539,7 @@ class DraftAndEditWorkflow:
                 db=db,
                 model=model,
                 cache=False,
+                model_config=model_config,
             )
 
         critiques = await asyncio.gather(*(_one_critic(i) for i in range(self.n_critics)))
@@ -561,6 +565,7 @@ class DraftAndEditWorkflow:
         target_length: int | None,
         current_draft: str,
         critiques: Sequence[str],
+        model_config: ModelConfig | None,
     ) -> str:
         model = self._resolve_model(self.editor_model)
         critiques_block = "\n\n---\n\n".join(
@@ -599,6 +604,16 @@ class DraftAndEditWorkflow:
                 n_critiques=len(critiques),
             )
         )
+        # Editor needs a higher output cap than the per-model default to
+        # avoid mid-revision truncation. text_call disallows mixing
+        # model_config with discrete max_tokens, so when a config is
+        # provided clone it with the bumped cap; otherwise use the
+        # discrete kwarg path.
+        editor_kwargs: dict = {"cache": True}
+        if model_config is not None:
+            editor_kwargs["model_config"] = dataclasses.replace(model_config, max_tokens=32_000)
+        else:
+            editor_kwargs["max_tokens"] = 32_000
         text = await text_call(
             self.editor_prompt,
             user_message,
@@ -609,8 +624,7 @@ class DraftAndEditWorkflow:
             ),
             db=db,
             model=model,
-            cache=True,
-            max_tokens=32_000,
+            **editor_kwargs,
         )
         revised = _extract_continuation(text)
         # Truncated edit (closing tag missing) → fallback returns scratch

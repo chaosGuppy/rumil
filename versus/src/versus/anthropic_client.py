@@ -12,10 +12,15 @@ read from os.environ; callers are expected to apply the env cascade
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 
 import httpx
+
+from versus._langfuse import observe, update_generation
+
+log = logging.getLogger(__name__)
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
@@ -35,6 +40,7 @@ def _headers() -> dict[str, str]:
     }
 
 
+@observe(as_type="generation", name="versus.anthropic.messages")
 def chat(
     model: str,
     messages: list[dict],
@@ -82,13 +88,42 @@ def chat(
             last_resp = r.json()
             text = _maybe_extract_text(last_resp)
             if text:
+                _enrich_anthropic_generation(model, messages, payload, last_resp)
                 return last_resp
             if attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
+        _enrich_anthropic_generation(model, messages, payload, last_resp)
         return last_resp
     finally:
         if close:
             client.close()
+
+
+def _enrich_anthropic_generation(
+    model: str, messages: list[dict], payload: dict, resp: dict
+) -> None:
+    try:
+        usage = resp.get("usage") or {}
+        params = {
+            k: payload.get(k)
+            for k in ("temperature", "top_p", "max_tokens", "thinking", "output_config")
+            if payload.get(k) is not None
+        }
+        update_generation(
+            model=model,
+            input=messages,
+            output=_maybe_extract_text(resp) or None,
+            model_parameters=params or None,
+            usage_details={
+                "input": usage.get("input_tokens") or 0,
+                "output": usage.get("output_tokens") or 0,
+                "cache_creation_input": usage.get("cache_creation_input_tokens") or 0,
+                "cache_read_input": usage.get("cache_read_input_tokens") or 0,
+            },
+            metadata={"stop_reason": resp.get("stop_reason")},
+        )
+    except Exception as exc:
+        log.debug("Langfuse enrichment (versus.anthropic) failed: %s", exc)
 
 
 def _maybe_extract_text(resp: dict) -> str:

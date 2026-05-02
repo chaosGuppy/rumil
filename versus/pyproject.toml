@@ -9,6 +9,7 @@ dependencies = [
     "pyyaml>=6.0",
     "beautifulsoup4>=4.12",
     "lxml>=5.0",
+    "langfuse>=4.5.1",
 ]
 
 [build-system]

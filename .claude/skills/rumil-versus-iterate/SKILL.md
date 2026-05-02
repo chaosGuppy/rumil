@@ -38,9 +38,15 @@ When the user invokes this skill without specifying scope, assume:
 - **Budget**: 4
 - **Scope**: both completion (TwoPhase + DraftAndEdit) and judge
   (TwoPhase orch)
-- **Pair shape**: human baseline + at least 2 model continuations from
-  different model families ("model-chooses-model" pairs) so the judge
-  has a meaningful comparison
+- **Completions to produce**: 2-3 model continuations from different
+  model families on the same essay × prefix. The human continuation
+  is already on the Source — don't regenerate it.
+- **Judging pair shape**: `(human, model_X)` for each model_X. This is
+  the canonical versus eval shape — human is the ground-truth side,
+  model-vs-human is the question the judge is being asked. Do NOT
+  default to model-vs-model judging pairs; those don't have a clean
+  ground truth and are only useful for specific A/B questions the
+  user asks for explicitly.
 - **Fork samples**: 2 per experiment
 - **Max forks**: 4 (tune up only if the user explicitly asks)
 

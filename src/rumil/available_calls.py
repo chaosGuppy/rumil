@@ -26,6 +26,7 @@ AVAILABLE_CALLS_PRESETS: dict[str, AvailableCallsPreset] = {
             CallType.SCOUT_ANALOGIES,
             CallType.SCOUT_PARADIGM_CASES,
             CallType.SCOUT_FACTCHECKS,
+            CallType.SCOUT_WEB_QUESTIONS,
         ],
         main_phase_prioritization_dispatch=[
             CallType.FIND_CONSIDERATIONS,

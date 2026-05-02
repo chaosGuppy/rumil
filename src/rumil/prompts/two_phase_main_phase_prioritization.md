@@ -126,6 +126,17 @@ you'll be shown scoring data from a preliminary assessment:
   `dispatch_web_factcheck` on questions targeting a specific,
   searchable factual claim. don't use it on broad or interpretive
   questions.
+- **ground load-bearing empirical claims.** if the scope question's
+  substance is empirical (specific numbers, deployment counts,
+  current state of a market or technology, recent regulatory
+  decisions), workspace claims that don't cite a source are likely
+  LLM priors and may be confidently wrong — especially for facts
+  near or past the model's training cutoff. when a load-bearing
+  numeric or factual claim has no source, prefer
+  `dispatch_web_factcheck` (or `web_research`) on it before letting
+  it get baked into a view. this is most important for the few
+  numbers a downstream reader would actually act on; don't burn
+  budget grounding every figure.
 
 ### guidance on how much budget to use
 

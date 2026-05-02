@@ -53,6 +53,7 @@ def chat(
     system: str | None = None,
     thinking: dict | None = None,
     output_config: dict | None = None,
+    system_cache: bool = False,
 ) -> dict:
     """Return full response JSON. Retries on transient empty-text failures.
 
@@ -61,6 +62,14 @@ def chat(
     ``{"effort": "..."}`` when applicable. Both default to None — pass
     them explicitly when the versus model registry says the model
     should run with them.
+
+    ``system_cache=True`` wraps the system prompt as a list with
+    ``cache_control={'type': 'ephemeral'}`` so identical system
+    prompts across calls get cached (~90% input-cost reduction on hits,
+    ~25% extra one-time creation cost). Default False because the
+    cache write is wasted when the prompt doesn't repeat. Opt in for
+    sweep-style call sites (e.g., blind judging) where the same
+    rubric runs against many pairs.
     """
     payload: dict = {
         "model": model,
@@ -72,7 +81,16 @@ def chat(
     if top_p is not None:
         payload["top_p"] = top_p
     if system is not None:
-        payload["system"] = system
+        if system_cache:
+            payload["system"] = [
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+        else:
+            payload["system"] = system
     if thinking is not None:
         payload["thinking"] = thinking
     if output_config is not None:

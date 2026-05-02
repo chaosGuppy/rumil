@@ -535,6 +535,13 @@ def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
             thinking=mc.thinking,
             output_config=output_cfg,
             client=client,
+            # Blind-judge sweeps re-use the same rubric system prompt
+            # across many pairs; cache it so input cost is paid once
+            # per rubric (versus per pair). The audit found system
+            # prompts were not cache-flagged here, costing ~80-90% of
+            # input spend on every blind call when the same dimension
+            # judges N pairs in a row.
+            system_cache=True,
         )
         text = anthropic_client.extract_text(resp)
     else:

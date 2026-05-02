@@ -198,8 +198,8 @@ def test_summarize_provenance_reads_from_config_when_present():
 @pytest.mark.parametrize(
     ("variant", "kw", "expected_keys"),
     (
-        ("blind", _BLIND_KW, {"variant", "model", "task", "phash"}),
-        ("orch", _ORCH_KW, {"variant", "model", "task", "phash"}),
+        ("blind", _BLIND_KW, {"variant", "model", "task", "phash", "wf_phash"}),
+        ("orch", _ORCH_KW, {"variant", "model", "task", "phash", "wf_phash"}),
     ),
 )
 def test_label_from_config_shape(variant, kw, expected_keys):

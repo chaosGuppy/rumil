@@ -608,10 +608,14 @@ export default async function PageDetailPage({
 
       <footer className="page-footer">
         <span>{new Date(page.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</span>
-        <span className="footer-sep" />
-        <span>{page.provenance_call_type}</span>
-        <span className="footer-sep" />
-        <span>{page.provenance_model}</span>
+        {isAdmin && (
+          <>
+            <span className="footer-sep" />
+            <span>{page.provenance_call_type}</span>
+            <span className="footer-sep" />
+            <span>{page.provenance_model}</span>
+          </>
+        )}
         {run && (
           <>
             <span className="footer-sep" />

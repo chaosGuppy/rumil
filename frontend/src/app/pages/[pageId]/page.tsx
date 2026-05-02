@@ -616,15 +616,22 @@ export default async function PageDetailPage({
           <>
             <span className="footer-sep" />
             <Link
-              href={
-                run.provenance_call_id
-                  ? `/traces/${run.run_id}#call-${run.provenance_call_id.slice(0, 8)}`
-                  : `/traces/${run.run_id}`
-              }
+              href={`/traces/${run.run_id}`}
               className="footer-run-link"
             >
               run {run.run_id.slice(0, 8)}
             </Link>
+            {page.provenance_call_id && (
+              <>
+                <span className="footer-sep" />
+                <Link
+                  href={`/traces/${run.run_id}#call-${page.provenance_call_id.slice(0, 8)}`}
+                  className="footer-run-link"
+                >
+                  call {page.provenance_call_id.slice(0, 8)}
+                </Link>
+              </>
+            )}
           </>
         )}
       </footer>

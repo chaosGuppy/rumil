@@ -83,7 +83,7 @@ async def test_run_versus_runs_phases_in_order(mocker):
     assert isinstance(result, VersusResult)
     task.create_question.assert_awaited_once_with(db, {"x": 1})
     workflow.setup.assert_awaited_once_with(db, "q-1")
-    workflow.run.assert_awaited_once_with(db, "q-1", None)
+    workflow.run.assert_awaited_once_with(db, "q-1", None, model_config=None)
     task.render_for_closer.assert_awaited_once_with(db, "q-1")
     task.closer_prompts.assert_called_once_with("RENDERED", {"x": 1})
     closer.assert_awaited_once()
@@ -182,7 +182,7 @@ async def test_run_versus_threads_model_into_settings_override(mocker):
 
     captured = {}
 
-    async def _spy_run(db, qid, broadcaster):
+    async def _spy_run(db, qid, broadcaster, *, model_config=None):
         captured["model_override"] = get_settings().rumil_model_override
 
     workflow = _make_workflow(mocker)

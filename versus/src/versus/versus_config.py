@@ -406,6 +406,7 @@ def make_judge_config(
     # actual knobs, not a default-constructed shim. Without these, two
     # reflective variants that differ only in (say) verdict_model would
     # fingerprint identically and dedup against each other.
+    dimension_body: str | None = None,
     reader_model: str | None = None,
     reflector_model: str | None = None,
     verdict_model: str | None = None,
@@ -485,23 +486,22 @@ def make_judge_config(
     if variant == "reflective":
         if pair_surface_hash is None:
             raise ValueError("variant='reflective' requires pair_surface_hash")
+        if dimension_body is None or not dimension_body.strip():
+            raise ValueError(
+                "variant='reflective' requires dimension_body (the rubric "
+                "text) so dimension_body_hash in the workflow fingerprint "
+                "represents the actual rubric, not a sentinel string"
+            )
         # Local import to avoid the same circular-import risk as orch.
         from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
 
-        # The reflective workflow needs a non-empty dimension_body for
-        # construction, but we only have its prompt_hash here. The hash
-        # is what fingerprints the workflow; the body content is fixed
-        # via that hash and the path the caller gave to the bridge. Use
-        # a sentinel body — the actual body is never read by
-        # make_versus_config (it only calls fingerprint()).
-        #
         # The per-role models and prompt-path overrides MUST be threaded
         # in here, not defaulted, so the workflow's fingerprint reflects
         # the actual variant. Two variants differing only in e.g.
         # verdict_model would otherwise fingerprint identically and
         # dedup against each other in versus_judgments.
         reflective_workflow = ReflectiveJudgeWorkflow(
-            dimension_body=f"<sentinel:{prompt_hash}>",
+            dimension_body=dimension_body,
             reader_model=reader_model,
             reflector_model=reflector_model,
             verdict_model=verdict_model,

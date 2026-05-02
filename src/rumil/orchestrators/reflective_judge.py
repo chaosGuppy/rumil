@@ -60,6 +60,7 @@ from pathlib import Path
 
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, text_call
+from rumil.model_config import ModelConfig
 from rumil.models import CallStatus, CallType
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -241,6 +242,8 @@ class ReflectiveJudgeWorkflow:
         db: DB,
         question_id: str,
         broadcaster: Broadcaster | None,
+        *,
+        model_config: ModelConfig | None = None,
     ) -> None:
         question = await db.get_page(question_id)
         if question is None:
@@ -273,6 +276,7 @@ class ReflectiveJudgeWorkflow:
                 trace=trace,
                 call_id=call.id,
                 pair_content=pair_content,
+                model_config=model_config,
             )
             await db.update_page_content(question_id, verdict_text)
         finally:
@@ -289,6 +293,7 @@ class ReflectiveJudgeWorkflow:
         trace: CallTrace,
         call_id: str,
         pair_content: str,
+        model_config: ModelConfig | None = None,
     ) -> str:
         rubric_block = f"<dimension-rubric>\n{self.dimension_body}\n</dimension-rubric>"
         pair_block = f"<pair>\n{pair_content}\n</pair>"
@@ -303,6 +308,7 @@ class ReflectiveJudgeWorkflow:
             db=db,
             model=read_model,
             cache=True,
+            model_config=model_config,
         )
 
         reflect_user_message = (
@@ -324,6 +330,7 @@ class ReflectiveJudgeWorkflow:
             db=db,
             model=reflect_model,
             cache=True,
+            model_config=model_config,
         )
 
         verdict_user_message = (
@@ -352,6 +359,7 @@ class ReflectiveJudgeWorkflow:
             db=db,
             model=verdict_model,
             cache=True,
+            model_config=model_config,
         )
         return verdict_text
 

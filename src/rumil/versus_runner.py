@@ -91,9 +91,12 @@ async def run_versus(
     see the caller's chosen model.
 
     ``model_config`` (optional) pins thinking / effort / max_thinking_tokens
-    for the closing call. The workflow's research calls go through
-    ``call_anthropic_api`` too, but we don't currently override those —
-    they pick up rumil's defaults for the model.
+    for the closing call AND is forwarded into ``workflow.run`` so
+    artifact-producing workflows (e.g. ``ReflectiveJudgeWorkflow``) can
+    apply it to their own ``text_call`` stages. Workflows that don't
+    plumb it through (e.g. budgeted orchestrators, ``DraftAndEditWorkflow``)
+    accept-and-ignore — sampling there falls back to rumil's per-model
+    defaults.
     """
     # rumil_model_override only accepts bare anthropic ids
     # (claude-{opus,sonnet,haiku}-...). versus's completion model
@@ -105,7 +108,7 @@ async def run_versus(
     with override_settings(rumil_model_override=override_target):
         question_id = await task.create_question(db, inputs)
         await workflow.setup(db, question_id)
-        await workflow.run(db, question_id, broadcaster)
+        await workflow.run(db, question_id, broadcaster, model_config=model_config)
 
         if workflow.produces_artifact:
             # Artifact-producing workflow path: the workflow has already

@@ -49,6 +49,7 @@ from rumil.budget import _consume_budget
 from rumil.calls.common import mark_call_completed
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, text_call
+from rumil.model_config import ModelConfig
 from rumil.models import CallStatus, CallType
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -316,7 +317,15 @@ class DraftAndEditWorkflow:
         db: DB,
         question_id: str,
         broadcaster: Broadcaster | None,
+        *,
+        model_config: ModelConfig | None = None,
     ) -> None:
+        # Accepted for protocol parity with ReflectiveJudgeWorkflow but
+        # not currently threaded into the drafter/critic/editor text_call
+        # sites — those use rumil's per-model defaults. If a caller needs
+        # thinking/effort overrides for d&e, plumb model_config through
+        # _run_loop / _draft_round / _critique_round / _edit_round.
+        del model_config
         question = await db.get_page(question_id)
         if question is None:
             raise RuntimeError(f"DraftAndEditWorkflow: question {question_id} missing")

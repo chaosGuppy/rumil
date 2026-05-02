@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
+from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
 from rumil.versus_workflow import TwoPhaseWorkflow
 from versus import config, prepare, versus_db
 from versus.run_summary import RunSummary
@@ -55,6 +56,20 @@ from versus.tasks import CompleteEssayTask, EssayPrefixContext
 WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
     "two_phase": (TwoPhaseWorkflow, {}),
     "draft_and_edit": (DraftAndEditWorkflow, {}),
+}
+
+# Judge-side workflows. Kept separate from WORKFLOW_REGISTRY so the
+# completion CLI's ``--orch <name>`` doesn't accidentally accept a
+# judge-only workflow. Only consulted by ``judge_config_is_current`` to
+# reproduce a workflow's ``workflow_code_fingerprint`` for staleness
+# checks. ``compute_workflow_code_fingerprint`` only reads
+# ``workflow.code_paths``, so a placeholder ``dimension_body`` is fine
+# for reconstruction — the actual rubric is never re-hashed here.
+JUDGE_WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
+    "reflective_judge": (
+        ReflectiveJudgeWorkflow,
+        {"dimension_body": "<staleness-check-placeholder>"},
+    ),
 }
 
 

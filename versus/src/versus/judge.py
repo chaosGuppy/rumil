@@ -15,6 +15,7 @@ different completion samples naturally forks the hash.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import itertools
 import threading
 import time
@@ -194,31 +195,40 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
         #   ``workflow_code_fingerprint`` at top level
         if "shared_code_fingerprint" in inputs or "workflow_code_fingerprint" in inputs:
             # circular import via rumil_completion → versus_workflow → orchestrators
-            from versus.rumil_completion import WORKFLOW_REGISTRY
+            from versus.rumil_completion import JUDGE_WORKFLOW_REGISTRY, WORKFLOW_REGISTRY
 
             if inputs.get("shared_code_fingerprint") != compute_shared_code_fingerprint():
                 return False
             # Reconstruct the workflow from its kind via the registry —
             # any workflow that ships judgment rows is reachable here as
-            # long as it's registered. Budget doesn't affect code_paths,
-            # so a placeholder budget value is fine for fingerprint
-            # reconstruction (the registry's default kwargs may also
-            # need overriding, but kwargs that don't affect code_paths
-            # don't matter for this comparison).
+            # long as it's registered in either the completion-side
+            # WORKFLOW_REGISTRY or the judge-side JUDGE_WORKFLOW_REGISTRY.
+            # The two registries are kept separate so completion CLI
+            # surface doesn't accidentally accept judge-only workflows.
+            # ``compute_workflow_code_fingerprint`` only reads
+            # ``workflow.code_paths``, so the registry's default kwargs
+            # only need to be sufficient for construction; values that
+            # don't affect code_paths don't matter for this comparison.
             workflow_kind = (inputs.get("workflow") or {}).get("kind")
-            registry_entry = WORKFLOW_REGISTRY.get(workflow_kind) if workflow_kind else None
+            if workflow_kind:
+                registry_entry = WORKFLOW_REGISTRY.get(
+                    workflow_kind
+                ) or JUDGE_WORKFLOW_REGISTRY.get(workflow_kind)
+            else:
+                registry_entry = None
             if registry_entry is None:
                 # Unknown workflow kind — can't reproduce its
                 # fingerprint. Treat as stale rather than guessing.
                 return False
             workflow_cls, default_kwargs = registry_entry
+            ctor_kwargs: dict[str, Any] = {**default_kwargs}
+            # ``budget`` only applies to budgeted workflows; passing it
+            # to a workflow that doesn't accept it (e.g. reflective_judge)
+            # raises TypeError. Gate on signature.
+            if "budget" in inspect.signature(workflow_cls.__init__).parameters:
+                ctor_kwargs["budget"] = int((inputs.get("workflow") or {}).get("budget") or 1)
             try:
-                wf = workflow_cls(
-                    **{
-                        **default_kwargs,
-                        "budget": int((inputs.get("workflow") or {}).get("budget") or 1),
-                    }
-                )
+                wf = workflow_cls(**ctor_kwargs)
             except TypeError:
                 # Constructor signature drift (e.g. required kwarg
                 # added since this row landed). Stale by definition.

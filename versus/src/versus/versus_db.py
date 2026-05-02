@@ -29,7 +29,7 @@ TextKind = Literal["human", "completion"]
 # Writer-side type. Historical "ws" rows still live in the DB and are
 # read back fine through the read paths; the variant column itself
 # (DB-side CHECK) still permits "ws" so existing rows remain valid.
-JudgmentVariant = Literal["blind", "orch"]
+JudgmentVariant = Literal["blind", "orch", "reflective"]
 Verdict = Literal["A", "B", "tie"]
 
 

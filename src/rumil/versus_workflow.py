@@ -32,6 +32,7 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol, runtime_checkable
 
 from rumil.database import DB
+from rumil.model_config import ModelConfig
 from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
@@ -49,7 +50,14 @@ class Workflow(Protocol):
 
     async def setup(self, db: DB, question_id: str) -> None: ...
 
-    async def run(self, db: DB, question_id: str, broadcaster: Broadcaster | None) -> None: ...
+    async def run(
+        self,
+        db: DB,
+        question_id: str,
+        broadcaster: Broadcaster | None,
+        *,
+        model_config: ModelConfig | None = None,
+    ) -> None: ...
 
 
 class _BudgetedOrchWorkflow:
@@ -110,7 +118,19 @@ class _BudgetedOrchWorkflow:
     async def setup(self, db: DB, question_id: str) -> None:
         await db.init_budget(self.budget)
 
-    async def run(self, db: DB, question_id: str, broadcaster: Broadcaster | None) -> None:
+    async def run(
+        self,
+        db: DB,
+        question_id: str,
+        broadcaster: Broadcaster | None,
+        *,
+        model_config: ModelConfig | None = None,
+    ) -> None:
+        # Budgeted orchestrators pick up sampling/thinking from rumil's
+        # own per-call defaults; ``model_config`` is accepted for
+        # protocol parity with artifact workflows but not currently
+        # threaded through the orch's nested call surface.
+        del model_config
         orch = self.orch_cls(db=db, broadcaster=broadcaster, budget_cap=self.budget)
         await orch.run(question_id)
 

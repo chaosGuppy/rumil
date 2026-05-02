@@ -1012,6 +1012,7 @@ async def text_call(
     cache: bool = False,
     effort: str | None = None,
     max_tokens: int | None = None,
+    model_config: ModelConfig | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
@@ -1026,7 +1027,10 @@ async def text_call(
     the effort parameter. Pass ``max_tokens`` to override the default output
     cap (``DEFAULT_MAX_TOKENS``); needed for long-form generations like d&e
     editor revisions where the default 20k cap silently truncates and breaks
-    downstream parsing.
+    downstream parsing. Pass ``model_config`` to fully override sampling /
+    thinking / effort / max_thinking_tokens / service_tier — takes precedence
+    over the per-model defaults that ``derive_model_config`` would pick.
+    Mutually exclusive with the discrete ``effort`` / ``max_tokens`` kwargs.
     """
     settings = get_settings()
     effective_model = model or settings.model
@@ -1054,7 +1058,23 @@ async def text_call(
 
     api_key = settings.require_anthropic_key()
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    if max_tokens is not None:
+    if model_config is not None:
+        if effort is not None or max_tokens is not None:
+            raise ValueError(
+                "text_call: pass either model_config OR effort/max_tokens, "
+                "not both — model_config carries effort and max_tokens already"
+            )
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            model_config=model_config,
+        )
+    elif max_tokens is not None:
         cfg = derive_model_config(effective_model, max_tokens=max_tokens)
         if effort is not None and cfg.effort is not None:
             cfg = replace(cfg, effort=effort)

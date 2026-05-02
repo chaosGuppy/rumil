@@ -389,6 +389,7 @@ async def run_orch(
             pair_surface_hash=qhash,
             workspace_id=ws_short,
             workspace_state_hash=workspace_state_hash,
+            dimension_body=task_body_cache[(task_name, is_versus_crit)],
             reader_model=reader_model,
             reflector_model=reflector_model,
             verdict_model=verdict_model,

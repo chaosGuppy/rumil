@@ -393,8 +393,26 @@ class RunCallExperimentOut(BaseModel):
     created_at: str
 
 
+class ContextEvalExperimentOut(BaseModel):
+    """One context-builder comparison (one gold arm paired with a candidate).
+
+    Surfaced in the experiments feed alongside ab_eval and run_call rows.
+    Links to the side-by-side diff page at
+    /context-evals/{gold_run_id}/vs/{candidate_run_id}.
+    """
+
+    kind: Literal["context_eval"] = "context_eval"
+    gold_run_id: str
+    candidate_run_id: str
+    question_id: str = ""
+    question_headline: str = ""
+    gold_builder: str = ""
+    candidate_builder: str = ""
+    created_at: str
+
+
 ExperimentListItemOut = Annotated[
-    AbEvalExperimentOut | RunCallExperimentOut,
+    AbEvalExperimentOut | RunCallExperimentOut | ContextEvalExperimentOut,
     Field(discriminator="kind"),
 ]
 

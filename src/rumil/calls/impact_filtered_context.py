@@ -394,6 +394,13 @@ class ImpactFilteredContext(ContextBuilder):
             )
         )
 
+        # Carry every scored candidate's percentile out so downstream
+        # consumers (the trace, the context-eval diff UI) can rank pages
+        # and annotate misses by sonnet-assigned impact. Includes pages
+        # the budget didn't fit and pages below floor_percentile — the
+        # eval signal is more useful with the full distribution.
+        impact_percentiles = {page.id: verdict.impact_percentile for page, verdict in scored}
+
         return ContextResult(
             context_text=merged_text,
             working_page_ids=merged_working_ids,
@@ -404,6 +411,7 @@ class ImpactFilteredContext(ContextBuilder):
             distillation_page_ids=pared_result.distillation_page_ids,
             budget_usage=merged_budget,
             source_page_id=pared_result.source_page_id,
+            impact_percentiles=impact_percentiles,
         )
 
     async def _score_candidates(

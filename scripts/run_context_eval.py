@@ -108,7 +108,12 @@ async def _run_arm(
         settings = get_settings()
         base_config = settings.capture_config()
         name = f"context-eval {role}: {builder_name}"
-        await db.create_run(name=name, question_id=question_id, config=base_config)
+        await db.create_run(
+            name=name,
+            question_id=question_id,
+            config=base_config,
+            entrypoint="context_eval",
+        )
         await db.init_budget(0)
 
         call = await db.create_call(

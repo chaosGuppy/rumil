@@ -383,6 +383,15 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             "Do not do anything else — just dispatch."
         )
 
+        scouts = list(get_available_calls_preset().initial_prioritization_scouts)
+        if CallType.SCOUT_FACTCHECKS in scouts and not await self.db.has_any_active_claim():
+            scouts = [s for s in scouts if s != CallType.SCOUT_FACTCHECKS]
+            log.info(
+                "Empty workspace — dropping scout_factchecks from initial fan-out "
+                "for q=%s (nothing to verify yet).",
+                question_id[:8],
+            )
+
         embed_task = await embed_task_for_page(
             self.db, question_id, "fan-out scouting prioritization."
         )
@@ -392,9 +401,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             p_call,
             self.db,
             short_id_map=short_id_map,
-            dispatch_types=list(
-                get_available_calls_preset().initial_prioritization_scouts,
-            ),
+            dispatch_types=scouts,
             system_prompt=build_system_prompt(
                 "two_phase_initial_prioritization",
                 task=embed_task,
@@ -411,8 +418,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 "default scouts for question=%s",
                 question_id[:8],
             )
-            preset = get_available_calls_preset()
-            for ct in preset.initial_prioritization_scouts[:initial_prioritization_budget]:
+            for ct in scouts[:initial_prioritization_budget]:
                 ddef = DISPATCH_DEFS[ct]
                 dispatches.append(
                     Dispatch(

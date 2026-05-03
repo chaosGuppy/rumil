@@ -1052,6 +1052,18 @@ class DB:
             pages = [p for p in pages if p.is_active()]
         return pages
 
+    async def has_any_active_claim(self) -> bool:
+        """True iff this project contains at least one active claim page.
+
+        Used to gate scout types whose value depends on the workspace
+        already containing claims (e.g. ``scout_factchecks``, which has
+        nothing to verify in an empty workspace).
+        """
+        if not self.project_id:
+            return False
+        pages = await self.get_pages(page_type=PageType.CLAIM)
+        return bool(pages)
+
     async def count_unsourced_high_credence_claims(
         self,
         credence_threshold: int = 6,

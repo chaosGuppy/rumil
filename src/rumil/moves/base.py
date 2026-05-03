@@ -378,15 +378,16 @@ async def create_page(
 _CITATION_RE = re.compile(r"\[([a-f0-9]{8})\]")
 
 _STRENGTH_SYSTEM_PROMPT = (
-    "You are assigning dependency strengths for a newly-created claim or "
-    "judgement. The page's content is its derivation — the argument for "
-    "the page, citing each direct dependency inline with a short ID in "
-    "square brackets.\n\n"
+    "You are assigning dependency strengths for a newly-created page that "
+    "cites other claims or judgements as direct dependencies. The page's "
+    "content is its argument or observation, citing each dependency inline "
+    "with a short ID in square brackets. The citing page may be a claim, a "
+    "judgement, or a view item — its type is shown in the user message.\n\n"
     "For each cited page listed in the user message, return an entry with "
     "its 8-character page_id, a strength 1-5, and a one-sentence reasoning "
-    "naming the role the cited page plays in the derivation.\n"
+    "naming the role the cited page plays.\n"
     "- 1 = weak; if the cited page were false, the citing page would mostly stand.\n"
-    "- 3 = material; the argument would need reworking.\n"
+    "- 3 = material; the citing page would need reworking.\n"
     "- 5 = fully load-bearing; the citing page would collapse.\n\n"
     "Return one entry per cited page; do not invent IDs."
 )
@@ -410,8 +411,8 @@ class _DependencyStrengths(BaseModel):
     strengths: list[_CitedPageStrength]
 
 
-_STRENGTH_ELIGIBLE_CITING_TYPES: frozenset[PageType] = frozenset(
-    {PageType.CLAIM, PageType.JUDGEMENT}
+_DEPENDS_ON_CITING_TYPES: frozenset[PageType] = frozenset(
+    {PageType.CLAIM, PageType.JUDGEMENT, PageType.VIEW_ITEM}
 )
 
 
@@ -522,9 +523,10 @@ async def extract_and_link_citations(
     cited pages' types:
 
     - Cited SOURCE → CITES (from=citing, to=cited)
-    - Citing CLAIM/JUDGEMENT cites a CLAIM/JUDGEMENT → DEPENDS_ON
+    - Citing CLAIM/JUDGEMENT/VIEW_ITEM cites a CLAIM/JUDGEMENT → DEPENDS_ON
       (from=citing, to=cited): the citing page's conclusions rest on the
-      cited page being true.
+      cited page being true. The set of citing types that produce
+      DEPENDS_ON is ``_DEPENDS_ON_CITING_TYPES``.
     - Citing QUESTION cites a CLAIM/JUDGEMENT → RELATED
       (from=cited, to=citing): inline citations from a question's body are
       not strong enough to count as considerations bearing on the question —
@@ -574,7 +576,7 @@ async def extract_and_link_citations(
             link_type = LinkType.CITES
             from_id, to_id = page_id, resolved
         elif cited_page.page_type in (PageType.CLAIM, PageType.JUDGEMENT):
-            if citing_type in (PageType.CLAIM, PageType.JUDGEMENT, PageType.VIEW_ITEM):
+            if citing_type in _DEPENDS_ON_CITING_TYPES:
                 link_type = LinkType.DEPENDS_ON
                 from_id, to_id = page_id, resolved
             else:
@@ -587,7 +589,7 @@ async def extract_and_link_citations(
         pending.append((from_id, to_id, link_type, cited_page))
 
     strengths: dict[str, tuple[float, str]] = {}
-    if citing_type in _STRENGTH_ELIGIBLE_CITING_TYPES and citing_page is not None:
+    if citing_page is not None:
         depends_on_targets = [cited for (_, _, lt, cited) in pending if lt == LinkType.DEPENDS_ON]
         if depends_on_targets:
             strengths = await _assign_dependency_strengths(

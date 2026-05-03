@@ -231,6 +231,9 @@ For each selected run, spawn one `Agent` (background) with
 > {bulleted list of (call_id_short, call_type, status, $cost, params.phase)}
 >
 > Your job: identify CONCRETE improvement opportunities. NOT generic advice.
+> **Workflow restructuring is in scope** — the iteration-target workflows
+> (DraftAndEditWorkflow, ReflectiveJudgeWorkflow) are designed to be
+> restructured. Don't limit yourself to prompt edits.
 > Look for:
 >   - Wasted budget (calls producing thin output relative to cost)
 >   - Bad prompting (system or user messages that confuse the model,
@@ -243,6 +246,31 @@ For each selected run, spawn one `Agent` (background) with
 >   - For judging: does the orch research inform the verdict, or could
 >     a blind judge land the same call?
 >   - Blind-leak risks (model speculating about source/human/AI)
+>   - **Round-N relitigation** (workflow keeps re-deciding the same
+>     call across rounds; cost spent on whiplash rather than progress)
+>   - **Editor refusing critic-named content** on length-budget grounds
+>     when the content is load-bearing (signals missing structural
+>     commitment device)
+>   - **Drafter committing to a weak spine** that downstream stages
+>     can't recover from (signals missing planning stage)
+>
+> **Candidate structural changes to consider** (don't limit yourself
+> to these — name others if the trace points elsewhere):
+>   - **Planner stage** before the drafter, emitting a structured
+>     brief (spine + length target + mandatory anchors). Drafter and
+>     critics enforce against the brief.
+>   - **Arbiter / triage stage** between critics and editor, producing
+>     `{accept, reject, unresolved}` triage. Editor sees plan, not
+>     raw critiques. Closes round-N relitigation loops.
+>   - **Role-specialized critics** — different prompts per critic slot
+>     (structure / length / citation / voice), not the same prompt
+>     sampled N times.
+>   - **Multi-drafter ensemble** in round 0 with different framings,
+>     selector picks best. Bounds drafter-commit risk.
+>   - **Fact-fetch stage** that fires targeted scout-style calls when
+>     a critic flags missing concrete content.
+>   - **Reordering / removing existing stages** (e.g. drop critics
+>     entirely if the trace shows they're producing duplicate notes).
 >
 > Tools:
 >   - `PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id>`
@@ -274,12 +302,26 @@ For each selected run, spawn one `Agent` (background) with
 >   1. Top 3 concrete improvements ranked by expected impact, each
 >      with: (a) what's wrong, (b) where (cite call short-id +
 >      brief excerpt), (c) specific fix (prompt edit, knob change,
->      code change).
->   2. One observation about whether orch research actually fed
+>      code change), (d) **classification**: bug fix / prompt iteration
+>      / structural change.
+>   2. **Ranked structural-change proposals** (1-3) — for each:
+>      one-paragraph design sketch, expected impact, what it requires
+>      implementing in LoC terms, and a **paired fork hypothesis** (if
+>      a single-turn fork can validate the change cheaply, name it).
+>      If no fork-amenable hypothesis exists for a structural change,
+>      flag explicitly — that's a tell that the change is harder to
+>      de-risk and needs a Phase 0.5 variant fan-out instead.
+>   3. **Proposed fork experiments** (1-2, cheap, single-turn,
+>      side-effect-free). For each: which exchange to fork, what to
+>      override, what behavior shift to look for. Forks here are
+>      Phase-3 candidates — pre-pair them with the structural changes
+>      they validate.
+>   4. One observation about whether orch research actually fed
 >      downstream consumption.
->   3. Cost outliers worth flagging.
+>   5. Cost outliers worth flagging.
+>   6. **Risks** (2-3 lines): what these changes might break or regress.
 >
-> Be terse. Under 500 words. Cite specific call ids and snippets.
+> Be terse. Under 700 words. Cite specific call ids and snippets.
 > Don't speculate beyond evidence.
 
 Run all trace agents in **a single message with multiple Agent
@@ -300,10 +342,45 @@ PER RUN. Good fork hypotheses:
   (single-knob test)
 - "If the user message included the actual essay opening (vs only a
   blurb), would the scout pick different cases?" (context test)
+- **"If we substituted a hand-written `<arbitration>` block for the
+  raw `<critiques>` block, would the editor stop relitigating?"**
+  (structural-change simulation — see below)
 
 Skip hypotheses that don't fit forks — anything multi-turn, anything
 that needs tool execution, anything that requires DB writes. Forks are
 single-turn, side-effect-free.
+
+**Forks can validate proposed structural changes by simulating the
+new stage's output.** When the trace investigator proposes a new
+pipeline stage (planner, arbiter, fact-fetch, etc.), the cheapest
+validation is to hand-write what that stage would emit and substitute
+it into the downstream consumer's input — then fire the existing
+exchange with the substituted input. Examples:
+- **Planner stage** → write a brief specifying mandatory paradigm
+  cases / spine / target lengths, inject it into the editor's user
+  message, see if the editor accommodates.
+- **Arbiter stage** → write an `{accept, reject, unresolved}` triage
+  by hand, replace the raw critiques block in the editor's user
+  message, see if the editor follows the plan.
+- **Role-specialized critic** → write each critic role's output by
+  hand, format them as separate critiques, see if the editor
+  responds differently than to N samples of the same prompt.
+
+This is a generally-useful pattern: an n=2 fork that costs ~$0.50
+can validate or refute a structural-change hypothesis before
+committing to ~100-300 LoC of workflow changes. Always do this
+before opening a Phase 0.5 fan-out for the structural variant.
+
+**Always include "what got cut to make room" as an explicit
+comparison check.** When a fork override adds new content (a
+mandatory case, an arbitration directive that forces specific
+edits), the most informative signal is what the model *chose to
+drop* to make room. That tells you whether the new content is doing
+load-bearing argumentative work or being shoehorned in as filler.
+Compare the fork's `<cuts>` block (or equivalent) to the recorded
+output's structure — preserved load-bearing sections is good
+signal; cut load-bearing sections to keep the new content is bad
+signal.
 
 Spawn one `Agent` per fork experiment, in parallel. Template:
 
@@ -361,13 +438,30 @@ to the user. Structure:
 For each item:
 - One-line statement of the problem
 - Cite supporting trace finding + fork id
+- **Classification** — exactly one of:
+  - **Bug fix** (deterministic failure, n=1 enough, ship now)
+  - **Prompt iteration** (incremental improvement within current
+    architecture, needs Phase 0.5 sweep before flipping defaults)
+  - **Structural change** (new pipeline stage, removed/reordered
+    stages, fundamentally different flow; needs a new entry in
+    `variants/*.yaml` and Phase 0.5 fan-out to validate; if forks
+    simulated the new stage and showed positive signal, that's
+    permission-to-implement, not permission-to-promote)
 - Concrete fix — one of: prompt edit, knob change, structural change
   (new variant entry in `variants/*.yaml`, validated by re-running
   Phase 0.5), or input/closer-rendering change for the
   TwoPhase-shared paths
 - Estimated impact ($ saved per run, quality delta, etc.)
 
-End with a one-line offer to draft any of the P0 items as PRs.
+The classification matters because the user response is different per
+class: bug fixes get committed; prompt iterations earn a sweep before
+becoming defaults; structural changes earn an implementation pass +
+fan-out + sweep before becoming defaults. Mixing these in a single
+P0/P1/P2/P3 grade hides important effort and risk asymmetries.
+
+End with a one-line offer to draft any of the P0 items as PRs (for
+bug fixes) or to implement any of the structural changes that
+fork-validated (for structural items).
 
 ## Where lessons land (the iteration target)
 
@@ -484,6 +578,20 @@ The trace+fork loop is high-leverage but the sample size is tiny
   "we use two_phase for normal rumil runs, don't fiddle." Default
   to fixing inputs to the orch and the closer's consumption of orch
   output, not the orch's traversal logic itself.
+- **Background subprocesses need `nohup`, not just `&` + `disown`.**
+  When firing long-running completions from the Bash tool with
+  `run_in_background=true` or with a literal `&` suffix, the child
+  process can be SIGHUP'd when the Bash tool's parent shell exits
+  before the python subprocess fully detaches (uv install + python
+  spawn takes several seconds). Symptom: a new `runs` row + `calls`
+  row land in the DB (workflow setup ran), but `call.status` stays
+  "running" forever with zero `call_llm_exchanges` and zero trace
+  events (the workflow died before the first `await trace.record(...)`).
+  Mitigation: prefix long-running fires with `nohup`, OR sleep until
+  the first exchange lands in the DB before returning control to
+  the user. For the iterate skill specifically: when firing fan-out
+  variants, use `nohup uv run python ... &` so SIGHUP from the
+  parent shell exit doesn't kill mid-init.
 
 ## Quick check (skill is working)
 

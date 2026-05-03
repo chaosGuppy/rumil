@@ -34,3 +34,22 @@ variants:
       just dilutes signal with redundancy.
     budget: 5  # one extra round to absorb the extra critic
     n_critics: 3
+
+  - name: multi_concern_critic
+    description: |
+      Replaces the critic prompt with a dimension-sectioned variant
+      that produces critique structured by four concerns: structural
+      commitment (spine + cue honoring), length fit (symmetric — flags
+      undershoot AND overshoot), concreteness/citation density (paradigm
+      cases, named referents, quantitative claims), and voice match.
+      Tests whether forcing critics to address each dimension explicitly
+      makes editor revisions land more cleanly than a free-form critique
+      that often privileges one dimension. Round-2 follow-up to the
+      §10.3 fork finding that the View was load-bearing for structural
+      discipline + paradigm-case content — d&e should iterate the same
+      dimensions through its critic loop rather than just borrowing tp's
+      pre-cooked View. Round-2 §10.2 showed tp's closer underdelivers on
+      long redwood essays; multi-concern critic's symmetric length
+      treatment is the d&e analogue of that fix on the closer-input side.
+    budget: 4
+    critic_prompt_path: .claude/skills/rumil-versus-iterate/prompts/draft_and_edit/critic_multi_concern.md

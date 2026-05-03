@@ -131,12 +131,22 @@ def _is_retryable(exc: BaseException) -> bool:
     """Return True if the exception represents a transient API error."""
     status = _exc_status(exc)
     name = type(exc).__name__.lower()
+    msg = str(exc).lower()
     return (
         status in (429, 500, 502, 503, 529)
         or "overloaded" in name
         or "ratelimit" in name
         or "internalserver" in name
-        or "overloaded" in str(exc).lower()
+        or "overloaded" in msg
+        # httpx RemoteProtocolError + variants — Anthropic edge sometimes
+        # closes the chunked-streaming connection mid-response; not a real
+        # refusal, transient. Observed on a v3 d&e workflow run as
+        # "RemoteProtocolError: peer closed connection without sending
+        # complete message body (incomplete chunked read)" — wedged the
+        # workflow because the error wasn't classified retryable.
+        or "remoteprotocol" in name
+        or "incomplete chunked read" in msg
+        or "peer closed connection" in msg
     )
 
 

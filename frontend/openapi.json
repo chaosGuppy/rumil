@@ -6881,6 +6881,16 @@
             ],
             "title": "Error"
           },
+          "thinking_blocks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingBlocksOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -8433,6 +8443,20 @@
         ],
         "title": "ReassessTriggeredEventOut"
       },
+      "RedactedThinkingBlockOut": {
+        "properties": {
+          "data": {
+            "type": "string",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RedactedThinkingBlockOut",
+        "description": "Anthropic-encrypted thinking block (content unavailable to clients)."
+      },
       "RenderQuestionSubgraphEventOut": {
         "properties": {
           "ts": {
@@ -9457,6 +9481,54 @@
           "question_id"
         ],
         "title": "SubquestionScoreItem"
+      },
+      "ThinkingBlockOut": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ThinkingBlockOut",
+        "description": "One summarized chain-of-thought block from an Anthropic response."
+      },
+      "ThinkingBlocksOut": {
+        "properties": {
+          "thinking": {
+            "items": {
+              "$ref": "#/components/schemas/ThinkingBlockOut"
+            },
+            "type": "array",
+            "title": "Thinking",
+            "default": []
+          },
+          "redacted_thinking": {
+            "items": {
+              "$ref": "#/components/schemas/RedactedThinkingBlockOut"
+            },
+            "type": "array",
+            "title": "Redacted Thinking",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "ThinkingBlocksOut",
+        "description": "Captured thinking content for an LLM exchange.\n\nPopulated when the model returned ``ThinkingBlock`` /\n``RedactedThinkingBlock`` content. Null on the parent ``LLMExchangeOut``\nwhen the model didn't think (e.g. Haiku) \u2014 clients should treat the\nfield as optional."
       },
       "ToolCallEventOut": {
         "properties": {

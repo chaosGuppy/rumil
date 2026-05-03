@@ -824,6 +824,7 @@ async def get_llm_exchange(
         output_tokens=row.get("output_tokens"),
         duration_ms=row.get("duration_ms"),
         error=row.get("error"),
+        thinking_blocks=row.get("thinking_blocks"),
         created_at=row["created_at"],
     )
 

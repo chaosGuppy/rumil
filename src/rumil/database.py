@@ -2827,6 +2827,7 @@ class DB:
         user_messages: Sequence[dict] | None = None,
         model: str | None = None,
         request_kwargs: dict[str, Any] | None = None,
+        thinking_blocks: dict[str, Any] | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         row: dict[str, Any] = {
@@ -2851,6 +2852,8 @@ class DB:
             row["user_messages"] = user_messages
         if request_kwargs is not None:
             row["request_kwargs"] = request_kwargs
+        if thinking_blocks is not None:
+            row["thinking_blocks"] = thinking_blocks
         await self._execute(self.client.table("call_llm_exchanges").insert(row))
         return exchange_id
 

@@ -28,8 +28,10 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import anthropic
 from anthropic.types import (
+    RedactedThinkingBlock,
     ServerToolUseBlock,
     TextBlock,
+    ThinkingBlock,
     ToolUseBlock,
     WebSearchToolResultBlock,
 )
@@ -447,6 +449,79 @@ def _capture_request_kwargs(cfg: ModelConfig) -> dict:
 
 
 @dataclass
+class ParsedAnthropicResponse:
+    """Decomposition of an Anthropic Message's content blocks.
+
+    One pass over ``response.content`` so every call path reaches the
+    same shape regardless of model generation. ``thinking`` is populated
+    when the model returns ``ThinkingBlock``s — Opus 4.7 with
+    ``display="summarized"`` and Opus 4.6 / Sonnet 4.6 with adaptive
+    thinking emit summarized CoT here. ``redacted_thinking`` is
+    Anthropic's encrypted-content variant. Both stay empty for models
+    without thinking (e.g. Haiku).
+    """
+
+    text_parts: list[str]
+    tool_calls: list[dict]
+    thinking: list[dict]
+    redacted_thinking: list[dict]
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.text_parts)
+
+    @property
+    def has_thinking(self) -> bool:
+        return bool(self.thinking) or bool(self.redacted_thinking)
+
+    def thinking_blocks_for_storage(self) -> dict | None:
+        """JSONB shape for ``call_llm_exchanges.thinking_blocks``.
+
+        ``None`` (not ``{}``) when there's nothing to store so non-thinking
+        models don't pollute the column.
+        """
+        if not self.has_thinking:
+            return None
+        out: dict = {}
+        if self.thinking:
+            out["thinking"] = self.thinking
+        if self.redacted_thinking:
+            out["redacted_thinking"] = self.redacted_thinking
+        return out
+
+
+def parse_anthropic_response(content: Sequence[Any]) -> ParsedAnthropicResponse:
+    """Walk ``response.content`` once and bucket blocks by type."""
+    text_parts: list[str] = []
+    tool_calls: list[dict] = []
+    thinking: list[dict] = []
+    redacted_thinking: list[dict] = []
+    for block in content:
+        if isinstance(block, TextBlock):
+            text_parts.append(block.text)
+        elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
+            tool_calls.append({"name": block.name, "input": block.input})
+        elif isinstance(block, WebSearchToolResultBlock):
+            tool_calls.append(
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": block.tool_use_id,
+                    "content": block.model_dump(mode="json")["content"],
+                }
+            )
+        elif isinstance(block, ThinkingBlock):
+            thinking.append({"content": block.thinking, "signature": block.signature})
+        elif isinstance(block, RedactedThinkingBlock):
+            redacted_thinking.append({"data": block.data})
+    return ParsedAnthropicResponse(
+        text_parts=text_parts,
+        tool_calls=tool_calls,
+        thinking=thinking,
+        redacted_thinking=redacted_thinking,
+    )
+
+
+@dataclass
 class LLMExchangeMetadata:
     """Context for automatically saving an LLM exchange to the database.
 
@@ -479,6 +554,7 @@ async def _save_exchange(
     cache_read_input_tokens: int = 0,
     user_messages: Sequence[dict] | None = None,
     request_kwargs: dict | None = None,
+    thinking_blocks: dict | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event."""
     exchange_id = await db.save_llm_exchange(
@@ -497,6 +573,7 @@ async def _save_exchange(
         user_messages=user_messages,
         model=model,
         request_kwargs=request_kwargs,
+        thinking_blocks=thinking_blocks,
     )
     cost_usd = compute_cost(
         model=model,
@@ -518,6 +595,7 @@ async def _save_exchange(
                 cache_read_input_tokens=cache_read_input_tokens or None,
                 duration_ms=duration_ms,
                 cost_usd=cost_usd or None,
+                has_thinking=thinking_blocks is not None,
                 langfuse_trace_url=langfuse_trace_url_for_current_observation(),
             )
         )
@@ -547,12 +625,34 @@ def _extract_model_parameters(api_kwargs: dict) -> dict:
     return params
 
 
+def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
+    """Render the assistant turn for Langfuse's IOPreview.
+
+    When the response contains thinking or redacted-thinking blocks, we
+    return a ChatML-shaped assistant message so Langfuse's
+    ``ThinkingBlock`` / ``RedactedThinkingBlock`` UI components light up.
+    Otherwise we return the joined text (or ``None``) to preserve the
+    existing string output for non-thinking models.
+    """
+    if not parsed.has_thinking:
+        return parsed.text or None
+    output: dict = {"role": "assistant", "content": parsed.text}
+    if parsed.thinking:
+        # Langfuse renders {content, summary?}. Drop signature — it's
+        # opaque to the UI; we keep it in our own DB column.
+        output["thinking"] = [{"content": t["content"]} for t in parsed.thinking]
+    if parsed.redacted_thinking:
+        output["redacted_thinking"] = [{"data": r["data"]} for r in parsed.redacted_thinking]
+    return output
+
+
 def _enrich_langfuse_generation(
     *,
     model: str,
     messages: Sequence[dict],
     response: anthropic.types.Message,
     elapsed_ms: int,
+    parsed: ParsedAnthropicResponse,
     api_kwargs: dict | None = None,
 ) -> None:
     """Populate the active Langfuse generation span with model, IO, and usage.
@@ -573,13 +673,10 @@ def _enrich_langfuse_generation(
             cache_creation_input_tokens=cache_creation,
             cache_read_input_tokens=cache_read,
         )
-        output_text = "".join(
-            block.text for block in response.content if isinstance(block, TextBlock)
-        )
         client.update_current_generation(
             model=model,
             input=_serialize_messages(messages),
-            output=output_text or None,
+            output=_langfuse_output_for(parsed),
             model_parameters=_extract_model_parameters(api_kwargs or {}),
             usage_details={
                 "input": usage.input_tokens,
@@ -686,22 +783,8 @@ async def call_anthropic_api(
         elapsed_ms,
         response.usage,
     )
+    parsed = parse_anthropic_response(response.content)
     if metadata and db:
-        text_parts = []
-        tool_call_data = []
-        for block in response.content:
-            if isinstance(block, TextBlock):
-                text_parts.append(block.text)
-            elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
-                tool_call_data.append({"name": block.name, "input": block.input})
-            elif isinstance(block, WebSearchToolResultBlock):
-                tool_call_data.append(
-                    {
-                        "type": "web_search_tool_result",
-                        "tool_use_id": block.tool_use_id,
-                        "content": block.model_dump(mode="json")["content"],
-                    }
-                )
         serialized = _serialize_messages(messages) if len(messages) > 1 else None
         try:
             await _save_exchange(
@@ -709,8 +792,8 @@ async def call_anthropic_api(
                 db=db,
                 model=model,
                 system_prompt=system_prompt,
-                response_text="\n".join(text_parts) or None,
-                tool_calls=tool_call_data,
+                response_text=parsed.text or None,
+                tool_calls=parsed.tool_calls,
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
                 duration_ms=elapsed_ms,
@@ -721,6 +804,7 @@ async def call_anthropic_api(
                 cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
                 user_messages=serialized,
                 request_kwargs=_capture_request_kwargs(cfg),
+                thinking_blocks=parsed.thinking_blocks_for_storage(),
             )
         except Exception as exc:
             log.error(
@@ -742,6 +826,7 @@ async def call_anthropic_api(
         messages=messages,
         response=response,
         elapsed_ms=elapsed_ms,
+        parsed=parsed,
         api_kwargs=kwargs,
     )
     return APIResponse(message=response, duration_ms=elapsed_ms)
@@ -1345,15 +1430,14 @@ async def _structured_call_parse(
 
     response: Any = await _do_parse()
     elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
-    response_text = ""
-    for block in response.content:
-        if isinstance(block, TextBlock):
-            response_text += block.text
+    parsed = parse_anthropic_response(response.content)
+    response_text = parsed.text
     _enrich_langfuse_generation(
         model=model,
         messages=msg_list,
         response=response,
         elapsed_ms=elapsed_ms,
+        parsed=parsed,
         api_kwargs=parse_kwargs,
     )
     if metadata and db:
@@ -1379,6 +1463,7 @@ async def _structured_call_parse(
             cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
             user_messages=serialized,
             request_kwargs=_capture_request_kwargs(cfg),
+            thinking_blocks=parsed.thinking_blocks_for_storage(),
         )
     if response.parsed_output is not None:
         log.debug(

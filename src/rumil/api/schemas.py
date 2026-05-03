@@ -261,6 +261,32 @@ class LLMExchangeSummaryOut(BaseModel):
     created_at: datetime
 
 
+class ThinkingBlockOut(BaseModel):
+    """One summarized chain-of-thought block from an Anthropic response."""
+
+    content: str
+    signature: str | None = None
+
+
+class RedactedThinkingBlockOut(BaseModel):
+    """Anthropic-encrypted thinking block (content unavailable to clients)."""
+
+    data: str
+
+
+class ThinkingBlocksOut(BaseModel):
+    """Captured thinking content for an LLM exchange.
+
+    Populated when the model returned ``ThinkingBlock`` /
+    ``RedactedThinkingBlock`` content. Null on the parent ``LLMExchangeOut``
+    when the model didn't think (e.g. Haiku) — clients should treat the
+    field as optional.
+    """
+
+    thinking: list[ThinkingBlockOut] = []
+    redacted_thinking: list[RedactedThinkingBlockOut] = []
+
+
 class LLMExchangeOut(BaseModel):
     id: str
     call_id: str
@@ -275,6 +301,7 @@ class LLMExchangeOut(BaseModel):
     output_tokens: int | None
     duration_ms: int | None
     error: str | None
+    thinking_blocks: ThinkingBlocksOut | None = None
     created_at: datetime
 
 

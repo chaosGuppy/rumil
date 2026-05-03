@@ -2233,6 +2233,7 @@ export type LlmExchangeOut = {
      * Error
      */
     error: string | null;
+    thinking_blocks?: ThinkingBlocksOut | null;
     /**
      * Created At
      */
@@ -3191,6 +3192,18 @@ export type ReassessTriggeredEventOut = {
 };
 
 /**
+ * RedactedThinkingBlockOut
+ *
+ * Anthropic-encrypted thinking block (content unavailable to clients).
+ */
+export type RedactedThinkingBlockOut = {
+    /**
+     * Data
+     */
+    data: string;
+};
+
+/**
  * RenderQuestionSubgraphEventOut
  */
 export type RenderQuestionSubgraphEventOut = {
@@ -3825,6 +3838,43 @@ export type SubquestionScoreItem = {
      * Reasoning
      */
     reasoning?: string;
+};
+
+/**
+ * ThinkingBlockOut
+ *
+ * One summarized chain-of-thought block from an Anthropic response.
+ */
+export type ThinkingBlockOut = {
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Signature
+     */
+    signature?: string | null;
+};
+
+/**
+ * ThinkingBlocksOut
+ *
+ * Captured thinking content for an LLM exchange.
+ *
+ * Populated when the model returned ``ThinkingBlock`` /
+ * ``RedactedThinkingBlock`` content. Null on the parent ``LLMExchangeOut``
+ * when the model didn't think (e.g. Haiku) — clients should treat the
+ * field as optional.
+ */
+export type ThinkingBlocksOut = {
+    /**
+     * Thinking
+     */
+    thinking?: Array<ThinkingBlockOut>;
+    /**
+     * Redacted Thinking
+     */
+    redacted_thinking?: Array<RedactedThinkingBlockOut>;
 };
 
 /**

@@ -126,6 +126,30 @@ you'll be shown scoring data from a preliminary assessment:
   `dispatch_web_factcheck` on questions targeting a specific,
   searchable factual claim. don't use it on broad or interpretive
   questions.
+- **ground load-bearing empirical claims.** if the scope question's
+  substance is empirical (specific numbers, deployment counts,
+  current state of a market or technology, recent regulatory
+  decisions), workspace claims that don't cite a source are likely
+  LLM priors and may be confidently wrong — especially for facts
+  near or past the model's training cutoff. when a load-bearing
+  numeric or factual claim has no source, prefer
+  `dispatch_web_factcheck` (or `web_research`) on it before letting
+  it get baked into a view. this is most important for the few
+  numbers a downstream reader would actually act on; don't burn
+  budget grounding every figure.
+- **high-credence ≠ verified.** a claim with credence 6+ whose
+  provenance is a `scout_*` call is, by definition, the model's
+  unverified retrieval from training data — confidence about a
+  pre-cutoff prior, not about a checked fact. these claims feel
+  load-bearing precisely because they sound concrete, which is the
+  failure mode `web_research` exists to fix. there is a real bias
+  toward "more scouting feels like more progress than verifying
+  what we already have"; resist it. if the workspace already holds
+  several confident-but-unsourced claims, a `dispatch_web_factcheck`
+  on the most load-bearing of them is usually higher-EV than another
+  scout round — even when the scout's fruit score looks competitive.
+  the orchestrator may surface a count of such claims as a Note;
+  treat that as a hint, not a quota.
 
 ### guidance on how much budget to use
 

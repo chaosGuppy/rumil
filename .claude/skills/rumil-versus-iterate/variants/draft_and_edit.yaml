@@ -76,3 +76,32 @@ variants:
     with_planner: true
     with_arbiter: true
     critic_prompt_path: .claude/skills/rumil-versus-iterate/prompts/draft_and_edit/critic_multi_concern.md
+
+  - name: v4_audit_anti_tells
+    description: |
+      v4 d&e: v3 (planner + arbiter + multi_concern critic) plus three
+      round-3-iterate-session changes:
+      (A.1) Cached-take preamble baked into the multi_concern critic
+      prompt — fork-validated round 3 (critic surfaces 4-5 specific
+      issues the consolidated multi_concern missed; quote density 3x).
+      (A.2) Anti-tells block + length-backstop in the editor prompt:
+      `<preserved>` sections must articulate the specific
+      argumentative claim that wouldn't survive deletion; per-sentence
+      "would deletion change the section's claim?" check; tightening
+      from anti-tells must produce a SHORTER revision (the round-3
+      fork found the editor articulation improved but length grew —
+      this directive constrains).
+      (B.3) New brief-audit stage (with_brief_audit=true) fires once
+      after round 1's edit. Emits a descriptive audit brief — what
+      spine the draft actually has, what anchors actually landed —
+      and downstream critic / arbiter / editor see both original and
+      audit briefs side-by-side. Round-3 fork found the audit catches
+      structural drift the editor + critic provably miss (Section 1
+      invented, anchor count doubled vs original).
+      Tests whether v3 + these three additive changes meaningfully
+      improves vs v3 on character/aiep/angels.
+    budget: 4
+    with_planner: true
+    with_arbiter: true
+    with_brief_audit: true
+    critic_prompt_path: .claude/skills/rumil-versus-iterate/prompts/draft_and_edit/critic_multi_concern.md

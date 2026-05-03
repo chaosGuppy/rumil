@@ -514,6 +514,34 @@ class ArbitrationEvent(BaseModel):
     model: str = ""
 
 
+class BriefAuditStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the brief-audit LLM
+    call fires (only when with_brief_audit=True). The audit runs once
+    after a designated round (default round 1's edit) and emits an
+    audit brief describing what the draft has actually become — its
+    real spine, real anchors, voice drift vs the original brief.
+    Downstream rounds' critic + arbiter + editor see both the original
+    brief and the audit side-by-side."""
+
+    event: Literal["brief_audit_started"] = "brief_audit_started"
+    after_round: int = 0
+    model: str = ""
+
+
+class BriefAuditEvent(BaseModel):
+    """Emitted when the brief-audit returns. The audit brief is opaque
+    text (same schema as the planner brief) that downstream stages
+    consume verbatim alongside the original brief — they don't parse
+    its internals. Recording the text in the trace event lets the UI
+    show the drift between original brief and what the draft became."""
+
+    event: Literal["brief_audit"] = "brief_audit"
+    after_round: int = 0
+    audit_brief_text: str = ""
+    audit_brief_chars: int = 0
+    model: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -561,6 +589,8 @@ TraceEvent = Annotated[
     | PlannerStartedEvent
     | PlannerEvent
     | ArbitrationStartedEvent
-    | ArbitrationEvent,
+    | ArbitrationEvent
+    | BriefAuditStartedEvent
+    | BriefAuditEvent,
     Field(discriminator="event"),
 ]

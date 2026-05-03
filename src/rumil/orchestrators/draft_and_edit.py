@@ -57,6 +57,8 @@ from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
     ArbitrationEvent,
     ArbitrationStartedEvent,
+    BriefAuditEvent,
+    BriefAuditStartedEvent,
     CritiqueItem,
     CritiqueRoundEvent,
     CritiqueStartedEvent,
@@ -157,7 +159,31 @@ _DEFAULT_EDITOR_PROMPT = (
     "edit. The revised continuation must be at-or-under the target. "
     "If current is close to target, edit at roughly neutral length. "
     "Only expand when the current draft is meaningfully below target "
-    "and a critic identified a missing argument worth adding.\n\n"
+    "and a critic identified a missing argument worth adding. "
+    "**Tightening from anti-tells should produce a SHORTER revision, "
+    "not a longer one** — if you cut scaffolding sentences and add "
+    "nothing, the revision must be shorter than the current draft, "
+    "not the same length or longer.\n\n"
+    "**Sentence-substance check.** A lot of professional-sounding "
+    "writing is 80% scaffolding and 20% claim — sentences that read "
+    "smoothly but don't constrain the answer. Yours especially, "
+    "since you're trained to produce well-structured output without "
+    "that structure necessarily reflecting actual reasoning. Two "
+    "moves to fight this:\n\n"
+    "  1. **For each <preserved> section**, name in one line the "
+    "specific argumentative claim it makes that would NOT survive "
+    "deletion. If you can't articulate the claim a deletion would "
+    "lose, the section is scaffolding — cut it instead of "
+    "preserving. Don't preserve sections on the basis that they "
+    "'read cleanly' or 'capture the voice well.'\n"
+    "  2. **For each new or substantially-revised sentence in the "
+    "revision**, internally ask: 'if I deleted this sentence, would "
+    "the section's argumentative claim change?' Keep the sentence "
+    "only if the answer is yes. Don't pad transitions, restate "
+    "adjacent sentences in different words, or gesture with "
+    "'important to note' / 'raises questions' / 'while it is true "
+    "that' / 'in some sense' / 'arguably' tics. Each sentence earns "
+    "its place by constraining the answer, not by being well-formed.\n\n"
     "**Required output format.** Before the <continuation> block, "
     "output two structured blocks in order:\n"
     "  1. <preserved>...</preserved> — a one-line note naming any "
@@ -297,6 +323,60 @@ _DEFAULT_ARBITER_PROMPT = (
     'with a single "- none" line so the editor\'s parser sees a '
     "consistent structure. Output the arbitration block and nothing "
     "else."
+)
+
+
+_DEFAULT_AUDIT_PROMPT = (
+    "You are running an audit pass on a planner brief. The user "
+    "message will give you the essay prefix, the original brief "
+    "(emitted before the drafter ran), and the current draft (after "
+    "one or more rounds of revision). Your job: emit an audit brief "
+    "that describes the draft as it ACTUALLY became — its real spine, "
+    "its real anchors, where its voice has held or drifted vs the "
+    "original brief's directives.\n\n"
+    "**Why this matters.** The original brief was generated from the "
+    "prefix alone — it never saw how the draft actually evolved. "
+    "Drafters and editors invent sections, drop or add anchors, and "
+    "drift in voice that the original brief couldn't anticipate. "
+    "Without an audit, the editor's late-round revisions stay "
+    "anchored to the original brief and miss what the draft has "
+    "actually become — sometimes a stronger structure than was "
+    "planned, sometimes a weaker one. Either way the editor needs "
+    "to know.\n\n"
+    "**This is descriptive, not prescriptive.** Describe the draft "
+    "as-is — don't recommend changes. The downstream editor will "
+    "compare your audit against the original brief and decide what "
+    "to do about the drift.\n\n"
+    "**Output format.** Use the same `<brief>` schema as the "
+    "original planner — same tags, same structure — but populated "
+    "from observation of the draft, not from prefix-only "
+    "imagination. Specifically:\n\n"
+    "<brief>\n"
+    "<spine>\n"
+    "- (a) <section label as the draft has it> — <key argumentative move the draft actually makes> — actual ~N chars — anchor: <named anchor that actually appears in this section, or none>\n"
+    "- (b) ...\n"
+    "</spine>\n"
+    "<total_target>N characters total (the draft's actual length)</total_target>\n"
+    "<voice>One paragraph: where has the draft's voice held vs the original brief's voice directives, and where has it drifted? Quote a short sample of voice drift if present.</voice>\n"
+    "<mandatory_anchors>\n"
+    "- <name + brief gloss>: where it lands in the draft (which section, what role)\n"
+    "- <next anchor>: same\n"
+    "</mandatory_anchors>\n"
+    "</brief>\n\n"
+    "**Spine rules for audit.** Use the section labels and structure "
+    "the draft actually has — even if they differ from the original "
+    "brief's spine. If the drafter invented a section, audit it in. "
+    "If the drafter merged two sections from the brief, audit them "
+    "merged. If the drafter dropped a brief-mandated section, omit "
+    "it from the audit (the original brief is still visible to the "
+    "editor — they'll see the deletion).\n\n"
+    "**Mandatory_anchors rules for audit.** List every named, dated, "
+    "concrete referent that actually lands in the draft (not what "
+    "the original brief mandated). If the draft introduced anchors "
+    "the original brief didn't list, include them. If the draft "
+    "dropped brief-mandated anchors, omit them — the editor sees "
+    "the deletion against the original brief.\n\n"
+    "Output the audit brief and nothing else."
 )
 
 
@@ -475,10 +555,15 @@ class DraftAndEditWorkflow:
         editor_prompt_path: str | Path | None = None,
         with_planner: bool = False,
         with_arbiter: bool = False,
+        with_brief_audit: bool = False,
         planner_model: str | None = None,
         arbiter_model: str | None = None,
+        audit_model: str | None = None,
         planner_prompt_path: str | Path | None = None,
         arbiter_prompt_path: str | Path | None = None,
+        audit_prompt_path: str | Path | None = None,
+        brief_audit_after_round: int = 1,
+        audit_feeds_critic: bool = True,
     ) -> None:
         if budget < 1:
             raise ValueError(f"budget must be >= 1, got {budget}")
@@ -494,8 +579,12 @@ class DraftAndEditWorkflow:
         self.editor_model = editor_model
         self.with_planner = with_planner
         self.with_arbiter = with_arbiter
+        self.with_brief_audit = with_brief_audit
         self.planner_model = planner_model
         self.arbiter_model = arbiter_model
+        self.audit_model = audit_model
+        self.brief_audit_after_round = brief_audit_after_round
+        self.audit_feeds_critic = audit_feeds_critic
         # Resolve prompt content at construction so fingerprint() and
         # the stage methods see the same bytes; record paths for telemetry.
         self.drafter_prompt_path = drafter_prompt_path
@@ -503,23 +592,25 @@ class DraftAndEditWorkflow:
         self.editor_prompt_path = editor_prompt_path
         self.planner_prompt_path = planner_prompt_path
         self.arbiter_prompt_path = arbiter_prompt_path
+        self.audit_prompt_path = audit_prompt_path
         self.drafter_prompt = _load_prompt(drafter_prompt_path, _DEFAULT_DRAFTER_PROMPT)
         self.critic_prompt = _load_prompt(critic_prompt_path, _DEFAULT_CRITIC_PROMPT)
         self.editor_prompt = _load_prompt(editor_prompt_path, _DEFAULT_EDITOR_PROMPT)
-        # Always resolve planner / arbiter prompts so the prompt-text
-        # bytes are stable across runs even when the stage is disabled
-        # — a future flip of with_planner/with_arbiter on the same
-        # variant won't accidentally fork the dedup hash via prompt
-        # changes that landed while the stage was off.
+        # Always resolve planner / arbiter / audit prompts so the prompt-
+        # text bytes are stable across runs even when the stage is
+        # disabled — a future flip of with_* on the same variant won't
+        # accidentally fork the dedup hash via prompt changes that
+        # landed while the stage was off.
         self.planner_prompt = _load_prompt(planner_prompt_path, _DEFAULT_PLANNER_PROMPT)
         self.arbiter_prompt = _load_prompt(arbiter_prompt_path, _DEFAULT_ARBITER_PROMPT)
+        self.audit_prompt = _load_prompt(audit_prompt_path, _DEFAULT_AUDIT_PROMPT)
         self.last_status: str = "complete"
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]:
-        # Planner / arbiter prompt hashes only fold into the fingerprint
-        # when the stage is enabled — keeps with_planner=False variants
-        # stable across edits to _DEFAULT_PLANNER_PROMPT, and likewise
-        # for arbiter. Flip the bool in a variant to opt in.
+        # Planner / arbiter / audit prompt hashes only fold into the
+        # fingerprint when the stage is enabled — keeps with_*=False
+        # variants stable across edits to _DEFAULT_*_PROMPT. Flip the
+        # bool in a variant to opt in.
         out: dict[str, str | int | bool | None] = {
             "kind": self.name,
             "budget": self.budget,
@@ -533,6 +624,7 @@ class DraftAndEditWorkflow:
             "editor_prompt_hash": _sha8(self.editor_prompt),
             "with_planner": self.with_planner,
             "with_arbiter": self.with_arbiter,
+            "with_brief_audit": self.with_brief_audit,
         }
         if self.with_planner:
             out["planner_model"] = self.planner_model
@@ -540,6 +632,11 @@ class DraftAndEditWorkflow:
         if self.with_arbiter:
             out["arbiter_model"] = self.arbiter_model
             out["arbiter_prompt_hash"] = _sha8(self.arbiter_prompt)
+        if self.with_brief_audit:
+            out["audit_model"] = self.audit_model
+            out["audit_prompt_hash"] = _sha8(self.audit_prompt)
+            out["brief_audit_after_round"] = self.brief_audit_after_round
+            out["audit_feeds_critic"] = self.audit_feeds_critic
         return out
 
     async def setup(self, db: DB, question_id: str) -> None:
@@ -596,6 +693,7 @@ class DraftAndEditWorkflow:
             "editor_prompt_hash": _sha8(self.editor_prompt),
             "with_planner": self.with_planner,
             "with_arbiter": self.with_arbiter,
+            "with_brief_audit": self.with_brief_audit,
         }
         if self.with_planner:
             call_params["planner_model"] = self.planner_model
@@ -611,6 +709,14 @@ class DraftAndEditWorkflow:
                 str(self.arbiter_prompt_path) if self.arbiter_prompt_path else None
             )
             call_params["arbiter_prompt_hash"] = _sha8(self.arbiter_prompt)
+        if self.with_brief_audit:
+            call_params["audit_model"] = self.audit_model
+            call_params["effective_audit_model"] = self._resolve_model(self.audit_model)
+            call_params["audit_prompt_path"] = (
+                str(self.audit_prompt_path) if self.audit_prompt_path else None
+            )
+            call_params["audit_prompt_hash"] = _sha8(self.audit_prompt)
+            call_params["brief_audit_after_round"] = self.brief_audit_after_round
         call = await db.create_call(
             call_type=CallType.VERSUS_COMPLETE,
             scope_page_id=question_id,
@@ -658,7 +764,12 @@ class DraftAndEditWorkflow:
         triage that the editor consumes in place of raw critiques. The
         planner cost is not budget-bounded (one extra LLM call per
         run); the arbiter consumes no budget either (it's metadata
-        about a round, not a separate round).
+        about a round, not a separate round). With
+        ``with_brief_audit=True`` an additional audit stage fires once
+        after ``brief_audit_after_round`` (default 1) and emits a
+        descriptive audit brief; downstream critic / arbiter / editor
+        see both the original and audit briefs side-by-side, surfacing
+        structural drift the editor was anchored away from.
         """
         brief: str | None = None
         if self.with_planner:
@@ -674,6 +785,7 @@ class DraftAndEditWorkflow:
         current_draft: str = ""
         critiques: Sequence[str] = []
         prior_arbitrations: list[str] = []
+        audit_brief: str | None = None
         round_idx = 0
         while True:
             if self.max_rounds is not None and round_idx >= self.max_rounds:
@@ -714,9 +826,11 @@ class DraftAndEditWorkflow:
                         prior_arbitrations=prior_arbitrations,
                         target_length=target_length,
                         brief=brief,
+                        audit_brief=audit_brief,
                         model_config=model_config,
                     )
-                    prior_arbitrations.append(arbitration)
+                    if arbitration is not None:
+                        prior_arbitrations.append(arbitration)
                 draft_before_edit = current_draft
                 current_draft = await self._edit(
                     db=db,
@@ -729,6 +843,7 @@ class DraftAndEditWorkflow:
                     critiques=critiques,
                     arbitration=arbitration,
                     brief=brief,
+                    audit_brief=audit_brief,
                     model_config=model_config,
                 )
                 # If the editor returned the unchanged prior draft (the
@@ -741,6 +856,30 @@ class DraftAndEditWorkflow:
                 # this round and reuse the prior round's critiques on
                 # the next edit.
                 edit_was_noop = current_draft == draft_before_edit
+
+            # Brief-audit stage: fires once after the configured round's
+            # edit completes (default after round 1). Audit brief
+            # threads into all subsequent stages alongside the original
+            # brief; downstream stages see drift between what was
+            # planned and what the draft actually became.
+            if (
+                self.with_brief_audit
+                and brief is not None
+                and audit_brief is None
+                and round_idx == self.brief_audit_after_round
+                and current_draft
+            ):
+                audit_brief = await self._audit_brief(
+                    db=db,
+                    trace=trace,
+                    call_id=call_id,
+                    after_round=round_idx,
+                    prefix=prefix,
+                    original_brief=brief,
+                    current_draft=current_draft,
+                    target_length=target_length,
+                    model_config=model_config,
+                )
 
             # Skip the critique step on the final round: there's no
             # subsequent edit to consume the critiques, so paying for
@@ -763,6 +902,7 @@ class DraftAndEditWorkflow:
                     target_length=target_length,
                     model_config=model_config,
                     brief=brief,
+                    audit_brief=audit_brief if self.audit_feeds_critic else None,
                 )
             round_idx += 1
 
@@ -833,6 +973,7 @@ class DraftAndEditWorkflow:
         target_length: int | None,
         model_config: ModelConfig | None,
         brief: str | None = None,
+        audit_brief: str | None = None,
     ) -> Sequence[str]:
         model = self._resolve_model(self.critic_model)
         current_chars = len(draft)
@@ -845,6 +986,26 @@ class DraftAndEditWorkflow:
         else:
             length_status = f"Current draft: {current_chars} characters. (No explicit target.)"
         brief_block = f"<brief-from-planner>\n{brief}\n</brief-from-planner>\n\n" if brief else ""
+        # When the brief audit ran, surface it to the critic too —
+        # the critic produces the next round's punch list, so audit-
+        # derived "drift here" notes can shape which issues the
+        # editor sees. Without this, the audit only feeds arbiter +
+        # editor, and the v4 trace investigation found those stages
+        # don't visibly act on audit-flagged items not already in
+        # the critic's notes.
+        if audit_brief:
+            brief_block += (
+                f"<brief-audit>\n{audit_brief}\n</brief-audit>\n\n"
+                "Note: the audit brief above describes what the draft "
+                "has actually become (post-revision), distinct from "
+                "the original brief which described what the planner "
+                "intended. When critiquing, surface drift between the "
+                "two as concrete issues — sections the audit added "
+                "that the original brief didn't may be load-bearing "
+                "or filler; sections the original mandated that the "
+                "audit dropped were lost. Quote specific drift in "
+                "your dimension critiques.\n\n"
+            )
 
         async def _one_critic(critic_idx: int) -> str:
             user_message = (
@@ -908,6 +1069,7 @@ class DraftAndEditWorkflow:
         model_config: ModelConfig | None,
         arbitration: str | None = None,
         brief: str | None = None,
+        audit_brief: str | None = None,
     ) -> str:
         model = self._resolve_model(self.editor_model)
         current_chars = len(current_draft)
@@ -921,6 +1083,23 @@ class DraftAndEditWorkflow:
             length_status = f"Current draft: {current_chars} characters. (No explicit target.)"
 
         brief_block = f"<brief-from-planner>\n{brief}\n</brief-from-planner>\n\n" if brief else ""
+        # When the brief audit ran, surface BOTH briefs side-by-side
+        # so the editor sees structural drift between what was planned
+        # and what the draft actually became.
+        if audit_brief:
+            brief_block += (
+                f"<brief-audit>\n{audit_brief}\n</brief-audit>\n\n"
+                "Note: the audit brief above describes what the draft "
+                "has actually become (post-revision), vs the original "
+                "brief which described what the planner intended. "
+                "Use the drift between them to decide what to keep, "
+                "cut, or revise — sections the audit lists that the "
+                "original didn't are evidence the drafter found "
+                "structure that worked; sections the original "
+                "mandated that the audit doesn't include were "
+                "dropped, and the editor should decide whether to "
+                "restore or accept the loss.\n\n"
+            )
         # When the arbiter ran, the editor sees the arbitration block
         # in place of raw critiques — accept/reject/unresolved triage
         # focuses the revision on a small set of concrete actions and
@@ -1211,6 +1390,7 @@ class DraftAndEditWorkflow:
         target_length: int | None,
         brief: str | None,
         model_config: ModelConfig | None,
+        audit_brief: str | None = None,
     ) -> str:
         """Run the arbiter stage between critique and edit per round.
 
@@ -1239,6 +1419,8 @@ class DraftAndEditWorkflow:
         else:
             length_status = f"Current draft: {current_chars} characters. (No explicit target.)"
         brief_block = f"<brief-from-planner>\n{brief}\n</brief-from-planner>\n\n" if brief else ""
+        if audit_brief:
+            brief_block += f"<brief-audit>\n{audit_brief}\n</brief-audit>\n\n"
         if prior_arbitrations:
             prior_block = (
                 "<prior-arbitrations>\n"
@@ -1297,6 +1479,78 @@ class DraftAndEditWorkflow:
             )
         )
         return arbitration
+
+    async def _audit_brief(
+        self,
+        *,
+        db: DB,
+        trace: CallTrace,
+        call_id: str,
+        after_round: int,
+        prefix: str,
+        original_brief: str,
+        current_draft: str,
+        target_length: int | None,
+        model_config: ModelConfig | None,
+    ) -> str:
+        """Run the brief-audit stage once after a designated round.
+
+        Emits a descriptive audit brief (same `<brief>` schema as the
+        planner) populated from observation of the current draft —
+        what spine the draft actually has, what anchors actually
+        landed, where the voice held vs drifted. Downstream critic /
+        arbiter / editor see both the original and audit briefs
+        side-by-side; the drift between them surfaces structural
+        decisions the editor was anchored away from.
+
+        Threads ``after_round`` so the trace event records when the
+        audit fired in the workflow timeline.
+        """
+        model = self._resolve_model(self.audit_model)
+        target_clause = (
+            f"Total target: approximately {target_length} characters."
+            if target_length
+            else "No explicit target length."
+        )
+        user_message = (
+            "<essay-prefix>\n"
+            f"{prefix}\n"
+            "</essay-prefix>\n\n"
+            f"<original-brief>\n{original_brief}\n</original-brief>\n\n"
+            "<current-draft>\n"
+            f"{current_draft}\n"
+            "</current-draft>\n\n"
+            f"{target_clause}\n\n"
+            f"This is the draft after round {after_round}'s edit. Emit "
+            "the audit brief as specified in the system prompt — "
+            "describe what the draft has actually become. The "
+            "downstream stages will see your audit alongside the "
+            "original brief and decide what to act on."
+        )
+        await trace.record(BriefAuditStartedEvent(after_round=after_round, model=model))
+        text = await text_call(
+            self.audit_prompt,
+            user_message,
+            metadata=LLMExchangeMetadata(
+                call_id=call_id,
+                phase="brief_audit",
+                round_num=None,
+            ),
+            db=db,
+            model=model,
+            cache=False,
+            model_config=model_config,
+        )
+        audit = text.strip()
+        await trace.record(
+            BriefAuditEvent(
+                after_round=after_round,
+                audit_brief_text=audit,
+                audit_brief_chars=len(audit),
+                model=model,
+            )
+        )
+        return audit
 
     def _resolve_model(self, override: str | None) -> str:
         """Resolve a per-role model override.

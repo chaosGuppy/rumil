@@ -2744,13 +2744,17 @@
                       },
                       {
                         "$ref": "#/components/schemas/RunCallExperimentOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ContextEvalExperimentOut"
                       }
                     ],
                     "discriminator": {
                       "propertyName": "kind",
                       "mapping": {
                         "ab_eval": "#/components/schemas/AbEvalExperimentOut",
-                        "run_call": "#/components/schemas/RunCallExperimentOut"
+                        "run_call": "#/components/schemas/RunCallExperimentOut",
+                        "context_eval": "#/components/schemas/ContextEvalExperimentOut"
                       }
                     }
                   },
@@ -4448,6 +4452,20 @@
             "type": "integer",
             "title": "Context Text Chars",
             "default": 0
+          },
+          "impact_percentiles": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact Percentiles"
           }
         },
         "type": "object",
@@ -4466,7 +4484,8 @@
           "scope_linked_pages",
           "budget_usage",
           "context_text",
-          "context_text_chars"
+          "context_text_chars",
+          "impact_percentiles"
         ],
         "title": "ContextBuiltEventOut"
       },
@@ -4565,6 +4584,56 @@
         ],
         "title": "ContextEvalDiffOut",
         "description": "Side-by-side diff of two context-builder runs on the same question.\n\npages_only_in_gold/pages_only_in_candidate/pages_in_both are the result\nof diffing the union of working_context, preloaded, and scope-linked\npages from each arm's context_built event. Headlines are carried via\nPageRef so the UI can render links without an extra lookup."
+      },
+      "ContextEvalExperimentOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "context_eval",
+            "title": "Kind",
+            "default": "context_eval"
+          },
+          "gold_run_id": {
+            "type": "string",
+            "title": "Gold Run Id"
+          },
+          "candidate_run_id": {
+            "type": "string",
+            "title": "Candidate Run Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id",
+            "default": ""
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "gold_builder": {
+            "type": "string",
+            "title": "Gold Builder",
+            "default": ""
+          },
+          "candidate_builder": {
+            "type": "string",
+            "title": "Candidate Builder",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gold_run_id",
+          "candidate_run_id",
+          "created_at"
+        ],
+        "title": "ContextEvalExperimentOut",
+        "description": "One context-builder comparison (one gold arm paired with a candidate).\n\nSurfaced in the experiments feed alongside ab_eval and run_call rows.\nLinks to the side-by-side diff page at\n/context-evals/{gold_run_id}/vs/{candidate_run_id}."
       },
       "CriterionMatrix": {
         "properties": {

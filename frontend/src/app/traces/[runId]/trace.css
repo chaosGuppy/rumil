@@ -43,6 +43,23 @@
   letter-spacing: 0.02em;
 }
 
+.trace-status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-geist-mono), monospace;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+.trace-status-staged {
+  color: #5a8a7a;
+  background: rgba(90, 138, 122, 0.12);
+}
+.trace-status-committed {
+  color: #6a6a6a;
+  background: rgba(120, 120, 120, 0.1);
+}
+
 .trace-error {
   color: #c44;
   font-size: 15px;
@@ -389,6 +406,54 @@
   background: #eaeaea;
   border-color: #bbb;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.trace-page-chip-percentile {
+  display: inline-block;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 1px 4px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.trace-page-chip-percentile--high {
+  background: #d7ebd9;
+  color: #2d6b3d;
+}
+.trace-page-chip-percentile--mid {
+  background: #ecdfc4;
+  color: #7a5a1f;
+}
+.trace-page-chip-percentile--low {
+  background: #e8d2c1;
+  color: #8a4f2c;
+}
+.trace-page-chip-percentile--floor {
+  background: #ddd;
+  color: #555;
+}
+
+@media (prefers-color-scheme: dark) {
+  .trace-page-chip-percentile--high {
+    background: #1c2e22;
+    color: #8fc89e;
+  }
+  .trace-page-chip-percentile--mid {
+    background: #2a2418;
+    color: #d4b88a;
+  }
+  .trace-page-chip-percentile--low {
+    background: #2c1e16;
+    color: #d49b78;
+  }
+  .trace-page-chip-percentile--floor {
+    background: #232323;
+    color: #888;
+  }
 }
 
 .trace-empty {

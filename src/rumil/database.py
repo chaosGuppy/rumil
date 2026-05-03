@@ -3393,6 +3393,46 @@ class DB:
             rows = [r for r in rows if r.get("project_id") in owned_ids]
         return rows
 
+    async def list_context_eval_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List context-builder eval gold runs that are paired with a candidate.
+
+        Each context-eval invocation produces two runs (one gold, one
+        candidate) tagged with `entrypoint = 'context_eval'`. Historical
+        runs that predate the tag are backfilled by a migration. We
+        surface only gold rows that have been paired
+        (config.eval.paired_run_id is set), giving one entry per
+        comparison.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "context_eval")
+            .eq("config->eval->>role", "gold")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        rows = [r for r in rows if ((r.get("config") or {}).get("eval") or {}).get("paired_run_id")]
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
     async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
         """Get a single AB evaluation report by ID."""
         q = self.client.table("ab_eval_reports").select("*").eq("id", report_id)

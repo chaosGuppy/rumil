@@ -31,6 +31,7 @@ from rumil.api.schemas import (
     ContextBuiltEventOut,
     ContextEvalArmOut,
     ContextEvalDiffOut,
+    ContextEvalExperimentOut,
     ExperimentListItemOut,
     LinkedPageOut,
     LLMExchangeOut,
@@ -556,6 +557,7 @@ async def list_experiments(
 ):
     ab_rows = await db.list_ab_eval_reports()
     run_rows = await db.list_run_call_experiments()
+    ctx_eval_rows = await db.list_context_eval_experiments()
 
     question_ids: set[str] = set()
     for row in ab_rows:
@@ -566,11 +568,15 @@ async def list_experiments(
         qid = row.get("question_id")
         if qid:
             question_ids.add(qid)
+    for row in ctx_eval_rows:
+        qid = row.get("question_id")
+        if qid:
+            question_ids.add(qid)
     pages_by_id: dict[str, Page] = {}
     if question_ids:
         pages_by_id = await db.get_pages_by_ids(list(question_ids))
 
-    items: list[AbEvalExperimentOut | RunCallExperimentOut] = []
+    items: list[AbEvalExperimentOut | RunCallExperimentOut | ContextEvalExperimentOut] = []
     for row in ab_rows:
         qid = row.get("question_id_a") or row.get("question_id_b") or ""
         q_page = pages_by_id.get(qid)
@@ -606,6 +612,40 @@ async def list_experiments(
                 question_headline=q_page.headline if q_page else "",
                 config_summary=_config_summary(row.get("config")),
                 staged=bool(row.get("staged")),
+                created_at=row.get("created_at", ""),
+            )
+        )
+    candidate_run_ids = [
+        ((r.get("config") or {}).get("eval") or {}).get("paired_run_id") or ""
+        for r in ctx_eval_rows
+    ]
+    candidate_run_ids = [rid for rid in candidate_run_ids if rid]
+    candidate_builders: dict[str, str] = {}
+    if candidate_run_ids:
+        cand_rows = _rows(
+            await db._execute(
+                db.client.table("runs").select("id, config").in_("id", candidate_run_ids)
+            )
+        )
+        for cand_row in cand_rows:
+            cfg = cand_row.get("config") or {}
+            eval_meta = cfg.get("eval") or {}
+            candidate_builders[cand_row["id"]] = str(eval_meta.get("context_builder") or "")
+    for row in ctx_eval_rows:
+        eval_meta = (row.get("config") or {}).get("eval") or {}
+        candidate_run_id = eval_meta.get("paired_run_id") or ""
+        if not candidate_run_id:
+            continue
+        qid = row.get("question_id") or ""
+        q_page = pages_by_id.get(qid)
+        items.append(
+            ContextEvalExperimentOut(
+                gold_run_id=row["id"],
+                candidate_run_id=candidate_run_id,
+                question_id=qid,
+                question_headline=q_page.headline if q_page else "",
+                gold_builder=str(eval_meta.get("context_builder") or ""),
+                candidate_builder=candidate_builders.get(candidate_run_id, ""),
                 created_at=row.get("created_at", ""),
             )
         )

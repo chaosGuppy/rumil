@@ -1180,15 +1180,31 @@ class DraftAndEditWorkflow:
         # condition fields (effort, service_tier, top_p, temperature)
         # are preserved from the supplied config.
         editor_kwargs: dict = {"cache": True}
+        # Opus 4-7 rejects ``thinking.type=enabled`` and
+        # ``max_thinking_tokens`` (per API: "Use thinking.type.adaptive
+        # and output_config.effort to control thinking behavior").
+        # Keep adaptive thinking (the model_config default from the
+        # bridge) and lower max_tokens to opus's output ceiling. The
+        # sonnet path retains the round-1 audit fix that converts
+        # adaptive→enabled with an explicit cap so the budget actually
+        # bites.
+        is_opus = model.startswith("claude-opus")
+        max_tokens_cap = 32_000 if is_opus else 64_000
         if model_config is not None:
-            editor_kwargs["model_config"] = dataclasses.replace(
-                model_config,
-                max_tokens=64_000,
-                thinking={"type": "enabled"},
-                max_thinking_tokens=48_000,
-            )
+            if is_opus:
+                editor_kwargs["model_config"] = dataclasses.replace(
+                    model_config,
+                    max_tokens=max_tokens_cap,
+                )
+            else:
+                editor_kwargs["model_config"] = dataclasses.replace(
+                    model_config,
+                    max_tokens=max_tokens_cap,
+                    thinking={"type": "enabled"},
+                    max_thinking_tokens=48_000,
+                )
         else:
-            editor_kwargs["max_tokens"] = 64_000
+            editor_kwargs["max_tokens"] = max_tokens_cap
         text = await text_call(
             self.editor_prompt,
             user_message,

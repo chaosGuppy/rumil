@@ -461,6 +461,59 @@ class EditEvent(BaseModel):
     model: str = ""
 
 
+class PlannerStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the planner LLM call
+    fires (only when with_planner=True). The planner runs once per
+    workflow run, before round 0, and emits a structural brief that
+    threads through every subsequent stage's user message."""
+
+    event: Literal["planner_started"] = "planner_started"
+    model: str = ""
+
+
+class PlannerEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow when the planner returns a brief.
+    The brief is free-form structured text (xml-tagged in the default
+    prompt) that the drafter / critic / editor consume verbatim. Keeping
+    it as text rather than parsed JSON avoids parser-failure regressions
+    if the planner deviates from format; downstream stages treat it as
+    opaque context."""
+
+    event: Literal["planner"] = "planner"
+    brief_text: str = ""
+    brief_chars: int = 0
+    model: str = ""
+
+
+class ArbitrationStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the arbiter LLM call
+    fires (only when with_arbiter=True). The arbiter runs per round
+    between critique and edit; its output replaces the raw critique
+    block in the editor's user message."""
+
+    event: Literal["arbitration_started"] = "arbitration_started"
+    round: int = 0
+    model: str = ""
+    n_critiques: int = 0
+
+
+class ArbitrationEvent(BaseModel):
+    """Emitted when the arbiter triages critic notes into accept / reject
+    / unresolved. Like the planner brief, the arbitration text is
+    free-form structured text (xml-tagged in the default prompt) that
+    the editor consumes verbatim. ``prior_arbitrations_seen`` records
+    how many prior rounds' arbitrations were threaded into this call so
+    rejected items stay rejected across rounds without the editor
+    rediscovering them."""
+
+    event: Literal["arbitration"] = "arbitration"
+    round: int = 0
+    arbitration_text: str = ""
+    arbitration_chars: int = 0
+    prior_arbitrations_seen: int = 0
+    model: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -504,6 +557,10 @@ TraceEvent = Annotated[
     | VerdictStartedEvent
     | DraftEvent
     | CritiqueRoundEvent
-    | EditEvent,
+    | EditEvent
+    | PlannerStartedEvent
+    | PlannerEvent
+    | ArbitrationStartedEvent
+    | ArbitrationEvent,
     Field(discriminator="event"),
 ]

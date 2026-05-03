@@ -53,3 +53,26 @@ variants:
       treatment is the d&e analogue of that fix on the closer-input side.
     budget: 4
     critic_prompt_path: .claude/skills/rumil-versus-iterate/prompts/draft_and_edit/critic_multi_concern.md
+
+  - name: v3_planner_arbiter
+    description: |
+      v3 d&e architecture: drafter is preceded by a planner stage that
+      emits a structural brief (spine + section sizing + voice +
+      mandatory paradigm-case anchors); critics evaluate against the
+      brief; an arbiter stage between critique and edit triages critic
+      notes into accept/reject/unresolved; the editor consumes the
+      arbitration in place of raw critiques. Combined with the
+      multi_concern critic prompt for dimension-sectioned critique.
+      Round-3 sweep result on character/aiep/angels: v3 beats every
+      prior d&e variant on 3/3 essays, beats human on 2/3 (aiep +
+      angels), and is the new d&e default. Still loses to tp b=4 on
+      3/3 essays — d&e architectural ceiling vs tp ceiling holds.
+      Adds ~6 min wall-clock per run vs multi_concern (planner once,
+      arbiter per round) but the prompts here include the round-3
+      fixes (mandatory paradigm anchors in planner; arbiter
+      reconsider-when-tightened ratchet release) — the unfixed v3
+      regressed on character; this fixed v3 is consistently better.
+    budget: 4
+    with_planner: true
+    with_arbiter: true
+    critic_prompt_path: .claude/skills/rumil-versus-iterate/prompts/draft_and_edit/critic_multi_concern.md

@@ -55,6 +55,8 @@ from rumil.models import CallStatus, CallType
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.trace_events import (
+    ArbitrationEvent,
+    ArbitrationStartedEvent,
     CritiqueItem,
     CritiqueRoundEvent,
     CritiqueStartedEvent,
@@ -62,6 +64,8 @@ from rumil.tracing.trace_events import (
     DraftStartedEvent,
     EditEvent,
     EditStartedEvent,
+    PlannerEvent,
+    PlannerStartedEvent,
     RoundStartedEvent,
 )
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
@@ -174,6 +178,125 @@ _DEFAULT_EDITOR_PROMPT = (
     "Wrap the revised continuation in <continuation>...</continuation> "
     "tags after the <preserved> and <cuts> blocks; only the content "
     "inside the <continuation> tags is kept."
+)
+
+
+_DEFAULT_PLANNER_PROMPT = (
+    "You are planning an essay continuation. The user message gives "
+    "you the opening of an essay (the prefix) plus a target length. "
+    "Your output is a structural brief that downstream stages "
+    "(drafter, critics, editor) consume verbatim — they do NOT see "
+    "the prefix transformed by your reasoning, only your brief. The "
+    "brief decides the spine, section sizing, voice, and which "
+    "concrete anchors the drafter must deploy.\n\n"
+    "**Why this matters.** Without an upfront brief, drafters tend "
+    "to commit to a weak spine that downstream rounds can't recover "
+    "from, and editors refuse to add concrete examples on length-"
+    "budget grounds — even when critics ask for them across multiple "
+    "rounds. Your brief gives the pipeline a structural commitment "
+    "device the drafter and editor can't unilaterally override.\n\n"
+    "**Output format.** Free-form prose forbidden. Emit exactly this "
+    "structure (no extra prose before or after):\n\n"
+    "<brief>\n"
+    "<spine>\n"
+    "- (a) <section label> — <key argumentative move> — target ~N chars — anchor: <concrete anchor or none>\n"
+    "- (b) <section label> — <key argumentative move> — target ~N chars — anchor: <concrete anchor or none>\n"
+    "- (c) ...\n"
+    "</spine>\n"
+    "<total_target>N characters total</total_target>\n"
+    "<voice>One paragraph naming the prefix's voice register, key vocabulary, sentence-rhythm cues, and tells of register drift to avoid.</voice>\n"
+    "<mandatory_anchors>\n"
+    "- <name + brief gloss>: why it's load-bearing for the argument and where it lands\n"
+    "- <name + brief gloss>: same\n"
+    "</mandatory_anchors>\n"
+    "</brief>\n\n"
+    "**Spine rules.** 4-7 sections; each with a distinct argumentative "
+    "move (not just a topic restatement). If the prefix opens with an "
+    "enumerated list / trailing colon, honor the enumeration in the "
+    "spine. Sum of section targets ≈ total_target.\n\n"
+    "**Mandatory_anchors rules.** 1-3 concrete named referents — "
+    "specific named incidents, dated empirical findings, named "
+    "papers with year, named events — that the drafter must cite "
+    "by name in the relevant section. **These are NOT optional.** "
+    "If plausibly-known referents exist that bear on the prefix's "
+    "argument, you MUST list them. Exhaust your knowledge before "
+    "punting. Entities the prefix already names (the essay's topic) "
+    "do NOT count as anchors — anchors are evidence the drafter "
+    "introduces *about* the topic. Do NOT fabricate; if you "
+    "genuinely don't know a referent with confidence, leave it out "
+    "rather than guess. The downstream arbiter and editor look for "
+    "these mandatory anchors as the basis for accepting paradigm-"
+    "case expansion against length-policy pushback. An anchorless "
+    "brief produces an abstract continuation that loses on "
+    "concreteness.\n\n"
+    "**Voice rules.** Quote a short fragment of the prefix as a "
+    "register example. Name 1-2 specific tells of drift "
+    '("hedging vocabulary", "academic register where prefix is '
+    'informal", etc.) the downstream stages should catch.\n\n'
+    "Output the brief and nothing else."
+)
+
+
+_DEFAULT_ARBITER_PROMPT = (
+    "You are triaging critic notes for the editor. The user message "
+    "gives you the essay prefix, the brief from the planner stage "
+    "(if any), the current draft, this round's critic outputs, and "
+    "any prior arbitrations from earlier rounds. Your output is "
+    "consumed verbatim by the editor in place of the raw critique "
+    "block.\n\n"
+    "**Why this matters.** Without arbitration the editor weighs "
+    "critic notes itself per-round, frequently relitigating the "
+    "same call across rounds (e.g. defending a section against the "
+    "same critic note three rounds in a row before finally cutting "
+    "it). Your job is to make those calls once, focus the editor on "
+    "execution, and prevent re-decision drift.\n\n"
+    "**Triage rules.**\n"
+    "1. **Honor prior arbitrations — but reconsider when conditions "
+    "changed.** If a prior round's arbitration REJECTED an item with "
+    "a reason, the default is to REJECT it again here. BUT: if "
+    "length pressure has materially weakened (the prior REJECTs were "
+    "length-motivated and the current draft has tightened), the "
+    "default flips to ACCEPT for those length-motivated rejects, not "
+    "merely 'reconsider.' Same for other contextual changes — a "
+    "REJECTed citation might land if a prior cut freed argumentative "
+    "space for it. Don't blindly defer to precedent. Cite the "
+    "specific change in conditions when overriding a prior REJECT. "
+    "(Non-length REJECTs — register, scope, voice — stay rejected "
+    "unless the critic produced new evidence.)\n"
+    "2. **Honor the planner brief if present.** Reject critic notes "
+    "that propose abandoning brief-mandated spine sections or "
+    "mandatory anchors. Accept critic notes that flag drift from "
+    "the brief's voice or structural commitments.\n"
+    "3. **Length policy.** If the current draft is at or above target "
+    "length, ACCEPT cuts and REJECT expansion notes that don't pay "
+    "for themselves. If the current draft is materially below target, "
+    "ACCEPT expansion notes tied to specific argumentative gaps.\n"
+    "4. **Don't manufacture work.** If a critic note is essentially "
+    "cosmetic on a draft that's structurally sound, mark it "
+    "UNRESOLVED rather than ACCEPT — the editor's effort budget is "
+    "limited.\n\n"
+    "**Output format.** Free-form prose forbidden. Emit exactly this "
+    "structure (no extra prose before or after):\n\n"
+    '<arbitration round="<round number>">\n'
+    "<accept>\n"
+    "- 1. <action the editor must take, including any verbatim quotes from critic if relevant>\n"
+    "- 2. <next action>\n"
+    "</accept>\n"
+    "<reject>\n"
+    "- 1. <critic suggestion to ignore> — Reason: <why; cite prior arbitration if applicable>\n"
+    "- 2. <next reject>\n"
+    "</reject>\n"
+    "<unresolved>\n"
+    "- 1. <observation worth flagging in <preserved> but not acting on this round>\n"
+    "</unresolved>\n"
+    "<focus>One sentence summarizing the editor's primary objective for this revision.</focus>\n"
+    "</arbitration>\n\n"
+    "**Quote critic phrases verbatim** when accepting cuts so the "
+    "editor's downstream <cuts> block stays grounded. Empty sections "
+    "(e.g. nothing to reject this round) should still emit the tag "
+    'with a single "- none" line so the editor\'s parser sees a '
+    "consistent structure. Output the arbitration block and nothing "
+    "else."
 )
 
 
@@ -350,6 +473,12 @@ class DraftAndEditWorkflow:
         drafter_prompt_path: str | Path | None = None,
         critic_prompt_path: str | Path | None = None,
         editor_prompt_path: str | Path | None = None,
+        with_planner: bool = False,
+        with_arbiter: bool = False,
+        planner_model: str | None = None,
+        arbiter_model: str | None = None,
+        planner_prompt_path: str | Path | None = None,
+        arbiter_prompt_path: str | Path | None = None,
     ) -> None:
         if budget < 1:
             raise ValueError(f"budget must be >= 1, got {budget}")
@@ -363,18 +492,35 @@ class DraftAndEditWorkflow:
         self.drafter_model = drafter_model
         self.critic_model = critic_model
         self.editor_model = editor_model
+        self.with_planner = with_planner
+        self.with_arbiter = with_arbiter
+        self.planner_model = planner_model
+        self.arbiter_model = arbiter_model
         # Resolve prompt content at construction so fingerprint() and
         # the stage methods see the same bytes; record paths for telemetry.
         self.drafter_prompt_path = drafter_prompt_path
         self.critic_prompt_path = critic_prompt_path
         self.editor_prompt_path = editor_prompt_path
+        self.planner_prompt_path = planner_prompt_path
+        self.arbiter_prompt_path = arbiter_prompt_path
         self.drafter_prompt = _load_prompt(drafter_prompt_path, _DEFAULT_DRAFTER_PROMPT)
         self.critic_prompt = _load_prompt(critic_prompt_path, _DEFAULT_CRITIC_PROMPT)
         self.editor_prompt = _load_prompt(editor_prompt_path, _DEFAULT_EDITOR_PROMPT)
+        # Always resolve planner / arbiter prompts so the prompt-text
+        # bytes are stable across runs even when the stage is disabled
+        # — a future flip of with_planner/with_arbiter on the same
+        # variant won't accidentally fork the dedup hash via prompt
+        # changes that landed while the stage was off.
+        self.planner_prompt = _load_prompt(planner_prompt_path, _DEFAULT_PLANNER_PROMPT)
+        self.arbiter_prompt = _load_prompt(arbiter_prompt_path, _DEFAULT_ARBITER_PROMPT)
         self.last_status: str = "complete"
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]:
-        return {
+        # Planner / arbiter prompt hashes only fold into the fingerprint
+        # when the stage is enabled — keeps with_planner=False variants
+        # stable across edits to _DEFAULT_PLANNER_PROMPT, and likewise
+        # for arbiter. Flip the bool in a variant to opt in.
+        out: dict[str, str | int | bool | None] = {
             "kind": self.name,
             "budget": self.budget,
             "n_critics": self.n_critics,
@@ -385,7 +531,16 @@ class DraftAndEditWorkflow:
             "drafter_prompt_hash": _sha8(self.drafter_prompt),
             "critic_prompt_hash": _sha8(self.critic_prompt),
             "editor_prompt_hash": _sha8(self.editor_prompt),
+            "with_planner": self.with_planner,
+            "with_arbiter": self.with_arbiter,
         }
+        if self.with_planner:
+            out["planner_model"] = self.planner_model
+            out["planner_prompt_hash"] = _sha8(self.planner_prompt)
+        if self.with_arbiter:
+            out["arbiter_model"] = self.arbiter_model
+            out["arbiter_prompt_hash"] = _sha8(self.arbiter_prompt)
+        return out
 
     async def setup(self, db: DB, question_id: str) -> None:
         await db.init_budget(self.budget)
@@ -439,7 +594,23 @@ class DraftAndEditWorkflow:
             "drafter_prompt_hash": _sha8(self.drafter_prompt),
             "critic_prompt_hash": _sha8(self.critic_prompt),
             "editor_prompt_hash": _sha8(self.editor_prompt),
+            "with_planner": self.with_planner,
+            "with_arbiter": self.with_arbiter,
         }
+        if self.with_planner:
+            call_params["planner_model"] = self.planner_model
+            call_params["effective_planner_model"] = self._resolve_model(self.planner_model)
+            call_params["planner_prompt_path"] = (
+                str(self.planner_prompt_path) if self.planner_prompt_path else None
+            )
+            call_params["planner_prompt_hash"] = _sha8(self.planner_prompt)
+        if self.with_arbiter:
+            call_params["arbiter_model"] = self.arbiter_model
+            call_params["effective_arbiter_model"] = self._resolve_model(self.arbiter_model)
+            call_params["arbiter_prompt_path"] = (
+                str(self.arbiter_prompt_path) if self.arbiter_prompt_path else None
+            )
+            call_params["arbiter_prompt_hash"] = _sha8(self.arbiter_prompt)
         call = await db.create_call(
             call_type=CallType.VERSUS_COMPLETE,
             scope_page_id=question_id,
@@ -478,9 +649,31 @@ class DraftAndEditWorkflow:
         Round 0 produces the initial draft; rounds 1..N each fold one
         round of critique into the draft via the editor. Budget is
         consumed at the top of each round so we never stop mid-round.
+
+        With ``with_planner=True`` an upfront planner stage runs once
+        before the loop, emitting a structural brief that threads
+        through every subsequent stage's user message. With
+        ``with_arbiter=True`` an arbiter stage runs per round between
+        critique and edit, producing an accept/reject/unresolved
+        triage that the editor consumes in place of raw critiques. The
+        planner cost is not budget-bounded (one extra LLM call per
+        run); the arbiter consumes no budget either (it's metadata
+        about a round, not a separate round).
         """
+        brief: str | None = None
+        if self.with_planner:
+            brief = await self._plan(
+                db=db,
+                trace=trace,
+                call_id=call_id,
+                prefix=prefix,
+                target_length=target_length,
+                model_config=model_config,
+            )
+
         current_draft: str = ""
         critiques: Sequence[str] = []
+        prior_arbitrations: list[str] = []
         round_idx = 0
         while True:
             if self.max_rounds is not None and round_idx >= self.max_rounds:
@@ -502,8 +695,28 @@ class DraftAndEditWorkflow:
                     prefix=prefix,
                     target_length=target_length,
                     model_config=model_config,
+                    brief=brief,
                 )
             else:
+                # Arbitrate prior round's critiques into a focused
+                # plan when with_arbiter=True; editor consumes the
+                # arbitration text instead of raw critiques.
+                arbitration: str | None = None
+                if self.with_arbiter and critiques:
+                    arbitration = await self._arbitrate(
+                        db=db,
+                        trace=trace,
+                        call_id=call_id,
+                        round_idx=round_idx,
+                        prefix=prefix,
+                        current_draft=current_draft,
+                        critiques=critiques,
+                        prior_arbitrations=prior_arbitrations,
+                        target_length=target_length,
+                        brief=brief,
+                        model_config=model_config,
+                    )
+                    prior_arbitrations.append(arbitration)
                 draft_before_edit = current_draft
                 current_draft = await self._edit(
                     db=db,
@@ -514,6 +727,8 @@ class DraftAndEditWorkflow:
                     target_length=target_length,
                     current_draft=current_draft,
                     critiques=critiques,
+                    arbitration=arbitration,
+                    brief=brief,
                     model_config=model_config,
                 )
                 # If the editor returned the unchanged prior draft (the
@@ -547,6 +762,7 @@ class DraftAndEditWorkflow:
                     draft=current_draft,
                     target_length=target_length,
                     model_config=model_config,
+                    brief=brief,
                 )
             round_idx += 1
 
@@ -564,15 +780,18 @@ class DraftAndEditWorkflow:
         prefix: str,
         target_length: int | None,
         model_config: ModelConfig | None,
+        brief: str | None = None,
     ) -> str:
         model = self._resolve_model(self.drafter_model)
         target_clause = (
             f"Aim for approximately {target_length} characters." if target_length else ""
         )
+        brief_block = f"\n\n<brief-from-planner>\n{brief}\n</brief-from-planner>" if brief else ""
         user_message = (
             "<essay-prefix>\n"
             f"{prefix}\n"
-            "</essay-prefix>\n\n"
+            "</essay-prefix>"
+            f"{brief_block}\n\n"
             "Continue this essay. Match the opening's voice and "
             "advance the argument. "
             f"{target_clause}".strip()
@@ -613,6 +832,7 @@ class DraftAndEditWorkflow:
         draft: str,
         target_length: int | None,
         model_config: ModelConfig | None,
+        brief: str | None = None,
     ) -> Sequence[str]:
         model = self._resolve_model(self.critic_model)
         current_chars = len(draft)
@@ -624,17 +844,26 @@ class DraftAndEditWorkflow:
             )
         else:
             length_status = f"Current draft: {current_chars} characters. (No explicit target.)"
+        brief_block = f"<brief-from-planner>\n{brief}\n</brief-from-planner>\n\n" if brief else ""
 
         async def _one_critic(critic_idx: int) -> str:
             user_message = (
                 "<essay-prefix>\n"
                 f"{prefix}\n"
                 "</essay-prefix>\n\n"
+                f"{brief_block}"
                 "<draft-continuation>\n"
                 f"{draft}\n"
                 "</draft-continuation>\n\n"
                 f"## Length\n\n{length_status}\n\n"
                 "Critique this draft. Be specific and concrete."
+                + (
+                    " Grade fidelity to the brief explicitly: where does "
+                    "the draft honor the spine / mandatory anchors / voice "
+                    "directives, and where does it drift?"
+                    if brief
+                    else ""
+                )
             )
             await trace.record(
                 CritiqueStartedEvent(round=round_idx, critic_index=critic_idx, model=model)
@@ -677,11 +906,10 @@ class DraftAndEditWorkflow:
         current_draft: str,
         critiques: Sequence[str],
         model_config: ModelConfig | None,
+        arbitration: str | None = None,
+        brief: str | None = None,
     ) -> str:
         model = self._resolve_model(self.editor_model)
-        critiques_block = "\n\n---\n\n".join(
-            f"## Critic {i + 1}\n\n{c}" for i, c in enumerate(critiques)
-        )
         current_chars = len(current_draft)
         if target_length:
             length_status = (
@@ -691,21 +919,46 @@ class DraftAndEditWorkflow:
             )
         else:
             length_status = f"Current draft: {current_chars} characters. (No explicit target.)"
+
+        brief_block = f"<brief-from-planner>\n{brief}\n</brief-from-planner>\n\n" if brief else ""
+        # When the arbiter ran, the editor sees the arbitration block
+        # in place of raw critiques — accept/reject/unresolved triage
+        # focuses the revision on a small set of concrete actions and
+        # forbids relitigating rejected items. Raw critiques are still
+        # available downstream via the trace event for audit.
+        if arbitration:
+            critique_or_arbitration_block = arbitration
+            edit_directive = (
+                "Produce a revised continuation. Follow the arbitration "
+                "block above: act on every ACCEPT directive, do NOT "
+                "act on REJECT items (and do not re-introduce content "
+                "the arbiter rejected from a prior round), and surface "
+                "UNRESOLVED items in the <preserved> block. Length "
+                "discipline still applies — tighten when at-or-above "
+                "target, edit at neutral length when close."
+            )
+        else:
+            critiques_block = "\n\n---\n\n".join(
+                f"## Critic {i + 1}\n\n{c}" for i, c in enumerate(critiques)
+            )
+            critique_or_arbitration_block = f"<critiques>\n{critiques_block}\n</critiques>"
+            edit_directive = (
+                "Produce a revised continuation. Apply the length discipline "
+                "from the system prompt: tighten when current is already "
+                "at-or-above target, edit at neutral length when close, only "
+                "expand when meaningfully below target."
+            )
         user_message = (
             "<essay-prefix>\n"
             f"{prefix}\n"
             "</essay-prefix>\n\n"
+            f"{brief_block}"
             "<current-draft>\n"
             f"{current_draft}\n"
             "</current-draft>\n\n"
-            "<critiques>\n"
-            f"{critiques_block}\n"
-            "</critiques>\n\n"
+            f"{critique_or_arbitration_block}\n\n"
             f"## Length\n\n{length_status}\n\n"
-            "Produce a revised continuation. Apply the length discipline "
-            "from the system prompt: tighten when current is already "
-            "at-or-above target, edit at neutral length when close, only "
-            "expand when meaningfully below target."
+            f"{edit_directive}"
         )
         await trace.record(
             EditStartedEvent(
@@ -882,6 +1135,168 @@ class DraftAndEditWorkflow:
             # response had no usable content to concatenate to).
             full = full + more if kind == "truncated" else more
         return full
+
+    async def _plan(
+        self,
+        *,
+        db: DB,
+        trace: CallTrace,
+        call_id: str,
+        prefix: str,
+        target_length: int | None,
+        model_config: ModelConfig | None,
+    ) -> str:
+        """Run the planner stage once before round 0.
+
+        Emits a structural brief — spine, total target, voice
+        directives, mandatory paradigm-case anchors — that downstream
+        stages consume verbatim via the ``brief`` parameter on each
+        stage method. The brief is text, not parsed JSON: downstream
+        consumers don't depend on its internal shape, only on it
+        being passed through. A planner-format regression therefore
+        degrades gracefully (drafter sees odd brief text but doesn't
+        crash) instead of breaking the whole workflow.
+        """
+        model = self._resolve_model(self.planner_model)
+        target_clause = (
+            f"Total target: approximately {target_length} characters."
+            if target_length
+            else "No explicit target length provided — pick one based on the prefix's register."
+        )
+        user_message = (
+            "<essay-prefix>\n"
+            f"{prefix}\n"
+            "</essay-prefix>\n\n"
+            f"{target_clause}\n\n"
+            "Emit the brief as specified in the system prompt. The "
+            "drafter, critics, and editor will consume your output "
+            "verbatim — they do not see your reasoning, only the "
+            "brief itself."
+        )
+        await trace.record(PlannerStartedEvent(model=model))
+        text = await text_call(
+            self.planner_prompt,
+            user_message,
+            metadata=LLMExchangeMetadata(
+                call_id=call_id,
+                phase="planner",
+                round_num=None,
+            ),
+            db=db,
+            model=model,
+            cache=True,
+            model_config=model_config,
+        )
+        brief = text.strip()
+        await trace.record(
+            PlannerEvent(
+                brief_text=brief,
+                brief_chars=len(brief),
+                model=model,
+            )
+        )
+        return brief
+
+    async def _arbitrate(
+        self,
+        *,
+        db: DB,
+        trace: CallTrace,
+        call_id: str,
+        round_idx: int,
+        prefix: str,
+        current_draft: str,
+        critiques: Sequence[str],
+        prior_arbitrations: Sequence[str],
+        target_length: int | None,
+        brief: str | None,
+        model_config: ModelConfig | None,
+    ) -> str:
+        """Run the arbiter stage between critique and edit per round.
+
+        Triages the round's critic notes into accept / reject /
+        unresolved. The editor consumes the arbitration text in place
+        of raw critiques, which closes the round-N relitigation loop
+        observed in the iterate session: e.g. critics flagging the
+        same redundant section across 3 rounds, editor defending it
+        twice before finally cutting in round 3. With arbitration the
+        cut lands in one round.
+
+        Threads ``prior_arbitrations`` so REJECTED items stay
+        rejected across rounds without the editor rediscovering them.
+        """
+        model = self._resolve_model(self.arbiter_model)
+        critiques_block = "\n\n---\n\n".join(
+            f"## Critic {i + 1}\n\n{c}" for i, c in enumerate(critiques)
+        )
+        current_chars = len(current_draft)
+        if target_length:
+            length_status = (
+                f"Current draft: {current_chars} characters. "
+                f"Target: {target_length} characters. "
+                f"Delta: {current_chars - target_length:+d}."
+            )
+        else:
+            length_status = f"Current draft: {current_chars} characters. (No explicit target.)"
+        brief_block = f"<brief-from-planner>\n{brief}\n</brief-from-planner>\n\n" if brief else ""
+        if prior_arbitrations:
+            prior_block = (
+                "<prior-arbitrations>\n"
+                + "\n\n---\n\n".join(prior_arbitrations)
+                + "\n</prior-arbitrations>\n\n"
+            )
+        else:
+            prior_block = ""
+        user_message = (
+            "<essay-prefix>\n"
+            f"{prefix}\n"
+            "</essay-prefix>\n\n"
+            f"{brief_block}"
+            f"{prior_block}"
+            "<current-draft>\n"
+            f"{current_draft}\n"
+            "</current-draft>\n\n"
+            "<critiques>\n"
+            f"{critiques_block}\n"
+            "</critiques>\n\n"
+            f"## Length\n\n{length_status}\n\n"
+            f"Triage these critic notes for round {round_idx}. Emit "
+            "the arbitration block as specified in the system prompt; "
+            "honor any prior arbitrations shown above (REJECTED items "
+            "stay rejected unless the current critic produced new "
+            "evidence)."
+        )
+        await trace.record(
+            ArbitrationStartedEvent(
+                round=round_idx,
+                model=model,
+                n_critiques=len(critiques),
+            )
+        )
+        text = await text_call(
+            self.arbiter_prompt,
+            user_message,
+            metadata=LLMExchangeMetadata(
+                call_id=call_id,
+                phase=f"arbiter_r{round_idx}",
+                round_num=round_idx,
+            ),
+            db=db,
+            model=model,
+            cache=False,
+            model_config=model_config,
+        )
+        arbitration = text.strip()
+        await trace.record(
+            ArbitrationEvent(
+                round=round_idx,
+                arbitration_text=arbitration,
+                arbitration_chars=len(arbitration),
+                prior_arbitrations_seen=len(prior_arbitrations),
+                model=model,
+            )
+        )
+        return arbitration
 
     def _resolve_model(self, override: str | None) -> str:
         """Resolve a per-role model override.

@@ -101,6 +101,12 @@ WORKFLOW_CLI: dict[str, dict] = {
             "drafter_prompt_path",
             "critic_prompt_path",
             "editor_prompt_path",
+            "with_planner",
+            "with_arbiter",
+            "planner_model",
+            "arbiter_model",
+            "planner_prompt_path",
+            "arbiter_prompt_path",
         ],
         "supports_contestants": False,
         # `budget` is a top-level CLI flag on this script; pull it

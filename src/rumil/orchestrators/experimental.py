@@ -394,6 +394,16 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if get_settings().subquestion_linker_enabled:
             await self._run_subquestion_linker(question_id, p_call.id)
 
+        view = get_active_view()
+        await view.refresh(
+            question_id,
+            self.db,
+            parent_call_id=p_call.id,
+            broadcaster=self.broadcaster,
+            force=True,
+            pool_question_id=self.pool_question_id,
+        )
+
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,
@@ -403,11 +413,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=initial_prioritization_budget))
 
+        dispatch_budget = max(initial_prioritization_budget - 1, 1)
         budget_line = (
-            f"You have a budget of **{initial_prioritization_budget} research calls** "
+            f"You have a budget of **{dispatch_budget} research calls** "
             "to distribute among the dispatch tools below."
         )
-        if total_remaining is not None and total_remaining > initial_prioritization_budget:
+        if total_remaining is not None and total_remaining > dispatch_budget:
             budget_line += (
                 f" The overall question has **{total_remaining} budget remaining** "
                 "across future rounds."
@@ -449,7 +460,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 question_id[:8],
             )
             preset = get_available_calls_preset()
-            for ct in preset.initial_prioritization_scouts[:initial_prioritization_budget]:
+            for ct in preset.initial_prioritization_scouts[:dispatch_budget]:
                 ddef = DISPATCH_DEFS[ct]
                 dispatches.append(
                     Dispatch(

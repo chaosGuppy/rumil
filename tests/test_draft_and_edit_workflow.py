@@ -251,6 +251,9 @@ _OPAQUE_TO_FINGERPRINT = {
     "drafter_prompt_path",
     "critic_prompt_path",
     "editor_prompt_path",
+    "planner_prompt_path",
+    "arbiter_prompt_path",
+    "audit_prompt_path",
 }
 
 
@@ -277,7 +280,17 @@ def test_workflow_fingerprint_covers_all_public_fields():
     """Catches drift: a new ``self.foo = ...`` knob in __init__ that's
     not folded into ``fingerprint()`` would silently let runs dedup
     against each other when they shouldn't."""
-    wf = DraftAndEditWorkflow(budget=4, n_critics=3, max_rounds=2)
+    # Enable every optional stage so its knobs (planner_*, arbiter_*,
+    # audit_*) participate in fingerprint() — fingerprint folds them in
+    # conditionally on the with_* flags.
+    wf = DraftAndEditWorkflow(
+        budget=4,
+        n_critics=3,
+        max_rounds=2,
+        with_planner=True,
+        with_arbiter=True,
+        with_brief_audit=True,
+    )
     fp = wf.fingerprint()
     public_attrs = _public_attrs(wf) - _OPAQUE_TO_FINGERPRINT
     fp_keys = _fingerprint_keys_normalized(fp)

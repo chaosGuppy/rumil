@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 type Experiment = ListExperimentsApiExperimentsGetResponse[number];
 type AbEvalExperiment = Extract<Experiment, { kind: "ab_eval" }>;
 type RunCallExperiment = Extract<Experiment, { kind: "run_call" }>;
+type ContextEvalExperiment = Extract<Experiment, { kind: "context_eval" }>;
 
 async function getExperiments(): Promise<Experiment[]> {
   const res = await serverFetch(`${API_BASE}/api/experiments`, {
@@ -71,6 +72,46 @@ function AbEvalRow({ ev, delay }: { ev: AbEvalExperiment; delay: number }) {
             />
           ))}
         </div>
+        <span className="experiment-date">{formatDate(ev.created_at)}</span>
+      </div>
+    </Link>
+  );
+}
+
+function ContextEvalRow({
+  ev,
+  delay,
+}: {
+  ev: ContextEvalExperiment;
+  delay: number;
+}) {
+  const fallback = `${ev.gold_run_id.slice(0, 8)} vs ${ev.candidate_run_id.slice(0, 8)}`;
+  return (
+    <Link
+      href={`/context-evals/${ev.gold_run_id}/vs/${ev.candidate_run_id}`}
+      className="experiment-row"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <span className="experiment-kind-tag" data-kind="context_eval">
+        CTX
+      </span>
+      <div className="experiment-row-main">
+        <div className="experiment-question">
+          {ev.question_headline || fallback}
+        </div>
+        <div className="experiment-ctx-builders">
+          <span className="experiment-ctx-builder experiment-ctx-builder--gold">
+            <span className="experiment-ctx-builder-tag">gold</span>
+            {ev.gold_builder || "?"}
+          </span>
+          <span className="experiment-ctx-builder-vs">vs</span>
+          <span className="experiment-ctx-builder experiment-ctx-builder--candidate">
+            <span className="experiment-ctx-builder-tag">candidate</span>
+            {ev.candidate_builder || "?"}
+          </span>
+        </div>
+      </div>
+      <div className="experiment-row-meta">
         <span className="experiment-date">{formatDate(ev.created_at)}</span>
       </div>
     </Link>
@@ -140,6 +181,15 @@ export default async function ExperimentsPage() {
               const delay = Math.min(i * 30, 300);
               if (ev.kind === "run_call") {
                 return <RunCallRow key={`run-${ev.run_id}`} ev={ev} delay={delay} />;
+              }
+              if (ev.kind === "context_eval") {
+                return (
+                  <ContextEvalRow
+                    key={`ctx-${ev.gold_run_id}`}
+                    ev={ev}
+                    delay={delay}
+                  />
+                );
               }
               return <AbEvalRow key={`ab-${ev.id}`} ev={ev} delay={delay} />;
             })}

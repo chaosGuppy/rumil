@@ -5,25 +5,70 @@ import type { ContextBuiltEventOut, PageRef } from "@/api/types.gen";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { withStagedRun } from "@/lib/staged-run-href";
 
-export function PageChip({ page }: { page: PageRef }) {
+export function PageChip({
+  page,
+  percentile,
+}: {
+  page: PageRef;
+  percentile?: number | null;
+}) {
   const short = page.id.slice(0, 8);
   const label = page.headline || short;
   const { activeStagedRunId } = useStagedRun();
   const href = withStagedRun(`/pages/${page.id}`, activeStagedRunId);
+  const tier =
+    percentile == null
+      ? null
+      : percentile >= 75
+      ? "high"
+      : percentile >= 50
+      ? "mid"
+      : percentile >= 25
+      ? "low"
+      : "floor";
   return (
     <Link href={href} className="trace-page-chip" title={short}>
+      {tier && (
+        <span
+          className={`trace-page-chip-percentile trace-page-chip-percentile--${tier}`}
+          aria-label={`impact percentile ${percentile}`}
+        >
+          p{percentile}
+        </span>
+      )}
       {label}
     </Link>
   );
 }
 
-export function PageList({ pages }: { pages: PageRef[] }) {
+export function PageList({
+  pages,
+  pageImpactPercentiles,
+  sortByPercentile,
+}: {
+  pages: PageRef[];
+  pageImpactPercentiles?: { [page_id: string]: number } | null;
+  sortByPercentile?: boolean;
+}) {
   if (!pages || pages.length === 0)
     return <span className="trace-empty">none</span>;
+  const ordered = sortByPercentile && pageImpactPercentiles
+    ? [...pages].sort((a, b) => {
+        const pa = pageImpactPercentiles[a.id];
+        const pb = pageImpactPercentiles[b.id];
+        const sa = pa == null ? -1 : pa;
+        const sb = pb == null ? -1 : pb;
+        return sb - sa;
+      })
+    : pages;
   return (
     <span className="trace-page-list">
-      {pages.map((p, i) => (
-        <PageChip key={`${p.id}-${i}`} page={p} />
+      {ordered.map((p, i) => (
+        <PageChip
+          key={`${p.id}-${i}`}
+          page={p}
+          percentile={pageImpactPercentiles?.[p.id] ?? null}
+        />
       ))}
     </span>
   );
@@ -38,7 +83,17 @@ export const CTX_TIER_ORDER: { key: CtxTierKey; label: string }[] = [
   { key: "summary", label: "summary" },
 ];
 
-export function ContextBuiltBody({ event }: { event: ContextBuiltEventOut }) {
+export function ContextBuiltBody({
+  event,
+  pageImpactPercentiles,
+  sortByPercentile,
+}: {
+  event: ContextBuiltEventOut;
+  pageImpactPercentiles?: { [page_id: string]: number } | null;
+  sortByPercentile?: boolean;
+}) {
+  const percentiles = pageImpactPercentiles ?? event.impact_percentiles ?? null;
+  const shouldSort = sortByPercentile ?? !!percentiles;
   const working = event.working_context_page_ids ?? [];
   const preloaded = event.preloaded_page_ids ?? [];
   const scopeLinked = event.scope_linked_pages ?? [];
@@ -121,7 +176,11 @@ export function ContextBuiltBody({ event }: { event: ContextBuiltEventOut }) {
               {t.label}
               <span className="trace-ctx-tier-count">({pages.length})</span>
             </span>
-            <PageList pages={pages} />
+            <PageList
+              pages={pages}
+              pageImpactPercentiles={percentiles}
+              sortByPercentile={shouldSort}
+            />
             <span className="trace-ctx-tier-chars">
               {chars > 0 ? `${chars.toLocaleString()} ch` : "—"}
             </span>
@@ -136,7 +195,11 @@ export function ContextBuiltBody({ event }: { event: ContextBuiltEventOut }) {
             working context
             <span className="trace-ctx-tier-count">({working.length})</span>
           </span>
-          <PageList pages={working} />
+          <PageList
+            pages={working}
+            pageImpactPercentiles={percentiles}
+            sortByPercentile={shouldSort}
+          />
           <span className="trace-ctx-tier-chars">—</span>
         </div>
       )}
@@ -148,7 +211,11 @@ export function ContextBuiltBody({ event }: { event: ContextBuiltEventOut }) {
             scope-linked
             <span className="trace-ctx-tier-count">({scopeLinked.length})</span>
           </span>
-          <PageList pages={scopeLinked} />
+          <PageList
+            pages={scopeLinked}
+            pageImpactPercentiles={percentiles}
+            sortByPercentile={shouldSort}
+          />
           <span className="trace-ctx-tier-chars">—</span>
         </div>
       )}
@@ -160,7 +227,11 @@ export function ContextBuiltBody({ event }: { event: ContextBuiltEventOut }) {
             preloaded
             <span className="trace-ctx-tier-count">({preloaded.length})</span>
           </span>
-          <PageList pages={preloaded} />
+          <PageList
+            pages={preloaded}
+            pageImpactPercentiles={percentiles}
+            sortByPercentile={shouldSort}
+          />
           <span className="trace-ctx-tier-chars">—</span>
         </div>
       )}

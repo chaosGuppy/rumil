@@ -454,3 +454,60 @@ async def test_paring_skipped_below_threshold(mocker, tmp_db, question_page, vie
     ]
     assert len(impact_events) == 1
     assert impact_events[0].paring_triggered is False
+
+
+async def test_impact_percentiles_includes_all_scored_candidates(
+    mocker, tmp_db, question_page, view_call
+):
+    """The returned ContextResult.impact_percentiles dict carries every
+    candidate sonnet scored, not just the ones that ended up in the prompt.
+
+    This is the eval signal the diff UI relies on: it needs the percentile
+    of pages the candidate builder picked but the impact filter floored
+    out, and pages the budget didn't fit, so the user can see "candidate
+    chose a page gold rated p10" or "candidate missed a p95 page".
+    """
+    inner = ContextResult(context_text="ctx", working_page_ids=[])
+    high = _make_evidence("High impact", "H" * 100)
+    mid = _make_evidence("Mid impact", "M" * 100)
+    floored = _make_evidence("Below floor", "L" * 100)
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.bfs_evidence_pages_within_distance",
+        new_callable=mocker.AsyncMock,
+        return_value=[high, mid, floored],
+    )
+
+    score_by_headline = {"High impact": 90, "Mid impact": 50, "Below floor": 10}
+
+    async def fake_structured_call(**kwargs):
+        msg = _scoring_call_text(kwargs)
+        score = next(s for h, s in score_by_headline.items() if h in msg)
+        return _FakeStructuredCallResult(
+            ImpactVerdict(new_information="x", impact_reasoning="y", impact_percentile=score)
+        )
+
+    mocker.patch(
+        "rumil.calls.impact_filtered_context.structured_call",
+        side_effect=fake_structured_call,
+    )
+
+    wrapper = ImpactFilteredContext(inner_builder=_StubInnerBuilder(inner))
+    infra = _make_infra(tmp_db, view_call, question_page)
+    with override_settings(
+        rumil_smoke_test="",
+        impact_filter_floor_percentile=25,
+        impact_filter_token_budget=200_000,
+    ):
+        result = await wrapper.build_context(infra)
+
+    assert result.impact_percentiles is not None
+    assert result.impact_percentiles == {
+        high.id: 90,
+        mid.id: 50,
+        floored.id: 10,
+    }
+    # Sanity-check the floor still kicked in — otherwise we'd be measuring
+    # a vacuous case where every scored page was accepted anyway.
+    assert high.id in result.full_page_ids
+    assert mid.id in result.full_page_ids
+    assert floored.id not in result.full_page_ids

@@ -734,6 +734,12 @@ export type ContextBuiltEventOut = {
      * Context Text Chars
      */
     context_text_chars: number;
+    /**
+     * Impact Percentiles
+     */
+    impact_percentiles: {
+        [key: string]: number;
+    } | null;
 };
 
 /**
@@ -793,6 +799,50 @@ export type ContextEvalDiffOut = {
      * Pages In Both
      */
     pages_in_both?: Array<PageRef>;
+};
+
+/**
+ * ContextEvalExperimentOut
+ *
+ * One context-builder comparison (one gold arm paired with a candidate).
+ *
+ * Surfaced in the experiments feed alongside ab_eval and run_call rows.
+ * Links to the side-by-side diff page at
+ * /context-evals/{gold_run_id}/vs/{candidate_run_id}.
+ */
+export type ContextEvalExperimentOut = {
+    /**
+     * Kind
+     */
+    kind?: 'context_eval';
+    /**
+     * Gold Run Id
+     */
+    gold_run_id: string;
+    /**
+     * Candidate Run Id
+     */
+    candidate_run_id: string;
+    /**
+     * Question Id
+     */
+    question_id?: string;
+    /**
+     * Question Headline
+     */
+    question_headline?: string;
+    /**
+     * Gold Builder
+     */
+    gold_builder?: string;
+    /**
+     * Candidate Builder
+     */
+    candidate_builder?: string;
+    /**
+     * Created At
+     */
+    created_at: string;
 };
 
 /**
@@ -5578,7 +5628,9 @@ export type ListExperimentsApiExperimentsGetResponses = {
         kind: 'ab_eval';
     } & AbEvalExperimentOut) | ({
         kind: 'run_call';
-    } & RunCallExperimentOut)>;
+    } & RunCallExperimentOut) | ({
+        kind: 'context_eval';
+    } & ContextEvalExperimentOut)>;
 };
 
 export type ListExperimentsApiExperimentsGetResponse = ListExperimentsApiExperimentsGetResponses[keyof ListExperimentsApiExperimentsGetResponses];

@@ -37,6 +37,7 @@ from unittest.mock import MagicMock
 
 from rumil.context import format_page, render_view
 from rumil.database import DB
+from rumil.model_config import ModelConfig
 from rumil.models import (
     Call,
     CallStatus,
@@ -315,6 +316,7 @@ async def judge_pair_ws_aware(
     task_body: str,
     model: str,
     broadcaster: Broadcaster | None = None,
+    model_config: ModelConfig | None = None,
 ) -> JudgeResult:
     """Run a single VERSUS_JUDGE agent call with single-arm workspace tools.
 
@@ -327,10 +329,20 @@ async def judge_pair_ws_aware(
     a scoped :func:`override_settings` block so downstream rumil code
     (sdk_agent, text_call, any nested calls) reads the same value. No
     env-var gymnastics.
+
+    ``model_config`` (optional) pins thinking / effort /
+    max_thinking_tokens for the SDK agent's underlying Anthropic call.
+    Versus's bridge passes the registry-derived ModelConfig so wire
+    behavior matches versus's config.yaml; without it, the SDK falls
+    back to its own per-model defaults.
     """
     with override_settings(rumil_model_override=model):
         return await _judge_pair_ws_aware_inner(
-            db, pair, task_body=task_body, broadcaster=broadcaster
+            db,
+            pair,
+            task_body=task_body,
+            broadcaster=broadcaster,
+            model_config=model_config,
         )
 
 
@@ -340,6 +352,7 @@ async def _judge_pair_ws_aware_inner(
     *,
     task_body: str,
     broadcaster: Broadcaster | None,
+    model_config: ModelConfig | None = None,
 ) -> JudgeResult:
     question_id = await ensure_versus_question(db, pair)
     call = await db.create_call(
@@ -379,6 +392,7 @@ async def _judge_pair_ws_aware_inner(
         broadcaster=broadcaster,
         allowed_tools=allowed,
         disallowed_tools=["Write", "Edit", "Glob"],
+        model_config=model_config,
     )
 
     try:
@@ -507,6 +521,7 @@ async def _run_orch_closer(
     broadcaster: Broadcaster | None,
     *,
     render_fn: Callable[[DB, str], Awaitable[str]] | None = None,
+    model_config: ModelConfig | None = None,
 ) -> tuple[str, Call, str, str]:
     """Small closing call: read the orchestrator's research on ``question_id``
     and emit a 7-point preference label.
@@ -567,6 +582,7 @@ async def _run_orch_closer(
         broadcaster=broadcaster,
         allowed_tools=allowed,
         disallowed_tools=list(_CLOSER_DISALLOWED_TOOLS),
+        model_config=model_config,
     )
 
     try:
@@ -600,6 +616,7 @@ async def judge_pair_orch(
     model: str,
     budget: int,
     broadcaster: Broadcaster | None = None,
+    model_config: ModelConfig | None = None,
 ) -> JudgeResult:
     """Create a per-pair Question, run TwoPhaseOrchestrator against it, then
     fire a closing call to extract the 7-point label.
@@ -610,6 +627,13 @@ async def judge_pair_orch(
     :func:`override_settings` block around the entire orchestrator run +
     closer call so the orchestrator's internal LLM calls all see the
     caller's chosen model.
+
+    ``model_config`` (optional) pins thinking / effort / max_thinking_tokens
+    for the closing call (which goes through call_anthropic_api). The
+    orchestrator's research calls go through call_anthropic_api too, but
+    we don't currently override those — they pick up rumil's defaults
+    for the model. The recorded judge_inputs reflects model_config so
+    operators can see what versus intended on the wire.
     """
     with override_settings(rumil_model_override=model):
         question_id = await ensure_versus_question(db, pair)
@@ -633,6 +657,7 @@ async def judge_pair_orch(
             question_id,
             task_body=task_body,
             broadcaster=broadcaster,
+            model_config=model_config,
         )
 
     label = extract_preference(report_text)

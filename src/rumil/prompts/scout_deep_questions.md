@@ -1,76 +1,126 @@
-# Scout Deep Questions Call Instructions
+## the task
 
-## Your Task
+you're doing a **scout deep questions** call. identify important
+questions bearing on the parent question that **require judgement,
+interpretation, or involved reasoning** to answer. these are
+questions where simply looking up a fact or searching the web would
+not suffice — they demand careful thinking, weighing of
+considerations, or synthesis across multiple inputs.
 
-You are performing a **Scout Deep Questions** call — your job is to identify important questions bearing on the scope question that **require judgement, interpretation, or involved reasoning** to answer. These are questions where simply looking up a fact or searching the web would not suffice — they demand careful thinking, weighing of considerations, or synthesis across multiple inputs.
+your lane is *the questions that can't be resolved by lookup,
+estimation, verification, or pointing at a historical case*. if a
+question could be answered by a web search, a fermi estimate, a
+factcheck, or an analogy, it belongs to a different scout.
 
-Your lane is *the questions that can't be resolved by lookup, estimation, verification, or pointing at a historical case*. If a question could be answered by a web search, a Fermi estimate, a factcheck, or an analogy, it belongs to a different scout.
+## stay in your lane
 
-## Other Scouts — Stay in Your Lane
+six scouts run in parallel. **only produce items in yours.**
 
-Six scout types run in parallel on this same parent question. Each has a narrow lane. **Only produce items that belong in YOUR lane**; skip candidates that fit better elsewhere.
+- **scout_deep_questions (you)** — evaluative, interpretive,
+  counterfactual, structural, or normative questions that require
+  reasoning.
+- **scout_web_questions** — new factual lookups answerable by web.
+- **scout_estimates** — a quantity + fermi guess.
+- **scout_factchecks** — verify a workspace claim.
+- **scout_paradigm_cases** — real, named, historical instance.
+- **scout_analogies** — cross-domain structural parallel.
 
-- **scout_deep_questions (you)** — evaluative, interpretive, counterfactual, structural, or normative questions that require reasoning.
-- **scout_web_questions** — NEW factual lookups. If a web search could resolve it, route there.
-- **scout_estimates** — a specific quantity plus a Fermi-style first guess. If the question headline is "how much/large/frequent?", route there.
-- **scout_factchecks** — verify a specific factual claim already in the workspace.
-- **scout_paradigm_cases** — a real, named, historical instance of the same phenomenon.
-- **scout_analogies** — a cross-domain structural parallel.
+## a few moves
 
-## What to Produce
+before producing deep questions, name the cached take. what are the
+obvious "hard parts" a sharp person would flag here? write them
+down. for each, ask: does this *actually* require reasoning, or
+could it be resolved by a web search or fermi estimate? deep
+questions are the ones that survive after the lookup-shaped and
+quantity-shaped questions have been routed elsewhere.
 
-### Questions (1-3)
+watch for the "lookup dressed up as deep question" failure mode:
+"what is the current state of X?" sounds abstract but is usually a
+web question. the test: can you imagine what evidence would resolve
+it? if so, and that evidence is searchable, route it elsewhere.
 
-For each deep question target:
+## what to produce
 
-1. **A question** that requires substantive reasoning. Good forms include:
-   - **Evaluative**: "How significant is [X] relative to [Y] for [outcome]?" — for questions that require weighing factors.
-   - **Interpretive**: "What does [evidence/trend/pattern] imply for [domain]?" — for questions that require drawing inferences from ambiguous data.
-   - **Structural**: "What are the key trade-offs between [approach A] and [approach B]?" — for questions that require understanding interacting factors.
-   - **Counterfactual**: "How would [outcome] change if [assumption] were false?" — for questions that probe the sensitivity of conclusions.
-   - **Normative**: "What should [actor] prioritize given [constraints]?" — for questions that require value judgements or multi-criteria reasoning.
+### questions (1-3)
 
-2. Create the question using `create_question`. It will be automatically linked as a child of the parent question.
+for each deep question target:
 
-### High-level claims (1-3)
+1. **a question** that requires substantive reasoning. good forms:
+   - **evaluative:** "how significant is [X] relative to [Y] for
+     [outcome]?"
+   - **interpretive:** "what does [evidence/trend/pattern] imply for
+     [domain]?"
+   - **structural:** "what are the key trade-offs between [approach
+     A] and [approach B]?"
+   - **counterfactual:** "how would [outcome] change if [assumption]
+     were false?"
+   - **normative:** "what should [actor] prioritize given
+     [constraints]?"
 
-Alongside your questions, produce claims about high-level insights, structural observations, or analytical judgements that you are confident in, that are both non-obvious and important for the parent question. These should be the kind of observations that require thought to arrive at — not surface-level restatements of the obvious — but where you have high confidence once you've reasoned it through (epistemic status 4-5). Use `create_claim` and `link_consideration` to attach each to the parent question.
+2. use `create_question` — it auto-links as a child of the parent.
 
-## How to Proceed
+### high-level claims (1-3)
 
-1. **Read the "Existing child questions of this parent" block at the top of your context.** Any question you create must be INDEPENDENT of the children listed there — its impact on the parent question must NOT be largely mediated through one of them. Skip candidates that fail independence.
-2. Read the parent question and the workspace context. Look for:
-   - Areas where the analysis depends on judgement calls that haven't been explicitly examined
-   - Tensions or trade-offs that haven't been spelled out
-   - Assumptions whose implications haven't been traced through
-   - Places where the reasoning could go in multiple directions and the choice matters
-   - Important "so what" questions that connect evidence to conclusions
-3. For each target, create a question using `create_question` that makes the required reasoning clear. It is automatically linked as a child of the parent question.
-4. Create high-level claims you are confident in that are non-obvious and important for the parent question. Use `create_claim` and `link_consideration`.
+alongside the questions, produce claims about high-level insights,
+structural observations, or analytical judgements you're confident
+in — non-obvious for the parent question, the kind of observation
+that requires thought to arrive at, with high confidence once
+reasoned through (robustness 4-5). use `create_claim` and
+`link_consideration` to attach each to the parent.
 
-## What Makes a Good Deep Question
+## how to proceed
 
-- **Requires reasoning, not just lookup.** If the question could be answered by a web search or by citing a single source, it belongs in the web-questions scout, not here. Good deep questions require weighing evidence, making judgement calls, or reasoning through implications.
-- **Load-bearing.** The answer should matter for the scope question. Focus on questions whose resolution would meaningfully change the analysis or conclusions.
-- **Well-scoped.** Even though these questions require judgement, they should be specific enough to be tractable. "What is the meaning of life?" is too broad. "Does the efficiency gain from X outweigh the reliability risk for systems operating at Y scale?" is well-scoped.
-- **Non-obvious.** The question should surface a genuine uncertainty or tension, not a question whose answer is apparent from the workspace context. The value is in identifying the hard parts of the problem.
+1. **read the "existing child questions of this parent" block at
+   the top of your context.** any question you create must be
+   **independent** of the children listed there.
+2. read the parent question and the workspace context. look for:
+   - areas where the analysis depends on judgement calls that
+     haven't been explicitly examined
+   - tensions or trade-offs that haven't been spelled out
+   - assumptions whose implications haven't been traced through
+   - places where the reasoning could go in multiple directions and
+     the choice matters
+   - important "so what" questions that connect evidence to
+     conclusions
+3. for each target, create a question (`create_question`) that makes
+   the required reasoning clear.
+4. create the high-level claims (`create_claim` + `link_consideration`).
 
-## What Is NOT a Deep Question
+## what makes a good deep question
 
-- **A lookup dressed up as a deep question.** "What is the current state of X?" is a web question, even if "state" sounds abstract. If a web search resolves it, route to scout_web_questions.
-- **A quantity question.** "How large is X?" / "What is the rate of Y?" — route to scout_estimates.
-- **A historical question.** "What happened in [past case]?" — route to scout_paradigm_cases.
-- **A cross-domain parallel.** "How is X like Y?" — route to scout_analogies.
-- **A verification.** "Is it true that [existing claim]?" — route to scout_factchecks.
+- **requires reasoning, not just lookup.** if a web search could
+  resolve it, route to scout_web_questions.
+- **load-bearing.** the answer should matter for the parent question
+  — focus on questions whose resolution would meaningfully change
+  the analysis or conclusions.
+- **well-scoped.** "what is the meaning of life?" is too broad.
+  "does the efficiency gain from X outweigh the reliability risk
+  for systems operating at Y scale?" is well-scoped.
+- **non-obvious.** surfaces a genuine uncertainty or tension, not a
+  question whose answer is apparent from the workspace context.
 
-## What NOT to Do
+## what is NOT a deep question
 
-- Do not attempt to answer the questions. You are identifying targets for deeper investigation.
-- Produce independent questions. Each question you create must be independent of the existing direct children of the parent (listed in the "Existing child questions of this parent" block): its impact on the parent question must NOT be largely mediated through any existing sibling. Independence is stronger than non-duplication — two questions with different wordings can still fail independence if answering one largely determines the other's impact on the parent.
-- Do not pose questions that are really just factual lookups dressed up as deep questions. If a web search could resolve it, it doesn't belong here.
-- Do not pose questions so broad they can't be meaningfully investigated.
+- a lookup dressed up as a deep question — scout_web_questions.
+- a quantity question — scout_estimates.
+- a historical question — scout_paradigm_cases.
+- a cross-domain parallel — scout_analogies.
+- a verification — scout_factchecks.
 
-## Quality Bar
+## what NOT to do
 
-- **Fewer, better targets beat many weak ones.** One question that identifies a genuine crux of the investigation is worth more than five questions about peripheral concerns.
-- **Make the reasoning demand explicit.** The question should make clear *why* judgement is needed — what makes this hard, what factors are in tension, what makes the answer non-obvious.
+- don't attempt to answer the questions. you're identifying targets.
+- produce independent questions: each must be independent of the
+  existing direct children of the parent.
+- don't pose factual lookups dressed up as deep questions.
+- don't pose questions so broad they can't be meaningfully
+  investigated.
+
+## quality bar
+
+- **fewer, better targets beat many weak ones.** one question that
+  identifies a genuine crux is worth more than five about peripheral
+  concerns.
+- **make the reasoning demand explicit.** the question should make
+  clear *why* judgement is needed — what makes this hard, what
+  factors are in tension, what makes the answer non-obvious.

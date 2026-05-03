@@ -2825,6 +2825,8 @@ class DB:
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
         user_messages: Sequence[dict] | None = None,
+        model: str | None = None,
+        request_kwargs: dict[str, Any] | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         row: dict[str, Any] = {
@@ -2843,9 +2845,12 @@ class DB:
             "duration_ms": duration_ms,
             "cache_creation_input_tokens": cache_creation_input_tokens,
             "cache_read_input_tokens": cache_read_input_tokens,
+            "model": model,
         }
         if user_messages is not None:
             row["user_messages"] = user_messages
+        if request_kwargs is not None:
+            row["request_kwargs"] = request_kwargs
         await self._execute(self.client.table("call_llm_exchanges").insert(row))
         return exchange_id
 
@@ -3058,6 +3063,7 @@ class DB:
         name: str,
         question_id: str | None,
         config: dict | None = None,
+        entrypoint: str | None = None,
     ) -> None:
         """Insert a row in the runs table for this DB's run_id."""
         await self._execute(
@@ -3069,6 +3075,7 @@ class DB:
                     "question_id": question_id,
                     "config": config or {},
                     "staged": self.staged,
+                    "entrypoint": entrypoint,
                 }
             )
         )
@@ -3347,6 +3354,42 @@ class DB:
             rows = [r for r in rows if r.get("project_id") in owned_ids]
         return rows
 
+    async def list_run_call_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List runs created by `scripts/run_call.py`, newest first.
+
+        Filtered by `entrypoint = 'run_call'`. Like `list_ab_eval_reports`,
+        applies `self.project_id` when set and supports an
+        `owner_user_id` cross-user safety filter via
+        `projects.owner_user_id`.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "run_call")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
     async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
         """Get a single AB evaluation report by ID."""
         q = self.client.table("ab_eval_reports").select("*").eq("id", report_id)
@@ -3467,6 +3510,85 @@ class DB:
             )
         results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         return results[:limit]
+
+    async def find_eval_gold_run(
+        self,
+        question_id: str,
+        builder_name: str = "ImpactFilteredContext",
+    ) -> str | None:
+        """Find the most recent context-eval gold run for this question.
+
+        Looks at runs.config.eval (a tag written by the context-builder
+        evaluation workflow) and returns the run_id of the newest gold-role
+        run for the given builder, scoped to this DB's project. Returns
+        None if no matching run exists.
+        """
+        if not self.project_id:
+            return None
+        rows = _rows(
+            await self._execute(
+                self.client.table("runs")
+                .select("id")
+                .eq("project_id", str(self.project_id))
+                .eq("question_id", question_id)
+                .eq("config->eval->>role", "gold")
+                .eq("config->eval->>context_builder", builder_name)
+                .order("created_at", desc=True)
+                .limit(1)
+            )
+        )
+        return rows[0]["id"] if rows else None
+
+    async def set_run_eval_meta(
+        self,
+        run_id: str,
+        *,
+        role: str,
+        context_builder: str,
+        question_id: str,
+        paired_run_id: str | None = None,
+    ) -> None:
+        """Tag a runs row with the context-builder-eval metadata block.
+
+        Called by the eval workflow only AFTER the call completes
+        successfully — so a run whose build_context phase failed never
+        gets the eval.role tag, and find_eval_gold_run won't surface it
+        as a usable cache hit.
+        """
+        rows = _rows(
+            await self._execute(self.client.table("runs").select("config").eq("id", run_id))
+        )
+        if not rows:
+            return
+        config = dict(rows[0].get("config") or {})
+        config["eval"] = {
+            "role": role,
+            "context_builder": context_builder,
+            "paired_run_id": paired_run_id,
+            "question_id": question_id,
+        }
+        await self._execute(self.client.table("runs").update({"config": config}).eq("id", run_id))
+
+    async def update_run_config_eval_partner(
+        self,
+        run_id: str,
+        partner_run_id: str,
+    ) -> None:
+        """Patch an existing run's config.eval.paired_run_id field.
+
+        Used by the context-builder eval workflow once both arms exist, so
+        the gold row also points at its candidate partner.
+        """
+        rows = _rows(
+            await self._execute(self.client.table("runs").select("config").eq("id", run_id))
+        )
+        if not rows:
+            return
+        config = dict(rows[0].get("config") or {})
+        eval_meta = dict(config.get("eval") or {})
+        eval_meta["paired_run_id"] = partner_run_id
+        config["eval"] = eval_meta
+        await self._execute(self.client.table("runs").update({"config": config}).eq("id", run_id))
 
     async def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""

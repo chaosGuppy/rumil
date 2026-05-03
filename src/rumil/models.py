@@ -104,6 +104,11 @@ class CallType(str, Enum):
     # external `versus` harness. Uses single-arm workspace-exploration
     # tools; does not write to ab_eval_reports.
     VERSUS_JUDGE = "versus_judge"
+    # Lightweight build_context-only call used by the context-builder
+    # evaluation workflow (see scripts/run_context_eval.py). Each eval run
+    # has one of these calls — gold (ImpactFilteredContext) or candidate
+    # (named builder under test). Never dispatchable from prioritization.
+    CONTEXT_BUILDER_EVAL = "context_builder_eval"
 
 
 # The subset of CallTypes that prioritization can dispatch.

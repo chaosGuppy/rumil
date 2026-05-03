@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from rumil.available_calls import get_available_calls_preset
-from rumil.calls.common import mark_call_completed
+from rumil.calls.common import embed_task_for_page, mark_call_completed
 from rumil.calls.dispatches import DISPATCH_DEFS, RECURSE_DISPATCH_DEF, DispatchDef
 from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.prioritization import run_prioritization_call
@@ -437,6 +437,9 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             "Do not do anything else — just dispatch."
         )
 
+        embed_task = await embed_task_for_page(
+            self.db, question_id, "fan-out scouting prioritization."
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -448,8 +451,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             ),
             system_prompt=build_system_prompt(
                 "two_phase_initial_prioritization",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="two_phase_initial_prioritization",
         )
 
         dispatches = list(result.dispatches)
@@ -653,6 +659,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if dispatch_budget >= MIN_TWOPHASE_BUDGET:
             extra_defs.append(RECURSE_DISPATCH_DEF)
 
+        embed_task = await embed_task_for_page(
+            self.db,
+            question_id,
+            "main-phase prioritization (experimental) across open lines of research.",
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -665,8 +676,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
                 "two_phase_main_phase_prioritization_experimental",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="two_phase_main_phase_prioritization_experimental",
             dispatch_budget=dispatch_budget,
         )
 

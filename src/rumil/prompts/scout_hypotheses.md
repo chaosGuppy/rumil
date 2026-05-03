@@ -1,36 +1,61 @@
-# Scout Hypotheses Call Instructions
+## the task
 
-## Your Task
+you're doing a **scout hypotheses** call — identifying **hypotheses**
+that should be explored as potential answers to the parent question.
+each hypothesis is a specific, substantive view that, if true, would
+substantially shape the answer.
 
-You are performing a **Scout Hypotheses** call — an initial exploration focused on identifying **hypotheses** that should be explored as potential answers to the parent question. Each hypothesis is a specific, substantive view that, if true, would substantially shape the answer.
+## a few moves
 
-## What to Produce
+before producing hypotheses, name the cached take. what are the
+obvious candidate answers a sharp person would reach for? write them
+down. for each, ask: does this represent a genuinely different view
+of what the answer looks like, or is it a minor variation on the
+same theme? hypotheses that compete against each other are more
+useful than hypotheses that rhyme.
 
-For each hypothesis (aim for 2-4):
+attack each candidate before staking it. is this actually
+substantive (a view that would shape the answer) or is it
+hypothesis-shaped filler ("X is an important factor")? if engaging
+with it seriously wouldn't yield insight, cut it.
 
-1. **A claim** stating the hypothesis as a concrete assertion, with your initial credence and robustness scores. Link it as a consideration to the parent question.
+## what to produce
 
-2. The claim's content should explain: what is the hypothesis? Why is it worth taking seriously? What would the world look like if this hypothesis is true?
+for each hypothesis (aim for **2-4**):
 
-Use `CREATE_CLAIM` to create the hypothesis claim and `LINK_CONSIDERATION` to link it to the parent question. Set the consideration direction to `supports` if the hypothesis supports a particular answer, or `neutral` if it frames an alternative perspective.
+1. **a claim** stating the hypothesis as a concrete assertion, with
+   your initial credence and robustness. link it as a consideration
+   to the parent question.
 
-## How to Proceed
+2. the claim's content should explain: what is the hypothesis? why
+   is it worth taking seriously? what would the world look like if
+   this hypothesis is true?
 
-1. Read the parent question and existing context carefully.
-2. Identify candidate answers, paradigms, or explanatory frameworks — not just pieces of evidence, but specific views about what the answer to the parent question looks like.
-3. For each, create a claim stating the hypothesis with appropriate credence and robustness. Low robustness is expected at this stage.
-4. Where multiple hypotheses compete, make sure they represent genuinely different views.
+use `create_claim` for the hypothesis and `link_consideration` to
+attach it to the parent. set the consideration direction to
+`supports` if the hypothesis supports a particular answer, or
+`neutral` if it frames an alternative perspective.
 
-## What Makes a Good Hypothesis
+## what makes a good hypothesis
 
-- **Specific and substantive.** "Economic factors are important" is not a hypothesis. "The primary driver of X is Y, because Z" is.
-- **Would shape the answer if true.** A hypothesis should be something that, if you became convinced of it, would substantially change how you respond to the parent question.
-- **Worth engaging with seriously.** Either it is plausibly correct, or engaging with it would yield useful insights — clarifying why it fails, surfacing adjacent territory, or extracting partial truth.
-- **Not already well-represented** in the existing consideration set.
+- **specific and substantive.** "economic factors are important" is
+  not a hypothesis. "the primary driver of X is Y, because Z" is.
+- **would shape the answer if true.** if you became convinced of it,
+  it would substantially change how you respond to the parent.
+- **worth engaging with seriously.** either it's plausibly correct,
+  or engaging with it would yield useful insights — clarifying why
+  it fails, surfacing adjacent territory, or extracting partial
+  truth from an otherwise wrong answer.
+- **not already well-represented** in the existing consideration set.
 
-## Quality Bar
+## quality bar
 
-- **One strong hypothesis beats several thin ones.** Do not pad with obvious or uninteresting options.
-- **Diversity of perspective.** Aim for hypotheses that represent genuinely different views, not minor variations on the same theme.
-- **Do not duplicate** hypotheses already present in the workspace.
-- **Set credence and robustness honestly, with reasoning.** These are initial assessments — low robustness (1-2) is expected, credence should reflect your genuine initial estimate. Every score needs its paired `credence_reasoning` / `robustness_reasoning` per the preamble rubric.
+- **one strong hypothesis beats several thin ones.** don't pad with
+  obvious or uninteresting options.
+- **diversity of perspective.** aim for hypotheses that represent
+  genuinely different views, not minor variations on the same theme.
+- **don't duplicate** hypotheses already in the workspace.
+- **set credence and robustness honestly, with reasoning.** low
+  robustness (1-2) is expected at this stage. credence should
+  reflect your genuine initial estimate. every score needs its
+  paired `credence_reasoning` / `robustness_reasoning`.

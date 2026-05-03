@@ -7,7 +7,7 @@ import logging
 from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
-from rumil.calls.common import mark_call_completed
+from rumil.calls.common import embed_task_for_page, mark_call_completed
 from rumil.calls.dispatches import (
     DISPATCH_DEFS,
     RECURSE_CLAIM_DISPATCH_DEF,
@@ -351,6 +351,12 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             "Do not do anything else — just dispatch."
         )
 
+        embed_task = await embed_task_for_page(
+            self.db,
+            claim_id,
+            "fan-out scouting prioritization for claim investigation.",
+            label="claim",
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -360,8 +366,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             dispatch_types=list(get_available_calls_preset().claim_phase1_scouts),
             system_prompt=build_system_prompt(
                 "claim_investigation_p1",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="claim_investigation_p1",
         )
 
         dispatches = list(result.dispatches)
@@ -573,6 +582,12 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             extra_defs.append(RECURSE_CLAIM_DISPATCH_DEF)
             extra_defs.append(RECURSE_DISPATCH_DEF)
 
+        embed_task = await embed_task_for_page(
+            self.db,
+            claim_id,
+            "main-phase prioritization across open lines of claim investigation.",
+            label="claim",
+        )
         result = await run_prioritization_call(
             task,
             context_text,
@@ -583,8 +598,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             extra_dispatch_defs=extra_defs or None,
             system_prompt=build_system_prompt(
                 "claim_investigation_p2",
+                task=embed_task,
                 include_citations=False,
+                include_per_call=False,
             ),
+            prompt_name="claim_investigation_p2",
             dispatch_budget=budget,
         )
 

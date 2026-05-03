@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+from typing import Any
 
 import pydantic
 import yaml
@@ -30,10 +31,13 @@ class PrefixCfg(pydantic.BaseModel):
 
 
 class ModelCfg(pydantic.BaseModel):
+    """Per-model entry in ``completion.models`` — selects the model and its
+    paraphrase axis flag. Sampling / thinking / effort live in the
+    registry under ``Config.models[id]``; we keep this entry minimal so
+    the registry is the unambiguous source of truth.
+    """
+
     id: str
-    temperature: float = 0.7
-    max_tokens: int = 4000
-    top_p: float | None = None
     # When True, this model also produces paraphrases (in addition to
     # completions). Default False so the same list serves the completion
     # axis directly while paraphrases stay opt-in per-model.
@@ -53,7 +57,47 @@ class JudgingCfg(pydantic.BaseModel):
     models: list[str]
     criteria: list[str] = pydantic.Field(default_factory=lambda: ["standalone_quality"])
     include_human_as_contestant: bool = True
-    max_tokens: int = 32000
+    # Purpose-specific override of ``models[<id>].sampling.max_tokens``
+    # for judge calls (blind, ws, orch). Reasoning judges (gpt-5.4,
+    # claude with thinking on) need more output headroom than
+    # completion-purpose calls on the same model. None means "use the
+    # registry's per-model max_tokens"; a value layers as
+    # ``replace(model_config, max_tokens=...)`` at each judge call site.
+    # Applied uniformly across judge models — for per-model judging
+    # caps, upgrade to a nested per-purpose registry shape.
+    max_tokens: int | None = 64000
+
+
+class SamplingCfg(pydantic.BaseModel):
+    temperature: float | None
+    max_tokens: int
+    top_p: float | None = None
+
+
+class VersusModelConfig(pydantic.BaseModel):
+    """Per-model effective config that versus applies on the wire.
+
+    Source of truth for what gets sent to the provider — sampling,
+    Anthropic thinking block, effort level, optional max-thinking
+    budget, optional service tier. Direct paths (completions,
+    paraphrases, blind judge) and bridge paths (ws/orch) both read
+    from this registry, so a single yaml edit changes the effective
+    condition everywhere consistently. The recorded
+    ``model_config_hash`` on each row forks naturally on any change,
+    keeping old rows reproducible.
+
+    Forward-looking optional fields (top_k, stop_sequences, etc.) get
+    added here when they become relevant. ``service_tier`` is most
+    useful on prod (``"priority"`` for cost-tolerant lower-latency
+    runs); ``max_thinking_tokens`` caps explicit thinking budget when
+    a model supports extended thinking with a budget knob.
+    """
+
+    sampling: SamplingCfg
+    thinking: dict[str, Any] | None = None
+    effort: str | None = None
+    max_thinking_tokens: int | None = None
+    service_tier: str | None = None
 
 
 class StorageCfg(pydantic.BaseModel):
@@ -74,6 +118,13 @@ class Config(pydantic.BaseModel):
     completion: CompletionCfg
     paraphrasing: ParaphrasingCfg = pydantic.Field(default_factory=ParaphrasingCfg)
     judging: JudgingCfg
+    # Per-model effective config registry, keyed by model id. Every
+    # model that appears in ``completion.models`` or ``judging.models``
+    # must have an entry here (validated on load). Source of truth for
+    # what versus actually sends; both direct and bridge call paths
+    # read from this registry rather than recomputing from rumil's
+    # implicit rules.
+    models: dict[str, VersusModelConfig] = pydantic.Field(default_factory=dict)
     storage: StorageCfg
     concurrency: int = 20
     # Per-model concurrency cap. Each unique completion/judge model id
@@ -89,6 +140,25 @@ class Config(pydantic.BaseModel):
         dupes = {i for i in ids if ids.count(i) > 1}
         if dupes:
             raise ValueError(f"duplicate prefix variant ids: {sorted(dupes)}")
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def _check_model_registry_coverage(self) -> Config:
+        """Every model used by completion / judging needs a registry entry.
+
+        Catches typos and forgotten registry updates at load time rather
+        than at first-call time when the row would silently fall back to
+        rumil's implicit rules.
+        """
+        used: set[str] = {m.id for m in self.completion.models}
+        used.update(self.judging.models)
+        missing = sorted(used - set(self.models.keys()))
+        if missing:
+            raise ValueError(
+                "config.models is missing entries for: "
+                + ", ".join(missing)
+                + ". Add a per-model VersusModelConfig under `models:` for each."
+            )
         return self
 
 

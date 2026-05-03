@@ -1,15 +1,17 @@
-"""Run completions for all cached essays.
+"""Run completions for the canonical active essay set.
+
+Default scope is the same gate ``/versus`` applies: current
+``schema_version`` and not in ``cfg.essays.exclude_ids``. Pass
+``--include-stale`` to instead run over every essay returned by the
+source fetchers (minus ``exclude_ids``) — useful for backfill or
+debugging old-schema rows.
 
 Filters mirror run_judgments.py so targeted runs are possible without
 editing config.yaml:
   --model <id>    (repeatable)  restrict to specific completion models
   --essay <id>    (repeatable)  restrict to specific essays
-  --active                      canonical eval set only (current schema, not excluded)
+  --include-stale               run over all fetched essays, not just the active set
   --prefix-label <id>           target a specific prefix variant (default: canonical)
-
-``cfg.essays.exclude_ids`` is always honored, so excluded essays never
-get completions even without ``--active``. Run from any cwd — paths
-resolve relative to versus/.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ import pathlib
 import sys
 
 VERSUS_ROOT = pathlib.Path(__file__).resolve().parent.parent
+RUMIL_ROOT = VERSUS_ROOT.parent
 
 sys.path.insert(0, str(VERSUS_ROOT / "src"))
 
@@ -32,12 +35,18 @@ except ModuleNotFoundError:
     sys.stderr.write(
         "[err] rumil isn't importable from this venv. Run from the rumil "
         "repo root, not versus/:\n"
-        f"      cd {VERSUS_ROOT.parent} && uv run python versus/scripts/run_completions.py ...\n"
+        f"      cd {RUMIL_ROOT} && uv run python versus/scripts/run_completions.py ...\n"
     )
     raise SystemExit(1) from None
 
-from versus import complete, config, prepare, sources, versus_db  # noqa: E402
+from versus import complete, config, envcascade, prepare, sources, versus_db  # noqa: E402
 from versus import essay as versus_essay  # noqa: E402
+
+envcascade.apply(
+    ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"),
+    versus_root=VERSUS_ROOT,
+    rumil_root=RUMIL_ROOT,
+)
 
 
 def _load_essay_from_cache(cache_dir: pathlib.Path, essay_id: str) -> versus_essay.Essay | None:
@@ -86,12 +95,14 @@ def main() -> None:
         help="Restrict to specified essay_id(s). Repeatable.",
     )
     ap.add_argument(
-        "--active",
+        "--include-stale",
         action="store_true",
         help=(
-            "Restrict to the canonical active set: current schema_version and "
-            "not in cfg.essays.exclude_ids. Same gate /versus applies. "
-            "Composes with --essay (both act as filters)."
+            "Default behavior is the canonical active set (current "
+            "schema_version, not in cfg.essays.exclude_ids — same gate "
+            "/versus applies). Pass this to run over every fetched essay "
+            "instead, including off-feed or old-schema rows. "
+            "exclude_ids is still honored."
         ),
     )
     ap.add_argument(
@@ -109,6 +120,11 @@ def main() -> None:
         "--prod",
         action="store_true",
         help="Target the production Supabase database (default: local).",
+    )
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the planned completion calls and exit without firing API requests.",
     )
     args = ap.parse_args()
 
@@ -134,11 +150,11 @@ def main() -> None:
     exclude = set(cfg.essays.exclude_ids)
     essays = [e for e in essays if e.id not in exclude]
 
-    if args.active:
-        # --active is a hard list of the canonical eval set, not an
-        # intersection with fetch_all. Active essays that have rolled
-        # off the source's live feed but are still valid in cache should
-        # be loaded directly so the run honors --active in full.
+    if not args.include_stale:
+        # Default: restrict to the canonical eval set. This is a hard
+        # list, not an intersection with fetch_all — active essays that
+        # have rolled off the source's live feed but are still valid in
+        # cache get loaded directly so the run honors --active in full.
         active = prepare.active_essay_ids(
             cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
         )
@@ -146,7 +162,7 @@ def main() -> None:
         for missing_id in sorted(active - fetched_ids):
             cached = _load_essay_from_cache(cfg.essays.cache_dir, missing_id)
             if cached is None:
-                print(f"[warn] --active {missing_id}: not in cache or schema mismatch; skipping")
+                print(f"[warn] active {missing_id}: not in cache or schema mismatch; skipping")
                 continue
             print(f"[essay] {missing_id}: loaded from cache (off live feed)")
             essays.append(cached)
@@ -176,7 +192,7 @@ def main() -> None:
     target = "prod" if args.prod else "local"
     for prefix_cfg in prefix_cfgs:
         print(f"[prefix] using variant {prefix_cfg.id!r} (db={target})")
-        complete.run(cfg, essays, prefix_cfg=prefix_cfg, prod=args.prod)
+        complete.run(cfg, essays, prefix_cfg=prefix_cfg, prod=args.prod, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

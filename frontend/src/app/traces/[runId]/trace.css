@@ -1196,6 +1196,135 @@
   background: none;
 }
 
+/* Thinking — the model's internal monologue. Italic serif sets it apart
+   from the surrounding sans UI chrome and mono code blocks: this is voice,
+   not data. A hairline left rule treats it like marginalia / a quoted
+   thought. */
+
+.trace-thinking {
+  margin: 6px 0 10px;
+}
+
+.trace-thinking-toggle {
+  color: #6b6358;
+}
+.trace-thinking-toggle:hover {
+  color: #2a2520;
+}
+
+.trace-thinking-glyph {
+  font-size: 11px;
+  color: #b29d7e;
+  margin-right: -2px;
+  letter-spacing: 0;
+}
+
+.trace-thinking-preview {
+  margin: 4px 0 0 30px;
+  font-family: Georgia, "Iowan Old Style", "Hoefler Text", "Palatino", serif;
+  font-style: italic;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #9a8f80;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: calc(100% - 30px);
+}
+
+.trace-thinking-content {
+  margin: 6px 0 0 18px;
+  padding: 10px 0 10px 16px;
+  border-left: 1px solid #d8cfbe;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.trace-thinking-block {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.trace-thinking-block:only-child {
+  grid-template-columns: 1fr;
+}
+.trace-thinking-block:only-child .trace-thinking-block-num {
+  display: none;
+}
+
+.trace-thinking-block-num {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: #b29d7e;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding-top: 2px;
+}
+
+.trace-thinking-text {
+  margin: 0;
+  font-family: Georgia, "Iowan Old Style", "Hoefler Text", "Palatino", serif;
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #4a4338;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  hyphens: auto;
+}
+
+.trace-thinking-empty {
+  margin: 0;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  color: #a89a85;
+  font-style: normal;
+  line-height: 1.5;
+}
+.trace-thinking-empty code {
+  font-size: 10.5px;
+  background: #f3ede0;
+  border: 1px solid #e6dcc6;
+  border-radius: 2px;
+  padding: 0 4px;
+  color: #6b6358;
+}
+
+.trace-thinking-redacted-tag {
+  display: inline-block;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: #f3ebd6;
+  color: #8a7a4e;
+  border: 1px solid #e6dcc6;
+  border-radius: 2px;
+  padding: 1px 5px;
+  font-weight: 600;
+}
+
+.trace-thinking-redacted-data {
+  margin: 0;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #8a7a4e;
+  background: #fbf7ed;
+  border: 1px dashed #e6dcc6;
+  border-radius: 3px;
+  padding: 8px 10px;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* Message thread */
 
 .trace-message-thread {
@@ -1683,6 +1812,30 @@
     color: #ccc;
   }
   .trace-collapsible-preview { color: #666; }
+
+  .trace-thinking-toggle { color: #a89a85; }
+  .trace-thinking-toggle:hover { color: #e8dcc4; }
+  .trace-thinking-glyph { color: #b29d7e; }
+  .trace-thinking-preview { color: #6b6358; }
+  .trace-thinking-content { border-left-color: #3a342a; }
+  .trace-thinking-block-num { color: #8a7a4e; }
+  .trace-thinking-text { color: #c8b896; }
+  .trace-thinking-empty { color: #6b6358; }
+  .trace-thinking-empty code {
+    background: #1f1a12;
+    border-color: #3a342a;
+    color: #a89a85;
+  }
+  .trace-thinking-redacted-tag {
+    background: #1f1a12;
+    border-color: #3a342a;
+    color: #a89a85;
+  }
+  .trace-thinking-redacted-data {
+    background: #14110a;
+    border-color: #3a342a;
+    color: #8a7a4e;
+  }
 
   .trace-tool-calls-label { color: #999; }
   .trace-tool-call-name { color: #bbb; }

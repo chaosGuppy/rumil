@@ -43,6 +43,23 @@
   letter-spacing: 0.02em;
 }
 
+.trace-status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-geist-mono), monospace;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+.trace-status-staged {
+  color: #5a8a7a;
+  background: rgba(90, 138, 122, 0.12);
+}
+.trace-status-committed {
+  color: #6a6a6a;
+  background: rgba(120, 120, 120, 0.1);
+}
+
 .trace-error {
   color: #c44;
   font-size: 15px;

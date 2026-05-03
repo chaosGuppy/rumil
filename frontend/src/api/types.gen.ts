@@ -2262,6 +2262,10 @@ export type JudgmentRow = {
      * Orphaned
      */
     orphaned: boolean;
+    /**
+     * Variant
+     */
+    variant?: string | null;
 };
 
 /**
@@ -3369,6 +3373,155 @@ export type ReassessTriggeredEventOut = {
      * Child Call Id
      */
     child_call_id: string | null;
+};
+
+/**
+ * RecentBundle
+ *
+ * Recent-first feed for /versus/recent.
+ *
+ * ``texts`` and ``judgments`` are independently capped at ``limit`` so
+ * the two tabs render without one starving the other. ``*_total`` is
+ * the unfiltered table count for the header.
+ */
+export type RecentBundle = {
+    /**
+     * Texts
+     */
+    texts: Array<RecentTextRow>;
+    /**
+     * Judgments
+     */
+    judgments: Array<JudgmentRow>;
+    /**
+     * Texts Total
+     */
+    texts_total: number;
+    /**
+     * Judgments Total
+     */
+    judgments_total: number;
+    /**
+     * Limit
+     */
+    limit: number;
+};
+
+/**
+ * RecentTextRow
+ *
+ * One row in the chronological completions feed.
+ *
+ * ``flavor`` is a derived label so the FE doesn't have to re-parse
+ * ``source_id`` patterns: ``human`` / ``single-shot`` / ``orch`` /
+ * ``paraphrase`` / ``other``. ``workflow`` is populated for orch rows.
+ * Optional generation knobs (``temperature``, ``max_tokens``,
+ * ``thinking_mode``, ``budget``, etc.) collapse the params snapshot to
+ * just the bits worth showing in a compact table.
+ */
+export type RecentTextRow = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Essay Id
+     */
+    essay_id: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Flavor
+     */
+    flavor: string;
+    /**
+     * Workflow
+     */
+    workflow: string | null;
+    /**
+     * Model Id
+     */
+    model_id: string | null;
+    /**
+     * Prefix Hash
+     */
+    prefix_hash: string;
+    /**
+     * Response Words
+     */
+    response_words: number;
+    /**
+     * Target Words
+     */
+    target_words: number;
+    /**
+     * Duration S
+     */
+    duration_s: number | null;
+    /**
+     * Provider
+     */
+    provider: string | null;
+    /**
+     * Temperature
+     */
+    temperature: number | null;
+    /**
+     * Max Tokens
+     */
+    max_tokens: number | null;
+    /**
+     * Thinking Mode
+     */
+    thinking_mode: string | null;
+    /**
+     * Budget
+     */
+    budget: number | null;
+    /**
+     * Config Hash
+     */
+    config_hash: string | null;
+    /**
+     * Config
+     */
+    config: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Status
+     */
+    status: string | null;
+    /**
+     * Rumil Call Id
+     */
+    rumil_call_id: string | null;
+    /**
+     * Rumil Run Id
+     */
+    rumil_run_id: string | null;
+    /**
+     * Rumil Cost Usd
+     */
+    rumil_cost_usd: number | null;
+    /**
+     * Trace Url
+     */
+    trace_url: string | null;
+    /**
+     * Stale
+     */
+    stale: boolean;
 };
 
 /**
@@ -4623,6 +4776,42 @@ export type GetResultsApiVersusResultsGetResponses = {
 };
 
 export type GetResultsApiVersusResultsGetResponse = GetResultsApiVersusResultsGetResponses[keyof GetResultsApiVersusResultsGetResponses];
+
+export type GetRecentApiVersusRecentGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/versus/recent';
+};
+
+export type GetRecentApiVersusRecentGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRecentApiVersusRecentGetError = GetRecentApiVersusRecentGetErrors[keyof GetRecentApiVersusRecentGetErrors];
+
+export type GetRecentApiVersusRecentGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RecentBundle;
+};
+
+export type GetRecentApiVersusRecentGetResponse = GetRecentApiVersusRecentGetResponses[keyof GetRecentApiVersusRecentGetResponses];
 
 export type GetJudgmentByKeyApiVersusJudgmentsByKeyGetData = {
     body?: never;

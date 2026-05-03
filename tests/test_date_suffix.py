@@ -41,9 +41,14 @@ async def test_call_anthropic_api_sends_date_in_system_prompt(mocker):
         stop_reason="end_turn",
         usage=fake_usage,
     )
-    mock_create = AsyncMock(return_value=fake_message)
+    fake_stream = mocker.MagicMock()
+    fake_stream.get_final_message = AsyncMock(return_value=fake_message)
+    fake_manager = mocker.MagicMock()
+    fake_manager.__aenter__ = AsyncMock(return_value=fake_stream)
+    fake_manager.__aexit__ = AsyncMock(return_value=None)
+    mock_stream = mocker.MagicMock(return_value=fake_manager)
     fake_client = mocker.MagicMock()
-    fake_client.messages.create = mock_create
+    fake_client.messages.stream = mock_stream
 
     await call_anthropic_api(
         fake_client,
@@ -52,7 +57,7 @@ async def test_call_anthropic_api_sends_date_in_system_prompt(mocker):
         [{"role": "user", "content": "hi"}],
     )
 
-    call_kwargs = mock_create.call_args
+    call_kwargs = mock_stream.call_args
     sent_system = call_kwargs.kwargs.get("system") or call_kwargs[1].get("system")
     assert DATE_MARKER in sent_system
 

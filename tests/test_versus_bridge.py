@@ -1,11 +1,10 @@
 """Pure-logic tests for rumil.versus_bridge.
 
 No LLM and no DB — everything here is fast and deterministic. The
-LLM-dependent code paths (judge_pair_ws_aware / judge_pair_orch) are
-exercised via the CLI manually; unit tests of those would either mock
-the agent (coupling to internal structure) or spend real tokens per
-run (slow, expensive, and mostly validating the SDK layer, not our
-code).
+LLM-dependent code path (judge_pair_orch) is exercised via the CLI
+manually; unit tests of it would either mock the agent (coupling to
+internal structure) or spend real tokens per run (slow, expensive, and
+mostly validating the SDK layer, not our code).
 
 Focus here is the surfaces that carry real correctness risk:
 
@@ -362,31 +361,128 @@ def test_compute_pair_surface_hash_is_short_hex():
 
 
 def test_compute_pair_surface_hash_changes_when_headline_template_changes(monkeypatch):
-    import rumil.versus_bridge as vb
+    from versus.tasks import judge_pair as jp
 
     baseline = compute_pair_surface_hash()
 
     def _alt_headline(pair):
         return f"DIFFERENT HEADLINE FORMAT: {pair.task_name}"
 
-    monkeypatch.setattr(vb, "_build_headline", _alt_headline)
+    monkeypatch.setattr(jp, "_build_headline", _alt_headline)
     forked = compute_pair_surface_hash()
 
     assert baseline != forked
 
 
 def test_compute_pair_surface_hash_changes_when_extra_keys_change(monkeypatch):
-    import rumil.versus_bridge as vb
+    from versus.tasks import judge_pair as jp
 
     baseline = compute_pair_surface_hash()
 
     def _alt_extra(pair):
         return {"source": "versus", "prefix_hash": pair.prefix_hash, "new_key": "x"}
 
-    monkeypatch.setattr(vb, "_versus_extra", _alt_extra)
+    monkeypatch.setattr(jp, "_versus_extra", _alt_extra)
     forked = compute_pair_surface_hash()
 
     assert baseline != forked
+
+
+def test_compute_pair_surface_hash_changes_when_abstract_template_changes(monkeypatch):
+    """The abstract is rendered into the question page surface, so an
+    edit to its template must fork the dedup hash — same fork-on-edit
+    discipline as the headline / content / extra_keys axes."""
+    from versus.tasks import judge_pair as jp
+
+    baseline = compute_pair_surface_hash()
+
+    def _alt_abstract(pair):
+        return f"DIFFERENT ABSTRACT WORDING for {pair.task_name}"
+
+    monkeypatch.setattr(jp, "_build_abstract", _alt_abstract)
+    forked = compute_pair_surface_hash()
+
+    assert baseline != forked
+
+
+# Abstract: blind discipline (no source_id leak) ---------------------------
+
+
+def test_build_abstract_does_not_leak_source_ids():
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(
+        continuation_a_id="human",
+        continuation_b_id="anthropic/claude-opus-4-7",
+        source_a_id="human",
+        source_b_id="anthropic/claude-opus-4-7",
+    )
+    abstract = _build_abstract(pair)
+
+    # Raw source ids must not surface in the abstract — it's read into
+    # the parent-context prioritization scoring step, which is agent-
+    # visible.
+    assert "anthropic/claude-opus-4-7" not in abstract
+    assert "human" not in abstract.lower()
+
+
+def test_build_abstract_does_not_leak_essay_id_or_prefix_text():
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(
+        essay_id="forethought__the-ai-frontier",
+        prefix_text="The opening of an essay about a sensitive topic.",
+        prefix_hash="deadbeefcafef00d",
+    )
+    abstract = _build_abstract(pair)
+
+    # essay_id leaks the source via the namespacing prefix.
+    assert "forethought" not in abstract
+    assert "the-ai-frontier" not in abstract
+    # The abstract intentionally omits prefix text (substring truncation
+    # is misleading; agents that need it read the question content).
+    assert "sensitive topic" not in abstract
+
+
+def test_build_abstract_includes_dimension_for_meta_evaluation_framing():
+    """The abstract exists to clarify the framing for parent-context
+    rendering — the dimension name is the load-bearing signal it must
+    carry."""
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(task_name="grounding")
+    assert "grounding" in _build_abstract(pair)
+
+
+# create_question sets Page.abstract --------------------------------------
+
+
+def test_ensure_versus_question_sets_page_abstract():
+    """``JudgePairTask.create_question`` must populate ``Page.abstract``
+    so parent-scoring renderers see the meta-evaluation framing."""
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(task_name="general_quality")
+    page = _make_question_page_synchronously(pair)
+
+    assert page.abstract == _build_abstract(pair)
+    # Sanity: abstract is non-empty and dimension-aware.
+    assert "general_quality" in page.abstract
+
+
+def test_ensure_versus_question_abstract_does_not_leak_source_ids():
+    pair = _make_pair(
+        continuation_a_id="human",
+        source_a_id="human",
+        continuation_b_id="anthropic/claude-opus-4-7",
+        source_b_id="anthropic/claude-opus-4-7",
+    )
+    page = _make_question_page_synchronously(pair)
+
+    assert "anthropic/claude-opus-4-7" not in page.abstract
+    # `human` as a substring is risky (English word), but as a literal
+    # source label it must not appear — guard against the obvious leak.
+    assert "human" not in page.abstract.lower()
 
 
 def test_build_headline_uses_prefix_hash_not_essay_id():
@@ -516,3 +612,66 @@ def test_preference_labels_are_in_scale_order():
         "B somewhat preferred",
         "B strongly preferred",
     ]
+
+
+# Structured-config dict-shape regression ---------------------------------
+#
+# The orch path now goes through ``TwoPhaseWorkflow`` + ``JudgePairTask``
+# via ``make_versus_config``. The dict shape changed in #424 (workflow /
+# task subdicts, settings snapshot folded in), so config_hash forks
+# intentionally. Don't pin a hash — pin the *shape* so accidental
+# restructuring (key renames, missing subdict keys) fails CI without
+# the dedup-hash forking churn that an explicit fork would cause.
+
+
+_HASH_FIXTURE_KW: dict = {
+    "model": "claude-opus-4-7",
+    "dimension": "general_quality",
+    "prompt_hash": "deadbeef",
+    "tool_prompt_hash": "11111111",
+    "pair_surface_hash": "22222222",
+    "workspace_id": "abcd1234",
+    "code_fingerprint": {"src/rumil/versus_bridge.py": "aaaaaaaa"},
+    "workspace_state_hash": "0011223344556677",
+    "budget": 4,
+    "closer_hash": "33333333",
+}
+
+
+def test_orch_make_judge_config_produces_new_shape_dict():
+    """The post-#424 shim returns a dict with the new structured shape:
+    top-level cross-cutting fields + ``workflow`` / ``task`` subdicts.
+    Pin the shape — not the hash — so adding behavioural knobs to a
+    workflow/task fingerprint forks the hash naturally without churning
+    this test.
+    """
+    from versus.versus_config import make_judge_config
+
+    from rumil.model_config import ModelConfig
+
+    mc = ModelConfig(temperature=None, max_tokens=1024)
+    cfg, h, jm = make_judge_config(
+        "orch",
+        model_config=mc,
+        **_HASH_FIXTURE_KW,
+    )
+    assert set(cfg.keys()) >= {
+        "model",
+        "model_config",
+        "workflow",
+        "task",
+        "workspace_id",
+        "workspace_state_hash",
+        "code_fingerprint",
+    }
+    assert cfg["workflow"]["kind"] == "two_phase"
+    assert cfg["workflow"]["budget"] == 4
+    assert cfg["task"]["kind"] == "judge_pair"
+    assert cfg["task"]["dimension"] == "general_quality"
+    assert cfg["task"]["prompt_hash"] == "deadbeef"
+    assert cfg["task"]["tool_prompt_hash"] == "11111111"
+    assert cfg["task"]["pair_surface_hash"] == "22222222"
+    assert cfg["task"]["closer_hash"] == "33333333"
+    assert "variant" not in cfg  # legacy shape removed
+    # judge_model now uses "<task>/<workflow>:<model>:c<hash8>".
+    assert jm == f"judge_pair/two_phase:claude-opus-4-7:c{h[:8]}"

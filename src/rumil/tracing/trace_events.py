@@ -346,6 +346,202 @@ class ImpactFilterEvent(BaseModel):
     pare_model: str | None = None
 
 
+class RoundStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow at the top of each loop iteration.
+    Mirrors two_phase's per-phase event pattern — gives the UI a
+    boundary marker so it can group subsequent phase events under the
+    round before any LLM call returns."""
+
+    event: Literal["round_started"] = "round_started"
+    round: int = 0
+
+
+class DraftStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the drafter LLM call
+    kicks off. Lets the UI show "Drafting…" immediately instead of
+    waiting on the (potentially multi-minute) call to return."""
+
+    event: Literal["draft_started"] = "draft_started"
+    round: int = 0
+    model: str = ""
+
+
+class CritiqueStartedEvent(BaseModel):
+    """Emitted per critic, right before each critic LLM call kicks off.
+    Critics run in parallel so this fires N times back-to-back at the
+    start of a critique round."""
+
+    event: Literal["critique_started"] = "critique_started"
+    round: int = 0
+    critic_index: int = 0
+    model: str = ""
+
+
+class ReadStartedEvent(BaseModel):
+    """Emitted by ReflectiveJudgeWorkflow right before the read-stage
+    LLM call. Live-trace counterpart to the read llm_exchange that
+    fires on completion."""
+
+    event: Literal["read_started"] = "read_started"
+    model: str = ""
+
+
+class ReflectStartedEvent(BaseModel):
+    """Emitted by ReflectiveJudgeWorkflow right before the reflect-stage
+    LLM call. Carries the prior read length so the UI has something
+    concrete to show during the wait."""
+
+    event: Literal["reflect_started"] = "reflect_started"
+    model: str = ""
+    prior_read_chars: int = 0
+
+
+class VerdictStartedEvent(BaseModel):
+    """Emitted by ReflectiveJudgeWorkflow right before the verdict-stage
+    LLM call. Carries the prior read + reflect lengths so the UI
+    surfaces what the verdict stage is synthesizing."""
+
+    event: Literal["verdict_started"] = "verdict_started"
+    model: str = ""
+    prior_read_chars: int = 0
+    prior_reflect_chars: int = 0
+
+
+class EditStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the editor LLM call
+    kicks off. Carries the inputs the editor will see (current draft
+    length, critique count) so the UI can show meaningful progress."""
+
+    event: Literal["edit_started"] = "edit_started"
+    round: int = 0
+    model: str = ""
+    current_chars: int = 0
+    n_critiques: int = 0
+
+
+class DraftEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow when the drafter produces (or
+    re-produces) a continuation. Round 0 is the initial draft; later
+    rounds are post-edit drafts that the editor handed off."""
+
+    event: Literal["draft"] = "draft"
+    round: int = 0
+    draft_text: str = ""
+    draft_chars: int = 0
+    model: str = ""
+
+
+class CritiqueItem(BaseModel):
+    """One critic's free-form prose output for a given round."""
+
+    critic_index: int = 0
+    critique_text: str = ""
+    model: str = ""
+
+
+class CritiqueRoundEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow after a parallel critic fan-out
+    completes for one round. ``critiques`` carries one entry per critic
+    in spawn order."""
+
+    event: Literal["critique_round"] = "critique_round"
+    round: int = 0
+    critiques: list[CritiqueItem] = []
+
+
+class EditEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow when the editor folds critiques
+    into a revised draft. The resulting draft becomes the next round's
+    starting point (or the final artifact if budget runs out)."""
+
+    event: Literal["edit"] = "edit"
+    round: int = 0
+    revised_text: str = ""
+    revised_chars: int = 0
+    model: str = ""
+
+
+class PlannerStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the planner LLM call
+    fires (only when with_planner=True). The planner runs once per
+    workflow run, before round 0, and emits a structural brief that
+    threads through every subsequent stage's user message."""
+
+    event: Literal["planner_started"] = "planner_started"
+    model: str = ""
+
+
+class PlannerEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow when the planner returns a brief.
+    The brief is free-form structured text (xml-tagged in the default
+    prompt) that the drafter / critic / editor consume verbatim. Keeping
+    it as text rather than parsed JSON avoids parser-failure regressions
+    if the planner deviates from format; downstream stages treat it as
+    opaque context."""
+
+    event: Literal["planner"] = "planner"
+    brief_text: str = ""
+    brief_chars: int = 0
+    model: str = ""
+
+
+class ArbitrationStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the arbiter LLM call
+    fires (only when with_arbiter=True). The arbiter runs per round
+    between critique and edit; its output replaces the raw critique
+    block in the editor's user message."""
+
+    event: Literal["arbitration_started"] = "arbitration_started"
+    round: int = 0
+    model: str = ""
+    n_critiques: int = 0
+
+
+class ArbitrationEvent(BaseModel):
+    """Emitted when the arbiter triages critic notes into accept / reject
+    / unresolved. Like the planner brief, the arbitration text is
+    free-form structured text (xml-tagged in the default prompt) that
+    the editor consumes verbatim. ``prior_arbitrations_seen`` records
+    how many prior rounds' arbitrations were threaded into this call so
+    rejected items stay rejected across rounds without the editor
+    rediscovering them."""
+
+    event: Literal["arbitration"] = "arbitration"
+    round: int = 0
+    arbitration_text: str = ""
+    arbitration_chars: int = 0
+    prior_arbitrations_seen: int = 0
+    model: str = ""
+
+
+class BriefAuditStartedEvent(BaseModel):
+    """Emitted by DraftAndEditWorkflow right before the brief-audit LLM
+    call fires (only when with_brief_audit=True). The audit runs once
+    after a designated round (default round 1's edit) and emits an
+    audit brief describing what the draft has actually become — its
+    real spine, real anchors, voice drift vs the original brief.
+    Downstream rounds' critic + arbiter + editor see both the original
+    brief and the audit side-by-side."""
+
+    event: Literal["brief_audit_started"] = "brief_audit_started"
+    after_round: int = 0
+    model: str = ""
+
+
+class BriefAuditEvent(BaseModel):
+    """Emitted when the brief-audit returns. The audit brief is opaque
+    text (same schema as the planner brief) that downstream stages
+    consume verbatim alongside the original brief — they don't parse
+    its internals. Recording the text in the trace event lets the UI
+    show the drift between original brief and what the draft became."""
+
+    event: Literal["brief_audit"] = "brief_audit"
+    after_round: int = 0
+    audit_brief_text: str = ""
+    audit_brief_chars: int = 0
+    model: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -379,6 +575,22 @@ TraceEvent = Annotated[
     | GlobalPhaseCompletedEvent
     | UpdateViewPhaseCompletedEvent
     | QuestionDedupeEvent
-    | ImpactFilterEvent,
+    | ImpactFilterEvent
+    | RoundStartedEvent
+    | DraftStartedEvent
+    | CritiqueStartedEvent
+    | EditStartedEvent
+    | ReadStartedEvent
+    | ReflectStartedEvent
+    | VerdictStartedEvent
+    | DraftEvent
+    | CritiqueRoundEvent
+    | EditEvent
+    | PlannerStartedEvent
+    | PlannerEvent
+    | ArbitrationStartedEvent
+    | ArbitrationEvent
+    | BriefAuditStartedEvent
+    | BriefAuditEvent,
     Field(discriminator="event"),
 ]

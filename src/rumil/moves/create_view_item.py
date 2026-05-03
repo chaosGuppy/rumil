@@ -25,11 +25,23 @@ class CreateViewItemPayload(ScoredPagePayload):
             "live_hypotheses, key_evidence, assessments, key_uncertainties, other)."
         ),
     )
+    # Default 3 ("useful context") so a tool use that omits the field
+    # doesn't kill the parent call. Observed in a versus two_phase
+    # b=16 run on 2026-05-02 where one of ~22 CREATE_VIEW_ITEM tool
+    # uses dropped `importance`; the validation error surfaced as a
+    # tool error to the agent, but the agent's done-detection fired
+    # before retrying and the create_view call hung in `running` for
+    # 3+ hours, blocking the parallel versus_complete closer.
+    # Defaulting here doesn't alter the normal path (when the model
+    # provides importance, behavior is unchanged) — it only kicks in
+    # when the field is absent. Importance 3 is the rubric's
+    # "useful context" tier, a safe middle bin.
     importance: int = Field(
+        default=3,
         description=(
             "1-5 importance score. 5=core to the View (shown in NL summary), "
-            "4=important, 3=useful context, 2=noted but not load-bearing, "
-            "1=catch-all."
+            "4=important, 3=useful context (default), 2=noted but not "
+            "load-bearing, 1=catch-all."
         ),
     )
 

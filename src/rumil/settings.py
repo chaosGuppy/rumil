@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic.config import JsonDict
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
 _CAPTURE: JsonDict = {"capture": True}
 
@@ -72,11 +72,33 @@ class Settings(BaseSettings):
     # per-worktree overrides (see /Users/chaos-guppy/differential/.workmux.yaml),
     # but devs without a worktree setup can use it too. Later files in the
     # tuple override earlier ones, so .env.overrides wins.
+    #
+    # Source priority is overridden below: .env files beat process
+    # environment variables, inverting pydantic-settings v2's default.
+    # The default would let a stale ``ANTHROPIC_API_KEY`` exported in a
+    # developer's shell silently redirect API calls / billing away from
+    # the project key in .env. Intent on this branch (and per the
+    # comment above) is that the project's .env IS the source of truth;
+    # shell vars are only consulted as a last resort fallback.
     model_config = {
         "env_file": (".env", ".env.overrides"),
         "extra": "ignore",
         "validate_assignment": True,
     }
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Order: explicit init kwargs win > dotenv (.env, .env.overrides)
+        # > shell env > file_secret_settings. Inverts pydantic-settings'
+        # default which puts env_settings above dotenv_settings.
+        return (init_settings, dotenv_settings, env_settings, file_secret_settings)
 
     anthropic_api_key: str = ""
     rumil_test_mode: str = ""

@@ -463,7 +463,7 @@ export type CallSummary = {
 /**
  * CallType
  */
-export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'create_view_max_effort' | 'global_prioritization' | 'update_view' | 'update_view_max_effort' | 'create_freeform_view' | 'update_freeform_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'red_team' | 'claude_code_direct' | 'versus_judge' | 'context_builder_eval';
+export type CallType = 'find_considerations' | 'assess' | 'prioritization' | 'ingest' | 'reframe' | 'maintain' | 'summarize' | 'scout_subquestions' | 'scout_estimates' | 'scout_hypotheses' | 'scout_analogies' | 'scout_paradigm_cases' | 'scout_factchecks' | 'scout_web_questions' | 'scout_deep_questions' | 'scout_c_how_true' | 'scout_c_how_false' | 'scout_c_cruxes' | 'scout_c_relevant_evidence' | 'scout_c_stress_test_cases' | 'scout_c_robustify' | 'scout_c_strengthen' | 'web_research' | 'evaluate' | 'grounding_feedback' | 'feedback_update' | 'link_subquestions' | 'ab_eval' | 'ab_eval_comparison' | 'ab_eval_summary' | 'run_eval' | 'create_view' | 'create_view_max_effort' | 'global_prioritization' | 'update_view' | 'update_view_max_effort' | 'create_freeform_view' | 'update_freeform_view' | 'generate_spec' | 'generate_artefact' | 'critique_artefact' | 'critique_artefact_request_only' | 'refine_spec' | 'red_team' | 'claude_code_direct' | 'versus_judge' | 'versus_complete' | 'context_builder_eval';
 
 /**
  * CallTypeFruitScoreItem
@@ -810,6 +810,82 @@ export type CriterionMatrix = {
 };
 
 /**
+ * CritiqueItem
+ *
+ * One critic's free-form prose output for a given round.
+ */
+export type CritiqueItem = {
+    /**
+     * Critic Index
+     */
+    critic_index?: number;
+    /**
+     * Critique Text
+     */
+    critique_text?: string;
+    /**
+     * Model
+     */
+    model?: string;
+};
+
+/**
+ * CritiqueRoundEventOut
+ */
+export type CritiqueRoundEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'critique_round';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Critiques
+     */
+    critiques: Array<CritiqueItem>;
+};
+
+/**
+ * CritiqueStartedEventOut
+ */
+export type CritiqueStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'critique_started';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Critic Index
+     */
+    critic_index: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
  * DedupeCandidateItem
  */
 export type DedupeCandidateItem = {
@@ -941,6 +1017,134 @@ export type DispatchesPlannedEventOut = {
      * Dispatches
      */
     dispatches: Array<DispatchTraceItem>;
+};
+
+/**
+ * DraftEventOut
+ */
+export type DraftEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'draft';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Draft Text
+     */
+    draft_text: string;
+    /**
+     * Draft Chars
+     */
+    draft_chars: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * DraftStartedEventOut
+ */
+export type DraftStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'draft_started';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * EditEventOut
+ */
+export type EditEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'edit';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Revised Text
+     */
+    revised_text: string;
+    /**
+     * Revised Chars
+     */
+    revised_chars: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * EditStartedEventOut
+ */
+export type EditStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'edit_started';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Current Chars
+     */
+    current_chars: number;
+    /**
+     * N Critiques
+     */
+    n_critiques: number;
 };
 
 /**
@@ -1701,6 +1905,10 @@ export type JudgeLabel = {
      * Phash
      */
     phash: string | null;
+    /**
+     * Wf Phash
+     */
+    wf_phash?: string | null;
 };
 
 /**
@@ -1836,7 +2044,8 @@ export type Judgment = {
  * Includes the verbatim prompt + reasoning text + raw provider response,
  * so a reader can audit what the judge actually saw and said. Most fields
  * are optional because the shape varies across judge variants (OpenRouter
- * vs anthropic vs rumil:text vs rumil:ws/orch).
+ * vs anthropic vs rumil:text vs rumil:orch; historical rumil:ws rows
+ * also still appear).
  */
 export type JudgmentDetail = {
     /**
@@ -3097,6 +3306,28 @@ export type QuestionStatsOut = {
 };
 
 /**
+ * ReadStartedEventOut
+ */
+export type ReadStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'read_started';
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
  * RealtimeConfigOut
  */
 export type RealtimeConfigOut = {
@@ -3138,6 +3369,32 @@ export type ReassessTriggeredEventOut = {
      * Child Call Id
      */
     child_call_id: string | null;
+};
+
+/**
+ * ReflectStartedEventOut
+ */
+export type ReflectStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'reflect_started';
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Prior Read Chars
+     */
+    prior_read_chars: number;
 };
 
 /**
@@ -3288,6 +3545,28 @@ export type ReviewCompleteEventOut = {
      * Confidence
      */
     confidence: number | null;
+};
+
+/**
+ * RoundStartedEventOut
+ */
+export type RoundStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'round_started';
+    /**
+     * Round
+     */
+    round: number;
 };
 
 /**
@@ -3933,6 +4212,36 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * VerdictStartedEventOut
+ */
+export type VerdictStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'verdict_started';
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Prior Read Chars
+     */
+    prior_read_chars: number;
+    /**
+     * Prior Reflect Chars
+     */
+    prior_reflect_chars: number;
 };
 
 /**
@@ -5536,7 +5845,27 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'question_dedupe';
     } & QuestionDedupeEventOut) | ({
         event: 'impact_filter';
-    } & ImpactFilterEventOut)>;
+    } & ImpactFilterEventOut) | ({
+        event: 'round_started';
+    } & RoundStartedEventOut) | ({
+        event: 'draft_started';
+    } & DraftStartedEventOut) | ({
+        event: 'critique_started';
+    } & CritiqueStartedEventOut) | ({
+        event: 'edit_started';
+    } & EditStartedEventOut) | ({
+        event: 'read_started';
+    } & ReadStartedEventOut) | ({
+        event: 'reflect_started';
+    } & ReflectStartedEventOut) | ({
+        event: 'verdict_started';
+    } & VerdictStartedEventOut) | ({
+        event: 'draft';
+    } & DraftEventOut) | ({
+        event: 'critique_round';
+    } & CritiqueRoundEventOut) | ({
+        event: 'edit';
+    } & EditEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

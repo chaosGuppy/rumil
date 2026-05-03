@@ -608,23 +608,34 @@ export default async function PageDetailPage({
 
       <footer className="page-footer">
         <span>{new Date(page.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}</span>
-        <span className="footer-sep" />
-        <span>{page.provenance_call_type}</span>
-        <span className="footer-sep" />
-        <span>{page.provenance_model}</span>
+        {isAdmin && (
+          <>
+            <span className="footer-sep" />
+            <span>{page.provenance_call_type}</span>
+            <span className="footer-sep" />
+            <span>{page.provenance_model}</span>
+          </>
+        )}
         {run && (
           <>
             <span className="footer-sep" />
             <Link
-              href={
-                run.provenance_call_id
-                  ? `/traces/${run.run_id}#call-${run.provenance_call_id.slice(0, 8)}`
-                  : `/traces/${run.run_id}`
-              }
+              href={`/traces/${run.run_id}`}
               className="footer-run-link"
             >
               run {run.run_id.slice(0, 8)}
             </Link>
+            {page.provenance_call_id && (
+              <>
+                <span className="footer-sep" />
+                <Link
+                  href={`/traces/${run.run_id}#call-${page.provenance_call_id.slice(0, 8)}`}
+                  className="footer-run-link"
+                >
+                  call {page.provenance_call_id.slice(0, 8)}
+                </Link>
+              </>
+            )}
           </>
         )}
       </footer>

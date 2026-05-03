@@ -1,0 +1,606 @@
+---
+name: rumil-versus-iterate
+description: Iterate on versus's pipeline — review recent (or freshly-fired) completion / judging runs, identify concrete improvement opportunities, test them via /rumil-forks, and consolidate findings into a ranked punch list. Spawns parallel agents for trace investigation and fork experiments so wall-clock stays low. Use when the user wants to "review the recent versus runs and find improvements," "play with these traces," "see what we could do better in d&e / two_phase," or anytime after a versus generation/judging batch when it's worth turning the runs into actionable code/prompt changes. Default scope is one forethought essay × Sonnet × budget 4, but every input is overridable.
+allowed-tools: Bash, Read, Write, Edit, Agent
+argument-hint: "[--reuse] [--workspace <name>] [--essay <essay_id>] [--model <model_id>] [--budget N] [--scope completion|judge|both] [--max-forks N]"
+---
+
+# rumil-versus-iterate
+
+A meta-skill: takes versus runs (existing or fresh), spawns parallel
+trace investigators + fork experimenters, and consolidates findings
+into a punch list of concrete improvements.
+
+This skill orchestrates other skills (`rumil-versus-generate`,
+`rumil-versus-complete`, `rumil-versus-judge`, `rumil-trace`,
+`rumil-forks`) and parallel `Agent` calls. The actual work happens in
+those tools; this skill is the recipe.
+
+## Step 0 — load rumil-system first
+
+**Before any other step**, invoke the `rumil-system` skill via
+the Skill tool. It loads the schema cheat sheet (column names for
+runs / calls / pages / versus_texts / versus_judgments), the
+short-name traps (e.g. it's `calls.cost_usd` not `calls.cost`,
+`calls.call_params` not `calls.params`), the uuid-LIKE-operator
+gotcha, and the two-lane provenance model. You will write DB queries
+in Phase 1 and your sub-agents will too — skipping this step burns
+round-trips on `column "X" does not exist` errors.
+
+If you're already in a session where rumil-system has been loaded
+recently (e.g. the user just ran another rumil skill), you can skip;
+otherwise load it.
+
+## When to use
+
+- "Review the recent versus runs, find improvements."
+- "What's wrong with our two_phase orch on the judging side?"
+- "Spin up some completions, look at what's going wrong, fork the bad
+   exchanges, consolidate."
+- After a fresh `rumil-versus-complete` or `rumil-versus-judge` batch
+  when it's worth turning the runs into actionable changes.
+- Whenever the user mentions trace inspection + forks + consolidation in
+  the same breath.
+
+## Defaults
+
+When the user invokes this skill without specifying scope, assume:
+
+- **Workspace**: `versus`
+- **Essay**: one forethought essay (pick the most-recent or
+  longest-completion among `versus_texts.essay_id LIKE 'forethought__%'`)
+- **Model**: `claude-sonnet-4-6`
+- **Budget**: 4
+- **Scope**: both completion (TwoPhase + DraftAndEdit) and judge
+  (TwoPhase orch)
+- **Completions to produce**: 2-3 model continuations from different
+  model families on the same essay × prefix. The human continuation
+  is already on the Source — don't regenerate it.
+- **Judging pair shape**: `(human, model_X)` for each model_X. This is
+  the canonical versus eval shape — human is the ground-truth side,
+  model-vs-human is the question the judge is being asked. Do NOT
+  default to model-vs-model judging pairs; those don't have a clean
+  ground truth and are only useful for specific A/B questions the
+  user asks for explicitly.
+- **Fork samples**: 2 per experiment
+- **Max forks**: 4 (tune up only if the user explicitly asks)
+
+Always confirm scope back to the user in one line before firing fresh
+runs (forks-on-existing-runs is cheap; fresh runs aren't).
+
+## Phases
+
+**Order: completions before judging**, throughout. Judging consumes
+completions as inputs (the pair contestants), so iterating on
+judging against bad completions wastes signal — improvements you
+find may just be the judge compensating for completion noise.
+Fresh-runs phase, run selection, agent dispatch, and consolidation
+all surface completion findings first.
+
+### Phase 0 — fresh runs (default; skip with `--reuse`)
+
+**Default behavior is to fire fresh runs.** The user typically
+invokes this skill to learn something new, and existing runs in the
+workspace have often already been iterated on — running the same
+trace+fork loop against them re-derives findings the user already
+acted on. Burning $5-15 on fresh runs is usually worth it for a
+clean slate.
+
+Skip Phase 0 only if:
+- `--reuse` is passed (user explicitly wants to iterate on existing
+  runs — e.g. they just fired a batch in another session and want to
+  analyze without paying again).
+- The user named a specific run id to investigate.
+- The conversation context makes clear the user wants existing-only
+  analysis (e.g. "look at run X, find improvements").
+
+Phase 0 fires only the **prerequisites** for the iteration-target
+runs (single-shot contestants and blind judgments). The
+iteration-target runs themselves — `DraftAndEditWorkflow` completions
+and `ReflectiveJudgeWorkflow` judgments — are fired as variant
+fan-outs in Phase 0.5, not here.
+
+When firing fresh, run:
+
+1. **Single-shot completions** (cheap baseline contestants) via
+   `rumil-versus-generate`:
+   ```
+   uv run python versus/scripts/run_completions.py \
+       --workspace versus \
+       --essay <essay_id> \
+       --model <model_id> [--model <model2_id>...]
+   ```
+   With `--orch`, `run_completions.py` accepts short rumil aliases
+   (`sonnet` / `opus` / `haiku`) just like the judge script. For
+   single-shot completions (no `--orch`), `--model` must match a
+   `cfg.completion.models[].id` verbatim
+   (`anthropic/claude-sonnet-4-6`, etc.) — that branch filters on
+   config ids rather than resolving aliases.
+
+2. **Blind judgments** via `rumil-versus-judge` (cheap, ground-truth
+   reference for the reflective-judge variants in Phase 0.5):
+   ```
+   uv run python versus/scripts/run_judgments.py \
+       --workspace versus --essay <essay_id> --judge-model <model_id>
+   ```
+
+Confirm total estimated $ before firing. A typical Phase 0 round is
+~$1-3; the iteration-target fan-outs in Phase 0.5 are the bulk of
+the cost (~$5-12 depending on variant count and budget).
+
+`TwoPhaseOrchestrator --variant orch` for judging (and `--orch
+two_phase` for completions) is **not canonical** in this skill — it
+shares internals with normal rumil and is off-limits to iterate on
+(see "Where lessons land" below). Fire it only if the user
+explicitly asks for a TwoPhase audit run as a comparison point.
+
+### Phase 0.5 — variant fan-out for the iteration-target workflows
+
+The iteration-target workflows (`DraftAndEditWorkflow` for completions,
+`ReflectiveJudgeWorkflow` for judging) ship with starter **variant
+sets** that fire in parallel within Phase 0. This is what gives the
+iterate loop generalizable signal — comparing a baseline variant
+against several one-knob-flipped siblings on the same essay × pair.
+
+Variant sets live at:
+
+- `.claude/skills/rumil-versus-iterate/variants/draft_and_edit.yaml`
+- `.claude/skills/rumil-versus-iterate/variants/reflective_judge.yaml`
+
+Each YAML lists named entries with constructor kwargs for the
+workflow. The first entry is conventionally `baseline` (all
+defaults); subsequent entries change one knob at a time so trace
+deltas are interpretable.
+
+How to dispatch:
+
+1. **Resolve the YAML into ready-to-fire CLI commands** with the
+   `fan_out` helper:
+   ```
+   PYTHONPATH=.claude/lib uv run python -m rumil_skills.fan_out \
+       --workflow reflective_judge \
+       --workspace versus \
+       --essay <essay_id> \
+       --dimension general_quality \
+       --model sonnet \
+       --limit 1 \
+       --contestants <source_a>,<source_b>
+   ```
+   Output is a JSON list — one entry per variant, each with `name`,
+   `description`, and a `cmd` array ready to dispatch as-is. Pass
+   `--variant <name>` (repeatable) to filter to specific variants.
+   The helper handles all the YAML→CLI translation: per-stage flag
+   mapping for reflective_judge, `--workflow-arg key=value`
+   passthrough for draft_and_edit, budget extraction from variant
+   entries, etc.
+2. **Lock variants to the same pair**: pass `--contestants
+   <source_a>,<source_b>` to the helper. Threaded into every
+   variant's command. Or set `default_contestants:` at the top of
+   the YAML for stable cross-session locking. Without either, each
+   variant invocation picks the next pending pair the planner finds
+   — variants drift apart and become non-comparable. Smoke-test
+   confirmed: a fan-out without `--contestants` produced 4 rows on 2
+   different pairs; only 3 of 4 were comparable.
+3. **Fire each `cmd` in parallel** as a separate Bash call with
+   `run_in_background=true`. Each variant becomes its own rumil Run
+   (its own row in `versus_texts` / `versus_judgments`), so trace +
+   fork analysis downstream can compare across variants directly.
+4. When all variants complete, hand the run_ids to the Phase 2 trace
+   investigators — one per variant — so the trace agents can compare
+   what each variant did differently.
+
+**When to skip variant fan-out**: if the user explicitly named a
+specific run to investigate, or if the conversation makes it clear
+the focus is one workflow configuration, run a single invocation and
+skip the fan-out. The fan-out is the default for "iterate on this
+workflow" intent.
+
+**When to add a variant**: if a fork experiment in Phase 3 reveals a
+promising direction (e.g. "tighter critic prompt produces less
+generic prose"), commit the new prompt file to the iterate skill's
+`prompts/` dir and add a variant entry to the relevant YAML. Future
+iterate runs will sweep against the new variant automatically.
+
+### Phase 1 — collect run ids for trace investigation
+
+**If Phase 0.5 just ran**: you already have the variant run ids from
+the fan-out. Take **all of them** to Phase 2 (one trace investigator
+per variant) — comparing across variants is the whole point. Skip
+the rest of this phase.
+
+**If `--reuse` was passed** (no fresh runs): use `/rumil-load-run` or
+the rumil UI to find recent runs in scope. Pick one run per
+(workflow × task_name) combination — typically:
+
+- `draft_and_edit` × `complete_essay`
+- `reflective_judge` × `<dimension>` (e.g. `general_quality`)
+
+Skip runs with 0 calls (dedup'd shells, not real work).
+
+### Phase 2 — spawn parallel trace investigators
+
+For each selected run, spawn one `Agent` (background) with
+`subagent_type=general-purpose` and a focused prompt. Template:
+
+> You're investigating a versus **{workflow}** **{task}** run to find
+> concrete improvement opportunities. Working dir: /Users/brian/code/rumil.
+> Active rumil workspace: `versus`.
+>
+> The run is `{run_id}` ({essay_id}, model {model}, budget {budget}).
+> It {has N calls / produced N words / etc.}:
+> {bulleted list of (call_id_short, call_type, status, $cost, params.phase)}
+>
+> Your job: identify CONCRETE improvement opportunities. NOT generic advice.
+> **Workflow restructuring is in scope** — the iteration-target workflows
+> (DraftAndEditWorkflow, ReflectiveJudgeWorkflow) are designed to be
+> restructured. Don't limit yourself to prompt edits.
+> Look for:
+>   - Wasted budget (calls producing thin output relative to cost)
+>   - Bad prompting (system or user messages that confuse the model,
+>     miscue scope, leak info, etc.)
+>   - Tool-use mistakes (wrong tool, looping, ignoring outputs)
+>   - Output that fails the downstream consumer (scout output the
+>     closer can't use; view items that paraphrase claims; etc.)
+>   - For completions: does the orch's research subgraph actually feed
+>     the closer's continuation, or does it ignore it?
+>   - For judging: does the orch research inform the verdict, or could
+>     a blind judge land the same call?
+>   - Blind-leak risks (model speculating about source/human/AI)
+>   - **Round-N relitigation** (workflow keeps re-deciding the same
+>     call across rounds; cost spent on whiplash rather than progress)
+>   - **Editor refusing critic-named content** on length-budget grounds
+>     when the content is load-bearing (signals missing structural
+>     commitment device)
+>   - **Drafter committing to a weak spine** that downstream stages
+>     can't recover from (signals missing planning stage)
+>
+> **Candidate structural changes to consider** (don't limit yourself
+> to these — name others if the trace points elsewhere):
+>   - **Planner stage** before the drafter, emitting a structured
+>     brief (spine + length target + mandatory anchors). Drafter and
+>     critics enforce against the brief.
+>   - **Arbiter / triage stage** between critics and editor, producing
+>     `{accept, reject, unresolved}` triage. Editor sees plan, not
+>     raw critiques. Closes round-N relitigation loops.
+>   - **Role-specialized critics** — different prompts per critic slot
+>     (structure / length / citation / voice), not the same prompt
+>     sampled N times.
+>   - **Multi-drafter ensemble** in round 0 with different framings,
+>     selector picks best. Bounds drafter-commit risk.
+>   - **Fact-fetch stage** that fires targeted scout-style calls when
+>     a critic flags missing concrete content.
+>   - **Reordering / removing existing stages** (e.g. drop critics
+>     entirely if the trace shows they're producing duplicate notes).
+>
+> Tools:
+>   - `PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id>`
+>     dumps trace events + verbatim LLM exchanges.
+>   - `PYTHONPATH=.claude/lib uv run python -m rumil_skills.show_question <qid>`
+>     for the resulting subgraph.
+>   - For d&e workflows: trace events on the single VERSUS_COMPLETE call
+>     hold drafter/critic/editor exchanges; see
+>     `src/rumil/orchestrators/draft_and_edit.py`.
+>   - The trace will be large; be selective — read prioritization +
+>     a couple of scouts + the closer; don't read every exchange.
+>
+> DB query gotchas (if you write any inline `db._execute` queries):
+>   - `calls.cost_usd` (NOT `calls.cost`); `calls.call_params` (NOT
+>     `calls.params`).
+>   - `versus_texts` has no `run_id` / `project_id` — it's
+>     workspace-global, dedup'd by `request_hash`.
+>   - Postgres `.like()` does not work on uuid columns; fetch a
+>     candidate set with eq filters and prefix-match in Python.
+>   - When reading `versus_judgments` to decide who won a pair, read
+>     `winner_source` (and `preference_label` for strength) — NOT
+>     `verdict` alone. `verdict='A'` means "the side shown as
+>     Continuation A won", which is `display_first` (deterministic but
+>     order-dependent), not `source_a` (alphabetical dedup-key order).
+>     Full breakdown in `versus/AGENT.md` "Judging contract" /
+>     "Canonical vs display order".
+>
+> Return:
+>   1. Top 3 concrete improvements ranked by expected impact, each
+>      with: (a) what's wrong, (b) where (cite call short-id +
+>      brief excerpt), (c) specific fix (prompt edit, knob change,
+>      code change), (d) **classification**: bug fix / prompt iteration
+>      / structural change.
+>   2. **Ranked structural-change proposals** (1-3) — for each:
+>      one-paragraph design sketch, expected impact, what it requires
+>      implementing in LoC terms, and a **paired fork hypothesis** (if
+>      a single-turn fork can validate the change cheaply, name it).
+>      If no fork-amenable hypothesis exists for a structural change,
+>      flag explicitly — that's a tell that the change is harder to
+>      de-risk and needs a Phase 0.5 variant fan-out instead.
+>   3. **Proposed fork experiments** (1-2, cheap, single-turn,
+>      side-effect-free). For each: which exchange to fork, what to
+>      override, what behavior shift to look for. Forks here are
+>      Phase-3 candidates — pre-pair them with the structural changes
+>      they validate.
+>   4. One observation about whether orch research actually fed
+>      downstream consumption.
+>   5. Cost outliers worth flagging.
+>   6. **Risks** (2-3 lines): what these changes might break or regress.
+>
+> Be terse. Under 700 words. Cite specific call ids and snippets.
+> Don't speculate beyond evidence.
+
+Run all trace agents in **a single message with multiple Agent
+tool_use blocks** so they execute concurrently. Set
+`run_in_background=true` so you can move on; you'll be notified when
+each completes.
+
+### Phase 3 — fork experiments
+
+When trace findings come back, identify 1-3 fork-amenable hypotheses
+PER RUN. Good fork hypotheses:
+
+- "If we removed the View block from the closer's user message, would
+  the verdict / continuation noticeably degrade?" (load-bearing test)
+- "If the system prompt forbade paraphrase, would the model produce
+  fewer denser items?" (prompt-tightening test)
+- "If max_tokens was bumped to 32k, would the truncated edit complete?"
+  (single-knob test)
+- "If the user message included the actual essay opening (vs only a
+  blurb), would the scout pick different cases?" (context test)
+- **"If we substituted a hand-written `<arbitration>` block for the
+  raw `<critiques>` block, would the editor stop relitigating?"**
+  (structural-change simulation — see below)
+
+Skip hypotheses that don't fit forks — anything multi-turn, anything
+that needs tool execution, anything that requires DB writes. Forks are
+single-turn, side-effect-free.
+
+**Forks can validate proposed structural changes by simulating the
+new stage's output.** When the trace investigator proposes a new
+pipeline stage (planner, arbiter, fact-fetch, etc.), the cheapest
+validation is to hand-write what that stage would emit and substitute
+it into the downstream consumer's input — then fire the existing
+exchange with the substituted input. Examples:
+- **Planner stage** → write a brief specifying mandatory paradigm
+  cases / spine / target lengths, inject it into the editor's user
+  message, see if the editor accommodates.
+- **Arbiter stage** → write an `{accept, reject, unresolved}` triage
+  by hand, replace the raw critiques block in the editor's user
+  message, see if the editor follows the plan.
+- **Role-specialized critic** → write each critic role's output by
+  hand, format them as separate critiques, see if the editor
+  responds differently than to N samples of the same prompt.
+
+This is a generally-useful pattern: an n=2 fork that costs ~$0.50
+can validate or refute a structural-change hypothesis before
+committing to ~100-300 LoC of workflow changes. Always do this
+before opening a Phase 0.5 fan-out for the structural variant.
+
+**Always include "what got cut to make room" as an explicit
+comparison check.** When a fork override adds new content (a
+mandatory case, an arbitration directive that forces specific
+edits), the most informative signal is what the model *chose to
+drop* to make room. That tells you whether the new content is doing
+load-bearing argumentative work or being shoehorned in as filler.
+Compare the fork's `<cuts>` block (or equivalent) to the recorded
+output's structure — preserved load-bearing sections is good
+signal; cut load-bearing sections to keep the new content is bad
+signal.
+
+Spawn one `Agent` per fork experiment, in parallel. Template:
+
+> Run a rumil-forks experiment and report findings. Working dir:
+> /Users/brian/code/rumil. Active workspace: `versus`.
+>
+> ## Hypothesis
+> {one paragraph: what's wrong, what to test, expected signal}
+>
+> ## Steps
+> 1. Dump the trace to find exchange_ids:
+>    ```
+>    PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id>
+>    ```
+>    Pick the {round-1 / closer / editor / etc.} exchange.
+> 2. `show` the exchange:
+>    ```
+>    uv run python scripts/exchange_forks.py show <exchange_id>
+>    ```
+> 3. Build overrides at `.scratch/forks/<descriptive_name>.json`
+>    overriding ONLY {system_prompt | user_messages | max_tokens | model | etc.}.
+>    {specific instructions for the override}
+> 4. Fire 2 samples:
+>    ```
+>    uv run python scripts/exchange_forks.py fire <exchange_id> \
+>        --overrides .scratch/forks/<name>.json --samples 2
+>    ```
+> 5. Report (under 350 words):
+>    - {what to compare}
+>    - Cost per sample.
+>    - Honest call: does the variation strictly improve, strictly
+>      degrade, or look mixed?
+>
+> ## Constraints
+> - NO `--prod`.
+> - DO NOT edit prompt files in `src/rumil/prompts/` or
+>   `src/rumil/orchestrators/`.
+> - DO NOT do extra unrelated forks.
+> - Cite fork ids + cost.
+
+Again: send all fork agent calls in **one message with multiple
+Agent tool_uses** for concurrent execution.
+
+### Phase 4 — consolidate
+
+When all fork agents return, write a single ranked-improvements report
+to the user. Structure:
+
+- **P0 — fix immediately** (low effort, high signal, fork-confirmed)
+- **P1 — worth doing** (clear value, may need broader sweep)
+- **P2 — known-needed but not yet solved** (fork showed the obvious
+  fix doesn't work; needs deeper change)
+- **P3 — observation only** (interesting pattern, no clear action yet)
+
+For each item:
+- One-line statement of the problem
+- Cite supporting trace finding + fork id
+- **Classification** — exactly one of:
+  - **Bug fix** (deterministic failure, n=1 enough, ship now)
+  - **Prompt iteration** (incremental improvement within current
+    architecture, needs Phase 0.5 sweep before flipping defaults)
+  - **Structural change** (new pipeline stage, removed/reordered
+    stages, fundamentally different flow; needs a new entry in
+    `variants/*.yaml` and Phase 0.5 fan-out to validate; if forks
+    simulated the new stage and showed positive signal, that's
+    permission-to-implement, not permission-to-promote)
+- Concrete fix — one of: prompt edit, knob change, structural change
+  (new variant entry in `variants/*.yaml`, validated by re-running
+  Phase 0.5), or input/closer-rendering change for the
+  TwoPhase-shared paths
+- Estimated impact ($ saved per run, quality delta, etc.)
+
+The classification matters because the user response is different per
+class: bug fixes get committed; prompt iterations earn a sweep before
+becoming defaults; structural changes earn an implementation pass +
+fan-out + sweep before becoming defaults. Mixing these in a single
+P0/P1/P2/P3 grade hides important effort and risk asymmetries.
+
+End with a one-line offer to draft any of the P0 items as PRs (for
+bug fixes) or to implement any of the structural changes that
+fork-validated (for structural items).
+
+## Where lessons land (the iteration target)
+
+Not all parts of the system are equally OK to edit while iterating.
+Be intentional about where wins from this loop get applied.
+
+- **Completions: `DraftAndEditWorkflow` is the iteration target.**
+  Lives at `src/rumil/orchestrators/draft_and_edit.py`. It's a
+  versus-specific workflow whose drafter / N critics / editor loop
+  does not touch the rest of rumil — change the prompts, the round
+  structure, the editor's max_tokens, add an arbiter exchange, etc.,
+  freely. Removing, reordering, or wholesale restructuring stages
+  is also fair game — this workflow exists to be restructured.
+  Structural changes can't be validated via Phase 3 forks (forks are
+  single-turn, side-effect-free); land them as a new entry in
+  `variants/draft_and_edit.yaml` and re-run Phase 0.5 to compare
+  against baseline. Lessons from the trace+fork loop on
+  **completion** runs should be applied here.
+- **Completions: `TwoPhaseOrchestrator` is shared with normal rumil
+  runs — leave its internals alone.** It runs research questions
+  outside versus too, so changing prioritization / scout / view logic
+  has spillover. Two ways to incorporate lessons without touching it:
+    1. Change the **inputs** the versus harness gives it — Question
+       framing, linked Source page, abstract, prefix surface
+       (`versus/src/versus/tasks/complete_essay.py` is the right
+       file).
+    2. Change how the **closer** consumes its output — strip
+       View from closer context, render claims differently, etc.
+       (`render_for_closer` and friends).
+- **Judging: `ReflectiveJudgeWorkflow` is the iteration target.**
+  Lives at `src/rumil/orchestrators/reflective_judge.py`. Three
+  sequential stages (read → reflect → verdict), each a plain
+  ``text_call`` with its own system prompt. Wholly independent of
+  two_phase — no shared prompts, helpers, or stage logic. Edit any
+  of the three stage prompts, add stages, or remove/reorder/restructure
+  the flow freely — this workflow exists to be restructured.
+  Structural changes can't be validated via Phase 3 forks (forks are
+  single-turn, side-effect-free); land them as a new entry in
+  `variants/reflective_judge.yaml` and re-run Phase 0.5 to compare
+  against baseline. Hold the model constant across stages by
+  default; per-role model swaps add a confound to trace+fork
+  comparisons. Lessons from the trace+fork loop on **judging** runs
+  land here.
+- **Judging: `TwoPhaseOrchestrator --variant orch` is shared with
+  normal rumil — leave its internals alone.** Same rule as the
+  completion side. Iterate on inputs (the pair Question's framing,
+  task body) and on closer consumption, not on the orch itself. If a
+  finding would change two_phase internals, escalate.
+
+If a finding really wants to change two_phase internals, escalate
+explicitly: name the change, why it's load-bearing, what it spills
+into for non-versus rumil callers, and let the user decide whether
+to break the boundary or build the new workflow first.
+
+## Don't overfit
+
+The trace+fork loop is high-leverage but the sample size is tiny
+(usually n=2 forks on a single pair / single run). Discipline:
+
+- A fork win on one pair is a **hypothesis**, not a verified
+  improvement. Before flipping a default or committing a prompt
+  edit, sweep the variation across 3-5 pairs / dimensions and
+  confirm the signal holds.
+- **Bug fixes are fine to commit immediately** (e.g. editor
+  max_tokens truncation cascading into empty drafts — that's a
+  deterministic failure, n=1 is enough). **Behavior changes on
+  prompts / structure** need broader confirmation.
+- Findings that emerge from the same run that produced them are
+  most at risk of overfitting. Try forks from a *different* run
+  in the same scope before committing the fix as default.
+- The consolidation report should explicitly tag each P0 / P1 item
+  with `(n=N forks, M pairs)` so the evidence base is visible.
+- It's OK to leave a P1 in "needs sweep" status — that's better
+  than committing a fix that overfits.
+
+## Caveats
+
+- **Generalization**: most fork experiments are n=2 on a single
+  pair/run. The signal is real but caveat in the report — sweeping
+  across more pairs/dimensions before flipping defaults is wise for
+  anything that changes core behavior.
+- **Blind-leak risk**: when forking judge exchanges, never let the
+  override reveal source/human/AI labels. Stripping orch context to
+  "blind-only" is fine; injecting source-id metadata is not.
+- **Not building human-vs-AI detection**: the goal is a judge that
+  recognizes higher quality on the rubric, not a judge that detects
+  which side is human vs AI. Concretely off-limits:
+    - Telling the judge "one of these may be AI-generated" or showing
+      it features expected of human prose vs AI prose (same blind-leak
+      family as above, but worth naming separately because it's a
+      tempting place to drift when the judge keeps preferring AI prose).
+    - Adding stages or bullets that ask the judge to flag "AI tells",
+      "manufactured analytical density", "performed concreteness" etc.
+      as a category — that's an AI-detector, not a quality judge.
+  Iterate on the read/reflect/verdict prompts to make the judge weigh
+  rubric criteria more discerningly, not to teach it side-detection.
+- **Don't change the rubric**: dimension prompts under
+  `src/rumil/prompts/versus-*.md` define what "general_quality" etc.
+  mean across the entire eval and across all judges. Editing them
+  retroactively reshapes the dataset's meaning and breaks comparison
+  with prior judgments. Iterate on the workflow stage prompts (read /
+  reflect / verdict) instead — those control HOW the judge applies
+  the rubric, not WHAT the rubric is.
+- **Don't promote prompts casually**: forks never edit
+  `src/rumil/prompts/*.md` or orchestrator prompts. If a fork wins,
+  surface it as a prompt-edit suggestion in the consolidation report;
+  don't auto-apply.
+- **Local-only**: every script should refuse `--prod` unless the user
+  explicitly opts in. Forks and generation alike.
+- **One agent per concern**: don't bundle "trace investigate AND fork"
+  into one agent prompt — the agent will short-circuit. Keep phases 2
+  and 3 cleanly separated.
+- **Don't expand orch internals** unless asked. The user may say
+  "we use two_phase for normal rumil runs, don't fiddle." Default
+  to fixing inputs to the orch and the closer's consumption of orch
+  output, not the orch's traversal logic itself.
+- **Background subprocesses need `nohup`, not just `&` + `disown`.**
+  When firing long-running completions from the Bash tool with
+  `run_in_background=true` or with a literal `&` suffix, the child
+  process can be SIGHUP'd when the Bash tool's parent shell exits
+  before the python subprocess fully detaches (uv install + python
+  spawn takes several seconds). Symptom: a new `runs` row + `calls`
+  row land in the DB (workflow setup ran), but `call.status` stays
+  "running" forever with zero `call_llm_exchanges` and zero trace
+  events (the workflow died before the first `await trace.record(...)`).
+  Mitigation: prefix long-running fires with `nohup`, OR sleep until
+  the first exchange lands in the DB before returning control to
+  the user. For the iterate skill specifically: when firing fan-out
+  variants, use `nohup uv run python ... &` so SIGHUP from the
+  parent shell exit doesn't kill mid-init.
+
+## Quick check (skill is working)
+
+A successful end-to-end run produces:
+- 2-3 trace agent reports, each citing 3+ specific call ids
+- 4-6 fork agent reports, each with fork ids + cost
+- A single consolidated punch list with P0/P1/P2/P3 sections
+- Total wall-clock: 5-15 min depending on fork count and trace size
+- Total $: $0.50-3 for forks alone (`--reuse`); $5-15 with fresh runs (default)
+
+If you're under 30 seconds wall-clock, you're not actually waiting
+for agents — you skipped Phase 2 or 3.

@@ -18,8 +18,14 @@ from rumil.tracing.trace_events import (
     AutocompactEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
+    CritiqueRoundEvent,
+    CritiqueStartedEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
+    DraftEvent,
+    DraftStartedEvent,
+    EditEvent,
+    EditStartedEvent,
     ErrorEvent,
     EvaluationCompleteEvent,
     ExperimentalScoringCompletedEvent,
@@ -34,9 +40,12 @@ from rumil.tracing.trace_events import (
     PageRef,
     PhaseSkippedEvent,
     QuestionDedupeEvent,
+    ReadStartedEvent,
     ReassessTriggeredEvent,
+    ReflectStartedEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
+    RoundStartedEvent,
     ScoringCompletedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
@@ -44,6 +53,7 @@ from rumil.tracing.trace_events import (
     UpdatePlanCreatedEvent,
     UpdateSubgraphComputedEvent,
     UpdateViewPhaseCompletedEvent,
+    VerdictStartedEvent,
     ViewCreatedEvent,
     WarningEvent,
     WebResearchCompleteEvent,
@@ -212,6 +222,46 @@ class ImpactFilterEventOut(ImpactFilterEvent, _TraceEnvelopeMixin):
     pass
 
 
+class RoundStartedEventOut(RoundStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class DraftStartedEventOut(DraftStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CritiqueStartedEventOut(CritiqueStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EditStartedEventOut(EditStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ReadStartedEventOut(ReadStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ReflectStartedEventOut(ReflectStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class VerdictStartedEventOut(VerdictStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class DraftEventOut(DraftEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CritiqueRoundEventOut(CritiqueRoundEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EditEventOut(EditEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -245,7 +295,17 @@ TraceEventOut = Annotated[
     | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut
     | QuestionDedupeEventOut
-    | ImpactFilterEventOut,
+    | ImpactFilterEventOut
+    | RoundStartedEventOut
+    | DraftStartedEventOut
+    | CritiqueStartedEventOut
+    | EditStartedEventOut
+    | ReadStartedEventOut
+    | ReflectStartedEventOut
+    | VerdictStartedEventOut
+    | DraftEventOut
+    | CritiqueRoundEventOut
+    | EditEventOut,
     Field(discriminator="event"),
 ]
 

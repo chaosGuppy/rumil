@@ -2639,6 +2639,36 @@
                       },
                       {
                         "$ref": "#/components/schemas/ImpactFilterEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/RoundStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DraftStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/CritiqueStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/EditStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ReadStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ReflectStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/VerdictStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/DraftEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/CritiqueRoundEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/EditEventOut"
                       }
                     ],
                     "discriminator": {
@@ -2676,7 +2706,17 @@
                         "global_phase_completed": "#/components/schemas/GlobalPhaseCompletedEventOut",
                         "update_view_phase_completed": "#/components/schemas/UpdateViewPhaseCompletedEventOut",
                         "question_dedupe": "#/components/schemas/QuestionDedupeEventOut",
-                        "impact_filter": "#/components/schemas/ImpactFilterEventOut"
+                        "impact_filter": "#/components/schemas/ImpactFilterEventOut",
+                        "round_started": "#/components/schemas/RoundStartedEventOut",
+                        "draft_started": "#/components/schemas/DraftStartedEventOut",
+                        "critique_started": "#/components/schemas/CritiqueStartedEventOut",
+                        "edit_started": "#/components/schemas/EditStartedEventOut",
+                        "read_started": "#/components/schemas/ReadStartedEventOut",
+                        "reflect_started": "#/components/schemas/ReflectStartedEventOut",
+                        "verdict_started": "#/components/schemas/VerdictStartedEventOut",
+                        "draft": "#/components/schemas/DraftEventOut",
+                        "critique_round": "#/components/schemas/CritiqueRoundEventOut",
+                        "edit": "#/components/schemas/EditEventOut"
                       }
                     }
                   },
@@ -4038,6 +4078,7 @@
           "red_team",
           "claude_code_direct",
           "versus_judge",
+          "versus_complete",
           "context_builder_eval"
         ],
         "title": "CallType"
@@ -4587,6 +4628,111 @@
         ],
         "title": "CriterionMatrix"
       },
+      "CritiqueItem": {
+        "properties": {
+          "critic_index": {
+            "type": "integer",
+            "title": "Critic Index",
+            "default": 0
+          },
+          "critique_text": {
+            "type": "string",
+            "title": "Critique Text",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "CritiqueItem",
+        "description": "One critic's free-form prose output for a given round."
+      },
+      "CritiqueRoundEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "critique_round",
+            "title": "Event",
+            "default": "critique_round"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "critiques": {
+            "items": {
+              "$ref": "#/components/schemas/CritiqueItem"
+            },
+            "type": "array",
+            "title": "Critiques",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "critiques"
+        ],
+        "title": "CritiqueRoundEventOut"
+      },
+      "CritiqueStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "critique_started",
+            "title": "Event",
+            "default": "critique_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "critic_index": {
+            "type": "integer",
+            "title": "Critic Index",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "critic_index",
+          "model"
+        ],
+        "title": "CritiqueStartedEventOut"
+      },
       "DedupeCandidateItem": {
         "properties": {
           "id": {
@@ -4776,6 +4922,190 @@
           "dispatches"
         ],
         "title": "DispatchesPlannedEventOut"
+      },
+      "DraftEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "draft",
+            "title": "Event",
+            "default": "draft"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "draft_text": {
+            "type": "string",
+            "title": "Draft Text",
+            "default": ""
+          },
+          "draft_chars": {
+            "type": "integer",
+            "title": "Draft Chars",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "draft_text",
+          "draft_chars",
+          "model"
+        ],
+        "title": "DraftEventOut"
+      },
+      "DraftStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "draft_started",
+            "title": "Event",
+            "default": "draft_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "model"
+        ],
+        "title": "DraftStartedEventOut"
+      },
+      "EditEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "edit",
+            "title": "Event",
+            "default": "edit"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "revised_text": {
+            "type": "string",
+            "title": "Revised Text",
+            "default": ""
+          },
+          "revised_chars": {
+            "type": "integer",
+            "title": "Revised Chars",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "revised_text",
+          "revised_chars",
+          "model"
+        ],
+        "title": "EditEventOut"
+      },
+      "EditStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "edit_started",
+            "title": "Event",
+            "default": "edit_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "current_chars": {
+            "type": "integer",
+            "title": "Current Chars",
+            "default": 0
+          },
+          "n_critiques": {
+            "type": "integer",
+            "title": "N Critiques",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "model",
+          "current_chars",
+          "n_critiques"
+        ],
+        "title": "EditStartedEventOut"
       },
       "ErrorEventOut": {
         "properties": {
@@ -5964,6 +6294,17 @@
               }
             ],
             "title": "Phash"
+          },
+          "wf_phash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wf Phash"
           }
         },
         "type": "object",
@@ -6477,7 +6818,7 @@
           "duration_s"
         ],
         "title": "JudgmentDetail",
-        "description": "Full judgment row for the side-panel inspector on /versus/results.\n\nIncludes the verbatim prompt + reasoning text + raw provider response,\nso a reader can audit what the judge actually saw and said. Most fields\nare optional because the shape varies across judge variants (OpenRouter\nvs anthropic vs rumil:text vs rumil:ws/orch)."
+        "description": "Full judgment row for the side-panel inspector on /versus/results.\n\nIncludes the verbatim prompt + reasoning text + raw provider response,\nso a reader can audit what the judge actually saw and said. Most fields\nare optional because the shape varies across judge variants (OpenRouter\nvs anthropic vs rumil:text vs rumil:orch; historical rumil:ws rows\nalso still appear)."
       },
       "JudgmentRow": {
         "properties": {
@@ -8367,6 +8708,37 @@
         ],
         "title": "QuestionStatsOut"
       },
+      "ReadStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "read_started",
+            "title": "Event",
+            "default": "read_started"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "model"
+        ],
+        "title": "ReadStartedEventOut"
+      },
       "RealtimeConfigOut": {
         "properties": {
           "url": {
@@ -8432,6 +8804,43 @@
           "child_call_id"
         ],
         "title": "ReassessTriggeredEventOut"
+      },
+      "ReflectStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "reflect_started",
+            "title": "Event",
+            "default": "reflect_started"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "prior_read_chars": {
+            "type": "integer",
+            "title": "Prior Read Chars",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "model",
+          "prior_read_chars"
+        ],
+        "title": "ReflectStartedEventOut"
       },
       "RenderQuestionSubgraphEventOut": {
         "properties": {
@@ -8687,6 +9096,37 @@
           "confidence"
         ],
         "title": "ReviewCompleteEventOut"
+      },
+      "RoundStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "round_started",
+            "title": "Event",
+            "default": "round_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round"
+        ],
+        "title": "RoundStartedEventOut"
       },
       "RowFilter": {
         "properties": {
@@ -9686,6 +10126,49 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VerdictStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "verdict_started",
+            "title": "Event",
+            "default": "verdict_started"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "prior_read_chars": {
+            "type": "integer",
+            "title": "Prior Read Chars",
+            "default": 0
+          },
+          "prior_reflect_chars": {
+            "type": "integer",
+            "title": "Prior Reflect Chars",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "model",
+          "prior_read_chars",
+          "prior_reflect_chars"
+        ],
+        "title": "VerdictStartedEventOut"
       },
       "ViewCreatedEventOut": {
         "properties": {

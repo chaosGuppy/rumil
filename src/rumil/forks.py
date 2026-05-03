@@ -24,6 +24,7 @@ from anthropic.types import (
     ToolUseBlock,
     WebSearchToolResultBlock,
 )
+from langfuse import observe
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, wait_exponential
 
@@ -44,6 +45,7 @@ from rumil.models import CallType
 from rumil.moves.registry import MOVES
 from rumil.pricing import compute_cost
 from rumil.settings import get_settings
+from rumil.tracing.langfuse_client import get_langfuse, phase_span
 
 log = logging.getLogger(__name__)
 
@@ -338,19 +340,68 @@ def _extract_response(response: anthropic.types.Message) -> tuple[str | None, li
 
 
 @_fork_retry
+@observe(as_type="generation", name="anthropic.messages.stream.fork")
 async def _do_call(
-    client: anthropic.AsyncAnthropic, kwargs: dict
+    client: anthropic.AsyncAnthropic, kwargs: dict, model: str
 ) -> tuple[anthropic.types.Message, int]:
     start = time.monotonic()
-    response = await client.messages.create(**kwargs)
+    async with client.messages.stream(**kwargs) as stream:
+        response = await stream.get_final_message()
     elapsed_ms = int((time.monotonic() - start) * 1000)
+    _enrich_fork_generation(model=model, kwargs=kwargs, response=response, elapsed_ms=elapsed_ms)
     return response, elapsed_ms
+
+
+def _enrich_fork_generation(
+    *,
+    model: str,
+    kwargs: dict,
+    response: anthropic.types.Message,
+    elapsed_ms: int,
+) -> None:
+    """Populate the active Langfuse generation span. No-op when disabled."""
+    lf = get_langfuse()
+    if lf is None:
+        return
+    try:
+        usage = response.usage
+        cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cost_usd = compute_cost(
+            model=model,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            cache_creation_input_tokens=cache_creation,
+            cache_read_input_tokens=cache_read,
+        )
+        output_text = "".join(b.text for b in response.content if isinstance(b, TextBlock))
+        params = {
+            k: kwargs.get(k)
+            for k in ("temperature", "top_p", "max_tokens", "thinking")
+            if kwargs.get(k) is not None
+        }
+        lf.update_current_generation(
+            model=model,
+            input=kwargs.get("messages"),
+            output=output_text or None,
+            model_parameters=params or None,
+            usage_details={
+                "input": usage.input_tokens,
+                "output": usage.output_tokens,
+                "cache_creation_input": cache_creation,
+                "cache_read_input": cache_read,
+            },
+            cost_details={"total": cost_usd} if cost_usd else None,
+            metadata={"stop_reason": response.stop_reason, "duration_ms": elapsed_ms},
+        )
+    except Exception as exc:
+        log.debug("Langfuse enrichment failed (fork): %s", exc)
 
 
 async def _fire_one_sample(client: anthropic.AsyncAnthropic, kwargs: dict, model: str) -> dict:
     """Fire a single sample. Returns a partial row dict (no id/index yet)."""
     try:
-        response, elapsed_ms = await _do_call(client, kwargs)
+        response, elapsed_ms = await _do_call(client, kwargs, model)
     except Exception as exc:
         log.error("Fork sample failed: %s", exc, exc_info=True)
         return {
@@ -418,10 +469,11 @@ async def fire_fork(
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
 
-    results = await asyncio.gather(
-        *(_fire_one_sample(client, kwargs, merged.model) for _ in range(n_samples)),
-        return_exceptions=False,
-    )
+    with phase_span(f"fork.{base_exchange_id[:8]}"):
+        results = await asyncio.gather(
+            *(_fire_one_sample(client, kwargs, merged.model) for _ in range(n_samples)),
+            return_exceptions=False,
+        )
 
     rows: list[ForkRow] = []
     for result in results:

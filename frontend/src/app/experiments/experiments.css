@@ -75,6 +75,10 @@
   background: #d4e2ef;
   color: #1f4a6b;
 }
+.experiment-kind-tag[data-kind="context_eval"] {
+  background: #e2dff0;
+  color: #3d3568;
+}
 @media (prefers-color-scheme: dark) {
   .experiment-kind-tag[data-kind="ab_eval"] {
     background: #2a2418;
@@ -83,6 +87,71 @@
   .experiment-kind-tag[data-kind="run_call"] {
     background: #18242a;
     color: #8ab8d4;
+  }
+  .experiment-kind-tag[data-kind="context_eval"] {
+    background: #1c1a2a;
+    color: #b3a8e0;
+  }
+}
+
+.experiment-ctx-builders {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  font-family: var(--font-geist-mono), monospace;
+  color: var(--color-muted);
+  flex-wrap: wrap;
+}
+
+.experiment-ctx-builder {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--foreground);
+}
+
+.experiment-ctx-builder-tag {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 0.05rem 0.3rem;
+  border-radius: 2px;
+  font-weight: 600;
+  color: var(--color-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.experiment-ctx-builder--gold .experiment-ctx-builder-tag {
+  color: #8a6724;
+  background: #f7efdc;
+  border-color: #e3d3a3;
+}
+
+.experiment-ctx-builder--candidate .experiment-ctx-builder-tag {
+  color: #2c5582;
+  background: #e0eaf5;
+  border-color: #a8c2dc;
+}
+
+.experiment-ctx-builder-vs {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  .experiment-ctx-builder--gold .experiment-ctx-builder-tag {
+    color: #d4b88a;
+    background: #2a2418;
+    border-color: #3a311e;
+  }
+  .experiment-ctx-builder--candidate .experiment-ctx-builder-tag {
+    color: #8ab8d4;
+    background: #18242a;
+    border-color: #1f3138;
   }
 }
 

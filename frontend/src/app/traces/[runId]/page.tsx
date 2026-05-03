@@ -98,6 +98,11 @@ export default async function TracePage({
         <div className="trace-title-row">
           <h1 className="trace-title">Execution Trace</h1>
           <span className="trace-run-id">{runId.slice(0, 8)}</span>
+          <span
+            className={`trace-status-badge trace-status-${trace.staged ? "staged" : "committed"}`}
+          >
+            {trace.staged ? "STAGED" : "COMMITTED"}
+          </span>
         </div>
       </header>
       {configEntries.length > 0 && (

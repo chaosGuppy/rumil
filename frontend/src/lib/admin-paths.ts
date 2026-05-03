@@ -1,4 +1,4 @@
-const ADMIN_PATH_PREFIXES = ["/traces", "/ab-evals", "/experiments", "/versus"];
+const ADMIN_PATH_PREFIXES = ["/traces", "/ab-evals", "/experiments", "/context-evals", "/versus"];
 
 const ADMIN_PATH_SUFFIXES = ["/stats"];
 

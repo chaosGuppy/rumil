@@ -23,16 +23,17 @@ from rumil.moves.base import _CITATION_RE, extract_and_link_citations
 
 @pytest.fixture(autouse=True)
 def _stub_strength_helper(mocker):
-    """Stub the Sonnet-backed dependency-strength helper with a deterministic result.
+    """Stub the Sonnet-backed dependency-classification helper with a deterministic result.
 
-    The helper is invoked by extract_and_link_citations when a CLAIM or
-    JUDGEMENT cites another claim/judgement. Unit tests should not hit the
-    network; return a fixed strength + reasoning for every cited page so
-    tests can assert on it.
+    The helper is invoked by extract_and_link_citations when a CLAIM,
+    JUDGEMENT, or VIEW_ITEM cites another claim/judgement. Unit tests
+    should not hit the network; default every citation to a 'derivation'
+    direction with a fixed strength + reasoning. Individual tests can
+    override `side_effect` to exercise the 'engagement' branch.
     """
 
     async def _stub(citing_page, cited_pages, call, db):
-        return {p.id: (3.5, "stub-reason") for p in cited_pages}
+        return {p.id: ("derivation", 3.5, "stub-reason") for p in cited_pages}
 
     return mocker.patch(
         "rumil.moves.base._assign_dependency_strengths",
@@ -203,6 +204,50 @@ async def test_judgement_citing_claim_creates_depends_on_link(
     assert deps[0].strength == 3.5
     assert deps[0].reasoning == "stub-reason"
     _stub_strength_helper.assert_called_once()
+
+
+async def test_engagement_direction_flips_depends_on_link(
+    tmp_db,
+    claim_page,
+    _stub_strength_helper,
+):
+    """When Sonnet classifies a citation as 'engagement', the DEPENDS_ON link
+    is flipped: from=cited, to=citing. Semantically, the cited page's
+    standing now depends on the new (citing) page that critiques or extends it.
+    """
+
+    async def _engagement_stub(citing_page, cited_pages, call, db):
+        return {p.id: ("engagement", 4.0, "critiques the cited claim") for p in cited_pages}
+
+    _stub_strength_helper.side_effect = _engagement_stub
+
+    citing_page = Page(
+        page_type=PageType.CLAIM,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=(
+            f"Contra [{claim_page.id[:8]}], the wavelength dependence is steeper than "
+            "the standard scattering treatment suggests."
+        ),
+        headline="Wavelength dependence steeper than standard treatment",
+    )
+    await tmp_db.save_page(citing_page)
+
+    linked = await extract_and_link_citations(citing_page.id, citing_page.content, tmp_db)
+
+    assert linked == {claim_page.id}
+    # Engagement direction means the link points cited -> citing, so
+    # outbound links from the citing page should NOT include this DEPENDS_ON.
+    links_from_citing = await tmp_db.get_links_from(citing_page.id)
+    assert not [l for l in links_from_citing if l.link_type == LinkType.DEPENDS_ON]
+    # Instead, the cited page should have an outbound DEPENDS_ON to the citing page.
+    links_from_cited = await tmp_db.get_links_from(claim_page.id)
+    deps = [l for l in links_from_cited if l.link_type == LinkType.DEPENDS_ON]
+    assert len(deps) == 1
+    assert deps[0].from_page_id == claim_page.id
+    assert deps[0].to_page_id == citing_page.id
+    assert deps[0].strength == 4.0
+    assert deps[0].reasoning == "critiques the cited claim"
 
 
 async def test_question_citing_claim_creates_related_link(

@@ -4,7 +4,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -378,32 +378,61 @@ async def create_page(
 _CITATION_RE = re.compile(r"\[([a-f0-9]{8})\]")
 
 _STRENGTH_SYSTEM_PROMPT = (
-    "You are assigning dependency strengths for a newly-created page that "
-    "cites other claims or judgements as direct dependencies. The page's "
-    "content is its argument or observation, citing each dependency inline "
-    "with a short ID in square brackets. The citing page may be a claim, a "
-    "judgement, or a view item — its type is shown in the user message.\n\n"
-    "For each cited page listed in the user message, return an entry with "
-    "its 8-character page_id, a strength 1-5, and a one-sentence reasoning "
-    "naming the role the cited page plays.\n"
-    "- 1 = weak; if the cited page were false, the citing page would mostly stand.\n"
-    "- 3 = material; the citing page would need reworking.\n"
-    "- 5 = fully load-bearing; the citing page would collapse.\n\n"
-    "Return one entry per cited page; do not invent IDs."
+    "You are classifying inline citations from a newly-created page (a claim, "
+    "judgement, or view item) that cites other claims or judgements. Each "
+    "citation falls into one of two directions:\n\n"
+    "- 'derivation': the cited page is a foundational input to the new page's "
+    "argument. The new page builds on top of it; if the cited page were false, "
+    "the new page's conclusions would be undermined.\n"
+    "- 'engagement': the new page is critiquing, extending, refining, or "
+    "bolstering the cited page. The new page provides new insight ABOUT the "
+    "cited page rather than resting on it. The cited page's current standing "
+    "in the workspace is what changes; the new page would still stand even if "
+    "the cited page were retracted.\n\n"
+    "Use the citation excerpts in the user message to judge which direction "
+    "fits each cited page. When in doubt — e.g. the new page neither clearly "
+    "rests on nor clearly modifies the cited page — prefer 'derivation'.\n\n"
+    "Also assign a strength 1-5 measuring how load-bearing the link is in the "
+    "chosen direction:\n"
+    "- For 'derivation', strength is how much the new page rests on the cited "
+    "page: 1 = the new page would mostly stand without it, 3 = the new page "
+    "would need reworking, 5 = the new page would collapse.\n"
+    "- For 'engagement', strength is how much the engagement changes the "
+    "cited page's standing: 1 = a passing remark, 3 = a substantive "
+    "qualification or supporting note, 5 = a demolishing critique or "
+    "decisive corroboration that materially shifts the cited page's "
+    "credence or scope.\n\n"
+    "Return one entry per cited page with its 8-character page_id, the "
+    "direction, the strength, and a one-sentence reasoning naming the role "
+    "the cited page plays. Do not invent IDs."
 )
 
 
 class _CitedPageStrength(BaseModel):
     page_id: str = Field(description="8-character short ID of the cited page")
+    direction: Literal["derivation", "engagement"] = Field(
+        description=(
+            "'derivation' if the new page rests on the cited page (cited is a "
+            "foundational input); 'engagement' if the new page critiques, "
+            "extends, refines, or bolsters the cited page (new page provides "
+            "insight about cited rather than building on it)."
+        ),
+    )
     strength: float = Field(
         description=(
-            "1-5: how load-bearing this dependency is for the citing page "
-            "(1 = mildly depends on, 5 = would collapse without it)"
+            "1-5 load-bearing scale for the chosen direction. For 'derivation', "
+            "how much the new page rests on the cited page (5 = would collapse "
+            "without it). For 'engagement', how much the engagement changes "
+            "the cited page's standing (5 = demolishing critique or decisive "
+            "corroboration)."
         ),
     )
     reasoning: str = Field(
         "",
-        description="One sentence: what role the cited page plays in the derivation",
+        description=(
+            "One sentence: the role the cited page plays — either how the new "
+            "page derives from it, or how the new page modifies it."
+        ),
     )
 
 
@@ -422,22 +451,30 @@ def _citation_excerpts(content: str, short_id: str, max_lines: int = 3) -> Seque
     return pattern.findall(content)[:max_lines]
 
 
+CitationDirection = Literal["derivation", "engagement"]
+
+
 async def _assign_dependency_strengths(
     citing_page: Page,
     cited_pages: Sequence[Page],
     call: Call | None,
     db: DB,
-) -> dict[str, tuple[float, str]]:
-    """Ask Sonnet to assign dependency strengths for each cited page.
+) -> dict[str, tuple[CitationDirection, float, str]]:
+    """Ask Sonnet to classify direction and assign strength for each cited page.
 
-    Returns a mapping ``{cited_page_id: (strength, reasoning)}``. On LLM
-    failure or if a cited page is missing from the response, that page's
-    entry defaults to ``(2.5, "")``.
+    Returns a mapping ``{cited_page_id: (direction, strength, reasoning)}``.
+    Direction is ``'derivation'`` (citing rests on cited) or ``'engagement'``
+    (citing critiques/extends/bolsters cited). On LLM failure or if a cited
+    page is missing from the response, that page's entry defaults to
+    ``('derivation', 2.5, "")`` — preserves the prior behavior of treating
+    every citation as a forward dependency.
     """
     if not cited_pages:
         return {}
 
-    defaults: dict[str, tuple[float, str]] = {p.id: (2.5, "") for p in cited_pages}
+    defaults: dict[str, tuple[CitationDirection, float, str]] = {
+        p.id: ("derivation", 2.5, "") for p in cited_pages
+    }
 
     entries: list[str] = []
     for p in cited_pages:
@@ -496,7 +533,7 @@ async def _assign_dependency_strengths(
 
     short_to_full = {p.id[:8]: p.id for p in cited_pages}
     full_set = {p.id for p in cited_pages}
-    assigned: dict[str, tuple[float, str]] = dict(defaults)
+    assigned: dict[str, tuple[CitationDirection, float, str]] = dict(defaults)
     for entry in result.parsed.strengths:
         pid = entry.page_id
         full = short_to_full.get(pid) if len(pid) == 8 else (pid if pid in full_set else None)
@@ -504,7 +541,7 @@ async def _assign_dependency_strengths(
             log.debug("Strength entry for unknown page_id %s ignored", pid)
             continue
         strength = max(1.0, min(5.0, float(entry.strength)))
-        assigned[full] = (strength, entry.reasoning)
+        assigned[full] = (entry.direction, strength, entry.reasoning)
     return assigned
 
 
@@ -523,9 +560,12 @@ async def extract_and_link_citations(
     cited pages' types:
 
     - Cited SOURCE → CITES (from=citing, to=cited)
-    - Citing CLAIM/JUDGEMENT/VIEW_ITEM cites a CLAIM/JUDGEMENT → DEPENDS_ON
-      (from=citing, to=cited): the citing page's conclusions rest on the
-      cited page being true. The set of citing types that produce
+    - Citing CLAIM/JUDGEMENT/VIEW_ITEM cites a CLAIM/JUDGEMENT → DEPENDS_ON.
+      Sonnet classifies each citation in the same call where it scores
+      strength: 'derivation' (citing rests on cited; from=citing, to=cited)
+      or 'engagement' (citing critiques/extends/bolsters cited, so the
+      cited page's standing now depends on citing; direction is flipped to
+      from=cited, to=citing). The set of citing types that produce
       DEPENDS_ON is ``_DEPENDS_ON_CITING_TYPES``.
     - Citing QUESTION cites a CLAIM/JUDGEMENT → RELATED
       (from=cited, to=citing): inline citations from a question's body are
@@ -588,7 +628,7 @@ async def extract_and_link_citations(
 
         pending.append((from_id, to_id, link_type, cited_page))
 
-    strengths: dict[str, tuple[float, str]] = {}
+    strengths: dict[str, tuple[CitationDirection, float, str]] = {}
     if citing_page is not None:
         depends_on_targets = [cited for (_, _, lt, cited) in pending if lt == LinkType.DEPENDS_ON]
         if depends_on_targets:
@@ -602,7 +642,9 @@ async def extract_and_link_citations(
     linked: set[str] = set()
     for from_id, to_id, link_type, cited_page in pending:
         if link_type == LinkType.DEPENDS_ON and cited_page.id in strengths:
-            strength, reasoning = strengths[cited_page.id]
+            direction, strength, reasoning = strengths[cited_page.id]
+            if direction == "engagement":
+                from_id, to_id = to_id, from_id
             link = PageLink(
                 from_page_id=from_id,
                 to_page_id=to_id,

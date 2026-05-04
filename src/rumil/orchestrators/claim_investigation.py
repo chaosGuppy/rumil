@@ -121,8 +121,12 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()
-        remaining = await self.db.budget_remaining()
-        effective = self._effective_budget(remaining)
+        if self._pool_pre_registered:
+            pool = await self.db.qbp_get(claim_id)
+            effective = max(pool.remaining, 0)
+        else:
+            remaining = await self.db.budget_remaining()
+            effective = self._effective_budget(remaining)
         if effective < MIN_TWOPHASE_BUDGET:
             raise ValueError(
                 "ClaimInvestigationOrchestrator requires a budget of at least "

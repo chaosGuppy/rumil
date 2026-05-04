@@ -35,6 +35,7 @@ from rumil.tracing.trace_events import (
     PhaseSkippedEvent,
     QuestionDedupeEvent,
     ReassessTriggeredEvent,
+    RecurseFailedEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
@@ -101,6 +102,10 @@ class WarningEventOut(WarningEvent, _TraceEnvelopeMixin):
 
 
 class ErrorEventOut(ErrorEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class RecurseFailedEventOut(RecurseFailedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -219,6 +224,7 @@ TraceEventOut = Annotated[
     | LLMExchangeEventOut
     | WarningEventOut
     | ErrorEventOut
+    | RecurseFailedEventOut
     | ScoringCompletedEventOut
     | ExperimentalScoringCompletedEventOut
     | DispatchesPlannedEventOut

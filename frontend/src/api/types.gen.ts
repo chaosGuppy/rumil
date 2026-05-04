@@ -3500,6 +3500,46 @@ export type RunListItemOut = {
 };
 
 /**
+ * RunPrioExperimentOut
+ */
+export type RunPrioExperimentOut = {
+    /**
+     * Kind
+     */
+    kind?: 'run_prio';
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Question Id
+     */
+    question_id?: string;
+    /**
+     * Question Headline
+     */
+    question_headline?: string;
+    /**
+     * Config Summary
+     */
+    config_summary?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Staged
+     */
+    staged?: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
  * RunSummaryOut
  */
 export type RunSummaryOut = {
@@ -5727,6 +5767,8 @@ export type ListExperimentsApiExperimentsGetResponses = {
     } & AbEvalExperimentOut) | ({
         kind: 'run_call';
     } & RunCallExperimentOut) | ({
+        kind: 'run_prio';
+    } & RunPrioExperimentOut) | ({
         kind: 'context_eval';
     } & ContextEvalExperimentOut)>;
 };

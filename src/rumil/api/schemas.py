@@ -426,6 +426,17 @@ class RunCallExperimentOut(BaseModel):
     created_at: str
 
 
+class RunPrioExperimentOut(BaseModel):
+    kind: Literal["run_prio"] = "run_prio"
+    run_id: str
+    name: str
+    question_id: str = ""
+    question_headline: str = ""
+    config_summary: dict = {}
+    staged: bool = False
+    created_at: str
+
+
 class ContextEvalExperimentOut(BaseModel):
     """One context-builder comparison (one gold arm paired with a candidate).
 
@@ -445,7 +456,7 @@ class ContextEvalExperimentOut(BaseModel):
 
 
 ExperimentListItemOut = Annotated[
-    AbEvalExperimentOut | RunCallExperimentOut | ContextEvalExperimentOut,
+    AbEvalExperimentOut | RunCallExperimentOut | RunPrioExperimentOut | ContextEvalExperimentOut,
     Field(discriminator="kind"),
 ]
 

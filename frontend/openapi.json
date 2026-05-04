@@ -2750,6 +2750,9 @@
                         "$ref": "#/components/schemas/RunCallExperimentOut"
                       },
                       {
+                        "$ref": "#/components/schemas/RunPrioExperimentOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/ContextEvalExperimentOut"
                       }
                     ],
@@ -2758,6 +2761,7 @@
                       "mapping": {
                         "ab_eval": "#/components/schemas/AbEvalExperimentOut",
                         "run_call": "#/components/schemas/RunCallExperimentOut",
+                        "run_prio": "#/components/schemas/RunPrioExperimentOut",
                         "context_eval": "#/components/schemas/ContextEvalExperimentOut"
                       }
                     }
@@ -9011,6 +9015,56 @@
           "created_at"
         ],
         "title": "RunListItemOut"
+      },
+      "RunPrioExperimentOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "run_prio",
+            "title": "Kind",
+            "default": "run_prio"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id",
+            "default": ""
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "config_summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config Summary",
+            "default": {}
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "name",
+          "created_at"
+        ],
+        "title": "RunPrioExperimentOut"
       },
       "RunSummaryOut": {
         "properties": {

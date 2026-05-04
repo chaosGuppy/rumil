@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 type Experiment = ListExperimentsApiExperimentsGetResponse[number];
 type AbEvalExperiment = Extract<Experiment, { kind: "ab_eval" }>;
 type RunCallExperiment = Extract<Experiment, { kind: "run_call" }>;
+type RunPrioExperiment = Extract<Experiment, { kind: "run_prio" }>;
 type ContextEvalExperiment = Extract<Experiment, { kind: "context_eval" }>;
 
 async function getExperiments(): Promise<Experiment[]> {
@@ -156,6 +157,44 @@ function RunCallRow({ ev, delay }: { ev: RunCallExperiment; delay: number }) {
   );
 }
 
+function RunPrioRow({ ev, delay }: { ev: RunPrioExperiment; delay: number }) {
+  const title = ev.question_headline || ev.name || ev.run_id.slice(0, 8);
+  const subtitle = ev.question_headline && ev.name && ev.name !== ev.question_headline
+    ? ev.name
+    : null;
+  const cfg = ev.config_summary ?? {};
+  const cfgEntries = Object.entries(cfg).filter(([, v]) => v !== undefined && v !== null && v !== "");
+  return (
+    <Link
+      href={`/traces/${ev.run_id}`}
+      className="experiment-row"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <span className="experiment-kind-tag" data-kind="run_prio">PRIO</span>
+      <div className="experiment-row-main">
+        <div className="experiment-question">
+          {title}
+          {ev.staged && <span className="experiment-staged-chip">staged</span>}
+        </div>
+        {subtitle && <div className="experiment-preview">{subtitle}</div>}
+        {cfgEntries.length > 0 && (
+          <div className="experiment-config">
+            {cfgEntries.map(([k, v]) => (
+              <span key={k} className="experiment-config-item">
+                <span className="experiment-config-key">{k}</span>
+                <span>{String(v)}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="experiment-row-meta">
+        <span className="experiment-date">{formatDate(ev.created_at)}</span>
+      </div>
+    </Link>
+  );
+}
+
 export default async function ExperimentsPage() {
   const experiments = await getExperiments();
 
@@ -181,6 +220,9 @@ export default async function ExperimentsPage() {
               const delay = Math.min(i * 30, 300);
               if (ev.kind === "run_call") {
                 return <RunCallRow key={`run-${ev.run_id}`} ev={ev} delay={delay} />;
+              }
+              if (ev.kind === "run_prio") {
+                return <RunPrioRow key={`prio-${ev.run_id}`} ev={ev} delay={delay} />;
               }
               if (ev.kind === "context_eval") {
                 return (

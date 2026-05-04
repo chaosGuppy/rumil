@@ -47,6 +47,7 @@ from rumil.api.schemas import (
     RealtimeConfigOut,
     RunCallExperimentOut,
     RunListItemOut,
+    RunPrioExperimentOut,
     RunSummaryOut,
     RunTraceTreeOut,
     TraceEventOut,
@@ -557,6 +558,7 @@ async def list_experiments(
 ):
     ab_rows = await db.list_ab_eval_reports()
     run_rows = await db.list_run_call_experiments()
+    prio_rows = await db.list_run_prio_experiments()
     ctx_eval_rows = await db.list_context_eval_experiments()
 
     question_ids: set[str] = set()
@@ -568,6 +570,10 @@ async def list_experiments(
         qid = row.get("question_id")
         if qid:
             question_ids.add(qid)
+    for row in prio_rows:
+        qid = row.get("question_id")
+        if qid:
+            question_ids.add(qid)
     for row in ctx_eval_rows:
         qid = row.get("question_id")
         if qid:
@@ -576,7 +582,9 @@ async def list_experiments(
     if question_ids:
         pages_by_id = await db.get_pages_by_ids(list(question_ids))
 
-    items: list[AbEvalExperimentOut | RunCallExperimentOut | ContextEvalExperimentOut] = []
+    items: list[
+        AbEvalExperimentOut | RunCallExperimentOut | RunPrioExperimentOut | ContextEvalExperimentOut
+    ] = []
     for row in ab_rows:
         qid = row.get("question_id_a") or row.get("question_id_b") or ""
         q_page = pages_by_id.get(qid)
@@ -606,6 +614,20 @@ async def list_experiments(
         q_page = pages_by_id.get(qid)
         items.append(
             RunCallExperimentOut(
+                run_id=row["id"],
+                name=row.get("name") or "",
+                question_id=qid,
+                question_headline=q_page.headline if q_page else "",
+                config_summary=_config_summary(row.get("config")),
+                staged=bool(row.get("staged")),
+                created_at=row.get("created_at", ""),
+            )
+        )
+    for row in prio_rows:
+        qid = row.get("question_id") or ""
+        q_page = pages_by_id.get(qid)
+        items.append(
+            RunPrioExperimentOut(
                 run_id=row["id"],
                 name=row.get("name") or "",
                 question_id=qid,

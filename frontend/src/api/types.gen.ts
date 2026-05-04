@@ -207,6 +207,74 @@ export type AgentStartedEventOut = {
 };
 
 /**
+ * ArbitrationEventOut
+ */
+export type ArbitrationEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'arbitration';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Arbitration Text
+     */
+    arbitration_text: string;
+    /**
+     * Arbitration Chars
+     */
+    arbitration_chars: number;
+    /**
+     * Prior Arbitrations Seen
+     */
+    prior_arbitrations_seen: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * ArbitrationStartedEventOut
+ */
+export type ArbitrationStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'arbitration_started';
+    /**
+     * Round
+     */
+    round: number;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * N Critiques
+     */
+    n_critiques: number;
+};
+
+/**
  * AuthUserOut
  */
 export type AuthUserOut = {
@@ -306,6 +374,66 @@ export type BaseExchangeOut = {
     original_config: {
         [key: string]: unknown;
     } | null;
+};
+
+/**
+ * BriefAuditEventOut
+ */
+export type BriefAuditEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'brief_audit';
+    /**
+     * After Round
+     */
+    after_round: number;
+    /**
+     * Audit Brief Text
+     */
+    audit_brief_text: string;
+    /**
+     * Audit Brief Chars
+     */
+    audit_brief_chars: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * BriefAuditStartedEventOut
+ */
+export type BriefAuditStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'brief_audit_started';
+    /**
+     * After Round
+     */
+    after_round: number;
+    /**
+     * Model
+     */
+    model: string;
 };
 
 /**
@@ -3040,6 +3168,58 @@ export type PhaseSkippedEventOut = {
 };
 
 /**
+ * PlannerEventOut
+ */
+export type PlannerEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'planner';
+    /**
+     * Brief Text
+     */
+    brief_text: string;
+    /**
+     * Brief Chars
+     */
+    brief_chars: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * PlannerStartedEventOut
+ */
+export type PlannerStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'planner_started';
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
  * PrefixVariantInfo
  *
  * One prefix variant available in the active config.
@@ -4058,6 +4238,58 @@ export type ScoringCompletedEventOut = {
      * Dispatch Guidance
      */
     dispatch_guidance: string;
+};
+
+/**
+ * ScoutPassEventOut
+ */
+export type ScoutPassEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'scout_pass';
+    /**
+     * Findings Text
+     */
+    findings_text: string;
+    /**
+     * Findings Chars
+     */
+    findings_chars: number;
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * ScoutPassStartedEventOut
+ */
+export type ScoutPassStartedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'scout_pass_started';
+    /**
+     * Model
+     */
+    model: string;
 };
 
 /**
@@ -6242,7 +6474,23 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'critique_round';
     } & CritiqueRoundEventOut) | ({
         event: 'edit';
-    } & EditEventOut)>;
+    } & EditEventOut) | ({
+        event: 'planner_started';
+    } & PlannerStartedEventOut) | ({
+        event: 'planner';
+    } & PlannerEventOut) | ({
+        event: 'arbitration_started';
+    } & ArbitrationStartedEventOut) | ({
+        event: 'arbitration';
+    } & ArbitrationEventOut) | ({
+        event: 'brief_audit_started';
+    } & BriefAuditStartedEventOut) | ({
+        event: 'brief_audit';
+    } & BriefAuditEventOut) | ({
+        event: 'scout_pass_started';
+    } & ScoutPassStartedEventOut) | ({
+        event: 'scout_pass';
+    } & ScoutPassEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

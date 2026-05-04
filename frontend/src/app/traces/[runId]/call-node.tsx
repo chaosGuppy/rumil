@@ -1624,6 +1624,158 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
           )}
         </div>
       )}
+
+      {(event.event === "planner_started" ||
+        event.event === "scout_pass_started") && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            {event.model && (
+              <>
+                <span className="trace-kv-key">model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "planner" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            {event.model && (
+              <>
+                <span className="trace-kv-key">model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.brief_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.brief_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.brief_text ? (
+            <CollapsiblePre label="Brief" content={event.brief_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {event.event === "arbitration_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>critiques</span>
+            <span className="trace-kv-value">{event.n_critiques}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "arbitration" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.arbitration_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.arbitration_chars.toLocaleString()}</span>
+              </>
+            )}
+            {event.prior_arbitrations_seen > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>prior</span>
+                <span className="trace-kv-value">{event.prior_arbitrations_seen}</span>
+              </>
+            )}
+          </div>
+          {event.arbitration_text ? (
+            <CollapsiblePre label="Arbitration" content={event.arbitration_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {event.event === "brief_audit_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">after round</span>
+            <span className="trace-kv-value">{event.after_round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "brief_audit" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">after round</span>
+            <span className="trace-kv-value">{event.after_round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.audit_brief_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.audit_brief_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.audit_brief_text ? (
+            <CollapsiblePre label="Audit brief" content={event.audit_brief_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {event.event === "scout_pass" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            {event.model && (
+              <>
+                <span className="trace-kv-key">model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.findings_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.findings_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.findings_text ? (
+            <CollapsiblePre label="Findings" content={event.findings_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
     </div>
   );
 });

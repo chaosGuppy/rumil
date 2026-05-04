@@ -15,7 +15,11 @@ from rumil.models import Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
+    ArbitrationEvent,
+    ArbitrationStartedEvent,
     AutocompactEvent,
+    BriefAuditEvent,
+    BriefAuditStartedEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
     CritiqueRoundEvent,
@@ -39,6 +43,8 @@ from rumil.tracing.trace_events import (
     MovesExecutedEvent,
     PageRef,
     PhaseSkippedEvent,
+    PlannerEvent,
+    PlannerStartedEvent,
     QuestionDedupeEvent,
     ReadStartedEvent,
     ReassessTriggeredEvent,
@@ -48,6 +54,8 @@ from rumil.tracing.trace_events import (
     ReviewCompleteEvent,
     RoundStartedEvent,
     ScoringCompletedEvent,
+    ScoutPassEvent,
+    ScoutPassStartedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
     ToolCallEvent,
@@ -267,6 +275,38 @@ class EditEventOut(EditEvent, _TraceEnvelopeMixin):
     pass
 
 
+class PlannerStartedEventOut(PlannerStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class PlannerEventOut(PlannerEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ArbitrationStartedEventOut(ArbitrationStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ArbitrationEventOut(ArbitrationEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class BriefAuditStartedEventOut(BriefAuditStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class BriefAuditEventOut(BriefAuditEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ScoutPassStartedEventOut(ScoutPassStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ScoutPassEventOut(ScoutPassEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -311,7 +351,15 @@ TraceEventOut = Annotated[
     | VerdictStartedEventOut
     | DraftEventOut
     | CritiqueRoundEventOut
-    | EditEventOut,
+    | EditEventOut
+    | PlannerStartedEventOut
+    | PlannerEventOut
+    | ArbitrationStartedEventOut
+    | ArbitrationEventOut
+    | BriefAuditStartedEventOut
+    | BriefAuditEventOut
+    | ScoutPassStartedEventOut
+    | ScoutPassEventOut,
     Field(discriminator="event"),
 ]
 

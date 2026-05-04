@@ -2732,6 +2732,30 @@
                       },
                       {
                         "$ref": "#/components/schemas/EditEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/PlannerStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/PlannerEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ArbitrationStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ArbitrationEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/BriefAuditStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/BriefAuditEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ScoutPassStartedEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ScoutPassEventOut"
                       }
                     ],
                     "discriminator": {
@@ -2780,7 +2804,15 @@
                         "verdict_started": "#/components/schemas/VerdictStartedEventOut",
                         "draft": "#/components/schemas/DraftEventOut",
                         "critique_round": "#/components/schemas/CritiqueRoundEventOut",
-                        "edit": "#/components/schemas/EditEventOut"
+                        "edit": "#/components/schemas/EditEventOut",
+                        "planner_started": "#/components/schemas/PlannerStartedEventOut",
+                        "planner": "#/components/schemas/PlannerEventOut",
+                        "arbitration_started": "#/components/schemas/ArbitrationStartedEventOut",
+                        "arbitration": "#/components/schemas/ArbitrationEventOut",
+                        "brief_audit_started": "#/components/schemas/BriefAuditStartedEventOut",
+                        "brief_audit": "#/components/schemas/BriefAuditEventOut",
+                        "scout_pass_started": "#/components/schemas/ScoutPassStartedEventOut",
+                        "scout_pass": "#/components/schemas/ScoutPassEventOut"
                       }
                     }
                   },
@@ -3628,6 +3660,104 @@
         ],
         "title": "AgentStartedEventOut"
       },
+      "ArbitrationEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "arbitration",
+            "title": "Event",
+            "default": "arbitration"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "arbitration_text": {
+            "type": "string",
+            "title": "Arbitration Text",
+            "default": ""
+          },
+          "arbitration_chars": {
+            "type": "integer",
+            "title": "Arbitration Chars",
+            "default": 0
+          },
+          "prior_arbitrations_seen": {
+            "type": "integer",
+            "title": "Prior Arbitrations Seen",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "arbitration_text",
+          "arbitration_chars",
+          "prior_arbitrations_seen",
+          "model"
+        ],
+        "title": "ArbitrationEventOut"
+      },
+      "ArbitrationStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "arbitration_started",
+            "title": "Event",
+            "default": "arbitration_started"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "n_critiques": {
+            "type": "integer",
+            "title": "N Critiques",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round",
+          "model",
+          "n_critiques"
+        ],
+        "title": "ArbitrationStartedEventOut"
+      },
       "AuthUserOut": {
         "properties": {
           "user_id": {
@@ -3779,6 +3909,92 @@
         ],
         "title": "BaseExchangeOut",
         "description": "Reconstructed base exchange \u2014 what the fork editor pre-populates."
+      },
+      "BriefAuditEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "brief_audit",
+            "title": "Event",
+            "default": "brief_audit"
+          },
+          "after_round": {
+            "type": "integer",
+            "title": "After Round",
+            "default": 0
+          },
+          "audit_brief_text": {
+            "type": "string",
+            "title": "Audit Brief Text",
+            "default": ""
+          },
+          "audit_brief_chars": {
+            "type": "integer",
+            "title": "Audit Brief Chars",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "after_round",
+          "audit_brief_text",
+          "audit_brief_chars",
+          "model"
+        ],
+        "title": "BriefAuditEventOut"
+      },
+      "BriefAuditStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "brief_audit_started",
+            "title": "Event",
+            "default": "brief_audit_started"
+          },
+          "after_round": {
+            "type": "integer",
+            "title": "After Round",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "after_round",
+          "model"
+        ],
+        "title": "BriefAuditStartedEventOut"
       },
       "Call": {
         "properties": {
@@ -8433,6 +8649,80 @@
         ],
         "title": "PhaseSkippedEventOut"
       },
+      "PlannerEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "planner",
+            "title": "Event",
+            "default": "planner"
+          },
+          "brief_text": {
+            "type": "string",
+            "title": "Brief Text",
+            "default": ""
+          },
+          "brief_chars": {
+            "type": "integer",
+            "title": "Brief Chars",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "brief_text",
+          "brief_chars",
+          "model"
+        ],
+        "title": "PlannerEventOut"
+      },
+      "PlannerStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "planner_started",
+            "title": "Event",
+            "default": "planner_started"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "model"
+        ],
+        "title": "PlannerStartedEventOut"
+      },
       "PrefixVariantInfo": {
         "properties": {
           "id": {
@@ -10009,6 +10299,80 @@
           "dispatch_guidance"
         ],
         "title": "ScoringCompletedEventOut"
+      },
+      "ScoutPassEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "scout_pass",
+            "title": "Event",
+            "default": "scout_pass"
+          },
+          "findings_text": {
+            "type": "string",
+            "title": "Findings Text",
+            "default": ""
+          },
+          "findings_chars": {
+            "type": "integer",
+            "title": "Findings Chars",
+            "default": 0
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "findings_text",
+          "findings_chars",
+          "model"
+        ],
+        "title": "ScoutPassEventOut"
+      },
+      "ScoutPassStartedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "scout_pass_started",
+            "title": "Event",
+            "default": "scout_pass_started"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "model"
+        ],
+        "title": "ScoutPassStartedEventOut"
       },
       "SmallGridRow": {
         "properties": {

@@ -632,6 +632,11 @@ class DraftAndEditWorkflow:
             raise ValueError(f"n_critics must be >= 1, got {n_critics}")
         if max_rounds is not None and max_rounds < 1:
             raise ValueError(f"max_rounds must be >= 1 or None, got {max_rounds}")
+        if with_brief_audit and not with_planner:
+            raise ValueError(
+                "with_brief_audit=True requires with_planner=True; the audit "
+                "consumes the planner's brief and is a silent no-op without it"
+            )
         self.budget = budget
         self.n_critics = n_critics
         self.max_rounds = max_rounds

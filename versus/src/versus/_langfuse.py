@@ -16,6 +16,7 @@ import contextlib
 import functools
 import logging
 import os
+import sys
 from collections.abc import Callable, Iterator
 from typing import Any, TypeVar, cast
 
@@ -118,17 +119,29 @@ def update_generation(**kwargs: Any) -> None:
 
 @contextlib.contextmanager
 def phase_span(name: str) -> Iterator[None]:
-    """Open a Langfuse span for the duration of a workflow phase. No-op when disabled."""
+    """Open a Langfuse span for the duration of a workflow phase. No-op when disabled.
+
+    Telemetry must NEVER swallow application errors — SDK enter/exit failures
+    are caught here, but exceptions raised inside the wrapped body propagate
+    normally. Mirrors the pattern in ``rumil.tracing.langfuse_client.phase_span``.
+    """
     if not _enabled():
         yield
         return
+    span_cm = None
     try:
         client = _get_client()
-        if client is None:
-            yield
-            return
-        with client.start_as_current_observation(name=name, as_type="span"):
-            yield
+        if client is not None:
+            span_cm = client.start_as_current_observation(name=name, as_type="span")
+            span_cm.__enter__()
     except Exception as exc:
-        log.debug("Langfuse phase_span failed: %s", exc)
+        log.debug("Langfuse phase_span enter suppressed: %s", exc)
+        span_cm = None
+    try:
         yield
+    finally:
+        if span_cm is not None:
+            try:
+                span_cm.__exit__(*sys.exc_info())
+            except Exception as exc:
+                log.debug("Langfuse phase_span exit suppressed: %s", exc)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import sys
 from collections.abc import Iterator
 from functools import lru_cache
 
@@ -142,6 +143,9 @@ def phase_span(name: str) -> Iterator[None]:
     finally:
         if span_cm is not None:
             try:
-                span_cm.__exit__(None, None, None)
+                # Forward sys.exc_info() so the SDK marks error spans as errored
+                # when the wrapped body raised. Returns (None, None, None) on
+                # success paths.
+                span_cm.__exit__(*sys.exc_info())
             except Exception as exc:
                 logging.getLogger(__name__).debug("phase_span exit suppressed: %s", exc)

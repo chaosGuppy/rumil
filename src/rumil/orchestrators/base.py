@@ -19,6 +19,7 @@ from rumil.models import (
     CallType,
     CreateViewDispatchPayload,
     Dispatch,
+    is_scout,
 )
 from rumil.orchestrators.common import (
     PrioritizationResult,
@@ -110,7 +111,8 @@ class BaseOrchestrator(ABC):
     async def _pacing_params(self) -> tuple[int, int]:
         """Return (total, used) for budget pacing.
 
-        Subclasses with budget_cap should override to use their local scope.
+        Subclasses that participate in a question pool override this to pace
+        against the pool's totals once registered.
         """
         return await self.db.get_budget()
 
@@ -399,15 +401,16 @@ class BaseOrchestrator(ABC):
         list (typically: stop when it is empty or all entries are exceptions).
 
         When ``self.run_initial_scouts_only`` is True, ``result`` is filtered
-        to scout-only sequences (every dispatch's ``call_type`` starts with
-        ``scout_``) and recursive children are skipped — useful for
-        inspecting scout outputs without firing off downstream work.
+        to scout-only sequences (every dispatch's ``call_type`` is a scout per
+        the ``SCOUT_CALL_TYPES`` registry) and recursive children are skipped
+        — useful for inspecting scout outputs without firing off downstream
+        work.
         """
         if self.run_initial_scouts_only:
             scout_sequences = [
                 seq
                 for seq in result.dispatch_sequences
-                if seq and all(d.call_type.value.startswith("scout_") for d in seq)
+                if seq and all(is_scout(d.call_type) for d in seq)
             ]
             skipped = len(result.dispatch_sequences) - len(scout_sequences)
             if skipped or result.children:
@@ -479,7 +482,7 @@ class BaseOrchestrator(ABC):
         round and the child call sits in a non-terminal state.
         """
         child_call_id = getattr(child, "_call_id", None)
-        allocated = getattr(child, "_budget_cap", None) or 0
+        allocated = getattr(child, "_assigned_budget", None) or 0
 
         refund = 0
         if self.pool_question_id:

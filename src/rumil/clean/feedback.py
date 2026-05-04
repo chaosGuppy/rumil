@@ -110,7 +110,7 @@ def _make_investigation_tools(
         budget: int,
     ) -> str:
         """Run orchestrator and return a summary string."""
-        orchestrator = ExperimentalOrchestrator(db, broadcaster, budget_cap=budget)
+        orchestrator = ExperimentalOrchestrator(db, broadcaster, assigned_budget=budget)
         orchestrator._parent_call_id = call.id
         child_call_id = await orchestrator.create_initial_call(question_id, parent_call_id=call.id)
         try:

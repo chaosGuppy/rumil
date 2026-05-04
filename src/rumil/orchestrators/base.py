@@ -15,6 +15,7 @@ from rumil.constants import SMOKE_TEST_MAX_ROUNDS, compute_round_budget
 from rumil.database import DB
 from rumil.models import (
     AssessDispatchPayload,
+    CallStatus,
     CallType,
     CreateViewDispatchPayload,
     Dispatch,
@@ -30,7 +31,7 @@ from rumil.orchestrators.dispatch_handlers import (
 from rumil.settings import get_settings
 from rumil.tracing import observe, propagate_attributes
 from rumil.tracing.broadcast import Broadcaster
-from rumil.tracing.trace_events import DispatchExecutedEvent, ErrorEvent
+from rumil.tracing.trace_events import DispatchExecutedEvent, ErrorEvent, RecurseFailedEvent
 from rumil.tracing.tracer import CallTrace, get_trace
 from rumil.views import get_active_view
 
@@ -432,6 +433,7 @@ class BaseOrchestrator(ABC):
                     result.call_id,
                 )
             )
+        children_offset = len(tasks)
         for child, child_qid in result.children:
             tasks.append(child.run(child_qid))
 
@@ -439,22 +441,88 @@ class BaseOrchestrator(ABC):
             return []
 
         gather_results = await asyncio.gather(*tasks, return_exceptions=True)
-        for r in gather_results:
-            if isinstance(r, Exception):
-                log.error("Concurrent dispatch failed: %s", r, exc_info=r)
-                if result.call_id:
-                    trace = CallTrace(
-                        result.call_id,
-                        self.db,
-                        broadcaster=self.broadcaster,
+        parent_trace: CallTrace | None = (
+            CallTrace(result.call_id, self.db, broadcaster=self.broadcaster)
+            if result.call_id
+            else None
+        )
+        for idx, r in enumerate(gather_results):
+            if not isinstance(r, Exception):
+                continue
+            log.error("Concurrent dispatch failed: %s", r, exc_info=r)
+            child_idx = idx - children_offset
+            if 0 <= child_idx < len(result.children):
+                child, child_qid = result.children[child_idx]
+                await self._handle_failed_recurse(child, child_qid, r, parent_trace)
+            elif parent_trace is not None:
+                await parent_trace.record(
+                    ErrorEvent(
+                        message=f"Concurrent dispatch failed: {type(r).__name__}: {r}",
+                        phase="dispatch",
                     )
-                    await trace.record(
-                        ErrorEvent(
-                            message=(f"Concurrent dispatch failed: {type(r).__name__}: {r}"),
-                            phase="dispatch",
-                        )
-                    )
+                )
         return gather_results
+
+    async def _handle_failed_recurse(
+        self,
+        child: "BaseOrchestrator",
+        child_qid: str,
+        exc: BaseException,
+        parent_trace: CallTrace | None,
+    ) -> None:
+        """Surface a failed recursive child cycle on the parent's trace,
+        refund the child's unspent budget back to the parent pool, and mark
+        the child's eagerly-created PRIORITIZATION call as FAILED.
+
+        Without this, the parent prioritizer never learns that its planned
+        recurse vanished — the wasted allocation is invisible to the next
+        round and the child call sits in a non-terminal state.
+        """
+        child_call_id = getattr(child, "_call_id", None)
+        allocated = getattr(child, "_budget_cap", None) or 0
+
+        refund = 0
+        if self.pool_question_id:
+            pool = await self.db.qbp_get(child_qid)
+            if pool.registered:
+                refund = max(pool.remaining, 0)
+                if refund:
+                    await self.db.qbp_refund(self.pool_question_id, child_qid, refund)
+                # The child raised before its own ``run()`` finally block had
+                # a chance to ``qbp_unregister``; balance active_calls now.
+                # ``qbp_unregister`` floors at zero so the no-op case is safe.
+                await self.db.qbp_unregister(child_qid)
+
+        if child_call_id:
+            summary = (
+                f"Recursive cycle failed before completion ({type(exc).__name__}: {exc}). "
+                f"Allocated={allocated}, refunded={refund} to parent pool."
+            )
+            try:
+                await self.db.update_call_status(
+                    child_call_id,
+                    CallStatus.FAILED,
+                    result_summary=summary,
+                )
+            except Exception:
+                log.exception(
+                    "Failed to mark child prioritization call %s as FAILED",
+                    child_call_id,
+                )
+
+        if parent_trace is not None:
+            child_page = await self.db.get_page(child_qid)
+            await parent_trace.record(
+                RecurseFailedEvent(
+                    child_call_id=child_call_id or "",
+                    child_question_id=child_qid,
+                    child_question_headline=child_page.headline if child_page else "",
+                    allocated_budget=allocated,
+                    refunded_budget=refund,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+            )
 
     @abstractmethod
     async def run(self, root_question_id: str) -> None: ...

@@ -143,7 +143,9 @@ async def _prepare_task(
     name = args.name or resolved_text
     config = settings.capture_config()
     if not adopted_run_id:
-        await db.create_run(name=name, question_id=resolved_qid, config=config)
+        await db.create_run(
+            name=name, question_id=resolved_qid, config=config, entrypoint="run_prio"
+        )
 
     langfuse_url: str | None = None
     if get_langfuse() is not None:

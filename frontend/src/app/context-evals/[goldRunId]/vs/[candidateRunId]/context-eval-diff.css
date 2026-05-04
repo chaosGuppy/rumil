@@ -1,102 +1,256 @@
+/* Context-builder comparison page.
+   Uses the project palette: --background, --foreground, --color-surface,
+   --color-border, --color-muted. The previous version referenced --surface
+   / --border / --fg fallbacks that don't exist in globals.css, so the
+   hardcoded dark fallbacks bled through in light mode. */
+
 .ce-page {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 24px;
-  font-family: var(--font-sans, system-ui, sans-serif);
+  padding: 48px 32px 80px;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  color: var(--foreground);
 }
 
 .ce-header {
-  border-bottom: 1px solid var(--border, #2a2a2a);
-  padding-bottom: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 32px;
 }
 
 .ce-back-link {
   display: inline-block;
   font-size: 13px;
-  color: var(--muted, #888);
+  color: var(--color-muted);
   text-decoration: none;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+  letter-spacing: 0.01em;
+  transition: color 0.15s;
 }
-
 .ce-back-link:hover {
-  color: var(--fg, #ddd);
+  color: var(--foreground);
 }
 
 .ce-title {
   font-size: 22px;
   font-weight: 600;
-  margin: 4px 0 12px 0;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px 0;
+  color: var(--foreground);
 }
 
-.ce-arms-bar {
-  display: flex;
+.ce-subtitle {
+  margin: 0 0 18px 0;
+  font-size: 13px;
+  color: var(--color-muted);
+  line-height: 1.6;
+}
+
+.ce-inline-tag {
+  display: inline-block;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.ce-inline-tag--gold {
+  background: #f7efdc;
+  color: #8a6724;
+}
+.ce-inline-tag--candidate {
+  background: #e0eaf5;
+  color: #2c5582;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ce-inline-tag--gold {
+    background: #2a2418;
+    color: #d4b88a;
+  }
+  .ce-inline-tag--candidate {
+    background: #18242a;
+    color: #8ab8d4;
+  }
+}
+
+.ce-arms {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
+  margin-top: 16px;
+}
+
+.ce-arm {
+  position: relative;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ce-arm::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  border-radius: 6px 0 0 6px;
+}
+.ce-arm--gold::before {
+  background: #d4943a;
+}
+.ce-arm--candidate::before {
+  background: #5b8def;
+}
+
+.ce-arm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.ce-arm-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--border, #2a2a2a);
-  background: var(--surface, #181818);
-  min-width: 220px;
+.ce-arm-pill {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  border-radius: 3px;
+}
+.ce-arm-pill--gold {
+  background: #f7efdc;
+  color: #8a6724;
+}
+.ce-arm-pill--candidate {
+  background: #e0eaf5;
+  color: #2c5582;
 }
 
-.ce-arm-card--gold {
-  border-left: 3px solid #d4943a;
+@media (prefers-color-scheme: dark) {
+  .ce-arm-pill--gold {
+    background: #2a2418;
+    color: #d4b88a;
+  }
+  .ce-arm-pill--candidate {
+    background: #18242a;
+    color: #8ab8d4;
+  }
 }
 
-.ce-arm-card--candidate {
-  border-left: 3px solid #5b8def;
-}
-
-.ce-arm-trace-link {
-  font-size: 13px;
+.ce-arm-trace {
+  font-size: 14px;
   font-weight: 500;
-  color: var(--fg, #ddd);
+  color: var(--foreground);
   text-decoration: none;
+  letter-spacing: -0.005em;
 }
-
-.ce-arm-trace-link:hover {
+.ce-arm-trace:hover {
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .ce-arm-id {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-geist-mono), monospace;
   font-size: 11px;
-  color: var(--muted, #888);
+  color: var(--color-muted);
+  margin-left: auto;
 }
 
-.ce-arm-summary {
+.ce-arm-help {
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.ce-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 36px;
+}
+
+.ce-stat {
+  background: var(--background);
+  padding: 14px 16px;
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ce-stat-value {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.ce-stat--bad .ce-stat-value {
+  color: #b25538;
+}
+.ce-stat--warn .ce-stat-value {
+  color: #b08428;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ce-stat--bad .ce-stat-value {
+    color: #e08766;
+  }
+  .ce-stat--warn .ce-stat-value {
+    color: #d4a850;
+  }
+}
+
+.ce-stat-label {
+  font-family: var(--font-geist-mono), monospace;
   font-size: 11px;
-  color: var(--muted, #888);
-}
-
-.ce-arm-role {
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.07em;
+  color: var(--foreground);
+  font-weight: 500;
+  margin-top: 4px;
 }
 
-.ce-arm-builder {
-  color: var(--fg, #ddd);
-}
-
-.ce-section-label {
+.ce-stat-help {
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted, #888);
-  margin-bottom: 8px;
+  color: var(--color-muted);
+  line-height: 1.4;
+  margin-top: 1px;
 }
 
-.ce-diff-section {
-  margin-bottom: 32px;
+.ce-section {
+  margin-bottom: 40px;
+}
+
+.ce-section-head {
+  margin-bottom: 14px;
+}
+
+.ce-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0 0 4px 0;
+  color: var(--foreground);
+}
+
+.ce-section-help {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.5;
+  max-width: 70ch;
 }
 
 .ce-bucket-grid {
@@ -106,48 +260,103 @@
 }
 
 .ce-bucket {
-  border: 1px solid var(--border, #2a2a2a);
+  border: 1px solid var(--color-border);
+  background: var(--background);
   border-radius: 6px;
-  background: var(--surface, #181818);
-  padding: 10px 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.ce-bucket--gold {
-  border-top: 3px solid #d4943a;
+.ce-bucket--missed {
+  border-top: 3px solid #b25538;
 }
-
-.ce-bucket--candidate {
-  border-top: 3px solid #5b8def;
-}
-
-.ce-bucket--both {
+.ce-bucket--shared {
   border-top: 3px solid #4dab6f;
 }
+.ce-bucket--extra {
+  border-top: 3px solid #b08428;
+}
 
-.ce-bucket-header {
+@media (prefers-color-scheme: dark) {
+  .ce-bucket--missed {
+    border-top-color: #e08766;
+  }
+  .ce-bucket--shared {
+    border-top-color: #6cc48a;
+  }
+  .ce-bucket--extra {
+    border-top-color: #d4a850;
+  }
+}
+
+.ce-bucket-head {
+  padding: 12px 14px 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.ce-bucket-head-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 
-.ce-bucket-label {
-  font-size: 12px;
-  font-weight: 500;
+.ce-bucket-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--foreground);
 }
 
 .ce-bucket-count {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
-  color: var(--muted, #888);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+  line-height: 1;
+}
+.ce-bucket-count--bad {
+  color: #b25538;
+}
+.ce-bucket-count--good {
+  color: #4dab6f;
+}
+.ce-bucket-count--warn {
+  color: #b08428;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ce-bucket-count--bad {
+    color: #e08766;
+  }
+  .ce-bucket-count--good {
+    color: #6cc48a;
+  }
+  .ce-bucket-count--warn {
+    color: #d4a850;
+  }
+}
+
+.ce-bucket-subtitle {
+  font-size: 11px;
+  color: var(--color-muted);
+  line-height: 1.45;
 }
 
 .ce-bucket-body {
+  padding: 12px 14px;
   font-size: 12px;
+  flex: 1;
 }
 
-.ce-context-section {
-  margin-top: 24px;
+.ce-bucket-empty {
+  font-size: 12px;
+  color: var(--color-dim);
+  font-style: italic;
 }
 
 .ce-context-grid {
@@ -157,39 +366,80 @@
 }
 
 .ce-context-col {
-  border: 1px solid var(--border, #2a2a2a);
+  border: 1px solid var(--color-border);
+  background: var(--background);
   border-radius: 6px;
-  background: var(--surface, #181818);
-  padding: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .ce-context-col--gold {
   border-top: 3px solid #d4943a;
 }
-
 .ce-context-col--candidate {
   border-top: 3px solid #5b8def;
 }
 
-.ce-context-col-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 8px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border, #2a2a2a);
+.ce-col-head {
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.ce-context-col-arm {
+.ce-col-head-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ce-col-head-trace {
+  margin-left: auto;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  color: var(--color-muted);
+  text-decoration: none;
+}
+.ce-col-head-trace:hover {
+  color: var(--foreground);
+}
+
+.ce-col-head-builder {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  margin-bottom: 3px;
+}
+
+.ce-col-head-tagline {
   font-size: 12px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--color-muted);
+  line-height: 1.45;
+}
+
+.ce-context-body {
+  padding: 14px 16px;
+  background: var(--background);
 }
 
 @media (max-width: 1100px) {
   .ce-bucket-grid,
-  .ce-context-grid {
+  .ce-context-grid,
+  .ce-arms {
+    grid-template-columns: 1fr;
+  }
+  .ce-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .ce-page {
+    padding: 24px 16px 48px;
+  }
+  .ce-stats {
     grid-template-columns: 1fr;
   }
 }

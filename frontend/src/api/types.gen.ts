@@ -734,6 +734,12 @@ export type ContextBuiltEventOut = {
      * Context Text Chars
      */
     context_text_chars: number;
+    /**
+     * Impact Percentiles
+     */
+    impact_percentiles: {
+        [key: string]: number;
+    } | null;
 };
 
 /**
@@ -793,6 +799,50 @@ export type ContextEvalDiffOut = {
      * Pages In Both
      */
     pages_in_both?: Array<PageRef>;
+};
+
+/**
+ * ContextEvalExperimentOut
+ *
+ * One context-builder comparison (one gold arm paired with a candidate).
+ *
+ * Surfaced in the experiments feed alongside ab_eval and run_call rows.
+ * Links to the side-by-side diff page at
+ * /context-evals/{gold_run_id}/vs/{candidate_run_id}.
+ */
+export type ContextEvalExperimentOut = {
+    /**
+     * Kind
+     */
+    kind?: 'context_eval';
+    /**
+     * Gold Run Id
+     */
+    gold_run_id: string;
+    /**
+     * Candidate Run Id
+     */
+    candidate_run_id: string;
+    /**
+     * Question Id
+     */
+    question_id?: string;
+    /**
+     * Question Headline
+     */
+    question_headline?: string;
+    /**
+     * Gold Builder
+     */
+    gold_builder?: string;
+    /**
+     * Candidate Builder
+     */
+    candidate_builder?: string;
+    /**
+     * Created At
+     */
+    created_at: string;
 };
 
 /**
@@ -2183,6 +2233,7 @@ export type LlmExchangeOut = {
      * Error
      */
     error: string | null;
+    thinking_blocks?: ThinkingBlocksOut | null;
     /**
      * Created At
      */
@@ -3141,6 +3192,64 @@ export type ReassessTriggeredEventOut = {
 };
 
 /**
+ * RecurseFailedEventOut
+ */
+export type RecurseFailedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'recurse_failed';
+    /**
+     * Child Call Id
+     */
+    child_call_id: string;
+    /**
+     * Child Question Id
+     */
+    child_question_id: string;
+    /**
+     * Child Question Headline
+     */
+    child_question_headline: string;
+    /**
+     * Allocated Budget
+     */
+    allocated_budget: number;
+    /**
+     * Refunded Budget
+     */
+    refunded_budget: number;
+    /**
+     * Error Type
+     */
+    error_type: string;
+    /**
+     * Error Message
+     */
+    error_message: string;
+};
+
+/**
+ * RedactedThinkingBlockOut
+ *
+ * Anthropic-encrypted thinking block (content unavailable to clients).
+ */
+export type RedactedThinkingBlockOut = {
+    /**
+     * Data
+     */
+    data: string;
+};
+
+/**
  * RenderQuestionSubgraphEventOut
  */
 export type RenderQuestionSubgraphEventOut = {
@@ -3388,6 +3497,46 @@ export type RunListItemOut = {
      * Staged
      */
     staged?: boolean;
+};
+
+/**
+ * RunPrioExperimentOut
+ */
+export type RunPrioExperimentOut = {
+    /**
+     * Kind
+     */
+    kind?: 'run_prio';
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Question Id
+     */
+    question_id?: string;
+    /**
+     * Question Headline
+     */
+    question_headline?: string;
+    /**
+     * Config Summary
+     */
+    config_summary?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Staged
+     */
+    staged?: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
 };
 
 /**
@@ -3775,6 +3924,43 @@ export type SubquestionScoreItem = {
      * Reasoning
      */
     reasoning?: string;
+};
+
+/**
+ * ThinkingBlockOut
+ *
+ * One summarized chain-of-thought block from an Anthropic response.
+ */
+export type ThinkingBlockOut = {
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Signature
+     */
+    signature?: string | null;
+};
+
+/**
+ * ThinkingBlocksOut
+ *
+ * Captured thinking content for an LLM exchange.
+ *
+ * Populated when the model returned ``ThinkingBlock`` /
+ * ``RedactedThinkingBlock`` content. Null on the parent ``LLMExchangeOut``
+ * when the model didn't think (e.g. Haiku) — clients should treat the
+ * field as optional.
+ */
+export type ThinkingBlocksOut = {
+    /**
+     * Thinking
+     */
+    thinking?: Array<ThinkingBlockOut>;
+    /**
+     * Redacted Thinking
+     */
+    redacted_thinking?: Array<RedactedThinkingBlockOut>;
 };
 
 /**
@@ -5483,6 +5669,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & WarningEventOut) | ({
         event: 'error';
     } & ErrorEventOut) | ({
+        event: 'recurse_failed';
+    } & RecurseFailedEventOut) | ({
         event: 'scoring_completed';
     } & ScoringCompletedEventOut) | ({
         event: 'experimental_scoring_completed';
@@ -5578,7 +5766,11 @@ export type ListExperimentsApiExperimentsGetResponses = {
         kind: 'ab_eval';
     } & AbEvalExperimentOut) | ({
         kind: 'run_call';
-    } & RunCallExperimentOut)>;
+    } & RunCallExperimentOut) | ({
+        kind: 'run_prio';
+    } & RunPrioExperimentOut) | ({
+        kind: 'context_eval';
+    } & ContextEvalExperimentOut)>;
 };
 
 export type ListExperimentsApiExperimentsGetResponse = ListExperimentsApiExperimentsGetResponses[keyof ListExperimentsApiExperimentsGetResponses];

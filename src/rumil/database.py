@@ -2164,6 +2164,29 @@ class DB:
             )
         )
 
+    async def qbp_refund(
+        self,
+        parent_question_id: str,
+        child_question_id: str,
+        amount: int,
+    ) -> None:
+        """Inverse of ``qbp_recurse``: return ``amount`` from a failed child
+        cycle's allocation back to the parent pool. No-op when amount<=0.
+        """
+        if amount <= 0:
+            return
+        await self._execute(
+            self.client.rpc(
+                "qbp_refund",
+                {
+                    "rid": self.run_id,
+                    "parent_qid": parent_question_id,
+                    "child_qid": child_question_id,
+                    "amount": amount,
+                },
+            )
+        )
+
     async def get_active_calls_for_question(
         self,
         question_id: str,
@@ -2866,6 +2889,7 @@ class DB:
         user_messages: Sequence[dict] | None = None,
         model: str | None = None,
         request_kwargs: dict[str, Any] | None = None,
+        thinking_blocks: dict[str, Any] | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         row: dict[str, Any] = {
@@ -2890,6 +2914,8 @@ class DB:
             row["user_messages"] = user_messages
         if request_kwargs is not None:
             row["request_kwargs"] = request_kwargs
+        if thinking_blocks is not None:
+            row["thinking_blocks"] = thinking_blocks
         await self._execute(self.client.table("call_llm_exchanges").insert(row))
         return exchange_id
 
@@ -3413,6 +3439,82 @@ class DB:
         if self.project_id:
             q = q.eq("project_id", str(self.project_id))
         rows = _rows(await self._execute(q))
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
+    async def list_run_prio_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List runs created by `scripts/run_prio.py`, newest first.
+
+        Filtered by `entrypoint = 'run_prio'`. Mirrors
+        `list_run_call_experiments`: applies `self.project_id` when set
+        and supports an `owner_user_id` cross-user safety filter via
+        `projects.owner_user_id`.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "run_prio")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
+    async def list_context_eval_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List context-builder eval gold runs that are paired with a candidate.
+
+        Each context-eval invocation produces two runs (one gold, one
+        candidate) tagged with `entrypoint = 'context_eval'`. Historical
+        runs that predate the tag are backfilled by a migration. We
+        surface only gold rows that have been paired
+        (config.eval.paired_run_id is set), giving one entry per
+        comparison.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "context_eval")
+            .eq("config->eval->>role", "gold")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        rows = [r for r in rows if ((r.get("config") or {}).get("eval") or {}).get("paired_run_id")]
         if owner_user_id:
             project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
             if not project_ids:

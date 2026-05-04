@@ -35,6 +35,7 @@ from rumil.tracing.trace_events import (
     PhaseSkippedEvent,
     QuestionDedupeEvent,
     ReassessTriggeredEvent,
+    RecurseFailedEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
@@ -101,6 +102,10 @@ class WarningEventOut(WarningEvent, _TraceEnvelopeMixin):
 
 
 class ErrorEventOut(ErrorEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class RecurseFailedEventOut(RecurseFailedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -219,6 +224,7 @@ TraceEventOut = Annotated[
     | LLMExchangeEventOut
     | WarningEventOut
     | ErrorEventOut
+    | RecurseFailedEventOut
     | ScoringCompletedEventOut
     | ExperimentalScoringCompletedEventOut
     | DispatchesPlannedEventOut
@@ -261,6 +267,32 @@ class LLMExchangeSummaryOut(BaseModel):
     created_at: datetime
 
 
+class ThinkingBlockOut(BaseModel):
+    """One summarized chain-of-thought block from an Anthropic response."""
+
+    content: str
+    signature: str | None = None
+
+
+class RedactedThinkingBlockOut(BaseModel):
+    """Anthropic-encrypted thinking block (content unavailable to clients)."""
+
+    data: str
+
+
+class ThinkingBlocksOut(BaseModel):
+    """Captured thinking content for an LLM exchange.
+
+    Populated when the model returned ``ThinkingBlock`` /
+    ``RedactedThinkingBlock`` content. Null on the parent ``LLMExchangeOut``
+    when the model didn't think (e.g. Haiku) — clients should treat the
+    field as optional.
+    """
+
+    thinking: list[ThinkingBlockOut] = []
+    redacted_thinking: list[RedactedThinkingBlockOut] = []
+
+
 class LLMExchangeOut(BaseModel):
     id: str
     call_id: str
@@ -275,6 +307,7 @@ class LLMExchangeOut(BaseModel):
     output_tokens: int | None
     duration_ms: int | None
     error: str | None
+    thinking_blocks: ThinkingBlocksOut | None = None
     created_at: datetime
 
 
@@ -393,8 +426,37 @@ class RunCallExperimentOut(BaseModel):
     created_at: str
 
 
+class RunPrioExperimentOut(BaseModel):
+    kind: Literal["run_prio"] = "run_prio"
+    run_id: str
+    name: str
+    question_id: str = ""
+    question_headline: str = ""
+    config_summary: dict = {}
+    staged: bool = False
+    created_at: str
+
+
+class ContextEvalExperimentOut(BaseModel):
+    """One context-builder comparison (one gold arm paired with a candidate).
+
+    Surfaced in the experiments feed alongside ab_eval and run_call rows.
+    Links to the side-by-side diff page at
+    /context-evals/{gold_run_id}/vs/{candidate_run_id}.
+    """
+
+    kind: Literal["context_eval"] = "context_eval"
+    gold_run_id: str
+    candidate_run_id: str
+    question_id: str = ""
+    question_headline: str = ""
+    gold_builder: str = ""
+    candidate_builder: str = ""
+    created_at: str
+
+
 ExperimentListItemOut = Annotated[
-    AbEvalExperimentOut | RunCallExperimentOut,
+    AbEvalExperimentOut | RunCallExperimentOut | RunPrioExperimentOut | ContextEvalExperimentOut,
     Field(discriminator="kind"),
 ]
 

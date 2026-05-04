@@ -11,6 +11,8 @@ export const metadata: Metadata = {
 type Experiment = ListExperimentsApiExperimentsGetResponse[number];
 type AbEvalExperiment = Extract<Experiment, { kind: "ab_eval" }>;
 type RunCallExperiment = Extract<Experiment, { kind: "run_call" }>;
+type RunPrioExperiment = Extract<Experiment, { kind: "run_prio" }>;
+type ContextEvalExperiment = Extract<Experiment, { kind: "context_eval" }>;
 
 async function getExperiments(): Promise<Experiment[]> {
   const res = await serverFetch(`${API_BASE}/api/experiments`, {
@@ -77,7 +79,54 @@ function AbEvalRow({ ev, delay }: { ev: AbEvalExperiment; delay: number }) {
   );
 }
 
-function RunCallRow({ ev, delay }: { ev: RunCallExperiment; delay: number }) {
+function ContextEvalRow({
+  ev,
+  delay,
+}: {
+  ev: ContextEvalExperiment;
+  delay: number;
+}) {
+  const fallback = `${ev.gold_run_id.slice(0, 8)} vs ${ev.candidate_run_id.slice(0, 8)}`;
+  return (
+    <Link
+      href={`/context-evals/${ev.gold_run_id}/vs/${ev.candidate_run_id}`}
+      className="experiment-row"
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <span className="experiment-kind-tag" data-kind="context_eval">
+        CTX
+      </span>
+      <div className="experiment-row-main">
+        <div className="experiment-question">
+          {ev.question_headline || fallback}
+        </div>
+        <div className="experiment-ctx-builders">
+          <span className="experiment-ctx-builder experiment-ctx-builder--gold">
+            <span className="experiment-ctx-builder-tag">gold</span>
+            {ev.gold_builder || "?"}
+          </span>
+          <span className="experiment-ctx-builder-vs">vs</span>
+          <span className="experiment-ctx-builder experiment-ctx-builder--candidate">
+            <span className="experiment-ctx-builder-tag">candidate</span>
+            {ev.candidate_builder || "?"}
+          </span>
+        </div>
+      </div>
+      <div className="experiment-row-meta">
+        <span className="experiment-date">{formatDate(ev.created_at)}</span>
+      </div>
+    </Link>
+  );
+}
+
+type RunRowExperiment = RunCallExperiment | RunPrioExperiment;
+
+const RUN_TAG_LABELS: Record<RunRowExperiment["kind"], string> = {
+  run_call: "RUN",
+  run_prio: "PRIO",
+};
+
+function RunRow({ ev, delay }: { ev: RunRowExperiment; delay: number }) {
   const title = ev.question_headline || ev.name || ev.run_id.slice(0, 8);
   const subtitle = ev.question_headline && ev.name && ev.name !== ev.question_headline
     ? ev.name
@@ -90,7 +139,9 @@ function RunCallRow({ ev, delay }: { ev: RunCallExperiment; delay: number }) {
       className="experiment-row"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <span className="experiment-kind-tag" data-kind="run_call">RUN</span>
+      <span className="experiment-kind-tag" data-kind={ev.kind}>
+        {RUN_TAG_LABELS[ev.kind]}
+      </span>
       <div className="experiment-row-main">
         <div className="experiment-question">
           {title}
@@ -138,8 +189,17 @@ export default async function ExperimentsPage() {
           <div className="experiments-list">
             {experiments.map((ev, i) => {
               const delay = Math.min(i * 30, 300);
-              if (ev.kind === "run_call") {
-                return <RunCallRow key={`run-${ev.run_id}`} ev={ev} delay={delay} />;
+              if (ev.kind === "run_call" || ev.kind === "run_prio") {
+                return <RunRow key={`${ev.kind}-${ev.run_id}`} ev={ev} delay={delay} />;
+              }
+              if (ev.kind === "context_eval") {
+                return (
+                  <ContextEvalRow
+                    key={`ctx-${ev.gold_run_id}`}
+                    ev={ev}
+                    delay={delay}
+                  />
+                );
               }
               return <AbEvalRow key={`ab-${ev.id}`} ev={ev} delay={delay} />;
             })}

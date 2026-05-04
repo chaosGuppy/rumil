@@ -62,6 +62,13 @@ class ContextBuiltEvent(BaseModel):
     # pre-computed so the UI can show a length at a glance without measuring.
     context_text: str = ""
     context_text_chars: int = 0
+    # Per-page impact percentile assigned by the impact filter's sonnet
+    # scoring pass: page_id → 1-100 (100 = above the most impactful page in
+    # the standard context). Populated only by ImpactFilteredContext, and
+    # only for the BFS-discovered candidate pages it scored — the inner
+    # builder's baseline pages aren't scored against themselves and are
+    # absent. Other context builders leave this None.
+    impact_percentiles: dict[str, int] | None = None
 
 
 class MovesExecutedEvent(BaseModel):
@@ -100,6 +107,25 @@ class ErrorEvent(BaseModel):
     event: Literal["error"] = "error"
     message: str
     phase: str = ""
+
+
+class RecurseFailedEvent(BaseModel):
+    """Recorded on the parent prioritization trace when a planned recursive
+    child cycle (recurse_into_subquestion / recurse_into_claim_investigation)
+    raised before completing. Reports the failed child's call id, scope page
+    id, allocated budget, and how much of the allocation was refunded back to
+    the parent pool — making the silent-failure mode visible to the next
+    prioritization round.
+    """
+
+    event: Literal["recurse_failed"] = "recurse_failed"
+    child_call_id: str
+    child_question_id: str
+    child_question_headline: str = ""
+    allocated_budget: int
+    refunded_budget: int
+    error_type: str = ""
+    error_message: str = ""
 
 
 class SubquestionScoreItem(BaseModel):
@@ -353,6 +379,7 @@ TraceEvent = Annotated[
     | LLMExchangeEvent
     | WarningEvent
     | ErrorEvent
+    | RecurseFailedEvent
     | ScoringCompletedEvent
     | ExperimentalScoringCompletedEvent
     | DispatchesPlannedEvent

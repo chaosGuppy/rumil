@@ -398,7 +398,6 @@ export function SubquestionFocusGrid({
           display: flex;
           flex-direction: column;
           gap: 0.2rem;
-          min-height: 2.4rem;
         }
         .subq-index {
           font-family: var(--font-geist-mono), monospace;
@@ -422,13 +421,10 @@ export function SubquestionFocusGrid({
         }
         .subq-headline {
           font-size: 0.82rem;
-          line-height: 1.3;
+          line-height: 1.35;
           color: var(--color-foreground);
           font-weight: 500;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
+          word-break: break-word;
         }
         .subq-headline a {
           color: inherit;
@@ -481,7 +477,7 @@ export function SubquestionFocusGrid({
                     </span>
                   ) : null}
                 </div>
-                <div className="subq-headline" title={headline}>
+                <div className="subq-headline">
                   <Link href={withStagedRun(`/pages/${qid}/stats`, activeStagedRunId)}>{headline}</Link>
                 </div>
               </div>

@@ -2560,6 +2560,9 @@
                         "$ref": "#/components/schemas/ErrorEventOut"
                       },
                       {
+                        "$ref": "#/components/schemas/RecurseFailedEventOut"
+                      },
+                      {
                         "$ref": "#/components/schemas/ScoringCompletedEventOut"
                       },
                       {
@@ -2650,6 +2653,7 @@
                         "llm_exchange": "#/components/schemas/LLMExchangeEventOut",
                         "warning": "#/components/schemas/WarningEventOut",
                         "error": "#/components/schemas/ErrorEventOut",
+                        "recurse_failed": "#/components/schemas/RecurseFailedEventOut",
                         "scoring_completed": "#/components/schemas/ScoringCompletedEventOut",
                         "experimental_scoring_completed": "#/components/schemas/ExperimentalScoringCompletedEventOut",
                         "dispatches_planned": "#/components/schemas/DispatchesPlannedEventOut",
@@ -2744,13 +2748,21 @@
                       },
                       {
                         "$ref": "#/components/schemas/RunCallExperimentOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/RunPrioExperimentOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/ContextEvalExperimentOut"
                       }
                     ],
                     "discriminator": {
                       "propertyName": "kind",
                       "mapping": {
                         "ab_eval": "#/components/schemas/AbEvalExperimentOut",
-                        "run_call": "#/components/schemas/RunCallExperimentOut"
+                        "run_call": "#/components/schemas/RunCallExperimentOut",
+                        "run_prio": "#/components/schemas/RunPrioExperimentOut",
+                        "context_eval": "#/components/schemas/ContextEvalExperimentOut"
                       }
                     }
                   },
@@ -4448,6 +4460,20 @@
             "type": "integer",
             "title": "Context Text Chars",
             "default": 0
+          },
+          "impact_percentiles": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact Percentiles"
           }
         },
         "type": "object",
@@ -4466,7 +4492,8 @@
           "scope_linked_pages",
           "budget_usage",
           "context_text",
-          "context_text_chars"
+          "context_text_chars",
+          "impact_percentiles"
         ],
         "title": "ContextBuiltEventOut"
       },
@@ -4565,6 +4592,56 @@
         ],
         "title": "ContextEvalDiffOut",
         "description": "Side-by-side diff of two context-builder runs on the same question.\n\npages_only_in_gold/pages_only_in_candidate/pages_in_both are the result\nof diffing the union of working_context, preloaded, and scope-linked\npages from each arm's context_built event. Headlines are carried via\nPageRef so the UI can render links without an extra lookup."
+      },
+      "ContextEvalExperimentOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "context_eval",
+            "title": "Kind",
+            "default": "context_eval"
+          },
+          "gold_run_id": {
+            "type": "string",
+            "title": "Gold Run Id"
+          },
+          "candidate_run_id": {
+            "type": "string",
+            "title": "Candidate Run Id"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id",
+            "default": ""
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "gold_builder": {
+            "type": "string",
+            "title": "Gold Builder",
+            "default": ""
+          },
+          "candidate_builder": {
+            "type": "string",
+            "title": "Candidate Builder",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "gold_run_id",
+          "candidate_run_id",
+          "created_at"
+        ],
+        "title": "ContextEvalExperimentOut",
+        "description": "One context-builder comparison (one gold arm paired with a candidate).\n\nSurfaced in the experiments feed alongside ab_eval and run_call rows.\nLinks to the side-by-side diff page at\n/context-evals/{gold_run_id}/vs/{candidate_run_id}."
       },
       "CriterionMatrix": {
         "properties": {
@@ -6881,6 +6958,16 @@
             ],
             "title": "Error"
           },
+          "thinking_blocks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingBlocksOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -8433,6 +8520,83 @@
         ],
         "title": "ReassessTriggeredEventOut"
       },
+      "RecurseFailedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "recurse_failed",
+            "title": "Event",
+            "default": "recurse_failed"
+          },
+          "child_call_id": {
+            "type": "string",
+            "title": "Child Call Id"
+          },
+          "child_question_id": {
+            "type": "string",
+            "title": "Child Question Id"
+          },
+          "child_question_headline": {
+            "type": "string",
+            "title": "Child Question Headline",
+            "default": ""
+          },
+          "allocated_budget": {
+            "type": "integer",
+            "title": "Allocated Budget"
+          },
+          "refunded_budget": {
+            "type": "integer",
+            "title": "Refunded Budget"
+          },
+          "error_type": {
+            "type": "string",
+            "title": "Error Type",
+            "default": ""
+          },
+          "error_message": {
+            "type": "string",
+            "title": "Error Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "child_call_id",
+          "child_question_id",
+          "child_question_headline",
+          "allocated_budget",
+          "refunded_budget",
+          "error_type",
+          "error_message"
+        ],
+        "title": "RecurseFailedEventOut"
+      },
+      "RedactedThinkingBlockOut": {
+        "properties": {
+          "data": {
+            "type": "string",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "RedactedThinkingBlockOut",
+        "description": "Anthropic-encrypted thinking block (content unavailable to clients)."
+      },
       "RenderQuestionSubgraphEventOut": {
         "properties": {
           "ts": {
@@ -8851,6 +9015,56 @@
           "created_at"
         ],
         "title": "RunListItemOut"
+      },
+      "RunPrioExperimentOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "run_prio",
+            "title": "Kind",
+            "default": "run_prio"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "question_id": {
+            "type": "string",
+            "title": "Question Id",
+            "default": ""
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline",
+            "default": ""
+          },
+          "config_summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config Summary",
+            "default": {}
+          },
+          "staged": {
+            "type": "boolean",
+            "title": "Staged",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "name",
+          "created_at"
+        ],
+        "title": "RunPrioExperimentOut"
       },
       "RunSummaryOut": {
         "properties": {
@@ -9457,6 +9671,54 @@
           "question_id"
         ],
         "title": "SubquestionScoreItem"
+      },
+      "ThinkingBlockOut": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ThinkingBlockOut",
+        "description": "One summarized chain-of-thought block from an Anthropic response."
+      },
+      "ThinkingBlocksOut": {
+        "properties": {
+          "thinking": {
+            "items": {
+              "$ref": "#/components/schemas/ThinkingBlockOut"
+            },
+            "type": "array",
+            "title": "Thinking",
+            "default": []
+          },
+          "redacted_thinking": {
+            "items": {
+              "$ref": "#/components/schemas/RedactedThinkingBlockOut"
+            },
+            "type": "array",
+            "title": "Redacted Thinking",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "ThinkingBlocksOut",
+        "description": "Captured thinking content for an LLM exchange.\n\nPopulated when the model returned ``ThinkingBlock`` /\n``RedactedThinkingBlock`` content. Null on the parent ``LLMExchangeOut``\nwhen the model didn't think (e.g. Haiku) \u2014 clients should treat the\nfield as optional."
       },
       "ToolCallEventOut": {
         "properties": {

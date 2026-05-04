@@ -112,6 +112,9 @@ WORKFLOW_CLI: dict[str, dict] = {
             "audit_prompt_path",
             "brief_audit_after_round",
             "audit_feeds_critic",
+            "with_scout_pass",
+            "scout_pass_model",
+            "scout_pass_prompt_path",
         ],
         "supports_contestants": False,
         # `budget` is a top-level CLI flag on this script; pull it

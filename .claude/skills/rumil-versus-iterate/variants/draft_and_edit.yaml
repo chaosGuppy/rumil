@@ -105,3 +105,32 @@ variants:
     with_arbiter: true
     with_brief_audit: true
     critic_prompt_path: .claude/skills/rumil-versus-iterate/prompts/draft_and_edit/critic_multi_concern.md
+
+  - name: v5_hybrid
+    description: |
+      v5_hybrid: v4b (planner + arbiter + brief-audit + multi_concern
+      critic) plus a fast scout pass before the planner. The scout
+      pass surfaces named/dated paradigm cases + hypotheses; the
+      planner consumes them and commits to 1-3 as mandatory anchors
+      in its brief.
+      Hypothesis: v4b's planner can only commit to anchors it already
+      knows offhand — usually framework citations (Rawls, Bostrom,
+      etc.). On philosophical / less-anchor-rich essays this leaves
+      the brief abstract, and v4b loses to tp's research-flow on
+      lockin (default opus_blind). The scout pass closes the
+      anchor-density gap by giving the planner concrete historical
+      lock-ins to choose from.
+      Fork validation (planner exchange 724656d2, lockin opus): both
+      n=2 samples adopted 100% of injected scout anchors (NPT/Bretton
+      Woods/INF/Montreal/GDPR replaced Rawls/Harsanyi/Bostrom/Ord/
+      Windfall) and one sample carved out a dedicated "historical
+      paradigm cases" spine section. Cost delta ~$0.001/sample.
+      Runs as v4b superset (with_scout_pass=true on top of v4b's
+      flags). Adds ~$0.10-0.30 per run for the scout pass at opus,
+      ~$0.05 at sonnet.
+    budget: 4
+    with_planner: true
+    with_arbiter: true
+    with_brief_audit: true
+    with_scout_pass: true
+    critic_prompt_path: .claude/skills/rumil-versus-iterate/prompts/draft_and_edit/critic_multi_concern.md

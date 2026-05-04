@@ -69,6 +69,8 @@ from rumil.tracing.trace_events import (
     PlannerEvent,
     PlannerStartedEvent,
     RoundStartedEvent,
+    ScoutPassEvent,
+    ScoutPassStartedEvent,
 )
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
@@ -380,6 +382,62 @@ _DEFAULT_AUDIT_PROMPT = (
 )
 
 
+_DEFAULT_SCOUT_PASS_PROMPT = (
+    "You are running a fast scout pass to surface candidate anchors "
+    "for a downstream essay-continuation planner. The user message "
+    "gives you the opening of an essay (the prefix) plus the essay's "
+    "approximate target length. Your output is consumed by the "
+    "planner stage, which will choose 1-3 of your surfaced items and "
+    "commit to them as mandatory anchors in its brief.\n\n"
+    "**Why this matters.** Without scout output, the planner can only "
+    "commit to anchors it already knows offhand — usually framework "
+    "citations (Rawls, Bostrom, etc.) rather than named historical "
+    "incidents, dated empirical findings, or specific paradigm cases. "
+    "On philosophical / less-anchor-rich essays this leaves the brief "
+    "abstract and the resulting continuation loses to research-driven "
+    "approaches. Your scout pass closes that gap.\n\n"
+    "**Output format.** Free-form prose forbidden. Emit exactly this "
+    "structure (no extra prose before or after):\n\n"
+    "## Scout findings (paradigm cases + hypotheses)\n\n"
+    "The planner should select 1-3 of these (or others it knows) and "
+    "commit to them in <mandatory_anchors>.\n\n"
+    "### Paradigm cases\n"
+    "Real, named, dated, historical instances of the same phenomenon "
+    "the prefix is about. Past-tense, outcome known. 4-7 items. Each "
+    "as a bullet:\n\n"
+    "- **<event/treaty/incident name + year>**: <one-sentence "
+    "description that names what kind of lock-in/decision/dynamic it "
+    "represents and what its outcome was, including specific numeric "
+    "or dated claims when possible (e.g. compliance rates, dates of "
+    "abrogation, ratification breadth).>\n\n"
+    "### Hypotheses\n"
+    "Candidate framings the brief should consider when picking a "
+    "spine. 3-5 items. Each as a bullet:\n\n"
+    "- **<short hypothesis name>**: <one-sentence claim that the "
+    "planner could organize a section around, citing one of your "
+    "paradigm cases when relevant.>\n\n"
+    "**Rules.**\n"
+    "1. Paradigm cases must be NEAR reference class — same domain "
+    "(governance/treaty/lock-in/AI-strategy/etc.) as the prefix. "
+    "Not analogies (different domain, e.g. evolutionary biology).\n"
+    "2. Be specific. Dates, named parties, named outcomes. "
+    '"Various international agreements" doesn\'t help; "1968 NPT, '
+    '191 signatories, India + Pakistan + Israel non-signatories" '
+    "does.\n"
+    "3. Do NOT fabricate. If you genuinely don't know a paradigm "
+    "case fitting the prefix, list fewer items rather than guess. "
+    "The planner will treat your output as candidate anchors, and "
+    "the editor will eventually deploy them in the continuation — "
+    "fabricated anchors fail downstream review.\n"
+    "4. Hypotheses should be claims the prefix's argument could "
+    "rest on, not topic restatements. "
+    '"Lock-in value scales with how irreversible the costs of NOT '
+    'locking in are" is a hypothesis; "lock-ins are important" is a '
+    "topic restatement.\n\n"
+    "Output the scout findings block and nothing else."
+)
+
+
 _CONTINUATION_RE = re.compile(r"<continuation>(.*?)</continuation>", re.DOTALL | re.IGNORECASE)
 _OPEN_CONTINUATION_RE = re.compile(r"<continuation>(.*)\Z", re.DOTALL | re.IGNORECASE)
 
@@ -556,12 +614,15 @@ class DraftAndEditWorkflow:
         with_planner: bool = False,
         with_arbiter: bool = False,
         with_brief_audit: bool = False,
+        with_scout_pass: bool = False,
         planner_model: str | None = None,
         arbiter_model: str | None = None,
         audit_model: str | None = None,
+        scout_pass_model: str | None = None,
         planner_prompt_path: str | Path | None = None,
         arbiter_prompt_path: str | Path | None = None,
         audit_prompt_path: str | Path | None = None,
+        scout_pass_prompt_path: str | Path | None = None,
         brief_audit_after_round: int = 1,
         audit_feeds_critic: bool = True,
     ) -> None:
@@ -580,9 +641,11 @@ class DraftAndEditWorkflow:
         self.with_planner = with_planner
         self.with_arbiter = with_arbiter
         self.with_brief_audit = with_brief_audit
+        self.with_scout_pass = with_scout_pass
         self.planner_model = planner_model
         self.arbiter_model = arbiter_model
         self.audit_model = audit_model
+        self.scout_pass_model = scout_pass_model
         self.brief_audit_after_round = brief_audit_after_round
         self.audit_feeds_critic = audit_feeds_critic
         # Resolve prompt content at construction so fingerprint() and
@@ -593,17 +656,19 @@ class DraftAndEditWorkflow:
         self.planner_prompt_path = planner_prompt_path
         self.arbiter_prompt_path = arbiter_prompt_path
         self.audit_prompt_path = audit_prompt_path
+        self.scout_pass_prompt_path = scout_pass_prompt_path
         self.drafter_prompt = _load_prompt(drafter_prompt_path, _DEFAULT_DRAFTER_PROMPT)
         self.critic_prompt = _load_prompt(critic_prompt_path, _DEFAULT_CRITIC_PROMPT)
         self.editor_prompt = _load_prompt(editor_prompt_path, _DEFAULT_EDITOR_PROMPT)
-        # Always resolve planner / arbiter / audit prompts so the prompt-
-        # text bytes are stable across runs even when the stage is
-        # disabled — a future flip of with_* on the same variant won't
-        # accidentally fork the dedup hash via prompt changes that
+        # Always resolve planner / arbiter / audit / scout-pass prompts
+        # so the prompt-text bytes are stable across runs even when the
+        # stage is disabled — a future flip of with_* on the same variant
+        # won't accidentally fork the dedup hash via prompt changes that
         # landed while the stage was off.
         self.planner_prompt = _load_prompt(planner_prompt_path, _DEFAULT_PLANNER_PROMPT)
         self.arbiter_prompt = _load_prompt(arbiter_prompt_path, _DEFAULT_ARBITER_PROMPT)
         self.audit_prompt = _load_prompt(audit_prompt_path, _DEFAULT_AUDIT_PROMPT)
+        self.scout_pass_prompt = _load_prompt(scout_pass_prompt_path, _DEFAULT_SCOUT_PASS_PROMPT)
         self.last_status: str = "complete"
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]:
@@ -626,6 +691,10 @@ class DraftAndEditWorkflow:
             "with_arbiter": self.with_arbiter,
             "with_brief_audit": self.with_brief_audit,
         }
+        if self.with_scout_pass:
+            out["with_scout_pass"] = True
+            out["scout_pass_model"] = self.scout_pass_model
+            out["scout_pass_prompt_hash"] = _sha8(self.scout_pass_prompt)
         if self.with_planner:
             out["planner_model"] = self.planner_model
             out["planner_prompt_hash"] = _sha8(self.planner_prompt)
@@ -694,7 +763,15 @@ class DraftAndEditWorkflow:
             "with_planner": self.with_planner,
             "with_arbiter": self.with_arbiter,
             "with_brief_audit": self.with_brief_audit,
+            "with_scout_pass": self.with_scout_pass,
         }
+        if self.with_scout_pass:
+            call_params["scout_pass_model"] = self.scout_pass_model
+            call_params["effective_scout_pass_model"] = self._resolve_model(self.scout_pass_model)
+            call_params["scout_pass_prompt_path"] = (
+                str(self.scout_pass_prompt_path) if self.scout_pass_prompt_path else None
+            )
+            call_params["scout_pass_prompt_hash"] = _sha8(self.scout_pass_prompt)
         if self.with_planner:
             call_params["planner_model"] = self.planner_model
             call_params["effective_planner_model"] = self._resolve_model(self.planner_model)
@@ -771,6 +848,17 @@ class DraftAndEditWorkflow:
         see both the original and audit briefs side-by-side, surfacing
         structural drift the editor was anchored away from.
         """
+        scout_findings: str | None = None
+        if self.with_scout_pass:
+            scout_findings = await self._scout_pass(
+                db=db,
+                trace=trace,
+                call_id=call_id,
+                prefix=prefix,
+                target_length=target_length,
+                model_config=model_config,
+            )
+
         brief: str | None = None
         if self.with_planner:
             brief = await self._plan(
@@ -780,6 +868,7 @@ class DraftAndEditWorkflow:
                 prefix=prefix,
                 target_length=target_length,
                 model_config=model_config,
+                scout_findings=scout_findings,
             )
 
         current_draft: str = ""
@@ -1331,6 +1420,70 @@ class DraftAndEditWorkflow:
             full = full + more if kind == "truncated" else more
         return full
 
+    async def _scout_pass(
+        self,
+        *,
+        db: DB,
+        trace: CallTrace,
+        call_id: str,
+        prefix: str,
+        target_length: int | None,
+        model_config: ModelConfig | None,
+    ) -> str:
+        """Run a fast scout pass before the planner (with_scout_pass=True).
+
+        Surfaces candidate paradigm cases + hypotheses that the planner
+        can commit to as mandatory anchors. Tests the v5_hybrid
+        hypothesis: anchor-density is the bottleneck for v4b on
+        philosophical / less-anchor-rich essays where it loses to tp's
+        research-flow architecture. The scout findings are injected
+        verbatim into the planner's user message via the
+        ``scout_findings`` arg on :meth:`_plan`.
+
+        The fork validation in `.scratch/forks/v5hybrid_lockin_planner.json`
+        showed planner adoption rate near 100% when scouts are
+        well-structured, with the brief reorganizing the spine to land
+        the new anchors rather than gluing them on top.
+        """
+        model = self._resolve_model(self.scout_pass_model)
+        target_clause = (
+            f"Target essay length: approximately {target_length} characters."
+            if target_length
+            else "No explicit target length provided."
+        )
+        user_message = (
+            "<essay-prefix>\n"
+            f"{prefix}\n"
+            "</essay-prefix>\n\n"
+            f"{target_clause}\n\n"
+            "Emit the scout findings block as specified in the system "
+            "prompt. The downstream planner will treat your output as "
+            "candidate anchors and commit to 1-3 of them in its brief."
+        )
+        await trace.record(ScoutPassStartedEvent(model=model))
+        text = await text_call(
+            self.scout_pass_prompt,
+            user_message,
+            metadata=LLMExchangeMetadata(
+                call_id=call_id,
+                phase="scout_pass",
+                round_num=None,
+            ),
+            db=db,
+            model=model,
+            cache=True,
+            model_config=model_config,
+        )
+        findings = text.strip()
+        await trace.record(
+            ScoutPassEvent(
+                findings_text=findings,
+                findings_chars=len(findings),
+                model=model,
+            )
+        )
+        return findings
+
     async def _plan(
         self,
         *,
@@ -1340,6 +1493,7 @@ class DraftAndEditWorkflow:
         prefix: str,
         target_length: int | None,
         model_config: ModelConfig | None,
+        scout_findings: str | None = None,
     ) -> str:
         """Run the planner stage once before round 0.
 
@@ -1358,11 +1512,21 @@ class DraftAndEditWorkflow:
             if target_length
             else "No explicit target length provided — pick one based on the prefix's register."
         )
+        scout_block = (
+            f"\n{scout_findings}\n\n"
+            "The above scout findings are CANDIDATE anchors. Apply the "
+            "anchor rules from your system prompt to decide how many "
+            "to use, whether to augment with anchors you know "
+            "independently, and how they land in the spine.\n"
+            if scout_findings
+            else ""
+        )
         user_message = (
             "<essay-prefix>\n"
             f"{prefix}\n"
             "</essay-prefix>\n\n"
-            f"{target_clause}\n\n"
+            f"{target_clause}\n"
+            f"{scout_block}\n"
             "Emit the brief as specified in the system prompt. The "
             "drafter, critics, and editor will consume your output "
             "verbatim — they do not see your reasoning, only the "

@@ -542,6 +542,31 @@ class BriefAuditEvent(BaseModel):
     model: str = ""
 
 
+class ScoutPassStartedEvent(BaseModel):
+    """Emitted right before the scout-pass LLM call fires (only when
+    with_scout_pass=True). The scout pass runs once before the planner,
+    surfacing paradigm cases / hypotheses the planner can commit to as
+    mandatory anchors. Tests the v5_hybrid hypothesis: anchor-density
+    is the bottleneck for v4b on philosophical / less-anchor-rich
+    essays where it loses to the research-flow architecture."""
+
+    event: Literal["scout_pass_started"] = "scout_pass_started"
+    model: str = ""
+
+
+class ScoutPassEvent(BaseModel):
+    """Emitted when the scout pass returns. The scout findings are
+    opaque text (paradigm-cases + hypotheses sections in the default
+    prompt) injected into the planner's user message. Recording the
+    text lets the UI show what anchors were on the table for the
+    planner to choose from."""
+
+    event: Literal["scout_pass"] = "scout_pass"
+    findings_text: str = ""
+    findings_chars: int = 0
+    model: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -591,6 +616,8 @@ TraceEvent = Annotated[
     | ArbitrationStartedEvent
     | ArbitrationEvent
     | BriefAuditStartedEvent
-    | BriefAuditEvent,
+    | BriefAuditEvent
+    | ScoutPassStartedEvent
+    | ScoutPassEvent,
     Field(discriminator="event"),
 ]

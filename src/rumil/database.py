@@ -22,6 +22,7 @@ from tenacity import (
 )
 
 from rumil.models import (
+    SCOUT_CALL_TYPES,
     Call,
     CallSequence,
     CallStatus,
@@ -339,6 +340,22 @@ class MutationState:
         self.hidden_overrides: dict[str, bool] = {}
 
 
+# Mutation events are scoped to a run, not a DB instance — the cache must be
+# shared across every DB.fork() (and view_as_staged sibling) of the same run.
+# Otherwise a child call writing a mutation on its forked DB never invalidates
+# the parent orchestrator's cache, and reads on the parent return stale state.
+# Keying on run_id ensures invalidation propagates to every fork automatically.
+_MUTATION_CACHES: dict[str, MutationState] = {}
+# Non-staged runs have no events to overlay; share one empty state so we
+# don't allocate a fresh one per page-read batch.
+_EMPTY_MUTATION_STATE = MutationState()
+
+
+def clear_mutation_caches() -> None:
+    """Drop all per-run mutation caches. For test teardown."""
+    _MUTATION_CACHES.clear()
+
+
 class DB:
     def __init__(
         self,
@@ -353,7 +370,6 @@ class DB:
         self.staged = staged
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
-        self._mutation_cache: MutationState | None = None
 
     @classmethod
     async def create(
@@ -436,11 +452,11 @@ class DB:
 
     async def _load_mutation_state(self) -> MutationState:
         """Fetch and cache mutation events for this staged run."""
-        if self._mutation_cache is not None:
-            return self._mutation_cache
         if not self.staged:
-            self._mutation_cache = MutationState()
-            return self._mutation_cache
+            return _EMPTY_MUTATION_STATE
+        cached = _MUTATION_CACHES.get(self.run_id)
+        if cached is not None:
+            return cached
         rows = _rows(
             await self._execute(
                 self.client.table("mutation_events")
@@ -484,11 +500,11 @@ class DB:
                         state.robustness_source[tid] = source
             elif et == "set_hidden" and "hidden" in payload:
                 state.hidden_overrides[tid] = bool(payload["hidden"])
-        self._mutation_cache = state
+        _MUTATION_CACHES[self.run_id] = state
         return state
 
     def _invalidate_mutation_cache(self) -> None:
-        self._mutation_cache = None
+        _MUTATION_CACHES.pop(self.run_id, None)
 
     async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
         """Overlay mutation events onto a batch of pages."""
@@ -2125,6 +2141,29 @@ class DB:
             )
         )
 
+    async def qbp_refund(
+        self,
+        parent_question_id: str,
+        child_question_id: str,
+        amount: int,
+    ) -> None:
+        """Inverse of ``qbp_recurse``: return ``amount`` from a failed child
+        cycle's allocation back to the parent pool. No-op when amount<=0.
+        """
+        if amount <= 0:
+            return
+        await self._execute(
+            self.client.rpc(
+                "qbp_refund",
+                {
+                    "rid": self.run_id,
+                    "parent_qid": parent_question_id,
+                    "child_qid": child_question_id,
+                    "amount": amount,
+                },
+            )
+        )
+
     async def get_active_calls_for_question(
         self,
         question_id: str,
@@ -2338,7 +2377,7 @@ class DB:
                 .select("call_type, completed_at, review_json")
                 .eq("scope_page_id", question_id)
                 .eq("status", "complete")
-                .like("call_type", "scout_%")
+                .in_("call_type", [ct.value for ct in SCOUT_CALL_TYPES])
                 .order("completed_at", desc=True)
             )
         )
@@ -3372,6 +3411,42 @@ class DB:
             self.client.table("runs")
             .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
             .eq("entrypoint", "run_call")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
+    async def list_run_prio_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List runs created by `scripts/run_prio.py`, newest first.
+
+        Filtered by `entrypoint = 'run_prio'`. Mirrors
+        `list_run_call_experiments`: applies `self.project_id` when set
+        and supports an `owner_user_id` cross-user safety filter via
+        `projects.owner_user_id`.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "run_prio")
             .order("created_at", desc=True)
         )
         if self.project_id:

@@ -61,10 +61,10 @@ class Workflow(Protocol):
 
 
 class _BudgetedOrchWorkflow:
-    """Shared base for orchestrators that take ``budget_cap=N``.
+    """Shared base for orchestrators that take ``assigned_budget=N``.
 
     Captures the ``db.init_budget(budget) -> Orch(db, broadcaster,
-    budget_cap=budget).run(qid)`` shape used by TwoPhase / Experimental
+    assigned_budget=budget).run(qid)`` shape used by TwoPhase / Experimental
     / ClaimInvestigation. Subclasses set ``name``, ``code_paths``, and
     ``orch_cls``.
 
@@ -132,7 +132,7 @@ class _BudgetedOrchWorkflow:
         # per-call defaults — ``model_config`` is intentionally not
         # threaded through this surface.
         del model_config
-        orch = self.orch_cls(db=db, broadcaster=broadcaster, budget_cap=self.budget)
+        orch = self.orch_cls(db=db, broadcaster=broadcaster, assigned_budget=self.budget)
         await orch.run(question_id)
 
 

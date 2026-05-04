@@ -54,37 +54,44 @@ async def test_twophase_raises_when_below_min_budget(tmp_db, question_page, prio
         await orch.run(question_page.id)
 
 
-def test_twophase_effective_budget_respects_cap(tmp_db):
-    """Pins the _effective_budget formula: min(global_remaining, cap - consumed)."""
-    orch = TwoPhaseOrchestrator(tmp_db, budget_cap=5)
-    assert orch._effective_budget(100) == 5
-    orch._consumed = 3
-    assert orch._effective_budget(100) == 2
-    orch._consumed = 5
-    assert orch._effective_budget(100) == 0
-    orch._consumed = 10
-    assert orch._effective_budget(100) < 0
+def test_twophase_effective_budget_is_passthrough(tmp_db):
+    """``_effective_budget`` is a passthrough — the run-loop's pool gate enforces
+    the per-question cap, not this method.
+    """
+    orch = TwoPhaseOrchestrator(tmp_db, assigned_budget=5)
+    assert orch._effective_budget(100) == 100
+    assert orch._effective_budget(0) == 0
+    uncapped = TwoPhaseOrchestrator(tmp_db)
+    assert uncapped._effective_budget(42) == 42
 
 
 @pytest.mark.asyncio
-async def test_twophase_budget_cap_limits_rounds(tmp_db, question_page, prio_harness):
-    """budget_cap bounds total dispatch rounds even when global budget is plentiful.
+async def test_twophase_assigned_budget_bounds_rounds_via_pool(tmp_db, question_page, prio_harness):
+    """assigned_budget bounds total dispatch rounds via the per-question pool, even
+    when global budget is plentiful.
 
-    With global budget = 200 but cap = 20, the loop must terminate long before
-    exhausting the scripted prio queue. Consumption also stays bounded by the cap.
+    With global budget = 200 but assigned = 20, the loop must terminate long before
+    exhausting the scripted prio queue. Consumption stays bounded by the pool's
+    contributed amount (= assigned_budget for a top-level orchestrator with no peers).
     """
     await tmp_db.init_budget(200)
     prio_harness.prio_queue = [
         RunCallResult(dispatches=[_scout_dispatch(question_page.id)]) for _ in range(50)
     ]
 
-    budget_cap = 20
-    orch = TwoPhaseOrchestrator(tmp_db, budget_cap=budget_cap)
+    assigned = 20
+    orch = TwoPhaseOrchestrator(tmp_db, assigned_budget=assigned)
     await orch.run(question_page.id)
 
-    assert orch._consumed <= budget_cap, f"_consumed={orch._consumed} exceeded cap={budget_cap}"
+    pool = await tmp_db.qbp_get(question_page.id)
+    assert pool.consumed <= pool.contributed, (
+        f"pool consumption {pool.consumed} exceeded contribution {pool.contributed}"
+    )
+    assert pool.contributed == assigned, (
+        f"top-level orchestrator should have contributed {assigned}, got {pool.contributed}"
+    )
     assert len(prio_harness.prio_queue) > 0, (
-        "prio queue was fully drained — budget_cap did not bound the number of rounds"
+        "prio queue was fully drained — assigned_budget did not bound the number of rounds"
     )
 
 

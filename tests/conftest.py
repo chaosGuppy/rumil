@@ -12,7 +12,7 @@ if str(_SKILLS_LIB) not in sys.path:
     sys.path.insert(0, str(_SKILLS_LIB))
 
 from rumil.calls.common import RunCallResult
-from rumil.database import DB
+from rumil.database import DB, clear_mutation_caches
 from rumil.models import (
     Call,
     CallStatus,
@@ -33,6 +33,14 @@ def _test_settings():
     """Activate test-mode settings for the entire test session."""
     with override_settings(rumil_test_mode="1"):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_mutation_caches():
+    """Drop the per-run mutation cache between tests so the dict doesn't grow
+    unboundedly across the session."""
+    yield
+    clear_mutation_caches()
 
 
 @pytest.fixture(autouse=True)

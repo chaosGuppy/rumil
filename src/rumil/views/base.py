@@ -92,6 +92,18 @@ class View(ABC):
         """
 
     @abstractmethod
+    async def render_for_scout(self, question_id: str, db: DB) -> str | None:
+        """Render the view as a top-level block in a scout call's context.
+
+        Variants whose section structure naturally generates subquestion
+        candidates should highlight those sections with a short callout
+        directing the scout to mine them. Variants without such structure
+        render the take plainly.
+
+        Returns None if this variant has no data for the question yet.
+        """
+
+    @abstractmethod
     async def render_for_child_investigation_results(
         self,
         question_id: str,

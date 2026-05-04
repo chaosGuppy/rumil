@@ -46,6 +46,7 @@ from tenacity import (
 )
 
 from rumil.model_config import ModelConfig
+from rumil.models import CallType, ScoutScope, scout_scope
 from rumil.pricing import compute_cost
 from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
@@ -216,20 +217,6 @@ def reset_experimental_scout_budget(token: contextvars.Token) -> None:
     _experimental_scout_budget.reset(token)
 
 
-_SCOUT_BUDGET_CALL_TYPES: frozenset[str] = frozenset(
-    {
-        "scout_subquestions",
-        "scout_estimates",
-        "scout_hypotheses",
-        "scout_analogies",
-        "scout_paradigm_cases",
-        "scout_factchecks",
-        "scout_web_questions",
-        "scout_deep_questions",
-    }
-)
-
-
 def build_system_prompt(
     call_type: str,
     *,
@@ -273,11 +260,16 @@ def build_system_prompt(
         parts.append(_load_file("citations.md"))
     parts.append(grounding)
     budget = _experimental_scout_budget.get()
-    if budget is not None and call_type in _SCOUT_BUDGET_CALL_TYPES:
-        budget_awareness = _load_file("scout_budget_awareness_experimental.md").format(
-            budget=budget
-        )
-        parts.append(budget_awareness)
+    if budget is not None:
+        try:
+            ct_enum = CallType(call_type)
+        except ValueError:
+            ct_enum = None
+        if ct_enum is not None and scout_scope(ct_enum) == ScoutScope.QUESTION:
+            budget_awareness = _load_file("scout_budget_awareness_experimental.md").format(
+                budget=budget
+            )
+            parts.append(budget_awareness)
     return "\n\n---\n\n".join(parts)
 
 

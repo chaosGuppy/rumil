@@ -134,6 +134,41 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
 }
 
 
+class ScoutScope(str, Enum):
+    QUESTION = "question"
+    CLAIM = "claim"
+
+
+# Single source of truth: which CallTypes are scouts and what their scope is.
+# Treat this as the authoritative answer to "is this a scout?" — never test
+# call_type names by string prefix.
+SCOUT_CALL_TYPES: dict[CallType, ScoutScope] = {
+    CallType.SCOUT_SUBQUESTIONS: ScoutScope.QUESTION,
+    CallType.SCOUT_ESTIMATES: ScoutScope.QUESTION,
+    CallType.SCOUT_HYPOTHESES: ScoutScope.QUESTION,
+    CallType.SCOUT_ANALOGIES: ScoutScope.QUESTION,
+    CallType.SCOUT_PARADIGM_CASES: ScoutScope.QUESTION,
+    CallType.SCOUT_FACTCHECKS: ScoutScope.QUESTION,
+    CallType.SCOUT_WEB_QUESTIONS: ScoutScope.QUESTION,
+    CallType.SCOUT_DEEP_QUESTIONS: ScoutScope.QUESTION,
+    CallType.SCOUT_C_HOW_TRUE: ScoutScope.CLAIM,
+    CallType.SCOUT_C_HOW_FALSE: ScoutScope.CLAIM,
+    CallType.SCOUT_C_CRUXES: ScoutScope.CLAIM,
+    CallType.SCOUT_C_RELEVANT_EVIDENCE: ScoutScope.CLAIM,
+    CallType.SCOUT_C_STRESS_TEST_CASES: ScoutScope.CLAIM,
+    CallType.SCOUT_C_ROBUSTIFY: ScoutScope.CLAIM,
+    CallType.SCOUT_C_STRENGTHEN: ScoutScope.CLAIM,
+}
+
+
+def is_scout(call_type: CallType) -> bool:
+    return call_type in SCOUT_CALL_TYPES
+
+
+def scout_scope(call_type: CallType) -> ScoutScope | None:
+    return SCOUT_CALL_TYPES.get(call_type)
+
+
 class CallStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"

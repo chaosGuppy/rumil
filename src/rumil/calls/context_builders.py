@@ -35,6 +35,8 @@ from rumil.models import (
     PageDetail,
     PageLink,
     PageType,
+    ScoutScope,
+    scout_scope,
 )
 from rumil.settings import get_settings
 from rumil.views import get_active_view
@@ -234,18 +236,21 @@ class RedTeamContext(ContextBuilder):
 
 
 class EmbeddingContext(ContextBuilder):
-    """Embedding-based context. Used by embedding variants."""
+    """Embedding-based context. Used by embedding variants.
+
+    Question-scoped scouts (per ``SCOUT_CALL_TYPES``) automatically get a
+    scout-tailored view block prepended to the context. Other call types
+    do not.
+    """
 
     def __init__(
         self,
         call_type: CallType,
         *,
         require_take_for_questions: bool = False,
-        view_for_scout: bool = False,
     ) -> None:
         self._call_type = call_type
         self._require_take_for_questions = require_take_for_questions
-        self._view_for_scout = view_for_scout
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         question = await infra.db.get_page(infra.question_id)
@@ -253,7 +258,7 @@ class EmbeddingContext(ContextBuilder):
 
         scout_view_block = ""
         exclude_page_ids: set[str] = set()
-        if self._view_for_scout:
+        if scout_scope(self._call_type) == ScoutScope.QUESTION:
             view = get_active_view()
             rendered = await view.render_for_scout(infra.question_id, infra.db)
             if rendered:
@@ -364,21 +369,9 @@ class ScoutSiblingAwareContext(EmbeddingContext):
     questions of the scope question, so the scout can avoid creating children
     whose impact on the parent is mediated through an existing sibling.
 
-    Scout-only by construction, so ``view_for_scout`` defaults to True.
+    Used only by question-scoped scouts; the parent class auto-derives the
+    scout-view treatment from the call type's scout scope.
     """
-
-    def __init__(
-        self,
-        call_type: CallType,
-        *,
-        require_take_for_questions: bool = False,
-        view_for_scout: bool = True,
-    ) -> None:
-        super().__init__(
-            call_type,
-            require_take_for_questions=require_take_for_questions,
-            view_for_scout=view_for_scout,
-        )
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         result = await super().build_context(infra)

@@ -77,9 +77,13 @@ async def test_resolve_returns_none_on_ambiguous_long_prefix(tmp_db, mocker):
         # The fallback prefix query is `LIKE '<first8>%'`; it returns rows
         # of {"id": ...}. Append a sibling row with the same prefix.
         rows = getattr(result, "data", None)
-        if isinstance(rows, list) and rows and all("id" in r for r in rows):
-            if any(r["id"] == page.id for r in rows) and len(rows) == 1:
-                rows.append({"id": sibling_id})
+        if (
+            isinstance(rows, list)
+            and len(rows) == 1
+            and all("id" in r for r in rows)
+            and rows[0]["id"] == page.id
+        ):
+            rows.append({"id": sibling_id})
         return result
 
     mocker.patch.object(tmp_db, "_execute", side_effect=fake_execute)

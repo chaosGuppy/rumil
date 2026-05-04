@@ -254,6 +254,7 @@ _OPAQUE_TO_FINGERPRINT = {
     "planner_prompt_path",
     "arbiter_prompt_path",
     "audit_prompt_path",
+    "scout_pass_prompt_path",
 }
 
 
@@ -290,6 +291,7 @@ def test_workflow_fingerprint_covers_all_public_fields():
         with_planner=True,
         with_arbiter=True,
         with_brief_audit=True,
+        with_scout_pass=True,
     )
     fp = wf.fingerprint()
     public_attrs = _public_attrs(wf) - _OPAQUE_TO_FINGERPRINT

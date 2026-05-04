@@ -37,6 +37,7 @@ from rumil.models import (
     PageType,
 )
 from rumil.settings import get_settings
+from rumil.views import get_active_view
 
 log = logging.getLogger(__name__)
 
@@ -240,24 +241,39 @@ class EmbeddingContext(ContextBuilder):
         call_type: CallType,
         *,
         require_take_for_questions: bool = False,
+        view_for_scout: bool = False,
     ) -> None:
         self._call_type = call_type
         self._require_take_for_questions = require_take_for_questions
+        self._view_for_scout = view_for_scout
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         question = await infra.db.get_page(infra.question_id)
         query = question.headline if question else infra.question_id
+
+        scout_view_block = ""
+        exclude_page_ids: set[str] = set()
+        if self._view_for_scout:
+            view = get_active_view()
+            rendered = await view.render_for_scout(infra.question_id, infra.db)
+            if rendered:
+                scout_view_block = f"{rendered}\n\n---\n\n"
+                headline = await view.headline_page(infra.question_id, infra.db)
+                if headline is not None:
+                    exclude_page_ids.add(headline.id)
+
         result = await build_embedding_based_context(
             query,
             infra.db,
             scope_question_id=infra.question_id,
             scope_linked_detail=PageDetail.ABSTRACT,
             require_take_for_questions=self._require_take_for_questions,
+            exclude_page_ids=exclude_page_ids or None,
         )
         working_page_ids = result.page_ids
         preloaded_ids = infra.call.context_page_ids or []
 
-        context_text = result.context_text
+        context_text = scout_view_block + result.context_text
         if preloaded_ids:
             parts: list[str] = []
             for pid in preloaded_ids:
@@ -347,7 +363,22 @@ class ScoutSiblingAwareContext(EmbeddingContext):
     """Embedding context with a prepended block listing existing direct child
     questions of the scope question, so the scout can avoid creating children
     whose impact on the parent is mediated through an existing sibling.
+
+    Scout-only by construction, so ``view_for_scout`` defaults to True.
     """
+
+    def __init__(
+        self,
+        call_type: CallType,
+        *,
+        require_take_for_questions: bool = False,
+        view_for_scout: bool = True,
+    ) -> None:
+        super().__init__(
+            call_type,
+            require_take_for_questions=require_take_for_questions,
+            view_for_scout=view_for_scout,
+        )
 
     async def build_context(self, infra: CallInfra) -> ContextResult:
         result = await super().build_context(infra)

@@ -97,6 +97,21 @@ class FreeformView(View):
     async def render_for_parent_scoring(self, question_id: str, db: DB) -> str | None:
         return await self.render_for_executive_summary(question_id, db)
 
+    async def render_for_scout(self, question_id: str, db: DB) -> str | None:
+        body = await self.render_for_executive_summary(question_id, db)
+        if body is None:
+            return None
+        callout = (
+            "### Notes for scouts\n\n"
+            "The **research_direction** section above is the canonical source "
+            "of subquestion-worthy cruxes — its job is precisely to surface "
+            "the unknowns that, if investigated, would most improve the "
+            "answer. Read it before deciding what to scout. "
+            "**returns_to_further_research** is also useful supporting "
+            "context for sizing scout effort."
+        )
+        return f"## Current view on this question\n\n{body}\n\n{callout}"
+
     async def render_for_child_investigation_results(
         self,
         question_id: str,

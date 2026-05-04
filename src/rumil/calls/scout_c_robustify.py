@@ -21,7 +21,7 @@ class ScoutCRobustifyCall(CallRunner):
     call_type = CallType.SCOUT_C_ROBUSTIFY
 
     def _make_context_builder(self) -> ContextBuilder:
-        return EmbeddingContext(self.call_type)
+        return EmbeddingContext(self.call_type, view_for_scout=True)
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return MultiRoundLoop(

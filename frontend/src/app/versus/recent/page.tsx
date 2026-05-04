@@ -51,7 +51,7 @@ export default async function VersusRecentPage({
     return (
       <div className="versus-shell">
         <VersusHeader breadcrumb="recent" />
-        <main className="versus-main">
+        <main className="versus-main versus-main-full">
           <div className="versus-card">
             <em className="versus-muted">
               Failed to load /api/versus/recent. Make sure the API is running.
@@ -78,7 +78,7 @@ export default async function VersusRecentPage({
           </span>
         }
       />
-      <main className="versus-main">
+      <main className="versus-main versus-main-full">
         <div className="recent-tabs">
           <Link
             href={tabHref("completions")}

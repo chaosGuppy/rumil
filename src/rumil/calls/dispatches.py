@@ -74,6 +74,22 @@ class DispatchDef(Generic[S]):
             if isinstance(validated, ScopeOnlyDispatchPayload) and scope_question_id:
                 validated.question_id = scope_question_id
 
+            qid = getattr(validated, "question_id", None)
+            if qid and not isinstance(validated, ScopeOnlyDispatchPayload):
+                resolved = await state.db.resolve_page_id(qid)
+                if resolved is None:
+                    suggestion = ""
+                    if len(qid) > 8:
+                        hint = await state.db.resolve_page_id(qid[:8])
+                        if hint:
+                            suggestion = f" The closest match by short-id prefix is `{hint}`."
+                    return (
+                        f"Dispatch rejected: page id `{qid}` does not exist."
+                        f"{suggestion} Re-dispatch with a corrected id."
+                    )
+                if resolved != qid:
+                    validated.question_id = resolved
+
             dispatch = Dispatch(call_type=self.call_type, payload=validated)
             error = state.record_dispatch(dispatch)
             if error:

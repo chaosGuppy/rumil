@@ -172,8 +172,8 @@ async def test_setup_seeds_budget(mocker):
 
 
 @pytest.mark.asyncio
-async def test_run_constructs_orch_with_budget_cap_and_runs(mocker):
-    """The wrapper must thread budget into ``budget_cap`` and call run(qid)."""
+async def test_run_constructs_orch_with_assigned_budget_and_runs(mocker):
+    """The wrapper must thread budget into ``assigned_budget`` and call run(qid)."""
     fake_orch = mocker.MagicMock()
     fake_orch.run = mocker.AsyncMock()
     orch_cls = mocker.MagicMock(return_value=fake_orch)
@@ -185,5 +185,5 @@ async def test_run_constructs_orch_with_budget_cap_and_runs(mocker):
     wf = TwoPhaseWorkflow(budget=5)
     await wf.run(db, "q-1", broadcaster)
 
-    orch_cls.assert_called_once_with(db=db, broadcaster=broadcaster, budget_cap=5)
+    orch_cls.assert_called_once_with(db=db, broadcaster=broadcaster, assigned_budget=5)
     fake_orch.run.assert_called_once_with("q-1")

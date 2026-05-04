@@ -1547,7 +1547,16 @@ def get_recent(limit: int = 100) -> RecentBundle:
 
     text_out = [_text_to_recent_row(db_row, current_prefix_hashes) for db_row in text_rows]
 
-    text_source_index = _build_completion_source_index_from_rows(text_rows)
+    # Orphan-check needs to know about ALL existing texts, not just the
+    # recent-100 window — otherwise judgments whose contestants were created
+    # outside that window (e.g. human baselines from weeks ago) wrongly flag
+    # as orphaned. 726 rows x 3 short cols is ~50KB, fine to fetch fresh.
+    all_text_index_resp = (
+        client.table("versus_texts").select("essay_id,prefix_hash,source_id").execute()
+    )
+    text_source_index = _build_completion_source_index_from_rows(
+        [r for r in (all_text_index_resp.data or []) if isinstance(r, dict)]
+    )
     judgments_out: list[JudgmentRow] = []
     for db_row in judgment_rows:
         row = _legacy_judgment_dict(db_row)

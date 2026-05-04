@@ -22,6 +22,7 @@ from tenacity import (
 )
 
 from rumil.models import (
+    SCOUT_CALL_TYPES,
     Call,
     CallSequence,
     CallStatus,
@@ -2376,7 +2377,7 @@ class DB:
                 .select("call_type, completed_at, review_json")
                 .eq("scope_page_id", question_id)
                 .eq("status", "complete")
-                .like("call_type", "scout_%")
+                .in_("call_type", [ct.value for ct in SCOUT_CALL_TYPES])
                 .order("completed_at", desc=True)
             )
         )

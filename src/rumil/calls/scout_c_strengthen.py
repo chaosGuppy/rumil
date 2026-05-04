@@ -21,7 +21,9 @@ class ScoutCStrengthenCall(CallRunner):
     call_type = CallType.SCOUT_C_STRENGTHEN
 
     def _make_context_builder(self) -> ContextBuilder:
-        return EmbeddingContext(self.call_type, view_for_scout=True)
+        # No view_for_scout: this scout's scope is a claim, not a question,
+        # so View.render_for_scout would just round-trip to no result.
+        return EmbeddingContext(self.call_type)
 
     def _make_workspace_updater(self) -> WorkspaceUpdater:
         return MultiRoundLoop(

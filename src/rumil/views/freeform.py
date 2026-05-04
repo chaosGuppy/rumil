@@ -103,11 +103,11 @@ class FreeformView(View):
             return None
         callout = (
             "### Notes for scouts\n\n"
-            "The **research_direction** section above is the canonical source "
+            "The **Research Direction** section above is the canonical source "
             "of subquestion-worthy cruxes — its job is precisely to surface "
             "the unknowns that, if investigated, would most improve the "
             "answer. Read it before deciding what to scout. "
-            "**returns_to_further_research** is also useful supporting "
+            "**Returns To Further Research** is also useful supporting "
             "context for sizing scout effort."
         )
         return f"## Current view on this question\n\n{body}\n\n{callout}"

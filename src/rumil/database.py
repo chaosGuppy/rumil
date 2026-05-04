@@ -339,6 +339,22 @@ class MutationState:
         self.hidden_overrides: dict[str, bool] = {}
 
 
+# Mutation events are scoped to a run, not a DB instance — the cache must be
+# shared across every DB.fork() (and view_as_staged sibling) of the same run.
+# Otherwise a child call writing a mutation on its forked DB never invalidates
+# the parent orchestrator's cache, and reads on the parent return stale state.
+# Keying on run_id ensures invalidation propagates to every fork automatically.
+_MUTATION_CACHES: dict[str, MutationState] = {}
+# Non-staged runs have no events to overlay; share one empty state so we
+# don't allocate a fresh one per page-read batch.
+_EMPTY_MUTATION_STATE = MutationState()
+
+
+def clear_mutation_caches() -> None:
+    """Drop all per-run mutation caches. For test teardown."""
+    _MUTATION_CACHES.clear()
+
+
 class DB:
     def __init__(
         self,
@@ -353,7 +369,6 @@ class DB:
         self.staged = staged
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
-        self._mutation_cache: MutationState | None = None
 
     @classmethod
     async def create(
@@ -436,11 +451,11 @@ class DB:
 
     async def _load_mutation_state(self) -> MutationState:
         """Fetch and cache mutation events for this staged run."""
-        if self._mutation_cache is not None:
-            return self._mutation_cache
         if not self.staged:
-            self._mutation_cache = MutationState()
-            return self._mutation_cache
+            return _EMPTY_MUTATION_STATE
+        cached = _MUTATION_CACHES.get(self.run_id)
+        if cached is not None:
+            return cached
         rows = _rows(
             await self._execute(
                 self.client.table("mutation_events")
@@ -484,11 +499,11 @@ class DB:
                         state.robustness_source[tid] = source
             elif et == "set_hidden" and "hidden" in payload:
                 state.hidden_overrides[tid] = bool(payload["hidden"])
-        self._mutation_cache = state
+        _MUTATION_CACHES[self.run_id] = state
         return state
 
     def _invalidate_mutation_cache(self) -> None:
-        self._mutation_cache = None
+        _MUTATION_CACHES.pop(self.run_id, None)
 
     async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
         """Overlay mutation events onto a batch of pages."""

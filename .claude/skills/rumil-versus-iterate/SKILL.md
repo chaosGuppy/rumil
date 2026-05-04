@@ -593,6 +593,64 @@ The trace+fork loop is high-leverage but the sample size is tiny
   variants, use `nohup uv run python ... &` so SIGHUP from the
   parent shell exit doesn't kill mid-init.
 
+  **`nohup` alone isn't always enough — verify after firing.** Even
+  with `nohup`, observed twice in one session: 5 fan-out subprocesses
+  silently died at $0 cost despite the parent shell having exited
+  cleanly. After firing, check `calls.cost_usd > 0` (or at least one
+  `call_llm_exchanges` row) within ~5 min. If status=running with $0
+  after that window, the subprocess died — re-fire. Don't trust
+  pid-based "alive" checks; the python process can be gone but the
+  shell wrapper around it linger.
+
+- **Bash word-splitting + `nohup` + flag-with-arg gotcha.** Passing
+  `--budget 4` (a flag and its value) through a bash variable inside
+  a `nohup` invocation can fail to word-split, causing argparse to
+  reject `--budget 4` as a single unrecognized argument. Reproducer:
+  ```bash
+  budget_flag="--budget 4"
+  nohup uv run python script.py --variant orch $budget_flag &  # FAILS
+  ```
+  Two fixes: (a) inline the flag — `... --variant orch --budget 4 &`
+  — when the flag isn't conditional; (b) use a bash array
+  for conditional flags — `args=(); [ -n "$bdg" ] && args+=(--budget "$bdg"); nohup ... "${args[@]}" &`.
+  Don't pack flag+value into a single quoted string.
+
+- **Robust watcher patterns.** When polling for completed
+  fan-out variants:
+  - **Poll by exact source_id**, computed via `--dry-run` of the
+    variant's command beforehand (`run_completions.py --dry-run`
+    prints the dedup'd source_id without executing). Pattern-matching
+    on `orch:draft_and_edit:claude-sonnet-4-6:%` will falsely match
+    pre-existing variant rows that share the model but differ in
+    workflow config — observed in this session: a v5_hybrid watcher
+    matched a pre-existing v3_planner_arbiter row as if it were the
+    target, fired judging on the wrong continuation, and only later
+    surfaced the mismatch.
+  - **Don't trust `all_done=1` initial value with cumulative skip
+    logic.** The pattern `all_done=1; for cell; do [ -f .judged ] && continue; if landed; then judge+touch; else all_done=0; fi; done`
+    silently exits when all currently-detected cells are judged but
+    not-yet-landed cells haven't been seen yet. Use explicit count
+    matching (`expected_cells == count(.judged files)`) or run the
+    loop until a sentinel file is touched externally.
+
+- **`versus_texts.prefix_hash` is 16 chars, not 12.** Easy to
+  truncate by reflex when typing DB queries. A `eq('prefix_hash',
+  '58d24ae8dcad')` filter (12 chars) will silently return zero rows;
+  the actual stored value is `58d24ae8dcadf767`. Use prefix matching
+  with a `startswith` check in Python rather than `.eq()` if you only
+  remember the leading bytes:
+  ```python
+  rows = [r for r in res.data if r['prefix_hash'].startswith(ph_short)]
+  ```
+
+- **`run_rumil_judgments.py --variant orch` budget knob is
+  load-bearing.** Pass `--budget N` to control the internal
+  `TwoPhaseOrchestrator` research budget per judgment (default
+  unspecified — tends to under-research relative to b=4 completions
+  the judges are evaluating). Match the completion budget the pairs
+  were produced at (typically `--budget 4`) so the judge has
+  symmetric research depth to the contestants it's comparing.
+
 ## Quick check (skill is working)
 
 A successful end-to-end run produces:

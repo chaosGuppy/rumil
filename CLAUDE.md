@@ -145,6 +145,8 @@ Load-bearing invariants you shouldn't break in a passing edit:
 - **Never run `supabase db reset`** — this wipes the database and is destructive. To apply pending migrations, use `supabase migration up` instead. If you find yourself wanting to reset the database, stop and ask the user first.
 - Always scope your test runs to a temp/scratch workspace, e.g. `uv run main.py "Is the sky blue?" --workspace skyblue-scratch`
 
+- **Settings precedence: dotenv beats shell env.** `Settings` overrides pydantic-settings' default source order so `.env` / `.env.overrides` win over exported shell variables (see `settings.py:settings_customise_sources`). This is intentional — per-worktree `.env.overrides` is the canonical override mechanism. If a value seems wrong, check the dotenv files before assuming `export FOO=...` took effect.
+
 - Always use absolute imports: `from rumil.module import name` (no relative imports)
 - Always put imports at the top of the file, not inside functions
 - Use modern type syntax: `X | None` not `Optional[X]`, `list[str]` not `List[str]`, etc. No `from typing import Optional, List, Dict`.

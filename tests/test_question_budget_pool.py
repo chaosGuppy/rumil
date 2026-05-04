@@ -289,7 +289,7 @@ async def test_orchestrator_registers_on_run_start_and_unregisters_after(
         RunCallResult(dispatches=[]),
     ]
 
-    parent = TwoPhaseOrchestrator(tmp_db, budget_cap=15)
+    parent = TwoPhaseOrchestrator(tmp_db, assigned_budget=15)
     await parent.run(question_page.id)
 
     pool = await tmp_db.qbp_get(question_page.id)
@@ -391,7 +391,7 @@ async def test_recurse_dispatch_charges_parent_pool_and_registers_child(
         RunCallResult(dispatches=[]),
     ]
 
-    parent = TwoPhaseOrchestrator(tmp_db, budget_cap=20)
+    parent = TwoPhaseOrchestrator(tmp_db, assigned_budget=20)
     await parent.run(question_page.id)
 
     parent_pool = await tmp_db.qbp_get(question_page.id)
@@ -402,6 +402,76 @@ async def test_recurse_dispatch_charges_parent_pool_and_registers_child(
     # Child orchestrator registered itself with budget=MIN_TWOPHASE_BUDGET when
     # its run() began.
     assert child_pool.contributed >= MIN_TWOPHASE_BUDGET
+
+
+@pytest.mark.asyncio
+async def test_recurse_child_consumes_full_pool_not_just_assigned_slice(
+    tmp_db, question_page, child_question_page, prio_harness
+):
+    """Recurse children draw from the full per-question pool, not just their slice.
+
+    Pins the fix for the budget-sharing bug: when a child question's pool
+    already has surplus contributions (e.g. from a prior peer cycle), the
+    recurse child orchestrator must be able to consume past its dispatched
+    budget. The previous ``budget_cap - _consumed`` clamp inside
+    ``_effective_budget`` prevented this and collapsed the shared pool back
+    into per-orchestrator slices.
+    """
+    await tmp_db.init_budget(80)
+
+    # A peer / prior cycle left ``surplus`` unconsumed in the child pool.
+    # This is what the recurse child should be allowed to spend on top of
+    # its own dispatched slice. Keep it large enough that the child runs
+    # several rounds — at small pool sizes the loop trips into last_call
+    # mode after one round and consumed never demonstrates "more than
+    # the slice".
+    surplus = MIN_TWOPHASE_BUDGET * 4
+    await tmp_db.qbp_register(child_question_page.id, surplus)
+
+    recurse = Dispatch(
+        call_type=CallType.PRIORITIZATION,
+        payload=RecurseDispatchPayload(
+            question_id=child_question_page.id,
+            budget=MIN_TWOPHASE_BUDGET,
+            reason="drill into subquestion",
+        ),
+    )
+    # The mocked prio queue feeds both parent and child orchestrators in turn.
+    # Parent: 1 seed scout, then 1 recurse. Child: deep queue of single-scout
+    # rounds so the only thing that can stop it is the pool draining.
+    prio_harness.prio_queue = [
+        RunCallResult(dispatches=[_scout_dispatch(question_page.id, "seed")]),
+        RunCallResult(dispatches=[recurse]),
+    ]
+    for i in range(30):
+        prio_harness.prio_queue.append(
+            RunCallResult(dispatches=[_scout_dispatch(child_question_page.id, f"c-{i}")])
+        )
+
+    parent = TwoPhaseOrchestrator(tmp_db, assigned_budget=20)
+    await parent.run(question_page.id)
+
+    child_pool = await tmp_db.qbp_get(child_question_page.id)
+    # Pool ends with: surplus (peer) + MIN_TWOPHASE_BUDGET (recurse contribution).
+    assert child_pool.contributed == surplus + MIN_TWOPHASE_BUDGET
+
+    # Count the scout dispatches the child executed against its own question.
+    # The old ``_budget_cap - _consumed`` clamp inside ``_effective_budget``
+    # would stop the child after exactly MIN_TWOPHASE_BUDGET dispatch sequences
+    # (one per increment of ``_consumed``), regardless of how much surplus the
+    # pool had. The fix lets the child keep running as long as the pool — the
+    # authoritative per-question gate — has remaining budget.
+    scout_count = sum(
+        1
+        for d in prio_harness.dispatched
+        if d["call_type"] == CallType.FIND_CONSIDERATIONS.value
+        and d["question_id"] == child_question_page.id
+    )
+    assert scout_count > MIN_TWOPHASE_BUDGET, (
+        f"Child dispatched only {scout_count} scouts on its question — capped at "
+        f"its assigned slice ({MIN_TWOPHASE_BUDGET}) instead of drawing from "
+        f"the pool's surplus contribution of {surplus}."
+    )
 
 
 @pytest.mark.asyncio
@@ -417,20 +487,23 @@ async def test_loop_stops_when_pool_exhausted_even_if_local_budget_remains(
     await tmp_db.qbp_consume(question_page.id, 10)
 
     # Endless dispatch script — we expect to exit before consuming much of
-    # our own budget_cap.
+    # our own assigned_budget.
     prio_harness.prio_queue = [
         RunCallResult(dispatches=[_scout_dispatch(question_page.id, f"r{i}")]) for i in range(20)
     ]
 
-    parent = TwoPhaseOrchestrator(tmp_db, budget_cap=20)
+    parent = TwoPhaseOrchestrator(tmp_db, assigned_budget=20)
     await parent.run(question_page.id)
 
     # The orchestrator should have exited because pool.remaining hit 0,
-    # not because budget_cap (20) was exhausted. Allow for a small bounded
-    # number of consumes from rounds that fired before the loop check tripped.
-    assert parent._consumed < 20
+    # not because its own assigned_budget (20) was drained. Allow for a small
+    # bounded number of consumes from rounds that fired before the loop check
+    # tripped — strictly less than what this orchestrator contributed (20).
+    pool = await tmp_db.qbp_get(question_page.id)
+    # Pool consumed = 10 (peer's pre-spent) + this orchestrator's spending.
+    # The latter must be small (< 20) for the early-exit to be meaningful.
+    assert pool.consumed - 10 < 20
 
     # Pool active_calls returned to 0 after our orchestrator unregistered
     # itself (we never unregistered the simulated peer).
-    pool = await tmp_db.qbp_get(question_page.id)
     assert pool.active_calls == 1

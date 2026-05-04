@@ -247,12 +247,12 @@ async def _make_question(db, headline: str) -> Page:
 
 
 async def test_concurrent_recursive_children_dont_overspend_global_budget(tmp_db, mocker):
-    """Two concurrent recurse children with caps summing above remaining must not overspend.
+    """Two concurrent recurse children with assignments summing above remaining must
+    not overspend.
 
-    Pins the invariant that ``_consumed`` tracked locally per orchestrator
-    does not allow siblings to collectively overdraw the shared global pool.
-    If a future rearch holds stale per-orchestrator consumption counters, this
-    test should fail.
+    Pins the invariant that the per-question pool plus the run-level budget
+    bound concurrent siblings — neither is allowed to draw past the shared
+    global remaining, even when their assigned_budgets sum to more than that.
     """
     parent_q = await _make_question(tmp_db, "Parent Q")
     child_a = await _make_question(tmp_db, "Child A")

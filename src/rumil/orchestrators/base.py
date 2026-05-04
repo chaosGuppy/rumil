@@ -110,7 +110,8 @@ class BaseOrchestrator(ABC):
     async def _pacing_params(self) -> tuple[int, int]:
         """Return (total, used) for budget pacing.
 
-        Subclasses with budget_cap should override to use their local scope.
+        Subclasses that participate in a question pool override this to pace
+        against the pool's totals once registered.
         """
         return await self.db.get_budget()
 
@@ -479,7 +480,7 @@ class BaseOrchestrator(ABC):
         round and the child call sits in a non-terminal state.
         """
         child_call_id = getattr(child, "_call_id", None)
-        allocated = getattr(child, "_budget_cap", None) or 0
+        allocated = getattr(child, "_assigned_budget", None) or 0
 
         refund = 0
         if self.pool_question_id:

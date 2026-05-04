@@ -346,15 +346,15 @@ async def test_failed_recurse_child_refunds_and_records_event(
     )
 
     class FailingChild(BaseOrchestrator):
-        def __init__(self, db, call_id, budget_cap):
+        def __init__(self, db, call_id, assigned_budget):
             super().__init__(db)
             self._call_id = call_id
-            self._budget_cap = budget_cap
+            self._assigned_budget = assigned_budget
 
         async def run(self, root_question_id):
             raise ValueError("child cycle blew up before consuming any budget")
 
-    child = FailingChild(tmp_db, child_p_call.id, budget_cap=4)
+    child = FailingChild(tmp_db, child_p_call.id, assigned_budget=4)
 
     parent = TwoPhaseOrchestrator(tmp_db)
     parent.pool_question_id = question_page.id
@@ -422,15 +422,15 @@ async def test_partial_consumption_refund_only_unspent(
     )
 
     class FailingChild(BaseOrchestrator):
-        def __init__(self, db, call_id, budget_cap):
+        def __init__(self, db, call_id, assigned_budget):
             super().__init__(db)
             self._call_id = call_id
-            self._budget_cap = budget_cap
+            self._assigned_budget = assigned_budget
 
         async def run(self, root_question_id):
             raise RuntimeError("partial spend then crash")
 
-    child = FailingChild(tmp_db, child_p_call.id, budget_cap=5)
+    child = FailingChild(tmp_db, child_p_call.id, assigned_budget=5)
 
     parent = TwoPhaseOrchestrator(tmp_db)
     parent.pool_question_id = question_page.id

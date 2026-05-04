@@ -314,6 +314,151 @@ async def test_concurrent_dispatch_failure_recorded_in_trace(
     assert "Simulated connection failure" in error_events[0]["message"]
 
 
+@pytest.mark.asyncio
+async def test_failed_recurse_child_refunds_and_records_event(
+    tmp_db,
+    question_page,
+    child_question_page,
+):
+    """A child orchestrator whose run() raises should be surfaced by the
+    parent: child PRIORITIZATION call marked FAILED, unspent allocation
+    refunded to the parent pool, and a RecurseFailedEvent recorded on the
+    parent prioritization trace. Without this, planned recurses fail
+    silently and 4-budget-each allocations vanish from the bookkeeping.
+    """
+    from rumil.models import CallStatus
+
+    parent_p_call = await tmp_db.create_call(
+        CallType.PRIORITIZATION,
+        scope_page_id=question_page.id,
+    )
+
+    await tmp_db.qbp_register(question_page.id, 10)
+    await tmp_db.qbp_recurse(question_page.id, child_question_page.id, 4)
+    parent_pool_after_recurse = await tmp_db.qbp_get(question_page.id)
+    assert parent_pool_after_recurse.consumed == 4
+
+    child_p_call = await tmp_db.create_call(
+        CallType.PRIORITIZATION,
+        scope_page_id=child_question_page.id,
+        parent_call_id=parent_p_call.id,
+        budget_allocated=4,
+    )
+
+    class FailingChild(BaseOrchestrator):
+        def __init__(self, db, call_id, budget_cap):
+            super().__init__(db)
+            self._call_id = call_id
+            self._budget_cap = budget_cap
+
+        async def run(self, root_question_id):
+            raise ValueError("child cycle blew up before consuming any budget")
+
+    child = FailingChild(tmp_db, child_p_call.id, budget_cap=4)
+
+    parent = TwoPhaseOrchestrator(tmp_db)
+    parent.pool_question_id = question_page.id
+
+    result = PrioritizationResult(
+        dispatch_sequences=[],
+        call_id=parent_p_call.id,
+        children=[(child, child_question_page.id)],
+    )
+
+    gather_results = await parent.execute_dispatches(result, question_page.id)
+
+    assert len(gather_results) == 1
+    assert isinstance(gather_results[0], ValueError)
+
+    parent_pool = await tmp_db.qbp_get(question_page.id)
+    assert parent_pool.consumed == 0
+    assert parent_pool.remaining == 10
+    child_pool = await tmp_db.qbp_get(child_question_page.id)
+    assert child_pool.contributed == 0
+
+    refreshed_child_call = await tmp_db.get_call(child_p_call.id)
+    assert refreshed_child_call is not None
+    assert refreshed_child_call.status == CallStatus.FAILED
+    assert "Recursive cycle failed" in refreshed_child_call.result_summary
+    assert "refunded=4" in refreshed_child_call.result_summary
+
+    rows = (
+        await tmp_db.client.table("calls").select("trace_json").eq("id", parent_p_call.id).execute()
+    )
+    trace_json = rows.data[0]["trace_json"]
+    recurse_events = [e for e in trace_json if e.get("event") == "recurse_failed"]
+    assert len(recurse_events) == 1
+    ev = recurse_events[0]
+    assert ev["child_call_id"] == child_p_call.id
+    assert ev["child_question_id"] == child_question_page.id
+    assert ev["allocated_budget"] == 4
+    assert ev["refunded_budget"] == 4
+    assert ev["error_type"] == "ValueError"
+    assert "blew up" in ev["error_message"]
+
+
+@pytest.mark.asyncio
+async def test_partial_consumption_refund_only_unspent(
+    tmp_db,
+    question_page,
+    child_question_page,
+):
+    """When a child consumed some of its allocation before failing, only
+    the unspent portion is refunded to the parent pool."""
+    parent_p_call = await tmp_db.create_call(
+        CallType.PRIORITIZATION,
+        scope_page_id=question_page.id,
+    )
+
+    await tmp_db.qbp_register(question_page.id, 10)
+    await tmp_db.qbp_recurse(question_page.id, child_question_page.id, 5)
+    await tmp_db.qbp_consume(child_question_page.id, 2)
+
+    child_p_call = await tmp_db.create_call(
+        CallType.PRIORITIZATION,
+        scope_page_id=child_question_page.id,
+        parent_call_id=parent_p_call.id,
+        budget_allocated=5,
+    )
+
+    class FailingChild(BaseOrchestrator):
+        def __init__(self, db, call_id, budget_cap):
+            super().__init__(db)
+            self._call_id = call_id
+            self._budget_cap = budget_cap
+
+        async def run(self, root_question_id):
+            raise RuntimeError("partial spend then crash")
+
+    child = FailingChild(tmp_db, child_p_call.id, budget_cap=5)
+
+    parent = TwoPhaseOrchestrator(tmp_db)
+    parent.pool_question_id = question_page.id
+
+    result = PrioritizationResult(
+        dispatch_sequences=[],
+        call_id=parent_p_call.id,
+        children=[(child, child_question_page.id)],
+    )
+
+    await parent.execute_dispatches(result, question_page.id)
+
+    # Started: parent.consumed=5, child.contributed=5, child.consumed=2.
+    # Unspent = 3 → refund 3. After: parent.consumed=2, child.contributed=2.
+    parent_pool = await tmp_db.qbp_get(question_page.id)
+    assert parent_pool.consumed == 2
+    child_pool = await tmp_db.qbp_get(child_question_page.id)
+    assert child_pool.contributed == 2
+    assert child_pool.consumed == 2
+
+    rows = (
+        await tmp_db.client.table("calls").select("trace_json").eq("id", parent_p_call.id).execute()
+    )
+    trace_json = rows.data[0]["trace_json"]
+    ev = next(e for e in trace_json if e.get("event") == "recurse_failed")
+    assert ev["refunded_budget"] == 3
+
+
 # ---------------------------------------------------------------------------
 # Behavioral unit tests for _execute_dispatch.
 #

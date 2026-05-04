@@ -51,24 +51,28 @@ def test_base_allocation_scaling() -> None:
 
 
 @pytest.mark.asyncio
-async def test_paced_budget_uses_budget_cap_in_nested_orchestrator(tmp_db):
-    """When budget_cap is set, _pacing_params returns the local cap/consumed, not global.
-
-    Nested orchestrators pace against their own allocation; a child with cap=20
-    paces like a 20-budget run regardless of the global pool size.
+async def test_paced_budget_uses_pool_when_registered(tmp_db, question_page):
+    """When the orchestrator's pool is registered, ``_pacing_params`` returns
+    pool-level totals, so pacing scales with the actual shared pool — including
+    any sibling contributions — rather than just this orchestrator's slice.
     """
     await tmp_db.init_budget(100)
     await tmp_db.consume_budget(40)
 
-    capped = TwoPhaseOrchestrator(tmp_db, budget_cap=20)
-    capped._consumed = 5
-    total, used = await capped._pacing_params()
-    assert (total, used) == (20, 5), (
-        f"capped orch should pace from (budget_cap, _consumed); got ({total}, {used})"
+    # Pool registered with a sibling contribution of 30 already consumed by 10.
+    # When this orchestrator joins, contributions sum and pacing sees the total.
+    await tmp_db.qbp_register(question_page.id, 30)
+    await tmp_db.qbp_consume(question_page.id, 10)
+
+    pooled = TwoPhaseOrchestrator(tmp_db)
+    pooled.pool_question_id = question_page.id
+    total, used = await pooled._pacing_params()
+    assert (total, used) == (30, 10), (
+        f"pooled orch should pace from (pool.contributed, pool.consumed); got ({total}, {used})"
     )
 
     uncapped = TwoPhaseOrchestrator(tmp_db)
     g_total, g_used = await uncapped._pacing_params()
     assert (g_total, g_used) == (100, 40), (
-        f"uncapped orch should pace from global budget; got ({g_total}, {g_used})"
+        f"orch without a registered pool should pace from global budget; got ({g_total}, {g_used})"
     )

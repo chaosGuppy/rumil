@@ -453,7 +453,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
 
     def _create_local_orchestrator(
         self,
-        budget_cap: int,
+        assigned_budget: int,
         parent_call_id: str | None = None,
     ) -> BaseOrchestrator | None:
         """Create the local orchestrator based on settings."""
@@ -464,7 +464,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             orch = ExperimentalOrchestrator(
                 self.db,
                 self.broadcaster,
-                budget_cap=budget_cap,
+                assigned_budget=assigned_budget,
             )
             orch._parent_call_id = parent_call_id
             return orch
@@ -472,7 +472,7 @@ class GlobalPrioOrchestrator(BaseOrchestrator):
             orch = TwoPhaseOrchestrator(
                 self.db,
                 self.broadcaster,
-                budget_cap=budget_cap,
+                assigned_budget=assigned_budget,
             )
             orch._parent_call_id = parent_call_id
             return orch

@@ -106,9 +106,7 @@ class FreeformView(View):
             "The **Research Direction** section above is the canonical source "
             "of subquestion-worthy cruxes — its job is precisely to surface "
             "the unknowns that, if investigated, would most improve the "
-            "answer. Read it before deciding what to scout. "
-            "**Returns To Further Research** is also useful supporting "
-            "context for sizing scout effort."
+            "answer."
         )
         return f"## Current view on this question\n\n{body}\n\n{callout}"
 

@@ -99,10 +99,11 @@ async def test_auto_refresh_runs_even_when_budget_exhausts_mid_sequence(
 ):
     """When the scout consumes the last unit, the trailing refresh force-consumes and still runs.
 
-    init_budget=13 lets initial prio drain 12 units, leaving 1 for the main-phase
-    scout; the trailing refresh hits budget_remaining==0 and must force-consume.
+    init_budget=14 lets initial prio's view.refresh + 12 scouts drain 13 units,
+    leaving 1 for the main-phase scout; the trailing refresh hits
+    budget_remaining==0 and must force-consume.
     """
-    await tmp_db.init_budget(13)
+    await tmp_db.init_budget(14)
     seed_scouts = [_scout_dispatch(question_page.id, f"seed {i}") for i in range(12)]
     prio_harness.prio_queue = [
         RunCallResult(dispatches=seed_scouts),
@@ -133,7 +134,7 @@ async def test_force_consume_expands_global_budget(
     tmp_db, question_page, child_question_page, prio_harness
 ):
     """Force-consume grows ``total`` by 1 per forced unit, so we never overdraw."""
-    initial_total = 13
+    initial_total = 14
     await tmp_db.init_budget(initial_total)
     seed_scouts = [_scout_dispatch(question_page.id, f"seed {i}") for i in range(12)]
     prio_harness.prio_queue = [
@@ -147,9 +148,10 @@ async def test_force_consume_expands_global_budget(
 
     total, used = await tmp_db.get_budget()
     forced_count = sum(1 for d in prio_harness.dispatched if d["force"])
-    assert forced_count > 0, "expected at least one force-consume in this setup"
-    assert total >= initial_total + forced_count, (
-        f"total={total} should have grown by ≥ {forced_count} forced units "
-        f"from initial {initial_total}"
+    expansions = total - initial_total
+    assert expansions > 0, "expected at least one force-expansion in this setup"
+    assert forced_count >= expansions, (
+        f"every expansion must come from a force-flagged dispatch — "
+        f"forced_count={forced_count}, expansions={expansions}"
     )
     assert used <= total

@@ -110,7 +110,7 @@ async def test_main_phase_prompt_includes_note_when_threshold_exceeded(
         RunCallResult(dispatches=[]),
     ]
 
-    orch = TwoPhaseOrchestrator(tmp_db, budget_cap=10)
+    orch = TwoPhaseOrchestrator(tmp_db, assigned_budget=10)
     orch._executed_since_last_plan = True
     orch._invocation = 1
     await orch._main_phase_prioritization(
@@ -142,7 +142,7 @@ async def test_main_phase_prompt_omits_note_when_below_threshold(
         RunCallResult(dispatches=[]),
     ]
 
-    orch = TwoPhaseOrchestrator(tmp_db, budget_cap=10)
+    orch = TwoPhaseOrchestrator(tmp_db, assigned_budget=10)
     orch._executed_since_last_plan = True
     orch._invocation = 1
     await orch._main_phase_prioritization(

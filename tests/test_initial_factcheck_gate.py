@@ -62,7 +62,7 @@ async def test_initial_fanout_drops_factchecks_when_workspace_empty(
         RunCallResult(dispatches=[]),
     ]
 
-    orch = TwoPhaseOrchestrator(tmp_db, budget_cap=10)
+    orch = TwoPhaseOrchestrator(tmp_db, assigned_budget=10)
     await orch.run(question_page.id)
 
     assert prio_harness.prio_calls, "expected at least one prioritization invocation"
@@ -86,7 +86,7 @@ async def test_initial_fanout_keeps_factchecks_when_a_claim_exists(
         RunCallResult(dispatches=[]),
     ]
 
-    orch = TwoPhaseOrchestrator(tmp_db, budget_cap=10)
+    orch = TwoPhaseOrchestrator(tmp_db, assigned_budget=10)
     await orch.run(question_page.id)
 
     initial_call = prio_harness.prio_calls[0]

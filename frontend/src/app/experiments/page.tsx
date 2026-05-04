@@ -119,45 +119,14 @@ function ContextEvalRow({
   );
 }
 
-function RunCallRow({ ev, delay }: { ev: RunCallExperiment; delay: number }) {
-  const title = ev.question_headline || ev.name || ev.run_id.slice(0, 8);
-  const subtitle = ev.question_headline && ev.name && ev.name !== ev.question_headline
-    ? ev.name
-    : null;
-  const cfg = ev.config_summary ?? {};
-  const cfgEntries = Object.entries(cfg).filter(([, v]) => v !== undefined && v !== null && v !== "");
-  return (
-    <Link
-      href={`/traces/${ev.run_id}`}
-      className="experiment-row"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      <span className="experiment-kind-tag" data-kind="run_call">RUN</span>
-      <div className="experiment-row-main">
-        <div className="experiment-question">
-          {title}
-          {ev.staged && <span className="experiment-staged-chip">staged</span>}
-        </div>
-        {subtitle && <div className="experiment-preview">{subtitle}</div>}
-        {cfgEntries.length > 0 && (
-          <div className="experiment-config">
-            {cfgEntries.map(([k, v]) => (
-              <span key={k} className="experiment-config-item">
-                <span className="experiment-config-key">{k}</span>
-                <span>{String(v)}</span>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="experiment-row-meta">
-        <span className="experiment-date">{formatDate(ev.created_at)}</span>
-      </div>
-    </Link>
-  );
-}
+type RunRowExperiment = RunCallExperiment | RunPrioExperiment;
 
-function RunPrioRow({ ev, delay }: { ev: RunPrioExperiment; delay: number }) {
+const RUN_TAG_LABELS: Record<RunRowExperiment["kind"], string> = {
+  run_call: "RUN",
+  run_prio: "PRIO",
+};
+
+function RunRow({ ev, delay }: { ev: RunRowExperiment; delay: number }) {
   const title = ev.question_headline || ev.name || ev.run_id.slice(0, 8);
   const subtitle = ev.question_headline && ev.name && ev.name !== ev.question_headline
     ? ev.name
@@ -170,7 +139,9 @@ function RunPrioRow({ ev, delay }: { ev: RunPrioExperiment; delay: number }) {
       className="experiment-row"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <span className="experiment-kind-tag" data-kind="run_prio">PRIO</span>
+      <span className="experiment-kind-tag" data-kind={ev.kind}>
+        {RUN_TAG_LABELS[ev.kind]}
+      </span>
       <div className="experiment-row-main">
         <div className="experiment-question">
           {title}
@@ -218,11 +189,8 @@ export default async function ExperimentsPage() {
           <div className="experiments-list">
             {experiments.map((ev, i) => {
               const delay = Math.min(i * 30, 300);
-              if (ev.kind === "run_call") {
-                return <RunCallRow key={`run-${ev.run_id}`} ev={ev} delay={delay} />;
-              }
-              if (ev.kind === "run_prio") {
-                return <RunPrioRow key={`prio-${ev.run_id}`} ev={ev} delay={delay} />;
+              if (ev.kind === "run_call" || ev.kind === "run_prio") {
+                return <RunRow key={`${ev.kind}-${ev.run_id}`} ev={ev} delay={delay} />;
               }
               if (ev.kind === "context_eval") {
                 return (

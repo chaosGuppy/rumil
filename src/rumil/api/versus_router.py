@@ -1424,7 +1424,27 @@ def _flavor_of(source_id: str, params: dict) -> tuple[str, str | None]:
     return "single-shot", None
 
 
-def _text_to_recent_row(db_row: dict, current_prefix_hashes: dict[str, str]) -> RecentTextRow:
+def _active_prefix_hashes_by_essay(cfg: versus_config.Config) -> dict[str, set[str]]:
+    """{essay_id -> set of valid prefix hashes across all active variants}.
+
+    Used by /recent to flag a row as stale only when its prefix_hash matches
+    no current variant — distinct from /matrix etc. which scope staleness to a
+    single user-selected variant. A row written under a non-canonical-but-
+    still-active prefix (e.g. ``no_headers``) is not stale; only rows whose
+    prefix has been renamed/removed/edited out of the cfg are.
+    """
+    out: dict[str, set[str]] = {}
+    for pcfg in versus_prepare.active_prefix_configs(cfg):
+        try:
+            _, variant_hashes = _build_essays_status(cfg, prefix_cfg=pcfg)
+        except Exception:
+            continue
+        for eid, ph in variant_hashes.items():
+            out.setdefault(eid, set()).add(ph)
+    return out
+
+
+def _text_to_recent_row(db_row: dict, current_prefix_hashes: dict[str, set[str]]) -> RecentTextRow:
     params = db_row.get("params") or {}
     source_id = db_row.get("source_id") or ""
     flavor, workflow = _flavor_of(source_id, params)
@@ -1441,8 +1461,8 @@ def _text_to_recent_row(db_row: dict, current_prefix_hashes: dict[str, str]) -> 
         thinking_mode = None
     essay_id = db_row.get("essay_id") or ""
     prefix_hash = db_row.get("prefix_hash") or ""
-    current = current_prefix_hashes.get(essay_id)
-    stale = bool(current) and current != prefix_hash
+    valid_hashes = current_prefix_hashes.get(essay_id) or set()
+    stale = bool(valid_hashes) and prefix_hash not in valid_hashes
     text_len = db_row.get("response_words")
     if text_len is None:
         text = db_row.get("text") or ""
@@ -1492,12 +1512,12 @@ def get_recent(limit: int = 100) -> RecentBundle:
     limit = max(1, min(limit, 1000))
     client = _versus_client()
     cfg = _cfg_cached()
-    current_prefix_hashes: dict[str, str] = {}
-    if cfg is not None:
-        try:
-            _, current_prefix_hashes = _build_essays_status(cfg)
-        except Exception:
-            current_prefix_hashes = {}
+    # /recent is cross-variant: a row is stale only if its prefix_hash matches
+    # NO active variant (canonical default + cfg.prefix_variants). Other
+    # endpoints scope staleness to a single user-selected variant.
+    current_prefix_hashes: dict[str, set[str]] = (
+        _active_prefix_hashes_by_essay(cfg) if cfg is not None else {}
+    )
 
     text_resp = (
         client.table("versus_texts")
@@ -1533,9 +1553,12 @@ def get_recent(limit: int = 100) -> RecentBundle:
         row = _legacy_judgment_dict(db_row)
         if row.get("verdict") is None:
             continue
-        is_stale = bool(current_prefix_hashes) and versus_analyze._prefix_hash_is_stale(
-            row, current_prefix_hashes
-        )
+        # Same cross-variant rule as _text_to_recent_row above: stale only if
+        # the row's hash matches no active variant for its essay.
+        eid_for_stale = row.get("essay_id") or ""
+        valid_hashes = current_prefix_hashes.get(eid_for_stale) or set()
+        row_ph = row.get("prefix_hash") or row.get("prefix_config_hash") or ""
+        is_stale = bool(valid_hashes) and row_ph not in valid_hashes
         cfg_dict_raw = row.get("config")
         cfg_dict: dict = cfg_dict_raw if isinstance(cfg_dict_raw, dict) else {}
         variant_raw = db_row.get("variant")

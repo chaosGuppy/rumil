@@ -108,7 +108,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         before ``run()`` begins. ``_initial_prioritization`` reuses the
         pre-created call.
         """
-        budget = self._effective_budget(await self.db.budget_remaining())
+        budget = (
+            self._assigned_budget
+            if self._assigned_budget is not None
+            else await self.db.budget_remaining()
+        )
         budget = await self._paced_budget(budget)
         initial_prioritization_budget = budget
         p_call = await self.db.create_call(

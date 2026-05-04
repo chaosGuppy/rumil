@@ -63,6 +63,10 @@ class ContextResult:
     # ImpactFilteredContext) must respect this exclusion so they don't
     # re-inject what the inner builder went to the trouble of excluding.
     excluded_page_ids: Sequence[str] = field(default_factory=list)
+    # Per-page impact percentile (page_id → 1-100) assigned by an impact
+    # filter pass over BFS-discovered candidates. Only ImpactFilteredContext
+    # populates this; other builders leave it None.
+    impact_percentiles: dict[str, int] | None = None
 
 
 @dataclass
@@ -206,6 +210,11 @@ class CallRunner(ABC):
                 context_text=result.context_text,
                 context_text_chars=len(result.context_text),
                 source_page_id=result.source_page_id,
+                impact_percentiles=(
+                    dict(result.impact_percentiles)
+                    if result.impact_percentiles is not None
+                    else None
+                ),
             )
         )
 

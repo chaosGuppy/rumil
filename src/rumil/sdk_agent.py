@@ -477,9 +477,14 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 text_parts = [
                     block.text for block in message.content if isinstance(block, TextBlock)
                 ]
-                thinking_parts = [
-                    block.thinking for block in message.content if isinstance(block, ThinkingBlock)
+                thinking_blocks = [
+                    {"content": block.thinking, "signature": block.signature}
+                    for block in message.content
+                    if isinstance(block, ThinkingBlock)
                 ]
+                thinking_payload: dict | None = (
+                    {"thinking": thinking_blocks} if thinking_blocks else None
+                )
                 tool_uses = [
                     {"tool": block.name, "input": block.input}
                     for block in message.content
@@ -531,6 +536,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                             cache_creation_input_tokens=cache_creation,
                             cache_read_input_tokens=cache_read,
                             model=settings.model,
+                            thinking_blocks=thinking_payload,
                         )
                         await config.trace.record(
                             LLMExchangeEvent(
@@ -542,7 +548,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                                 cache_creation_input_tokens=cache_creation,
                                 cache_read_input_tokens=cache_read,
                                 cost_usd=cost_usd,
-                                has_thinking=bool(thinking_parts),
+                                has_thinking=thinking_payload is not None,
                                 tool_uses=tool_uses or None,
                             )
                         )

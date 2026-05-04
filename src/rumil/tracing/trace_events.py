@@ -62,6 +62,13 @@ class ContextBuiltEvent(BaseModel):
     # pre-computed so the UI can show a length at a glance without measuring.
     context_text: str = ""
     context_text_chars: int = 0
+    # Per-page impact percentile assigned by the impact filter's sonnet
+    # scoring pass: page_id → 1-100 (100 = above the most impactful page in
+    # the standard context). Populated only by ImpactFilteredContext, and
+    # only for the BFS-discovered candidate pages it scored — the inner
+    # builder's baseline pages aren't scored against themselves and are
+    # absent. Other context builders leave this None.
+    impact_percentiles: dict[str, int] | None = None
 
 
 class MovesExecutedEvent(BaseModel):

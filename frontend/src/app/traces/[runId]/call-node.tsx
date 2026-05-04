@@ -11,6 +11,7 @@ import type {
   GetCallEventsApiCallsCallIdEventsGetResponse,
   LlmExchangeOut,
   PageRef,
+  ThinkingBlocksOut,
 } from "@/api/types.gen";
 import { CLIENT_API_BASE as QUERY_API_BASE } from "@/api-config";
 import { clientFetch } from "@/lib/client-fetch";
@@ -629,6 +630,86 @@ function ToolCallsList({ toolCalls }: { toolCalls: Array<Record<string, unknown>
   );
 }
 
+function ThinkingSection({ blocks }: { blocks: ThinkingBlocksOut }) {
+  const thinking = blocks.thinking ?? [];
+  const redacted = blocks.redacted_thinking ?? [];
+  const totalChars =
+    thinking.reduce((acc, b) => acc + b.content.length, 0) +
+    redacted.reduce((acc, b) => acc + b.data.length, 0);
+  const [open, setOpen] = useState(false);
+
+  if (thinking.length === 0 && redacted.length === 0) return null;
+
+  const previewSource =
+    thinking.find((b) => b.content.trim().length > 0)?.content ??
+    (redacted.length > 0 ? "[encrypted thinking]" : "");
+  const preview = previewSource.replace(/\s+/g, " ").slice(0, 180);
+  const totalCount = thinking.length + redacted.length;
+  const countLabel =
+    totalCount === 1
+      ? "1 block"
+      : `${totalCount} blocks`;
+
+  return (
+    <div className="trace-thinking">
+      <button
+        onClick={() => setOpen(!open)}
+        className="trace-collapsible-toggle trace-thinking-toggle"
+      >
+        <span className="trace-collapsible-icon">{open ? "–" : "+"}</span>
+        <span className="trace-thinking-glyph" aria-hidden="true">
+          {"✿"}
+        </span>
+        <span>Thinking</span>
+        <span className="trace-collapsible-meta">
+          {countLabel} &middot; {totalChars.toLocaleString()} chars
+        </span>
+      </button>
+      {!open && previewSource.length > 0 && (
+        <div className="trace-thinking-preview">{preview}{previewSource.length > preview.length ? "…" : ""}</div>
+      )}
+      {open && (
+        <div className="trace-thinking-content">
+          {thinking.map((block, i) => (
+            <article
+              key={`t-${i}`}
+              className="trace-thinking-block"
+              data-empty={block.content.trim().length === 0 ? "true" : "false"}
+            >
+              {thinking.length > 1 && (
+                <header className="trace-thinking-block-num">
+                  {String(i + 1).padStart(2, "0")}
+                </header>
+              )}
+              {block.content.trim().length === 0 ? (
+                <p className="trace-thinking-empty">
+                  Model emitted a thinking block without disclosing its
+                  contents&mdash;ask for{" "}
+                  <code>thinking.display: &quot;summarized&quot;</code> to see
+                  this.
+                </p>
+              ) : (
+                <p className="trace-thinking-text">{block.content}</p>
+              )}
+            </article>
+          ))}
+          {redacted.map((block, i) => (
+            <article
+              key={`r-${i}`}
+              className="trace-thinking-block trace-thinking-redacted"
+            >
+              <header className="trace-thinking-block-num">
+                <span className="trace-thinking-redacted-tag">encrypted</span>
+              </header>
+              <pre className="trace-thinking-redacted-data">{block.data}</pre>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
   return (
     <div className="trace-exchange-detail">
@@ -637,6 +718,9 @@ function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
         <MessageThread messages={detail.user_messages as Array<Record<string, unknown>>} />
       ) : (
         <CollapsiblePre label="User message" content={detail.user_message} />
+      )}
+      {detail.thinking_blocks && (
+        <ThinkingSection blocks={detail.thinking_blocks} />
       )}
       <CollapsiblePre label="Response" content={detail.response_text} />
       {detail.tool_calls.length > 0 && (

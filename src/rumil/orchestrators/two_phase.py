@@ -318,11 +318,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             initial_prioritization_budget,
         )
 
-        context_text, short_id_map = await build_prioritization_context(
-            self.db,
-            scope_question_id=question_id,
-            current_call_id=self._initial_call.id if self._initial_call else None,
-        )
         if self._initial_call is not None:
             p_call = self._initial_call
             self._initial_call = None
@@ -344,12 +339,29 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             )
             if self._sequence_id is not None:
                 self._seq_position += 1
+
+        view = get_active_view()
+        await view.refresh(
+            question_id,
+            self.db,
+            parent_call_id=p_call.id,
+            broadcaster=self.broadcaster,
+            force=True,
+            pool_question_id=self.pool_question_id,
+        )
+
+        context_text, short_id_map = await build_prioritization_context(
+            self.db,
+            scope_question_id=question_id,
+            current_call_id=p_call.id,
+        )
         trace = CallTrace(p_call.id, self.db, broadcaster=self.broadcaster)
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=initial_prioritization_budget))
 
+        dispatch_budget = max(initial_prioritization_budget - 1, 1)
         budget_line = (
-            f"You have a budget of **{initial_prioritization_budget} research calls** "
+            f"You have a budget of **{dispatch_budget} research calls** "
             "to distribute among the dispatch tools below."
         )
         if last_call:
@@ -358,7 +370,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 "research rounds after this. Spend the full budget on the "
                 "highest-value work.**"
             )
-        elif total_remaining is not None and total_remaining > initial_prioritization_budget:
+        elif total_remaining is not None and total_remaining > dispatch_budget:
             budget_line += (
                 f" The overall question has **{total_remaining} budget remaining** "
                 "across future rounds."
@@ -406,7 +418,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 question_id[:8],
             )
             preset = get_available_calls_preset()
-            for ct in preset.initial_prioritization_scouts[:initial_prioritization_budget]:
+            for ct in preset.initial_prioritization_scouts[:dispatch_budget]:
                 ddef = DISPATCH_DEFS[ct]
                 dispatches.append(
                     Dispatch(

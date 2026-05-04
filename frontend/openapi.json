@@ -4018,6 +4018,7 @@
           "scout_c_stress_test_cases",
           "scout_c_robustify",
           "scout_c_strengthen",
+          "generate_subquestions",
           "web_research",
           "evaluate",
           "grounding_feedback",

@@ -74,6 +74,7 @@ class CallType(str, Enum):
     SCOUT_C_STRESS_TEST_CASES = "scout_c_stress_test_cases"
     SCOUT_C_ROBUSTIFY = "scout_c_robustify"
     SCOUT_C_STRENGTHEN = "scout_c_strengthen"
+    GENERATE_SUBQUESTIONS = "generate_subquestions"
     WEB_RESEARCH = "web_research"
     EVALUATE = "evaluate"
     GROUNDING_FEEDBACK = "grounding_feedback"

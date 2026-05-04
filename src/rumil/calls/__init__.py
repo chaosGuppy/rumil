@@ -16,6 +16,7 @@ from rumil.calls.find_considerations import FindConsiderationsCall
 from rumil.calls.freeform_view import CreateFreeformViewCall, UpdateFreeformViewCall
 from rumil.calls.generate_artefact import GenerateArtefactCall
 from rumil.calls.generate_spec import GenerateSpecCall
+from rumil.calls.generate_subquestions import GenerateSubquestionsCall
 from rumil.calls.impact_filtered_context import ImpactFilteredContext
 from rumil.calls.ingest import IngestCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
@@ -56,6 +57,7 @@ __all__ = [
     "FindConsiderationsCall",
     "GenerateArtefactCall",
     "GenerateSpecCall",
+    "GenerateSubquestionsCall",
     "ImpactFilteredContext",
     "IngestCall",
     "LinkSubquestionsCall",

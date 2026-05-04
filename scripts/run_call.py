@@ -52,6 +52,7 @@ from dataclasses import dataclass
 
 from rumil.calls.call_registry import ASSESS_CALL_CLASSES
 from rumil.calls.find_considerations import FindConsiderationsCall
+from rumil.calls.generate_subquestions import GenerateSubquestionsCall
 from rumil.calls.link_subquestions import LinkSubquestionsCall
 from rumil.calls.red_team import RedTeamCall
 from rumil.calls.scout_analogies import ScoutAnalogiesCall
@@ -157,6 +158,19 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
             up_to_stage=up_to_stage,
         )
         await linker.run()
+
+    elif call_type == "generate-subquestions":
+        call = await db.create_call(
+            CallType.GENERATE_SUBQUESTIONS,
+            scope_page_id=question_id,
+        )
+        gen = GenerateSubquestionsCall(
+            question_id,
+            call,
+            db,
+            up_to_stage=up_to_stage,
+        )
+        await gen.run()
 
     elif call_type == "red-team":
         call = await db.create_call(
@@ -366,6 +380,7 @@ def main() -> None:
             "robustify",
             "web-research",
             "link-subquestions",
+            "generate-subquestions",
             "refresh-view",
             *_SCOUT_CALL_TYPES,
         ],

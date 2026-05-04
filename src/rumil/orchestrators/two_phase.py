@@ -4,7 +4,6 @@ TwoPhaseOrchestrator: two-phase orchestrator for new questions.
 
 import asyncio
 import logging
-from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import embed_task_for_page, mark_call_completed
@@ -69,7 +68,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self,
         db: DB,
         broadcaster: Broadcaster | None = None,
-        budget_cap: int | None = None,
+        assigned_budget: int | None = None,
         pool_pre_registered: bool = False,
     ):
         super().__init__(db, broadcaster)
@@ -77,8 +76,14 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._call_id: str | None = None
 
         self._executed_since_last_plan: bool = False
-        self._budget_cap: int | None = budget_cap
-        self._consumed: int = 0
+        # The budget assigned to this orchestrator at construction. NOT a
+        # runtime cap — it's the amount this orchestrator contributes to its
+        # question pool on run() start (when not pool_pre_registered) and the
+        # ``allocated`` figure surfaced in RecurseFailedEvent. The pool's
+        # ``remaining`` is the authoritative per-question gate during the run
+        # loop, so this orchestrator can spend more than ``_assigned_budget``
+        # if peer cycles or prior contributions have left surplus in the pool.
+        self._assigned_budget: int | None = assigned_budget
         self._initial_call: Call | None = None
         self._parent_call_id: str | None = None
         self._sequence_id: str | None = None
@@ -91,13 +96,13 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         self._pool_pre_registered: bool = pool_pre_registered
 
     def _effective_budget(self, global_remaining: int) -> int:
-        if self._budget_cap is not None:
-            return min(global_remaining, self._budget_cap - self._consumed)
         return global_remaining
 
     async def _pacing_params(self) -> tuple[int, int]:
-        if self._budget_cap is not None:
-            return self._budget_cap, self._consumed
+        if self.pool_question_id:
+            pool = await self.db.qbp_get(self.pool_question_id)
+            if pool.registered:
+                return pool.contributed, pool.consumed
         return await self.db.get_budget()
 
     async def create_initial_call(
@@ -111,7 +116,11 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         before ``run()`` begins. ``_initial_prioritization`` reuses the
         pre-created call.
         """
-        budget = self._effective_budget(await self.db.budget_remaining())
+        budget = (
+            self._assigned_budget
+            if self._assigned_budget is not None
+            else await self.db.budget_remaining()
+        )
         budget = await self._paced_budget(budget)
         initial_prioritization_budget = budget
         p_call = await self.db.create_call(
@@ -131,8 +140,12 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()
-        remaining = await self.db.budget_remaining()
-        effective = self._effective_budget(remaining)
+        if self._pool_pre_registered:
+            pool = await self.db.qbp_get(root_question_id)
+            effective = max(pool.remaining, 0)
+        else:
+            remaining = await self.db.budget_remaining()
+            effective = self._effective_budget(remaining)
         if effective < MIN_TWOPHASE_BUDGET:
             raise ValueError(
                 "TwoPhaseOrchestrator requires a budget of at least "
@@ -147,7 +160,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             self._seq_position = 0
         self.pool_question_id = root_question_id
         if not self._pool_pre_registered:
-            contribution = self._budget_cap if self._budget_cap is not None else effective
+            contribution = self._assigned_budget if self._assigned_budget is not None else effective
             await self.db.qbp_register(root_question_id, contribution)
         try:
             while True:
@@ -215,25 +228,6 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
             finally:
                 await self._teardown()
                 await own_db.close()
-
-    async def _run_dispatch_sequence(
-        self,
-        sequence: Sequence[Dispatch],
-        scope_question_id: str,
-        parent_call_id: str | None,
-        base_index: int,
-        position_in_batch: int = 0,
-    ) -> bool:
-        result = await super()._run_dispatch_sequence(
-            sequence,
-            scope_question_id,
-            parent_call_id,
-            base_index,
-            position_in_batch=position_in_batch,
-        )
-        if result:
-            self._consumed += len(sequence)
-        return result
 
     async def _needs_initial_prioritization(self, question_id: str) -> bool:
         """Run initial_prioritization iff no view answers the question yet."""
@@ -715,7 +709,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 child_claim = ClaimInvestigationOrchestrator(
                     self.db,
                     self.broadcaster,
-                    budget_cap=d.payload.budget,
+                    assigned_budget=d.payload.budget,
                     pool_pre_registered=True,
                 )
                 child_claim._parent_call_id = p_call.id
@@ -738,7 +732,7 @@ class TwoPhaseOrchestrator(BaseOrchestrator):
                 child = TwoPhaseOrchestrator(
                     self.db,
                     self.broadcaster,
-                    budget_cap=d.payload.budget,
+                    assigned_budget=d.payload.budget,
                     pool_pre_registered=True,
                 )
                 child._parent_call_id = p_call.id

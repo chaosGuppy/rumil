@@ -2,7 +2,7 @@
 
 The recurse path is the closest analog of what the prioritizer rearch
 replaces: today, a recurse dispatch spawns a new ``TwoPhaseOrchestrator``
-(or ``ClaimInvestigationOrchestrator``) with its own ``budget_cap``.
+(or ``ClaimInvestigationOrchestrator``) with its own ``assigned_budget``.
 These tests pin the current contract so the rearch author can tell when
 they've accidentally dropped it.
 """
@@ -49,7 +49,7 @@ def _patch_init(mocker, cls):
         instances.append(
             {
                 "instance": self,
-                "budget_cap": kwargs.get("budget_cap"),
+                "assigned_budget": kwargs.get("assigned_budget"),
             }
         )
 
@@ -58,10 +58,10 @@ def _patch_init(mocker, cls):
 
 
 @pytest.mark.asyncio
-async def test_recurse_dispatch_spawns_child_twophase_with_budget_cap(
+async def test_recurse_dispatch_spawns_child_twophase_with_assigned_budget(
     tmp_db, question_page, child_question_page, prio_harness, mocker
 ):
-    """A RecurseDispatchPayload → a new TwoPhaseOrchestrator with the right budget_cap."""
+    """A RecurseDispatchPayload → a new TwoPhaseOrchestrator with the right assigned_budget."""
     instances = _patch_init(mocker, TwoPhaseOrchestrator)
     await tmp_db.init_budget(30)
     recurse = Dispatch(
@@ -84,14 +84,14 @@ async def test_recurse_dispatch_spawns_child_twophase_with_budget_cap(
 
     child_entries = [i for i in instances if i["instance"] is not parent]
     assert len(child_entries) >= 1
-    assert child_entries[0]["budget_cap"] == MIN_TWOPHASE_BUDGET
+    assert child_entries[0]["assigned_budget"] == MIN_TWOPHASE_BUDGET
 
 
 @pytest.mark.asyncio
 async def test_recurse_claim_dispatch_spawns_claim_investigation_orchestrator(
     tmp_db, question_page, prio_harness, mocker
 ):
-    """A RecurseClaimDispatchPayload → a new ClaimInvestigationOrchestrator with budget_cap."""
+    """A RecurseClaimDispatchPayload → a new ClaimInvestigationOrchestrator with assigned_budget."""
     claim = Page(
         page_type=PageType.CLAIM,
         layer=PageLayer.SQUIDGY,
@@ -131,7 +131,7 @@ async def test_recurse_claim_dispatch_spawns_claim_investigation_orchestrator(
     await parent.run(question_page.id)
 
     assert len(claim_instances) >= 1
-    assert claim_instances[0]["budget_cap"] == MIN_TWOPHASE_BUDGET
+    assert claim_instances[0]["assigned_budget"] == MIN_TWOPHASE_BUDGET
 
 
 @pytest.mark.asyncio

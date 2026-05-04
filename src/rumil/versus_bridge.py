@@ -639,7 +639,7 @@ async def judge_pair_orch(
         question_id = await ensure_versus_question(db, pair)
         await db.init_budget(budget)
 
-        orch = TwoPhaseOrchestrator(db=db, broadcaster=broadcaster, budget_cap=budget)
+        orch = TwoPhaseOrchestrator(db=db, broadcaster=broadcaster, assigned_budget=budget)
         try:
             await orch.run(question_id)
         except Exception:

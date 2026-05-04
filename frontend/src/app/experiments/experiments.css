@@ -75,6 +75,10 @@
   background: #d4e2ef;
   color: #1f4a6b;
 }
+.experiment-kind-tag[data-kind="run_prio"] {
+  background: #d6ecdc;
+  color: #1f5a3a;
+}
 .experiment-kind-tag[data-kind="context_eval"] {
   background: #e2dff0;
   color: #3d3568;
@@ -87,6 +91,10 @@
   .experiment-kind-tag[data-kind="run_call"] {
     background: #18242a;
     color: #8ab8d4;
+  }
+  .experiment-kind-tag[data-kind="run_prio"] {
+    background: #1a2a20;
+    color: #8ed4a8;
   }
   .experiment-kind-tag[data-kind="context_eval"] {
     background: #1c1a2a;

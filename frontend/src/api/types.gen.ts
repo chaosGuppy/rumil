@@ -3192,6 +3192,52 @@ export type ReassessTriggeredEventOut = {
 };
 
 /**
+ * RecurseFailedEventOut
+ */
+export type RecurseFailedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'recurse_failed';
+    /**
+     * Child Call Id
+     */
+    child_call_id: string;
+    /**
+     * Child Question Id
+     */
+    child_question_id: string;
+    /**
+     * Child Question Headline
+     */
+    child_question_headline: string;
+    /**
+     * Allocated Budget
+     */
+    allocated_budget: number;
+    /**
+     * Refunded Budget
+     */
+    refunded_budget: number;
+    /**
+     * Error Type
+     */
+    error_type: string;
+    /**
+     * Error Message
+     */
+    error_message: string;
+};
+
+/**
  * RedactedThinkingBlockOut
  *
  * Anthropic-encrypted thinking block (content unavailable to clients).
@@ -3451,6 +3497,46 @@ export type RunListItemOut = {
      * Staged
      */
     staged?: boolean;
+};
+
+/**
+ * RunPrioExperimentOut
+ */
+export type RunPrioExperimentOut = {
+    /**
+     * Kind
+     */
+    kind?: 'run_prio';
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Question Id
+     */
+    question_id?: string;
+    /**
+     * Question Headline
+     */
+    question_headline?: string;
+    /**
+     * Config Summary
+     */
+    config_summary?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Staged
+     */
+    staged?: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
 };
 
 /**
@@ -5583,6 +5669,8 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
     } & WarningEventOut) | ({
         event: 'error';
     } & ErrorEventOut) | ({
+        event: 'recurse_failed';
+    } & RecurseFailedEventOut) | ({
         event: 'scoring_completed';
     } & ScoringCompletedEventOut) | ({
         event: 'experimental_scoring_completed';
@@ -5679,6 +5767,8 @@ export type ListExperimentsApiExperimentsGetResponses = {
     } & AbEvalExperimentOut) | ({
         kind: 'run_call';
     } & RunCallExperimentOut) | ({
+        kind: 'run_prio';
+    } & RunPrioExperimentOut) | ({
         kind: 'context_eval';
     } & ContextEvalExperimentOut)>;
 };

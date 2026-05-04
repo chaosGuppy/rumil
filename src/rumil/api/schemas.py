@@ -35,6 +35,7 @@ from rumil.tracing.trace_events import (
     PhaseSkippedEvent,
     QuestionDedupeEvent,
     ReassessTriggeredEvent,
+    RecurseFailedEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
     ScoringCompletedEvent,
@@ -101,6 +102,10 @@ class WarningEventOut(WarningEvent, _TraceEnvelopeMixin):
 
 
 class ErrorEventOut(ErrorEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class RecurseFailedEventOut(RecurseFailedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -219,6 +224,7 @@ TraceEventOut = Annotated[
     | LLMExchangeEventOut
     | WarningEventOut
     | ErrorEventOut
+    | RecurseFailedEventOut
     | ScoringCompletedEventOut
     | ExperimentalScoringCompletedEventOut
     | DispatchesPlannedEventOut
@@ -420,6 +426,17 @@ class RunCallExperimentOut(BaseModel):
     created_at: str
 
 
+class RunPrioExperimentOut(BaseModel):
+    kind: Literal["run_prio"] = "run_prio"
+    run_id: str
+    name: str
+    question_id: str = ""
+    question_headline: str = ""
+    config_summary: dict = {}
+    staged: bool = False
+    created_at: str
+
+
 class ContextEvalExperimentOut(BaseModel):
     """One context-builder comparison (one gold arm paired with a candidate).
 
@@ -439,7 +456,7 @@ class ContextEvalExperimentOut(BaseModel):
 
 
 ExperimentListItemOut = Annotated[
-    AbEvalExperimentOut | RunCallExperimentOut | ContextEvalExperimentOut,
+    AbEvalExperimentOut | RunCallExperimentOut | RunPrioExperimentOut | ContextEvalExperimentOut,
     Field(discriminator="kind"),
 ]
 

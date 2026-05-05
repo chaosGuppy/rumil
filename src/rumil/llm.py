@@ -1597,13 +1597,55 @@ def _inject_into_last_user_message(
 
 
 _CONTINUATION_NUDGE = (
-    "Your previous response was cut off mid-string before the JSON could "
-    "close. Continue from exactly where you stopped — do not restate, "
-    "repeat, or summarize anything you already wrote. Close the open "
-    'string with a quote (`"`), complete any remaining items, and end '
-    "with `]}`. Output ONLY the continuation text starting from the "
-    "next character after where you stopped."
+    "Your previous response was truncated. The text shown above is the "
+    "portion that completed cleanly — everything after the last "
+    "successfully-closed element was lost. Continue the JSON from "
+    "exactly where it ends: emit any remaining elements (with leading "
+    "comma if appropriate) and the closing brackets needed to make the "
+    "concatenation a valid JSON object matching the schema. Output ONLY "
+    "the continuation text — do not restate or repeat the portion shown."
 )
+
+
+def _safe_truncate_partial_json(partial: str) -> str | None:
+    """Trim partial JSON to the last clean structural boundary.
+
+    Walks ``partial`` tracking quote/escape state and brace depth,
+    recording every position where a ``}`` or ``]`` closes a
+    non-outermost element (depth-after-close > 0). Returns the prefix
+    up to and including the last such close — a "between elements"
+    state where a continuation can splice cleanly without landing inside
+    a string or mid-escape.
+
+    Returns ``None`` if no such boundary exists (e.g. truncation
+    happened inside the first sub-element, or the partial is a flat
+    object with no sub-element closes).
+    """
+    in_string = False
+    escape = False
+    depth = 0
+    last_boundary = -1
+    for i, c in enumerate(partial):
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            continue
+        if c == '"':
+            in_string = True
+        elif c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+            if depth > 0:
+                last_boundary = i + 1
+    if last_boundary == -1:
+        return None
+    return partial[:last_boundary]
 
 
 async def _continuation_recovery_for_parse(
@@ -1637,13 +1679,23 @@ async def _continuation_recovery_for_parse(
     ``call_llm_exchanges`` row tagged ``phase="<original>:continueN"``
     for trace visibility.
     """
+    trimmed = _safe_truncate_partial_json(partial_text)
+    if trimmed is None:
+        log.debug(
+            "Continuation recovery: no clean splice boundary in partial "
+            "(truncation likely inside first sub-element); aborting"
+        )
+        return None
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
-    full = partial_text
     for attempt in range(max_attempts):
+        # Reset each attempt to the clean trimmed prefix — compounding
+        # a failed continuation across retries just sends the model
+        # invalid mid-stream context. Re-sample from the same splice
+        # point instead.
         cont_messages: list[dict] = [
             *msg_list,
-            {"role": "assistant", "content": full},
+            {"role": "assistant", "content": trimmed},
             {"role": "user", "content": _CONTINUATION_NUDGE},
         ]
         cont_metadata = (
@@ -1674,12 +1726,12 @@ async def _continuation_recovery_for_parse(
         if not more:
             log.debug("Continuation attempt %d produced no text; aborting", attempt + 1)
             return None
-        full = full + more
+        full = trimmed + more
         try:
             return response_model.model_validate_json(full), full
         except ValidationError:
             log.debug(
-                "Continuation attempt %d still didn't parse cleanly; trying again",
+                "Continuation attempt %d still didn't parse cleanly; retrying",
                 attempt + 1,
             )
     return None

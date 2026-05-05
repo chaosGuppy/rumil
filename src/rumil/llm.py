@@ -695,10 +695,16 @@ async def _record_partial_failure(
             )
 
     client = get_langfuse()
-    if client is not None and partial_text:
+    if client is not None:
         try:
             client.update_current_generation(
-                output=partial_text[:_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX],
+                model=model,
+                input=_langfuse_input_for(system_prompt, messages),
+                output=(
+                    partial_text[:_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX] if partial_text else None
+                ),
+                model_parameters=_extract_model_parameters(request_kwargs or {}),
+                metadata={"duration_ms": elapsed_ms},
             )
         except Exception as lf_exc:
             log.debug("Langfuse partial-failure enrichment failed: %s", lf_exc)
@@ -749,9 +755,27 @@ def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
     return output
 
 
+def _langfuse_input_for(system_prompt: str, messages: Sequence[dict]) -> list[dict]:
+    """Shape the ``input`` payload for Langfuse generations.
+
+    Langfuse has no dedicated ``system`` field. Folding system into a
+    nested ``{"system": ..., "messages": [...]}`` dict renders nicely in
+    the trace UI but the playground reads only ``messages`` and drops
+    the system prompt. Prepending a ``{"role": "system", ...}`` entry to
+    a flat ChatML list keeps both viewers happy: the trace UI shows the
+    system message at the top, and "Open in Playground" pre-fills it
+    correctly.
+    """
+    serialized = list(_serialize_messages(messages))
+    if not system_prompt:
+        return serialized
+    return [{"role": "system", "content": system_prompt}, *serialized]
+
+
 def _enrich_langfuse_generation(
     *,
     model: str,
+    system_prompt: str,
     messages: Sequence[dict],
     response: anthropic.types.Message,
     elapsed_ms: int,
@@ -778,7 +802,7 @@ def _enrich_langfuse_generation(
         )
         client.update_current_generation(
             model=model,
-            input=_serialize_messages(messages),
+            input=_langfuse_input_for(system_prompt, messages),
             output=_langfuse_output_for(parsed),
             model_parameters=_extract_model_parameters(api_kwargs or {}),
             usage_details={
@@ -970,6 +994,7 @@ async def call_anthropic_api(
                 )
     _enrich_langfuse_generation(
         model=model,
+        system_prompt=system_prompt,
         messages=messages,
         response=response,
         elapsed_ms=elapsed_ms,
@@ -1052,6 +1077,7 @@ def _to_google_contents(messages: Sequence[dict]) -> list[Any]:
 def _enrich_langfuse_generation_google(
     *,
     model: str,
+    system_prompt: str,
     messages: Sequence[dict],
     response: Any,
     elapsed_ms: int,
@@ -1076,7 +1102,7 @@ def _enrich_langfuse_generation_google(
         output_text = getattr(response, "text", None) or ""
         client.update_current_generation(
             model=model,
-            input=_serialize_messages(messages),
+            input=_langfuse_input_for(system_prompt, messages),
             output=output_text or None,
             model_parameters=config or {},
             usage_details={
@@ -1232,6 +1258,7 @@ async def call_google_api(
 
     _enrich_langfuse_generation_google(
         model=model,
+        system_prompt=system_prompt,
         messages=messages,
         response=response,
         elapsed_ms=elapsed_ms,
@@ -1851,6 +1878,7 @@ async def _structured_call_parse(
     response_text = parsed.text
     _enrich_langfuse_generation(
         model=model,
+        system_prompt=system_prompt,
         messages=msg_list,
         response=response,
         elapsed_ms=elapsed_ms,

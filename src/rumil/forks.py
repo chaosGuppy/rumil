@@ -34,6 +34,7 @@ from rumil.llm import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
     _is_retryable,
+    _langfuse_input_for,
     _log_before_retry,
     _stop_after_status_retries,
     _supports_sampling_params,
@@ -360,13 +361,24 @@ async def _do_call(
                 partial_text = "".join(b.text for b in content if isinstance(b, TextBlock)) or None
             except Exception:
                 pass
-            if partial_text:
-                lf = get_langfuse()
-                if lf is not None:
-                    try:
-                        lf.update_current_generation(output=partial_text)
-                    except Exception as lf_exc:
-                        log.debug("Langfuse partial-failure enrichment (fork) failed: %s", lf_exc)
+            lf = get_langfuse()
+            if lf is not None:
+                try:
+                    params = {
+                        k: kwargs.get(k)
+                        for k in ("temperature", "top_p", "max_tokens", "thinking")
+                        if kwargs.get(k) is not None
+                    }
+                    lf.update_current_generation(
+                        model=model,
+                        input=_langfuse_input_for(
+                            kwargs.get("system") or "", kwargs.get("messages") or []
+                        ),
+                        output=partial_text,
+                        model_parameters=params or None,
+                    )
+                except Exception as lf_exc:
+                    log.debug("Langfuse partial-failure enrichment (fork) failed: %s", lf_exc)
             raise
     elapsed_ms = int((time.monotonic() - start) * 1000)
     _enrich_fork_generation(model=model, kwargs=kwargs, response=response, elapsed_ms=elapsed_ms)
@@ -403,7 +415,7 @@ def _enrich_fork_generation(
         }
         lf.update_current_generation(
             model=model,
-            input=kwargs.get("messages"),
+            input=_langfuse_input_for(kwargs.get("system") or "", kwargs.get("messages") or []),
             output=output_text or None,
             model_parameters=params or None,
             usage_details={

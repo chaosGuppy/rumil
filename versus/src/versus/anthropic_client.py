@@ -100,18 +100,25 @@ def chat(
     client = client or httpx.Client(timeout=timeout)
     try:
         last_resp: dict = {}
-        for attempt in range(retries + 1):
-            r = client.post(API_URL, headers=_headers(), json=payload)
-            r.raise_for_status()
-            last_resp = r.json()
-            text = _maybe_extract_text(last_resp)
-            if text:
-                _enrich_anthropic_generation(model, messages, payload, last_resp)
-                return last_resp
-            if attempt < retries:
-                time.sleep(1.5 * (attempt + 1))
-        _enrich_anthropic_generation(model, messages, payload, last_resp)
-        return last_resp
+        try:
+            for attempt in range(retries + 1):
+                r = client.post(API_URL, headers=_headers(), json=payload)
+                r.raise_for_status()
+                last_resp = r.json()
+                text = _maybe_extract_text(last_resp)
+                if text:
+                    _enrich_anthropic_generation(model, messages, payload, last_resp)
+                    return last_resp
+                if attempt < retries:
+                    time.sleep(1.5 * (attempt + 1))
+            _enrich_anthropic_generation(model, messages, payload, last_resp)
+            return last_resp
+        except Exception:
+            # Enrich the active langfuse generation with whatever request
+            # context we have so the failed span isn't bare. ``@observe``
+            # will layer ``level=ERROR`` + ``status_message`` on re-raise.
+            _enrich_anthropic_generation(model, messages, payload, last_resp)
+            raise
     finally:
         if close:
             client.close()

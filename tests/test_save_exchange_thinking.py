@@ -116,3 +116,42 @@ async def test_no_thinking_passes_none_to_db_and_false_on_event(
     kwargs = db_mock.save_llm_exchange.await_args.kwargs
     assert kwargs["thinking_blocks"] is None
     assert _recorded_event(trace_mock).has_thinking is False
+
+
+@pytest.mark.asyncio
+async def test_error_defaults_to_none(metadata, db_mock, trace_mock, langfuse_url):
+    await _save_exchange(
+        metadata,
+        db=db_mock,
+        model="claude-haiku-4-5",
+        system_prompt="sys",
+        response_text="answer",
+        tool_calls=[],
+        input_tokens=1,
+        output_tokens=1,
+        duration_ms=1,
+    )
+
+    kwargs = db_mock.save_llm_exchange.await_args.kwargs
+    assert kwargs["error"] is None
+    assert _recorded_event(trace_mock).error is None
+
+
+@pytest.mark.asyncio
+async def test_error_forwarded_to_db_and_event(metadata, db_mock, trace_mock, langfuse_url):
+    await _save_exchange(
+        metadata,
+        db=db_mock,
+        model="claude-haiku-4-5",
+        system_prompt="sys",
+        response_text=None,
+        tool_calls=[],
+        input_tokens=0,
+        output_tokens=0,
+        duration_ms=1,
+        error="boom",
+    )
+
+    kwargs = db_mock.save_llm_exchange.await_args.kwargs
+    assert kwargs["error"] == "boom"
+    assert _recorded_event(trace_mock).error == "boom"

@@ -96,6 +96,7 @@ class LLMExchangeEvent(BaseModel):
     has_thinking: bool | None = None
     tool_uses: list[dict[str, Any]] | None = None
     langfuse_trace_url: str | None = None
+    error: str | None = None
 
 
 class WarningEvent(BaseModel):

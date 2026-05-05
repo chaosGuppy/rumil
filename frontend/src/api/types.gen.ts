@@ -2512,6 +2512,10 @@ export type LlmExchangeEventOut = {
      * Langfuse Trace Url
      */
     langfuse_trace_url: string | null;
+    /**
+     * Error
+     */
+    error: string | null;
 };
 
 /**

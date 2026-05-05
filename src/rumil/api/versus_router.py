@@ -19,6 +19,7 @@ import time
 
 import pydantic
 from fastapi import APIRouter, Depends, HTTPException
+from postgrest.types import CountMethod
 
 from rumil.api.auth import require_admin
 from rumil.settings import get_settings
@@ -29,6 +30,7 @@ from versus import essay as versus_essay
 from versus import judge as versus_judge
 from versus import mainline as versus_mainline
 from versus import prepare as versus_prepare
+from versus import versus_config as versus_config_mod
 from versus import versus_db
 from versus import view as versus_view
 
@@ -482,7 +484,8 @@ class JudgmentDetail(pydantic.BaseModel):
     Includes the verbatim prompt + reasoning text + raw provider response,
     so a reader can audit what the judge actually saw and said. Most fields
     are optional because the shape varies across judge variants (OpenRouter
-    vs anthropic vs rumil:text vs rumil:ws/orch).
+    vs anthropic vs rumil:text vs rumil:orch; historical rumil:ws rows
+    also still appear).
     """
 
     key: str
@@ -526,6 +529,7 @@ class JudgeLabel(pydantic.BaseModel):
     model: str
     task: str | None
     phash: str | None
+    wf_phash: str | None = None
 
 
 class Cell(pydantic.BaseModel):
@@ -630,6 +634,60 @@ class JudgmentRow(pydantic.BaseModel):
     contamination_note: str | None
     stale: bool
     orphaned: bool
+    variant: str | None = None
+
+
+class RecentTextRow(pydantic.BaseModel):
+    """One row in the chronological completions feed.
+
+    ``flavor`` is a derived label so the FE doesn't have to re-parse
+    ``source_id`` patterns: ``human`` / ``single-shot`` / ``orch`` /
+    ``paraphrase`` / ``other``. ``workflow`` is populated for orch rows.
+    Optional generation knobs (``temperature``, ``max_tokens``,
+    ``thinking_mode``, ``budget``, etc.) collapse the params snapshot to
+    just the bits worth showing in a compact table.
+    """
+
+    key: str
+    ts: str
+    essay_id: str
+    kind: str
+    source_id: str
+    flavor: str
+    workflow: str | None
+    model_id: str | None
+    prefix_hash: str
+    response_words: int
+    target_words: int
+    duration_s: float | None
+    provider: str | None
+    temperature: float | None
+    max_tokens: int | None
+    thinking_mode: str | None
+    budget: int | None
+    config_hash: str | None
+    config: dict | None
+    status: str | None
+    rumil_call_id: str | None
+    rumil_run_id: str | None
+    rumil_cost_usd: float | None
+    trace_url: str | None
+    stale: bool
+
+
+class RecentBundle(pydantic.BaseModel):
+    """Recent-first feed for /versus/recent.
+
+    ``texts`` and ``judgments`` are independently capped at ``limit`` so
+    the two tabs render without one starving the other. ``*_total`` is
+    the unfiltered table count for the header.
+    """
+
+    texts: list[RecentTextRow]
+    judgments: list[JudgmentRow]
+    texts_total: int
+    judgments_total: int
+    limit: int
 
 
 class EssayStatus(pydantic.BaseModel):
@@ -947,7 +1005,7 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 judge_model=jm,
                 judge_model_id=row_cfg["model"],
                 config_hash=row["config_hash"],
-                prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
+                prompt_hash=f"p{versus_config_mod.row_prompt_hash(row_cfg) or 'unknown'}",
                 sampling=row.get("sampling") or {},
                 model_config_snapshot=row_cfg.get("model_config"),
                 criterion=row.get("criterion", ""),
@@ -962,7 +1020,7 @@ def get_essay_judgments(essay_id: str, prefix_label: str | None = None) -> Essay
                 reasoning_text=row.get("reasoning_text"),
                 prompt=row.get("prompt"),
                 system_prompt=row.get("system_prompt"),
-                is_rumil=jm.startswith("rumil:"),
+                is_rumil=versus_config_mod.is_rumil_row(row_cfg, jm),
                 rumil_trace_url=row.get("rumil_trace_url"),
                 rumil_question_id=row.get("rumil_question_id"),
                 rumil_call_id=row.get("rumil_call_id"),
@@ -1236,10 +1294,13 @@ def get_results(
                 winner=row.get("winner_source") or "-",
                 preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
                 ts=row["ts"][:16],
-                is_rumil=str(row.get("judge_model", "")).startswith("rumil:"),
+                is_rumil=versus_config_mod.is_rumil_row(
+                    row["config"], str(row.get("judge_model", ""))
+                ),
                 contamination_note=row.get("contamination_note"),
                 stale=is_stale,
                 orphaned=(not is_stale) and _is_orphaned(row, source_index),
+                variant=db_row.get("variant"),
             )
         )
 
@@ -1344,6 +1405,207 @@ def get_results(
     )
 
 
+def _flavor_of(source_id: str, params: dict) -> tuple[str, str | None]:
+    """Classify a versus_texts row into ``(flavor, workflow)``.
+
+    Reads ``params.workflow`` first so we don't have to re-parse the
+    source_id when it's an orch row; falls back to source_id pattern
+    matching for everything else.
+    """
+    if source_id == "human":
+        return "human", None
+    if params.get("workflow"):
+        return "orch", params["workflow"]
+    if source_id.startswith("orch:"):
+        parts = source_id.split(":")
+        return "orch", parts[1] if len(parts) >= 2 else None
+    if source_id.startswith("paraphrase:"):
+        return "paraphrase", None
+    return "single-shot", None
+
+
+def _active_prefix_hashes_by_essay(cfg: versus_config.Config) -> dict[str, set[str]]:
+    """{essay_id -> set of valid prefix hashes across all active variants}.
+
+    Used by /recent to flag a row as stale only when its prefix_hash matches
+    no current variant — distinct from /matrix etc. which scope staleness to a
+    single user-selected variant. A row written under a non-canonical-but-
+    still-active prefix (e.g. ``no_headers``) is not stale; only rows whose
+    prefix has been renamed/removed/edited out of the cfg are.
+    """
+    out: dict[str, set[str]] = {}
+    for pcfg in versus_prepare.active_prefix_configs(cfg):
+        try:
+            _, variant_hashes = _build_essays_status(cfg, prefix_cfg=pcfg)
+        except Exception:
+            continue
+        for eid, ph in variant_hashes.items():
+            out.setdefault(eid, set()).add(ph)
+    return out
+
+
+def _text_to_recent_row(db_row: dict, current_prefix_hashes: dict[str, set[str]]) -> RecentTextRow:
+    params = db_row.get("params") or {}
+    source_id = db_row.get("source_id") or ""
+    flavor, workflow = _flavor_of(source_id, params)
+    mc = params.get("model_config") or {}
+    thinking = mc.get("thinking")
+    if isinstance(thinking, dict):
+        # ``thinking`` records as e.g. {"type": "enabled", "budget_tokens": 4000}
+        # or {"type": "disabled"}. Render the type so the table cell stays narrow;
+        # detail lives in the params blob.
+        thinking_mode = thinking.get("type")
+    elif isinstance(thinking, str):
+        thinking_mode = thinking
+    else:
+        thinking_mode = None
+    essay_id = db_row.get("essay_id") or ""
+    prefix_hash = db_row.get("prefix_hash") or ""
+    valid_hashes = current_prefix_hashes.get(essay_id) or set()
+    stale = bool(valid_hashes) and prefix_hash not in valid_hashes
+    text_len = db_row.get("response_words")
+    if text_len is None:
+        text = db_row.get("text") or ""
+        text_len = len(text.split())
+    return RecentTextRow(
+        key=db_row["id"],
+        ts=(params.get("ts") or db_row.get("created_at") or "")[:19],
+        essay_id=essay_id,
+        kind=db_row.get("kind") or "",
+        source_id=source_id,
+        flavor=flavor,
+        workflow=workflow,
+        model_id=db_row.get("model_id"),
+        prefix_hash=prefix_hash,
+        response_words=text_len,
+        target_words=params.get("target_words", 0) or 0,
+        duration_s=params.get("duration_s"),
+        provider=params.get("provider"),
+        temperature=mc.get("temperature"),
+        max_tokens=mc.get("max_tokens"),
+        thinking_mode=thinking_mode,
+        budget=params.get("budget"),
+        config_hash=params.get("config_hash"),
+        config=params.get("config") if isinstance(params.get("config"), dict) else None,
+        status=params.get("status"),
+        rumil_call_id=params.get("rumil_call_id"),
+        rumil_run_id=params.get("rumil_run_id"),
+        rumil_cost_usd=params.get("rumil_cost_usd"),
+        trace_url=params.get("trace_url")
+        or _trace_url(params.get("rumil_run_id"), params.get("rumil_call_id")),
+        stale=stale,
+    )
+
+
+@router.get("/recent", response_model=RecentBundle)
+def get_recent(limit: int = 100) -> RecentBundle:
+    """Chronological (recent-first) feed of versus texts and judgments.
+
+    Independent of the aggregator pipeline on /results — this view is
+    about "what just ran", so it returns rows regardless of staleness or
+    contamination, with flags so the FE can mark them visually. Each
+    table is independently capped at ``limit``.
+
+    Works without versus config (staleness flags are skipped if config
+    is missing — useful when poking at the table from a fresh checkout).
+    """
+    limit = max(1, min(limit, 1000))
+    client = _versus_client()
+    cfg = _cfg_cached()
+    # /recent is cross-variant: a row is stale only if its prefix_hash matches
+    # NO active variant (canonical default + cfg.prefix_variants). Other
+    # endpoints scope staleness to a single user-selected variant.
+    current_prefix_hashes: dict[str, set[str]] = (
+        _active_prefix_hashes_by_essay(cfg) if cfg is not None else {}
+    )
+
+    text_resp = (
+        client.table("versus_texts")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    text_rows: list[dict] = [r for r in (text_resp.data or []) if isinstance(r, dict)]
+    texts_total_resp = (
+        client.table("versus_texts").select("id", count=CountMethod.exact).limit(1).execute()
+    )
+    texts_total = texts_total_resp.count or 0
+
+    judgment_resp = (
+        client.table("versus_judgments")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    judgment_rows: list[dict] = [r for r in (judgment_resp.data or []) if isinstance(r, dict)]
+    judgments_total_resp = (
+        client.table("versus_judgments").select("id", count=CountMethod.exact).limit(1).execute()
+    )
+    judgments_total = judgments_total_resp.count or 0
+
+    text_out = [_text_to_recent_row(db_row, current_prefix_hashes) for db_row in text_rows]
+
+    # Orphan-check needs to know about ALL existing texts, not just the
+    # recent-100 window — otherwise judgments whose contestants were created
+    # outside that window (e.g. human baselines from weeks ago) wrongly flag
+    # as orphaned. 726 rows x 3 short cols is ~50KB, fine to fetch fresh.
+    all_text_index_resp = (
+        client.table("versus_texts").select("essay_id,prefix_hash,source_id").execute()
+    )
+    text_source_index = _build_completion_source_index_from_rows(
+        [r for r in (all_text_index_resp.data or []) if isinstance(r, dict)]
+    )
+    judgments_out: list[JudgmentRow] = []
+    for db_row in judgment_rows:
+        row = _legacy_judgment_dict(db_row)
+        if row.get("verdict") is None:
+            continue
+        # Same cross-variant rule as _text_to_recent_row above: stale only if
+        # the row's hash matches no active variant for its essay.
+        eid_for_stale = row.get("essay_id") or ""
+        valid_hashes = current_prefix_hashes.get(eid_for_stale) or set()
+        row_ph = row.get("prefix_hash") or row.get("prefix_config_hash") or ""
+        is_stale = bool(valid_hashes) and row_ph not in valid_hashes
+        cfg_dict_raw = row.get("config")
+        cfg_dict: dict = cfg_dict_raw if isinstance(cfg_dict_raw, dict) else {}
+        variant_raw = db_row.get("variant")
+        variant = variant_raw if isinstance(variant_raw, str) else None
+        judgments_out.append(
+            JudgmentRow(
+                key=row.get("key", ""),
+                essay_id=row["essay_id"],
+                prefix_config_hash=row.get("prefix_config_hash", ""),
+                source_a=row["source_a"],
+                source_b=row["source_b"],
+                display_first=row.get("display_first") or "",
+                display_second=row.get("display_second") or "",
+                criterion=row["criterion"],
+                judge_model=row["judge_model"],
+                judge_model_id=cfg_dict.get("model") or row.get("judge_model", ""),
+                config_hash=row.get("config_hash") or "",
+                verdict=row["verdict"],
+                winner=row.get("winner_source") or "-",
+                preference_label=row.get("preference_label"),
+                ts=(row.get("ts") or "")[:19],
+                is_rumil=versus_config_mod.is_rumil_row(cfg_dict, str(row.get("judge_model", ""))),
+                contamination_note=row.get("contamination_note"),
+                stale=is_stale,
+                orphaned=(not is_stale) and _is_orphaned(row, text_source_index),
+                variant=variant,
+            )
+        )
+
+    return RecentBundle(
+        texts=text_out,
+        judgments=judgments_out,
+        texts_total=texts_total,
+        judgments_total=judgments_total,
+        limit=limit,
+    )
+
+
 @router.get("/judgments/by-key", response_model=JudgmentDetail)
 def get_judgment_by_key(key: str) -> JudgmentDetail:
     """Look up the verbatim row for a single judgment key.
@@ -1375,13 +1637,13 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
         judge_model=jm,
         judge_model_id=row_cfg["model"],
         config_hash=row["config_hash"],
-        prompt_hash=f"p{row_cfg['prompts']['shell_hash']}",
+        prompt_hash=f"p{versus_config_mod.row_prompt_hash(row_cfg) or 'unknown'}",
         sampling=row.get("sampling") or {},
         model_config_snapshot=row_cfg.get("model_config"),
         verdict=row.get("verdict"),
         winner_source=row.get("winner_source"),
         preference_label=(row.get("preference_label") or row.get("rumil_preference_label")),
-        is_rumil=jm.startswith("rumil:"),
+        is_rumil=versus_config_mod.is_rumil_row(row_cfg, jm),
         contamination_note=row.get("contamination_note"),
         prompt=row.get("prompt"),
         reasoning_text=row.get("reasoning_text"),

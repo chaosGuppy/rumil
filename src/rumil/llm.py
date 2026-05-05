@@ -134,12 +134,22 @@ def _is_retryable(exc: BaseException) -> bool:
     """Return True if the exception represents a transient API error."""
     status = _exc_status(exc)
     name = type(exc).__name__.lower()
+    msg = str(exc).lower()
     return (
         status in (429, 500, 502, 503, 529)
         or "overloaded" in name
         or "ratelimit" in name
         or "internalserver" in name
-        or "overloaded" in str(exc).lower()
+        or "overloaded" in msg
+        # httpx RemoteProtocolError + variants — Anthropic edge sometimes
+        # closes the chunked-streaming connection mid-response; not a real
+        # refusal, transient. Observed on a v3 d&e workflow run as
+        # "RemoteProtocolError: peer closed connection without sending
+        # complete message body (incomplete chunked read)" — wedged the
+        # workflow because the error wasn't classified retryable.
+        or "remoteprotocol" in name
+        or "incomplete chunked read" in msg
+        or "peer closed connection" in msg
     )
 
 
@@ -746,7 +756,13 @@ async def call_anthropic_api(
     @_api_retry
     async def _do_api_call() -> anthropic.types.Message:
         start = time.monotonic()
-        response = await client.messages.create(**kwargs)
+        # Stream and aggregate to the same Message shape `create` returns.
+        # The SDK rejects non-streaming calls whose predicted duration
+        # exceeds 10 minutes (Anthropic#long-requests), which breaks any
+        # call with large context + high max_tokens — e.g. d&e's editor
+        # stage on a long essay.
+        async with client.messages.stream(**kwargs) as stream:
+            response = await stream.get_final_message()
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
         return response
@@ -1082,6 +1098,8 @@ async def text_call(
     model: str | None = None,
     cache: bool = False,
     effort: str | None = None,
+    max_tokens: int | None = None,
+    model_config: ModelConfig | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
@@ -1093,7 +1111,13 @@ async def text_call(
     a prompt-cache breakpoint on the last message (Anthropic only — the Google
     branch ignores it). Pass `effort` (e.g. ``"max"``) to override the default
     effort level derived from the model; ignored for models that do not support
-    the effort parameter.
+    the effort parameter. Pass ``max_tokens`` to override the default output
+    cap (``DEFAULT_MAX_TOKENS``); needed for long-form generations like d&e
+    editor revisions where the default 20k cap silently truncates and breaks
+    downstream parsing. Pass ``model_config`` to fully override sampling /
+    thinking / effort / max_thinking_tokens / service_tier — takes precedence
+    over the per-model defaults that ``derive_model_config`` would pick.
+    Mutually exclusive with the discrete ``effort`` / ``max_tokens`` kwargs.
     """
     settings = get_settings()
     effective_model = model or settings.model
@@ -1103,6 +1127,18 @@ async def text_call(
     log.debug("text_call: messages=%d, model=%s", len(msg_list), effective_model)
 
     if is_google_model(effective_model):
+        if max_tokens is not None:
+            raise NotImplementedError(
+                "text_call(max_tokens=...) is not yet plumbed through the "
+                "Google branch; only the Anthropic path supports an explicit "
+                "max_tokens override."
+            )
+        if model_config is not None:
+            raise NotImplementedError(
+                "text_call(model_config=...) is not yet plumbed through the "
+                "Google branch; only the Anthropic path applies model_config "
+                "overrides."
+            )
         google_resp = await call_google_api(
             effective_model,
             system_prompt,
@@ -1115,16 +1151,47 @@ async def text_call(
 
     api_key = settings.require_anthropic_key()
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    api_resp = await call_anthropic_api(
-        client,
-        effective_model,
-        system_prompt,
-        msg_list,
-        metadata=metadata,
-        db=db,
-        cache=cache,
-        effort=effort,
-    )
+    if model_config is not None:
+        if effort is not None or max_tokens is not None:
+            raise ValueError(
+                "text_call: pass either model_config OR effort/max_tokens, "
+                "not both — model_config carries effort and max_tokens already"
+            )
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            model_config=model_config,
+        )
+    elif max_tokens is not None:
+        cfg = derive_model_config(effective_model, max_tokens=max_tokens)
+        if effort is not None and cfg.effort is not None:
+            cfg = replace(cfg, effort=effort)
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            model_config=cfg,
+        )
+    else:
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            effort=effort,
+        )
     for block in api_resp.message.content:
         if isinstance(block, TextBlock):
             log.debug("text_call returned %d chars", len(block.text))

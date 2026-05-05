@@ -9,6 +9,7 @@ into SQL.
 from __future__ import annotations
 
 import collections
+import hashlib
 from collections.abc import Iterable
 from typing import Any
 
@@ -34,12 +35,22 @@ def model_sort_key(judge: str) -> tuple:
     Families (left to right): gemini, openai, anthropic, other. Weak->strong
     within family: flash < pro for gemini, nano < mini < full for openai,
     haiku < sonnet < opus for anthropic. Variant (relevant for judges):
-    blind < rumil:ws < rumil:orch.
+    blind < rumil:ws < rumil:orch. ``rumil:ws`` is historical-only — no
+    new rows produced — but the slot is kept so old rows sort sensibly.
 
-    Accepts both source-id strings ("human", "google/gemini-3-flash",
-    "paraphrase:openai/gpt-5") and the post-cleanup judge_model shape
-    (``<path>:<model>:<dim>:c<hash8>`` with path ∈ {blind, rumil:ws,
-    rumil:orch}).
+    Accepts:
+
+    - Source-id strings: ``"human"``, ``"google/gemini-3-flash"``,
+      ``"paraphrase:openai/gpt-5"``.
+    - Legacy judge_model shape: ``<path>:<model>:<dim>:c<hash8>`` with
+      path ∈ {blind, rumil:ws, rumil:orch}.
+    - New judge_model shape (post-#424):
+      ``<task>/<workflow>:<model>:c<hash8>``, e.g.
+      ``judge_pair/blind:claude-opus-4-7:c2937f03b`` or
+      ``judge_pair/two_phase:claude-opus-4-7:c2937f03b``. Blind workflows
+      sort with the legacy ``blind:`` priority; non-blind workflows
+      (two_phase, draft_and_edit, …) sort with the legacy ``rumil:orch``
+      priority since they're all rumil-produced.
     """
     low = judge.lower()
     parts = judge.split(":")
@@ -53,6 +64,16 @@ def model_sort_key(judge: str) -> tuple:
     elif low.startswith("blind:"):
         variant = 1
         base = parts[1] if len(parts) >= 2 else judge
+    elif "/" in parts[0] and len(parts) >= 2:
+        # New shape: ``<task>/<workflow>:<model>:c<hash8>``. The first
+        # colon-separated segment carries the ``task/workflow`` pair, so
+        # only the first ``parts[0]`` is checked for ``/`` — a provider
+        # model like ``openai/gpt-5`` falls through to the catch-all
+        # ``"/" in judge`` branch below since it has no leading colon.
+        head = parts[0]
+        workflow = head.split("/", 1)[1].lower()
+        variant = 1 if workflow == "blind" else 3
+        base = parts[1]
     elif "/" in judge:
         variant = 0
         base = judge.split("/", 1)[1]
@@ -96,14 +117,78 @@ def model_sort_key(judge: str) -> tuple:
     return (family, strength, base_low, variant, judge)
 
 
+_WORKFLOW_PHASH_KEYS = (
+    "read_prompt_hash",
+    "reflect_prompt_hash",
+    "verdict_prompt_hash",
+    "dimension_body_hash",
+    "reader_model",
+    "reflector_model",
+    "verdict_model",
+)
+
+
+def _workflow_phash(workflow: dict) -> str | None:
+    """Hash of the workflow-level fields that distinguish variants of the
+    same workflow kind sharing the same task/rubric prompt — today,
+    reflective_judge's per-stage prompt hashes, dimension body hash,
+    and per-stage model overrides.
+
+    Returned as an 8-char hex projection so it slots into the column
+    header as a single short token rather than 3+ separate hashes.
+    Returns None when there's nothing distinguishing — caller hides the
+    field in that case so blind/legacy rows stay uncluttered.
+    """
+    parts = [f"{k}={workflow[k]}" for k in _WORKFLOW_PHASH_KEYS if workflow.get(k) is not None]
+    if not parts:
+        return None
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:8]
+
+
 def label_from_config(cfg: dict) -> dict:
     """Derive the stacked column-header dict from a judge_inputs blob.
 
-    Returns ``{variant, model, task, phash}``. Drives the FE
-    column-header layout. Orch carries its budget tag.
+    Returns ``{variant, model, task, phash, wf_phash}``. Drives the FE
+    column-header layout. Orch carries its budget tag. The ``ws``
+    branch is kept to render historical rows; new rows only ever
+    have workflow.kind ∈ {blind, two_phase, ...}.
+
+    ``wf_phash`` is a short combo hash of workflow-level fields (read /
+    reflect / verdict prompt hashes for reflective_judge, etc.) so two
+    variants of the same workflow that share dimension/rubric still get
+    visually distinct columns.
+
+    Handles both pre-#424 flat-dict rows and post-#424 structured rows
+    (``workflow`` / ``task`` subdicts) so the panel renders correctly
+    across the transition.
     """
-    variant = cfg["variant"]
     model = cfg["model"]
+    if "workflow" in cfg:
+        workflow = cfg.get("workflow") or {}
+        task = cfg.get("task") or {}
+        workflow_kind = workflow.get("kind")
+        dim = task.get("dimension", "")
+        ph = task.get("prompt_hash", "")
+        phash = f"p{ph}" if ph else ""
+        wf_ph = _workflow_phash(workflow)
+        if workflow_kind == "blind":
+            head = model.split("/", 1)[0] if "/" in model else "anthropic"
+        else:
+            budget = workflow.get("budget")
+            head = (
+                f"rumil:{workflow_kind} b{budget}"
+                if budget is not None
+                else f"rumil:{workflow_kind}"
+            )
+        return {
+            "variant": head,
+            "model": model,
+            "task": dim,
+            "phash": phash,
+            "wf_phash": f"w{wf_ph}" if wf_ph else None,
+        }
+    # Legacy flat-dict shape (pre-#424 rows in versus_judgments).
+    variant = cfg["variant"]
     dim = cfg["dimension"]
     phash = f"p{cfg['prompts']['shell_hash']}"
     if variant == "orch":
@@ -112,7 +197,13 @@ def label_from_config(cfg: dict) -> dict:
         head = "rumil:ws"
     else:
         head = model.split("/", 1)[0] if "/" in model else "anthropic"
-    return {"variant": head, "model": model, "task": dim, "phash": phash}
+    return {
+        "variant": head,
+        "model": model,
+        "task": dim,
+        "phash": phash,
+        "wf_phash": None,
+    }
 
 
 def cell_color(pct: float) -> str:

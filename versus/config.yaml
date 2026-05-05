@@ -118,7 +118,11 @@ models:
     thinking: { type: adaptive }
     effort: high
   anthropic/claude-opus-4-7:
-    sampling: { temperature: null, max_tokens: 32000 }
+    # 64k headroom: adaptive xhigh thinking ate ~24k on 10k-word
+    # forethought continuations, truncating output mid-clause at the
+    # old 32k cap. 64k is the Anthropic max for Opus 4.7 and leaves
+    # room for both deep thinking and full essay-length output.
+    sampling: { temperature: null, max_tokens: 64000 }
     thinking: { type: adaptive, display: summarized }
     effort: xhigh
   google/gemini-3.1-pro-preview:

@@ -21,7 +21,7 @@ _VERSUS_SRC = Path(__file__).resolve().parents[1] / "versus" / "src"
 if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
-from versus.judge_config import (  # noqa: E402
+from versus.versus_config import (  # noqa: E402
     compute_config_hash,
     compute_file_fingerprint,
     make_judge_config,
@@ -40,17 +40,13 @@ _BLIND_KW: dict[str, Any] = {
     "prompt_hash": "deadbeef",
 }
 
-_WS_KW: dict[str, Any] = {
+_ORCH_KW: dict[str, Any] = {
     **_BLIND_KW,
     "tool_prompt_hash": "11111111",
     "pair_surface_hash": "22222222",
     "workspace_id": "abcd1234",
     "code_fingerprint": {"src/rumil/versus_bridge.py": "aaaaaaaa"},
     "workspace_state_hash": "0011223344556677",
-}
-
-_ORCH_KW: dict[str, Any] = {
-    **_WS_KW,
     "budget": 4,
     "closer_hash": "33333333",
 }
@@ -119,47 +115,55 @@ def test_orch_config_hash_changes_when_code_fingerprint_changes():
 
 
 @pytest.mark.parametrize(
-    ("variant", "missing"),
+    "missing",
     (
-        ("ws", "tool_prompt_hash"),
-        ("ws", "pair_surface_hash"),
-        ("ws", "workspace_id"),
-        ("ws", "code_fingerprint"),
-        ("ws", "workspace_state_hash"),
-        ("orch", "budget"),
-        ("orch", "closer_hash"),
-        ("orch", "code_fingerprint"),
-        ("orch", "workspace_state_hash"),
+        "tool_prompt_hash",
+        "pair_surface_hash",
+        "workspace_id",
+        "workspace_state_hash",
+        "budget",
+        "closer_hash",
     ),
 )
-def test_missing_required_arg_raises_value_error(variant, missing):
-    kw = dict(_ORCH_KW if variant == "orch" else _WS_KW)
+def test_missing_required_arg_raises_value_error(missing):
+    kw = dict(_ORCH_KW)
     kw[missing] = None
     with pytest.raises(ValueError):
-        make_judge_config(variant, **kw)
+        make_judge_config("orch", **kw)
+
+
+def test_orch_missing_code_fingerprint_auto_computes():
+    """Post-#425: ``code_fingerprint`` is no longer required on the orch
+    shim path. Omitting it auto-computes ``shared_code_fingerprint`` +
+    ``workflow_code_fingerprint`` from the workflow's ``code_paths``;
+    explicitly passing it lands the legacy flat dict for hash compat.
+    """
+    kw = dict(_ORCH_KW)
+    del kw["code_fingerprint"]
+    cfg, _, _ = make_judge_config("orch", **kw)
+    assert "shared_code_fingerprint" in cfg
+    assert "workflow_code_fingerprint" in cfg
+    # workflow_code_fingerprint covers TwoPhaseWorkflow.code_paths.
+    assert "src/rumil/orchestrators/two_phase.py" in cfg["workflow_code_fingerprint"]
 
 
 def test_blind_judge_model_display_shape():
     _, ch, jm = make_judge_config("blind", **_BLIND_KW)
-    # New display shape: blind:<model>:<dim>:c<hash8>
-    assert jm == f"blind:claude-opus-4-7:general_quality:c{ch[:8]}"
-
-
-def test_ws_judge_model_display_shape():
-    _, ch, jm = make_judge_config("ws", **_WS_KW)
-    assert jm == f"rumil:ws:claude-opus-4-7:general_quality:c{ch[:8]}"
+    # New display shape (#424): <task>/<workflow>:<model>:c<hash8>
+    assert jm == f"judge_pair/blind:claude-opus-4-7:c{ch[:8]}"
 
 
 def test_orch_judge_model_display_shape():
     _, ch, jm = make_judge_config("orch", **_ORCH_KW)
-    assert jm == f"rumil:orch:claude-opus-4-7:general_quality:c{ch[:8]}"
+    # The orch path now uses TwoPhaseWorkflow (workflow.name="two_phase").
+    assert jm == f"judge_pair/two_phase:claude-opus-4-7:c{ch[:8]}"
 
 
 def test_compute_file_fingerprint_picks_up_content_changes(tmp_path, monkeypatch):
     # compute_file_fingerprint anchors at the rumil repo root via its
     # own helper. Patch the helper to point at tmp_path so we can test
     # against files we control.
-    from versus import judge_config as jc
+    from versus import versus_config as jc
 
     monkeypatch.setattr(jc, "_repo_root", lambda: tmp_path)
     target = tmp_path / "thing.txt"
@@ -171,7 +175,7 @@ def test_compute_file_fingerprint_picks_up_content_changes(tmp_path, monkeypatch
 
 
 def test_compute_file_fingerprint_records_missing_paths_as_empty(tmp_path, monkeypatch):
-    from versus import judge_config as jc
+    from versus import versus_config as jc
 
     monkeypatch.setattr(jc, "_repo_root", lambda: tmp_path)
     fp = compute_file_fingerprint(["nope.txt"])
@@ -179,12 +183,14 @@ def test_compute_file_fingerprint_records_missing_paths_as_empty(tmp_path, monke
 
 
 def test_summarize_provenance_reads_from_config_when_present():
-    cfg, ch, jm = make_judge_config("ws", **_WS_KW)
+    cfg, ch, jm = make_judge_config("orch", **_ORCH_KW)
     rows = [
         {"prefix_config_hash": "ph1", "judge_model": jm, "config": cfg, "config_hash": ch},
     ]
     out = versus_mainline.summarize_provenance(rows)
-    assert out["judge_path"] == {"rumil:ws": 1}
+    # Post-#424: workflow.kind="two_phase" so judge_path reads
+    # rumil:two_phase, not the legacy rumil:orch axis value.
+    assert out["judge_path"] == {"rumil:two_phase": 1}
     assert out["judge_workspace_id"] == {"abcd1234": 1}
     assert out["judge_pair_hash"] == {"q22222222": 1}
 
@@ -192,9 +198,8 @@ def test_summarize_provenance_reads_from_config_when_present():
 @pytest.mark.parametrize(
     ("variant", "kw", "expected_keys"),
     (
-        ("blind", _BLIND_KW, {"variant", "model", "task", "phash"}),
-        ("ws", _WS_KW, {"variant", "model", "task", "phash"}),
-        ("orch", _ORCH_KW, {"variant", "model", "task", "phash"}),
+        ("blind", _BLIND_KW, {"variant", "model", "task", "phash", "wf_phash"}),
+        ("orch", _ORCH_KW, {"variant", "model", "task", "phash", "wf_phash"}),
     ),
 )
 def test_label_from_config_shape(variant, kw, expected_keys):
@@ -209,57 +214,95 @@ def test_label_from_config_shape(variant, kw, expected_keys):
     assert set(out.keys()) == expected_keys
 
 
-# Config field → axis name. Pins the projection contract: a new
-# config field must add an entry here AND a corresponding axis in
+# Top-level config field → axis name. Post-#424 the structured config
+# uses ``workflow`` / ``task`` subdicts; this map covers the cross-cutting
+# top-level keys plus task subdict fields. Pins the projection contract:
+# a new field must add an entry here AND a corresponding axis in
 # ``project_config_to_axes``. Missing either raises the test below.
-_CONFIG_FIELD_TO_AXIS = {
+_TOP_FIELD_TO_AXIS = {
     "model": "judge_base_model",
-    "dimension": "judge_dimension",
     "workspace_id": "judge_workspace_id",
-    "tool_descriptions_hash": "judge_tool_hash",
-    "pair_surface_hash": "judge_pair_hash",
+    # Pre-#425 shim path stores a single flat ``code_fingerprint``;
+    # post-#425 auto-compute splits it into ``shared_code_fingerprint``
+    # + ``workflow_code_fingerprint``. Both shapes fold into the same
+    # ``judge_code_fingerprint`` axis at projection time.
     "code_fingerprint": "judge_code_fingerprint",
+    "shared_code_fingerprint": "judge_code_fingerprint",
+    "workflow_code_fingerprint": "judge_code_fingerprint",
     "workspace_state_hash": "judge_workspace_state_hash",
-    "budget": "judge_budget",
+}
+_TASK_FIELD_TO_AXIS = {
+    "dimension": "judge_dimension",
+    "prompt_hash": "judge_prompt_hash",
+    "tool_prompt_hash": "judge_tool_hash",
+    "pair_surface_hash": "judge_pair_hash",
     "closer_hash": "judge_closer_hash",
+}
+_WORKFLOW_FIELD_TO_AXIS = {
+    "budget": "judge_budget",
 }
 # Top-level keys deliberately not exposed as their own axis (covered
 # by other axes implicitly). ``model_config`` is the nested ModelConfig
 # snapshot; folded into config_hash and surfaced as
-# ``judge_model_config_hash`` axis on demand.
-_CONFIG_FIELDS_OPAQUE = {"variant", "model_config", "prompts"}
+# ``judge_model_config_hash`` axis on demand. ``workflow`` and ``task``
+# are subdicts whose own keys are projected — see _WORKFLOW_FIELD_TO_AXIS
+# / _TASK_FIELD_TO_AXIS.
+_TOP_FIELDS_OPAQUE = {"model_config", "workflow", "task"}
+# Workflow subdict keys whose values feed implicit axes (judge_path
+# combines workflow.kind with the variant prefix; settings.* knobs
+# fold into config_hash).
+_WORKFLOW_FIELDS_OPAQUE_PREFIXES = ("settings.",)
+_WORKFLOW_FIELDS_OPAQUE = {"kind"}
+_TASK_FIELDS_OPAQUE = {"kind"}
 
 
 @pytest.mark.parametrize(
     ("variant", "kw"),
     (
         ("blind", _BLIND_KW),
-        ("ws", _WS_KW),
         ("orch", _ORCH_KW),
     ),
 )
 def test_project_config_to_axes_covers_every_config_field(variant, kw):
     """Pins config_hash's role as a completeness check: every config
-    field must either be opaque-by-design or have an entry in
-    ``_CONFIG_FIELD_TO_AXIS`` that points at a real axis. Adding a
-    new field to ``make_judge_config`` without updating the mapping
-    fails this test — preventing silent drift where ``config_hash``
-    would diverge from the per-axis panel.
+    field must either be opaque-by-design or have an entry in the
+    field→axis maps that point at a real axis. Adding a new field to
+    ``make_versus_config`` without updating the mapping fails this
+    test — preventing silent drift where ``config_hash`` would diverge
+    from the per-axis panel.
     """
     cfg, ch, _ = make_judge_config(variant, **kw)
     axes = project_config_to_axes(cfg, config_hash=ch)
     for key in cfg:
-        if key in _CONFIG_FIELDS_OPAQUE:
+        if key in _TOP_FIELDS_OPAQUE:
             continue
-        axis = _CONFIG_FIELD_TO_AXIS.get(key)
+        axis = _TOP_FIELD_TO_AXIS.get(key)
         assert axis is not None, (
-            f"config field {key!r} has no entry in _CONFIG_FIELD_TO_AXIS — "
-            "either add a corresponding axis to project_config_to_axes "
-            "or mark it opaque."
+            f"top-level config field {key!r} has no entry in "
+            "_TOP_FIELD_TO_AXIS — either add a corresponding axis to "
+            "project_config_to_axes or mark it opaque."
         )
         assert axis in axes, (
-            f"config field {key!r} maps to axis {axis!r} but that axis "
+            f"top-level field {key!r} maps to axis {axis!r} but that axis "
             f"isn't produced by project_config_to_axes (got {sorted(axes)})"
+        )
+    for key in cfg.get("task") or {}:
+        if key in _TASK_FIELDS_OPAQUE:
+            continue
+        axis = _TASK_FIELD_TO_AXIS.get(key)
+        assert axis is not None, f"task field {key!r} has no entry in _TASK_FIELD_TO_AXIS"
+        assert axis in axes, (
+            f"task field {key!r} maps to axis {axis!r} but it isn't in {sorted(axes)}"
+        )
+    for key in cfg.get("workflow") or {}:
+        if key in _WORKFLOW_FIELDS_OPAQUE:
+            continue
+        if any(key.startswith(p) for p in _WORKFLOW_FIELDS_OPAQUE_PREFIXES):
+            continue
+        axis = _WORKFLOW_FIELD_TO_AXIS.get(key)
+        assert axis is not None, f"workflow field {key!r} has no entry in _WORKFLOW_FIELD_TO_AXIS"
+        assert axis in axes, (
+            f"workflow field {key!r} maps to axis {axis!r} but it isn't in {sorted(axes)}"
         )
 
 

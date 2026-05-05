@@ -23,11 +23,20 @@ OpenRouter-only judgment script.
 
 | Intent | This skill? |
 |---|---|
-| "run a flash / gpt-5.4 / gemini completion on essay X" | yes |
+| "run a flash / gpt-5.4 / gemini completion on essay X" | yes (single-shot path) |
 | "regenerate paraphrases after a prompt bump" | yes |
+| "run an orch-driven completion (TwoPhase / DraftAndEdit)" | **no** — use `rumil-versus-complete` |
 | "top up judgments (any model)" | **no** — use `rumil-versus-judge` |
-| "run a rumil:ws / rumil:orch judge" | **no** — use `rumil-versus-judge` |
+| "run a rumil:orch judge" | **no** — use `rumil-versus-judge` |
 | "pre-flight check before a topup" | **no** — see `status.py` below |
+
+This skill fires **single-shot** completions: one LLM call per essay
+× prefix × model, no orchestrator, no workflow. For
+orchestrator-driven completions (a full rumil workflow per essay,
+budget-bounded research loop, dedup by `config_hash`) use
+**`rumil-versus-complete`**. Both write into `versus_texts` and are
+pairable in judging — single-shot rows carry the bare model id as
+`source_id`; orch rows carry `orch:<workflow>:<model>:c<hash8>`.
 
 ## Before any run: check staleness
 

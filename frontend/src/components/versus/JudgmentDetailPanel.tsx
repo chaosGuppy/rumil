@@ -13,6 +13,15 @@ function localTracePath(url: string | null | undefined): string | null {
   return m ? m[0] : null;
 }
 
+/** Workflow segment from a compound judge_model display string, e.g.
+ *  `judge_pair/two_phase:claude-opus-4-7:c12345678` → "two_phase". Returns
+ *  null when the string doesn't match the new shape (legacy rows). */
+function workflowOfJudge(judgeModel: string | null | undefined): string | null {
+  if (!judgeModel) return null;
+  const m = judgeModel.match(/^[^/]+\/([^:]+):/);
+  return m ? m[1] : null;
+}
+
 export function JudgmentDetailPanel({
   selectedKey,
   onClose,
@@ -120,7 +129,21 @@ function DetailContent({
         <div className="detail-section-label">Meta</div>
         <dl className="detail-meta-grid">
           <dt>judge</dt>
-          <dd title={data.judge_model}>{data.judge_model_id}</dd>
+          <dd title={data.judge_model}>
+            {data.judge_model_id}
+            {(() => {
+              const wf = workflowOfJudge(data.judge_model);
+              return wf ? (
+                <span
+                  className="versus-pill"
+                  style={{ fontSize: 10, marginLeft: 6 }}
+                  title={`workflow: ${wf}`}
+                >
+                  {wf}
+                </span>
+              ) : null;
+            })()}
+          </dd>
           <dt>config_hash</dt>
           <dd className="versus-mono" style={{ fontSize: 11 }}>{data.config_hash}</dd>
           <dt>criterion</dt>

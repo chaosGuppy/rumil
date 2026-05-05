@@ -137,13 +137,15 @@ Load-bearing invariants you shouldn't break in a passing edit:
 
 - **Blind judging**: no source_id (can literally be `"human"`) in any agent-visible surface — Question page headline/content, `page.extra`, inline user prompts.
 - **Dedup discipline**: completions and judgments live in `versus_texts` / `versus_judgments` (Postgres) keyed on generated content hashes (`request_hash` / `judge_inputs_hash`) — editing a prompt template, sampling param, or any code the fingerprint covers naturally forks the hash and lands a new row. No `*_PROMPT_VERSION` constants. The runner decides "skip if exists" via `versus_db.find_*` queries; replicates (e.g. temperature>0 sampling) are first-class.
-- **Bridge model**: `judge_pair_ws_aware` / `judge_pair_orch` take `model` explicitly; don't reintroduce `settings.model` reads there.
+- **Bridge model**: `judge_pair_orch` takes `model` explicitly; don't reintroduce `settings.model` reads there. (The earlier `judge_pair_ws_aware` path was removed; historical `rumil:ws:*` rows are read-only-preserved.)
 
 ## Key Conventions
 
 - **NEVER pass `--prod` when running `main.py` unless the user explicitly asks you to.** The production database contains real research data. Default to the local database for all testing, development, and exploratory runs.
 - **Never run `supabase db reset`** — this wipes the database and is destructive. To apply pending migrations, use `supabase migration up` instead. If you find yourself wanting to reset the database, stop and ask the user first.
 - Always scope your test runs to a temp/scratch workspace, e.g. `uv run main.py "Is the sky blue?" --workspace skyblue-scratch`
+
+- **Settings precedence: dotenv beats shell env.** `Settings` overrides pydantic-settings' default source order so `.env` / `.env.overrides` win over exported shell variables (see `settings.py:settings_customise_sources`). This is intentional — per-worktree `.env.overrides` is the canonical override mechanism. If a value seems wrong, check the dotenv files before assuming `export FOO=...` took effect.
 
 - Always use absolute imports: `from rumil.module import name` (no relative imports)
 - Always put imports at the top of the file, not inside functions

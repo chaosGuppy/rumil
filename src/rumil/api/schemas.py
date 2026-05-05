@@ -15,11 +15,21 @@ from rumil.models import Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
+    ArbitrationEvent,
+    ArbitrationStartedEvent,
     AutocompactEvent,
+    BriefAuditEvent,
+    BriefAuditStartedEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
+    CritiqueRoundEvent,
+    CritiqueStartedEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
+    DraftEvent,
+    DraftStartedEvent,
+    EditEvent,
+    EditStartedEvent,
     ErrorEvent,
     EvaluationCompleteEvent,
     ExperimentalScoringCompletedEvent,
@@ -33,18 +43,26 @@ from rumil.tracing.trace_events import (
     MovesExecutedEvent,
     PageRef,
     PhaseSkippedEvent,
+    PlannerEvent,
+    PlannerStartedEvent,
     QuestionDedupeEvent,
+    ReadStartedEvent,
     ReassessTriggeredEvent,
     RecurseFailedEvent,
+    ReflectStartedEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
+    RoundStartedEvent,
     ScoringCompletedEvent,
+    ScoutPassEvent,
+    ScoutPassStartedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
     ToolCallEvent,
     UpdatePlanCreatedEvent,
     UpdateSubgraphComputedEvent,
     UpdateViewPhaseCompletedEvent,
+    VerdictStartedEvent,
     ViewCreatedEvent,
     WarningEvent,
     WebResearchCompleteEvent,
@@ -217,6 +235,78 @@ class ImpactFilterEventOut(ImpactFilterEvent, _TraceEnvelopeMixin):
     pass
 
 
+class RoundStartedEventOut(RoundStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class DraftStartedEventOut(DraftStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CritiqueStartedEventOut(CritiqueStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EditStartedEventOut(EditStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ReadStartedEventOut(ReadStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ReflectStartedEventOut(ReflectStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class VerdictStartedEventOut(VerdictStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class DraftEventOut(DraftEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CritiqueRoundEventOut(CritiqueRoundEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EditEventOut(EditEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class PlannerStartedEventOut(PlannerStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class PlannerEventOut(PlannerEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ArbitrationStartedEventOut(ArbitrationStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ArbitrationEventOut(ArbitrationEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class BriefAuditStartedEventOut(BriefAuditStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class BriefAuditEventOut(BriefAuditEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ScoutPassStartedEventOut(ScoutPassStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ScoutPassEventOut(ScoutPassEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -251,7 +341,25 @@ TraceEventOut = Annotated[
     | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut
     | QuestionDedupeEventOut
-    | ImpactFilterEventOut,
+    | ImpactFilterEventOut
+    | RoundStartedEventOut
+    | DraftStartedEventOut
+    | CritiqueStartedEventOut
+    | EditStartedEventOut
+    | ReadStartedEventOut
+    | ReflectStartedEventOut
+    | VerdictStartedEventOut
+    | DraftEventOut
+    | CritiqueRoundEventOut
+    | EditEventOut
+    | PlannerStartedEventOut
+    | PlannerEventOut
+    | ArbitrationStartedEventOut
+    | ArbitrationEventOut
+    | BriefAuditStartedEventOut
+    | BriefAuditEventOut
+    | ScoutPassStartedEventOut
+    | ScoutPassEventOut,
     Field(discriminator="event"),
 ]
 

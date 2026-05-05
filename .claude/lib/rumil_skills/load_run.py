@@ -11,6 +11,7 @@ Usage:
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.load_run <run_id>
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.load_run <run_id> --full
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.load_run <run_id> --only llm_exchange
+    PYTHONPATH=.claude/lib uv run python -m rumil_skills.load_run <run_id> --compare <other_run_id>
 """
 
 from __future__ import annotations
@@ -61,6 +62,18 @@ async def _fetch_runs_row(db, run_id: str) -> dict[str, Any] | None:
     rows = await db._execute(db.client.table("runs").select("*").eq("id", run_id).limit(1))
     data = getattr(rows, "data", None) or []
     return data[0] if data else None
+
+
+async def _fetch_project_name(db, project_id: str | None) -> str | None:
+    """Resolve a project_id to its name. The runs table stores project_id
+    but the user-facing label is the workspace name on the projects table."""
+    if not project_id:
+        return None
+    rows = await db._execute(
+        db.client.table("projects").select("name").eq("id", project_id).limit(1)
+    )
+    data = getattr(rows, "data", None) or []
+    return data[0]["name"] if data else None
 
 
 async def _fetch_calls_for_run(db, run_id: str) -> list[dict[str, Any]]:
@@ -160,6 +173,138 @@ def _event_summary(events: list[dict[str, Any]], only: str | None) -> str:
     return "\n".join(lines)
 
 
+def _result_summary(call: dict[str, Any], events: list[dict[str, Any]]) -> str:
+    """One-line condensed summary of a call's outcome — events + cost + status.
+
+    Used by --compare mode where full exchanges aren't rendered. Surfaces
+    the high-signal counts: how many llm exchanges, moves, errors, plus
+    review_complete fruit/confidence if present.
+    """
+    counts: dict[str, int] = {}
+    review = None
+    err = None
+    for e in events:
+        ev = e.get("event", "?")
+        counts[ev] = counts.get(ev, 0) + 1
+        if ev == "review_complete":
+            review = e
+        if ev == "error" and err is None:
+            err = e.get("message") or "?"
+    bits: list[str] = []
+    for k in ("llm_exchange", "moves_executed", "view_created", "dispatch_executed"):
+        if k in counts:
+            bits.append(f"{k.split('_')[0]}×{counts[k]}")
+    if review:
+        bits.append(f"fruit={review.get('remaining_fruit')} conf={review.get('confidence')}")
+    if err:
+        bits.append(f"err={err[:40]}")
+    return " ".join(bits) or "(no events)"
+
+
+def _align_calls_by_type(
+    calls_a: list[dict[str, Any]],
+    calls_b: list[dict[str, Any]],
+) -> list[tuple[dict[str, Any] | None, dict[str, Any] | None]]:
+    """Align two run's calls by call_type, preserving creation order within each type.
+
+    Walks call_types in the order they first appear across both runs (union,
+    A's order first, then any B-only types appended). Within each type,
+    pairs Nth-of-type-in-A with Nth-of-type-in-B; extras in either run land
+    as (call, None) or (None, call) rows. This handles the "3 scouts vs 2
+    scouts" case cleanly without trying to reason about parent/child
+    structure (which can legitimately differ between runs).
+    """
+    by_type_a: dict[str, list[dict[str, Any]]] = {}
+    by_type_b: dict[str, list[dict[str, Any]]] = {}
+    for c in sorted(calls_a, key=lambda x: x.get("created_at") or ""):
+        by_type_a.setdefault(c.get("call_type", "?"), []).append(c)
+    for c in sorted(calls_b, key=lambda x: x.get("created_at") or ""):
+        by_type_b.setdefault(c.get("call_type", "?"), []).append(c)
+
+    seen: set[str] = set()
+    ordered_types: list[str] = []
+    for c in sorted(calls_a, key=lambda x: x.get("created_at") or ""):
+        ct = c.get("call_type", "?")
+        if ct not in seen:
+            ordered_types.append(ct)
+            seen.add(ct)
+    for c in sorted(calls_b, key=lambda x: x.get("created_at") or ""):
+        ct = c.get("call_type", "?")
+        if ct not in seen:
+            ordered_types.append(ct)
+            seen.add(ct)
+
+    rows: list[tuple[dict[str, Any] | None, dict[str, Any] | None]] = []
+    for ct in ordered_types:
+        a_list = by_type_a.get(ct, [])
+        b_list = by_type_b.get(ct, [])
+        n = max(len(a_list), len(b_list))
+        for i in range(n):
+            a = a_list[i] if i < len(a_list) else None
+            b = b_list[i] if i < len(b_list) else None
+            rows.append((a, b))
+    return rows
+
+
+def _compare_cell(call: dict[str, Any] | None, events: list[dict[str, Any]] | None) -> str:
+    """Render one side of a comparison row — short id + status + cost + summary."""
+    if call is None:
+        return f"{'—':<60}"
+    cost = call.get("cost_usd")
+    cost_s = f"${cost:.3f}" if cost is not None else "—"
+    status = call.get("status", "?")
+    summary = _result_summary(call, events or [])
+    return f"{short(call['id'])} {status:<8} {cost_s:>7}  {summary}"[:90]
+
+
+def _print_compare(
+    run_a: str,
+    calls_a: list[dict[str, Any]],
+    events_a: dict[str, list[dict[str, Any]]],
+    runs_row_a: dict[str, Any] | None,
+    run_b: str,
+    calls_b: list[dict[str, Any]],
+    events_b: dict[str, list[dict[str, Any]]],
+    runs_row_b: dict[str, Any] | None,
+) -> None:
+    print("=== compare ===")
+    name_a = (runs_row_a or {}).get("name") or "—"
+    name_b = (runs_row_b or {}).get("name") or "—"
+    total_a = sum(c.get("cost_usd") or 0 for c in calls_a)
+    total_b = sum(c.get("cost_usd") or 0 for c in calls_b)
+    print(f"A: {short(run_a)}  {name_a}  calls={len(calls_a)}  total=${total_a:.3f}")
+    print(f"B: {short(run_b)}  {name_b}  calls={len(calls_b)}  total=${total_b:.3f}")
+    print()
+
+    rows = _align_calls_by_type(calls_a, calls_b)
+
+    print(f"{'call_type':<22}  {'A':<60}  {'B':<60}  diff")
+    last_type: str | None = None
+    for a, b in rows:
+        ct = (a or b or {}).get("call_type", "?")
+        cell_a = _compare_cell(a, events_a.get(a["id"]) if a else None)
+        cell_b = _compare_cell(b, events_b.get(b["id"]) if b else None)
+        diff_marks: list[str] = []
+        if a is None or b is None:
+            diff_marks.append("MISSING")
+        else:
+            if a.get("status") != b.get("status"):
+                diff_marks.append("status")
+            ca, cb = a.get("cost_usd") or 0, b.get("cost_usd") or 0
+            if ca and cb and abs(ca - cb) / max(ca, cb) > 0.25:
+                diff_marks.append(f"cost {ca:.3f}vs{cb:.3f}")
+            ev_a = events_a.get(a["id"]) or []
+            ev_b = events_b.get(b["id"]) or []
+            xa = sum(1 for e in ev_a if e.get("event") == "llm_exchange")
+            xb = sum(1 for e in ev_b if e.get("event") == "llm_exchange")
+            if xa != xb:
+                diff_marks.append(f"exchanges {xa}vs{xb}")
+        marker = "*" if diff_marks else " "
+        type_label = ct if ct != last_type else ""
+        last_type = ct
+        print(f"{type_label:<22}  {cell_a:<60}  {cell_b:<60}  {marker} {' '.join(diff_marks)}")
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("run_id", help="Full or short (8+ char) run ID")
@@ -180,6 +325,15 @@ async def main() -> None:
         default=None,
         help="In --full mode, trim each call to its last N exchanges",
     )
+    parser.add_argument(
+        "--compare",
+        default=None,
+        metavar="OTHER_RUN_ID",
+        help=(
+            "Show a side-by-side comparison with another run, aligned by "
+            "call_type. No verbatim exchanges in compare mode — call summaries only."
+        ),
+    )
     args = parser.parse_args()
 
     db, ws = await make_db(workspace=args.workspace)
@@ -190,6 +344,7 @@ async def main() -> None:
             sys.exit(1)
 
         runs_row = await _fetch_runs_row(db, full_id)
+        run_workspace = await _fetch_project_name(db, (runs_row or {}).get("project_id"))
         calls = await _fetch_calls_for_run(db, full_id)
         # trace_json is a JSONB column on calls, already hydrated by
         # _fetch_calls_for_run's select("*") — no extra round trips.
@@ -198,10 +353,26 @@ async def main() -> None:
         if args.full:
             for c in calls:
                 exchanges_by_call[c["id"]] = await _fetch_full_exchanges(db, c["id"])
+
+        compare_id: str | None = None
+        compare_calls: list[dict[str, Any]] = []
+        compare_events: dict[str, list[dict[str, Any]]] = {}
+        compare_runs_row: dict[str, Any] | None = None
+        if args.compare:
+            compare_id = await _resolve_run_id(db, args.compare)
+            if not compare_id:
+                print(f"no calls with run_id matching {args.compare!r}")
+                sys.exit(1)
+            compare_runs_row = await _fetch_runs_row(db, compare_id)
+            compare_calls = await _fetch_calls_for_run(db, compare_id)
+            compare_events = {c["id"]: (c.get("trace_json") or []) for c in compare_calls}
     finally:
         await db.close()
 
-    print(f"workspace: {ws}")
+    if run_workspace and run_workspace != ws:
+        print(f"workspace: {run_workspace}  (session active: {ws})")
+    else:
+        print(f"workspace: {run_workspace or ws}")
     print(f"run:       {full_id}")
     print(f"trace url: {trace_url(full_id)}")
     if runs_row:
@@ -218,6 +389,19 @@ async def main() -> None:
     print()
 
     if not calls:
+        return
+
+    if compare_id:
+        _print_compare(
+            full_id,
+            calls,
+            events_by_call,
+            runs_row,
+            compare_id,
+            compare_calls,
+            compare_events,
+            compare_runs_row,
+        )
         return
 
     print("=== call tree ===")

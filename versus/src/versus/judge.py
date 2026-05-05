@@ -15,6 +15,7 @@ different completion samples naturally forks the hash.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import itertools
 import threading
 import time
@@ -126,7 +127,7 @@ def build_blind_judge_config(
     on the wire — sampling, thinking, effort, etc. The whole bundle
     lives under ``judge_inputs.model_config`` and feeds the dedup hash.
     """
-    from versus.judge_config import make_judge_config
+    from versus.versus_config import make_judge_config
 
     return make_judge_config(
         "blind",
@@ -152,22 +153,95 @@ def judge_config_is_current(row: dict, criterion: str, *, cfg: config.Config | N
     service_tier) surfaces as stale rows. Doesn't check
     ``workspace_state_hash``: that's a per-row baseline watermark, not
     a staleness signal — every row would flap.
+
+    Handles both pre-#424 flat-dict rows (``variant`` / ``prompts`` /
+    ``code_fingerprint`` at top level) and post-#424 structured rows
+    (``workflow`` / ``task`` subdicts).
     """
 
     inputs = row["judge_inputs"]
-    is_tools = inputs["variant"] in ("ws", "orch")
+    # New-shape rows have a ``workflow`` subdict; legacy rows have a
+    # top-level ``variant``. Historical "ws" rows are flat with
+    # variant="ws"; their staleness check (with_tools=True prompt +
+    # code_fingerprint) still runs through the legacy branch.
+    if "workflow" in inputs:
+        workflow_kind = (inputs.get("workflow") or {}).get("kind")
+        is_tools = workflow_kind not in (None, "blind")
+        prompt_hash = (inputs.get("task") or {}).get("prompt_hash")
+    else:
+        variant = inputs.get("variant")
+        is_tools = variant in ("ws", "orch")
+        prompt_hash = (inputs.get("prompts") or {}).get("shell_hash")
     try:
         expected_ph = compute_judge_prompt_hash(criterion, with_tools=is_tools)
     except ValueError:
         return False
-    if inputs["prompts"]["shell_hash"] != expected_ph:
+    if prompt_hash != expected_ph:
         return False
     if is_tools:
-        # circular: rumil.versus_bridge -> versus.judge_config -> versus.judge
-        from versus.judge_config import compute_judge_code_fingerprint
+        # circular: rumil.versus_bridge -> versus.versus_config -> versus.judge
+        from versus.versus_config import (
+            compute_shared_code_fingerprint,
+            compute_workflow_code_fingerprint,
+        )
 
-        if inputs.get("code_fingerprint") != compute_judge_code_fingerprint():
-            return False
+        # Three row shapes are in the wild:
+        # - legacy flat: top-level ``code_fingerprint`` covering the
+        #   pre-#425 fat scope (orchestrators + calls + prompts +
+        #   workspace_exploration + harness files)
+        # - new-shape with frozen fingerprint: ``code_fingerprint`` at
+        #   top level (shim path or test that passed it explicitly)
+        # - post-#425 split: ``shared_code_fingerprint`` +
+        #   ``workflow_code_fingerprint`` at top level
+        if "shared_code_fingerprint" in inputs or "workflow_code_fingerprint" in inputs:
+            # circular import via rumil_completion → versus_workflow → orchestrators
+            from versus.rumil_completion import JUDGE_WORKFLOW_REGISTRY, WORKFLOW_REGISTRY
+
+            if inputs.get("shared_code_fingerprint") != compute_shared_code_fingerprint():
+                return False
+            # Reconstruct the workflow from its kind via the registry —
+            # any workflow that ships judgment rows is reachable here as
+            # long as it's registered in either the completion-side
+            # WORKFLOW_REGISTRY or the judge-side JUDGE_WORKFLOW_REGISTRY.
+            # The two registries are kept separate so completion CLI
+            # surface doesn't accidentally accept judge-only workflows.
+            # ``compute_workflow_code_fingerprint`` only reads
+            # ``workflow.code_paths``, so the registry's default kwargs
+            # only need to be sufficient for construction; values that
+            # don't affect code_paths don't matter for this comparison.
+            workflow_kind = (inputs.get("workflow") or {}).get("kind")
+            if workflow_kind:
+                registry_entry = WORKFLOW_REGISTRY.get(
+                    workflow_kind
+                ) or JUDGE_WORKFLOW_REGISTRY.get(workflow_kind)
+            else:
+                registry_entry = None
+            if registry_entry is None:
+                # Unknown workflow kind — can't reproduce its
+                # fingerprint. Treat as stale rather than guessing.
+                return False
+            workflow_cls, default_kwargs = registry_entry
+            ctor_kwargs: dict[str, Any] = {**default_kwargs}
+            # ``budget`` only applies to budgeted workflows; passing it
+            # to a workflow that doesn't accept it (e.g. reflective_judge)
+            # raises TypeError. Gate on signature.
+            if "budget" in inspect.signature(workflow_cls.__init__).parameters:
+                ctor_kwargs["budget"] = int((inputs.get("workflow") or {}).get("budget") or 1)
+            try:
+                wf = workflow_cls(**ctor_kwargs)
+            except TypeError:
+                # Constructor signature drift (e.g. required kwarg
+                # added since this row landed). Stale by definition.
+                return False
+            if inputs.get("workflow_code_fingerprint") != compute_workflow_code_fingerprint(wf):
+                return False
+        else:
+            # Legacy flat fingerprint or shim-frozen fingerprint. Pre-#425
+            # rows used the fat scope; today's ``compute_shared_code_fingerprint``
+            # returns the shrunk scope, so legacy rows mark stale (correct
+            # — they reference code state that no longer reproduces).
+            if inputs.get("code_fingerprint") != compute_shared_code_fingerprint():
+                return False
     try:
         expected_mc = get_judge_model_config(inputs["model"], cfg=cfg)
     except KeyError:
@@ -252,6 +326,35 @@ def is_refusal(row: dict) -> bool:
     return not text or len(text.split()) < _MIN_RESPONSE_WORDS
 
 
+def is_truncated(row: dict) -> bool:
+    """True if this completion hit the provider's max_tokens cap.
+
+    A truncated continuation ends mid-clause and gives the judge a
+    structurally-incomplete artifact — picking it as a contestant
+    confounds prose-quality signal with output-length signal. Skip
+    such rows when a non-truncated alternative exists for the same
+    (essay, prefix, source).
+
+    Anthropic-direct surfaces truncation as ``response.stop_reason ==
+    "max_tokens"``; OpenAI-shape providers (incl. OpenRouter) use
+    ``choices[0].finish_reason == "length"`` and some report
+    ``native_finish_reason == "MAX_TOKENS"``.
+    """
+    if row.get("kind") == "human":
+        return False
+    rr = row.get("response") or {}
+    if rr.get("stop_reason") == "max_tokens":
+        return True
+    choices = rr.get("choices") or []
+    if choices:
+        ch = choices[0] or {}
+        if ch.get("finish_reason") == "length":
+            return True
+        if (ch.get("native_finish_reason") or "").upper() == "MAX_TOKENS":
+            return True
+    return False
+
+
 def _prefix_text_from_request(request: dict | None) -> str:
     """Recover the prefix text that was shown in a completion's request body.
 
@@ -294,12 +397,19 @@ def load_sources_by_essay(
     last-row-wins by created_at — pair enumeration uses one canonical
     text per source. Re-running the judge against a *specific* replicate
     is a separate flow that doesn't go through this helper.
+
+    A truncated row (provider hit max_tokens) is only used as the
+    canonical text if no non-truncated row exists for the same
+    (essay, prefix, source) — a complete continuation is preferred
+    over a truncated one regardless of created_at order, since the
+    judge's signal is confounded by mid-clause endings.
     """
     if client is None:
         client = versus_db.get_client()
     groups: dict[tuple[str, str], dict[str, Source]] = {}
     prefix_text_by_group: dict[tuple[str, str], str] = {}
     skipped: list[tuple[str, str]] = []
+    truncated_keys: set[tuple[str, str, str]] = set()
     for row in versus_db.iter_texts(client):
         prefix_hash = row.get("prefix_hash")
         if prefix_hash is None:
@@ -314,6 +424,16 @@ def load_sources_by_essay(
         if exclude_refusals and is_refusal(row):
             skipped.append((row["essay_id"], row["source_id"]))
             continue
+        source_key = (row["essay_id"], prefix_hash, row["source_id"])
+        row_truncated = is_truncated(row)
+        existing = groups.get(k, {}).get(row["source_id"])
+        if existing is not None and source_key not in truncated_keys and row_truncated:
+            # Existing canonical is non-truncated; don't overwrite with truncated.
+            continue
+        if row_truncated:
+            truncated_keys.add(source_key)
+        else:
+            truncated_keys.discard(source_key)
         groups.setdefault(k, {})[row["source_id"]] = Source(
             source_id=row["source_id"],
             text=row["text"],
@@ -415,6 +535,13 @@ def _call_one_blind(task: _BlindTask, client: httpx.Client) -> dict:
             thinking=mc.thinking,
             output_config=output_cfg,
             client=client,
+            # Blind-judge sweeps re-use the same rubric system prompt
+            # across many pairs; cache it so input cost is paid once
+            # per rubric (versus per pair). The audit found system
+            # prompts were not cache-flagged here, costing ~80-90% of
+            # input spend on every blind call when the same dimension
+            # judges N pairs in a row.
+            system_cache=True,
         )
         text = anthropic_client.extract_text(resp)
     else:

@@ -9,6 +9,9 @@ Usage:
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id> --brief
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id> --only llm_exchange
     PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id> --last-n 5
+    PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id> --system-once
+    PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id> --user-only 2000
+    PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace <call_id> --response-only 2000
 """
 
 from __future__ import annotations
@@ -88,7 +91,29 @@ def _render_event(ev: dict, brief: bool) -> str:
     return f"{head}  {truncate(json.dumps(preview, default=str), 120)}"
 
 
-def _render_exchange(ex: dict, idx: int, brief: bool) -> str:
+def _tail(text: str, n: int) -> str:
+    """Return the last n chars of `text`, prefixed with a truncation marker if trimmed."""
+    total = len(text)
+    if total <= n:
+        return text
+    return f"... (truncated, {total} chars total)\n{text[-n:]}"
+
+
+def _render_exchange(
+    ex: dict,
+    idx: int,
+    brief: bool,
+    *,
+    system_once_state: dict | None = None,
+    user_only: int | None = None,
+    response_only: int | None = None,
+) -> str:
+    """Render one exchange.
+
+    `system_once_state` (if provided) is a mutable dict shared across calls
+    that tracks the first system prompt seen and which exchange index it
+    appeared in; subsequent identical prompts get a placeholder.
+    """
     parts: list[str] = []
     parts.append(
         f"\n--- exchange {idx}  phase={ex.get('phase')!r}  round={ex.get('round')}  "
@@ -103,12 +128,31 @@ def _render_exchange(ex: dict, idx: int, brief: bool) -> str:
             parts.append(f"resp: {truncate(ex['response_text'], 300)}")
         return "\n".join(parts)
     # Full body mode — verbatim so the reviewer sees the model's actual words.
-    if ex.get("system_prompt"):
-        parts.append(f"\n[system_prompt]\n{ex['system_prompt']}")
-    if ex.get("user_message"):
-        parts.append(f"\n[user_message]\n{ex['user_message']}")
-    if ex.get("response_text"):
-        parts.append(f"\n[response_text]\n{ex['response_text']}")
+    sys_prompt = ex.get("system_prompt")
+    if sys_prompt:
+        if system_once_state is not None:
+            first = system_once_state.get("first_prompt")
+            first_idx = system_once_state.get("first_idx")
+            if first is None:
+                system_once_state["first_prompt"] = sys_prompt
+                system_once_state["first_idx"] = idx
+                parts.append(f"\n[system_prompt]\n{sys_prompt}")
+            elif sys_prompt == first:
+                parts.append(
+                    f"\n[system_prompt]\n(system prompt unchanged from exchange {first_idx})"
+                )
+            else:
+                parts.append(f"\n[system_prompt]\n{sys_prompt}")
+        else:
+            parts.append(f"\n[system_prompt]\n{sys_prompt}")
+    user_msg = ex.get("user_message")
+    if user_msg:
+        body = _tail(user_msg, user_only) if user_only is not None else user_msg
+        parts.append(f"\n[user_message]\n{body}")
+    response = ex.get("response_text")
+    if response:
+        body = _tail(response, response_only) if response_only is not None else response
+        parts.append(f"\n[response_text]\n{body}")
     tool_calls = ex.get("tool_calls")
     if tool_calls:
         parts.append(f"\n[tool_calls]\n{json.dumps(tool_calls, indent=2, default=str)}")
@@ -139,6 +183,28 @@ async def main() -> None:
         "--no-exchanges",
         action="store_true",
         help="Skip the verbatim exchanges section (events only)",
+    )
+    parser.add_argument(
+        "--system-once",
+        action="store_true",
+        help=(
+            "Render the system prompt only the first time it appears; "
+            "replace subsequent identical occurrences with a placeholder."
+        ),
+    )
+    parser.add_argument(
+        "--user-only",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Show only the last N chars of each user_message (with truncation marker)",
+    )
+    parser.add_argument(
+        "--response-only",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Show only the last N chars of each response_text (with truncation marker)",
     )
     args = parser.parse_args()
 
@@ -180,8 +246,18 @@ async def main() -> None:
     if not exchanges:
         print("(none)")
     else:
+        system_once_state: dict | None = {} if args.system_once else None
         for i, ex in enumerate(exchanges, start=1):
-            print(_render_exchange(ex, i, brief=args.brief))
+            print(
+                _render_exchange(
+                    ex,
+                    i,
+                    brief=args.brief,
+                    system_once_state=system_once_state,
+                    user_only=args.user_only,
+                    response_only=args.response_only,
+                )
+            )
 
 
 if __name__ == "__main__":

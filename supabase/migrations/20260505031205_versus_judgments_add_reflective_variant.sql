@@ -1,5 +1,8 @@
 -- Add 'reflective' to the versus_judgments.variant CHECK constraint.
 --
+-- Re-timestamped from 20260502035314 so it applies in forward order
+-- relative to migrations that landed on main while this branch was open.
+--
 -- Originally allowed ('blind', 'ws', 'orch'); the new
 -- ReflectiveJudgeWorkflow (read → reflect → verdict, versus-specific
 -- iteration target on the judging side) writes rows with

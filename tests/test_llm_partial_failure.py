@@ -4,6 +4,7 @@ Covers the partial-response recovery helpers in ``rumil.llm`` and the
 failure paths of ``_structured_call_parse`` / ``call_anthropic_api``.
 """
 
+import json
 from typing import Any
 
 import pytest
@@ -326,8 +327,6 @@ async def test_call_anthropic_api_records_partial_text_from_stream_snapshot(
 async def test_structured_call_parse_request_kwargs_are_json_serializable(
     metadata, db_mock, trace_mock, langfuse_url, no_langfuse, patch_anthropic_client, mocker
 ):
-    import json
-
     big = '{"item_reviews":[{"item_id":"a","reasoning":"' + ("X" * 100) + "...END"
     parse_exc = _make_validation_error(big)
     patch_anthropic_client.messages.parse = mocker.AsyncMock(side_effect=parse_exc)
@@ -344,7 +343,7 @@ async def test_structured_call_parse_request_kwargs_are_json_serializable(
 
     db_mock.save_llm_exchange.assert_awaited_once()
     kwargs = db_mock.save_llm_exchange.await_args.kwargs
-    json.dumps(kwargs.get("request_kwargs"))
+    json.dumps(kwargs["request_kwargs"])
 
 
 @pytest.mark.asyncio

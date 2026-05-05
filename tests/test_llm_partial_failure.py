@@ -146,10 +146,10 @@ async def test_record_partial_failure_enriches_langfuse_with_full_shape(
     langfuse_mock.update_current_generation.assert_called_once()
     kwargs = langfuse_mock.update_current_generation.call_args.kwargs
     assert kwargs["model"] == "claude-opus-4-7"
-    assert kwargs["input"] == {
-        "system": "sys",
-        "messages": [{"role": "user", "content": "hi"}],
-    }
+    assert kwargs["input"] == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hi"},
+    ]
     assert kwargs["output"] == "partial output"
     assert kwargs["model_parameters"] == {"model": "claude-opus-4-7", "max_tokens": 100}
 
@@ -172,10 +172,10 @@ async def test_record_partial_failure_enriches_langfuse_even_without_partial_tex
 
     langfuse_mock.update_current_generation.assert_called_once()
     kwargs = langfuse_mock.update_current_generation.call_args.kwargs
-    assert kwargs["input"] == {
-        "system": "sys",
-        "messages": [{"role": "user", "content": "hi"}],
-    }
+    assert kwargs["input"] == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hi"},
+    ]
     assert kwargs["output"] is None
 
 

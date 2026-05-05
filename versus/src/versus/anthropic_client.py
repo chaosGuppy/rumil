@@ -134,9 +134,15 @@ def _enrich_anthropic_generation(
             for k in ("temperature", "top_p", "max_tokens", "thinking", "output_config")
             if payload.get(k) is not None
         }
+        system = payload.get("system")
+        if isinstance(system, list):
+            system = " ".join(b.get("text", "") for b in system if isinstance(b, dict))
+        chatml_input: list[dict] = (
+            [{"role": "system", "content": system}, *messages] if system else list(messages)
+        )
         update_generation(
             model=model,
-            input={"system": payload.get("system"), "messages": messages},
+            input=chatml_input,
             output=_maybe_extract_text(resp) or None,
             model_parameters=params or None,
             usage_details={

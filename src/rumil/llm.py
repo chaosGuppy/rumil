@@ -755,14 +755,18 @@ def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
     return output
 
 
-def _langfuse_input_for(system_prompt: str, messages: Sequence[dict]) -> dict:
+def _langfuse_input_for(system_prompt: str, messages: Sequence[dict]) -> list[dict]:
     """Shape the ``input`` payload for Langfuse generations.
 
-    Langfuse has no dedicated `system` field; folding it into `input`
-    keeps the trace self-contained and lets the playground / replay tools
-    see exactly what the model saw.
+    Langfuse has no dedicated ``system`` field. Folding system into a
+    nested ``{"system": ..., "messages": [...]}`` dict renders nicely in
+    the trace UI but the playground reads only ``messages`` and drops
+    the system prompt. Prepending a ``{"role": "system", ...}`` entry to
+    a flat ChatML list keeps both viewers happy: the trace UI shows the
+    system message at the top, and "Open in Playground" pre-fills it
+    correctly.
     """
-    return {"system": system_prompt, "messages": _serialize_messages(messages)}
+    return [{"role": "system", "content": system_prompt}, *_serialize_messages(messages)]
 
 
 def _enrich_langfuse_generation(

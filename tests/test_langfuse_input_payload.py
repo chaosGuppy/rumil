@@ -17,13 +17,13 @@ from rumil.llm import (
 )
 
 
-def test_langfuse_input_for_folds_system_and_serializes_messages():
+def test_langfuse_input_for_prepends_system_as_chatml_message():
     payload = _langfuse_input_for("you are helpful", [{"role": "user", "content": "hi"}])
 
-    assert payload == {
-        "system": "you are helpful",
-        "messages": [{"role": "user", "content": "hi"}],
-    }
+    assert payload == [
+        {"role": "system", "content": "you are helpful"},
+        {"role": "user", "content": "hi"},
+    ]
 
 
 def test_langfuse_input_for_handles_content_blocks():
@@ -34,8 +34,8 @@ def test_langfuse_input_for_handles_content_blocks():
 
     payload = _langfuse_input_for("sys", messages)
 
-    assert payload["system"] == "sys"
-    assert payload["messages"][1]["content"] == [{"type": "text", "text": "hello"}]
+    assert payload[0] == {"role": "system", "content": "sys"}
+    assert payload[2]["content"] == [{"type": "text", "text": "hello"}]
 
 
 @pytest.fixture
@@ -74,10 +74,10 @@ def test_enrich_langfuse_generation_includes_system_in_input(langfuse_client):
     )
 
     kwargs = langfuse_client.update_current_generation.call_args.kwargs
-    assert kwargs["input"] == {
-        "system": "you are helpful",
-        "messages": [{"role": "user", "content": "hi"}],
-    }
+    assert kwargs["input"] == [
+        {"role": "system", "content": "you are helpful"},
+        {"role": "user", "content": "hi"},
+    ]
 
 
 def test_enrich_langfuse_generation_google_includes_system_in_input(langfuse_client, mocker):
@@ -98,7 +98,7 @@ def test_enrich_langfuse_generation_google_includes_system_in_input(langfuse_cli
     )
 
     kwargs = langfuse_client.update_current_generation.call_args.kwargs
-    assert kwargs["input"] == {
-        "system": "be concise",
-        "messages": [{"role": "user", "content": "hi"}],
-    }
+    assert kwargs["input"] == [
+        {"role": "system", "content": "be concise"},
+        {"role": "user", "content": "hi"},
+    ]

@@ -34,6 +34,7 @@ from rumil.llm import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
     _is_retryable,
+    _langfuse_input_for,
     _log_before_retry,
     _stop_after_status_retries,
     _supports_sampling_params,
@@ -370,10 +371,9 @@ async def _do_call(
                     }
                     lf.update_current_generation(
                         model=model,
-                        input={
-                            "system": kwargs.get("system"),
-                            "messages": kwargs.get("messages"),
-                        },
+                        input=_langfuse_input_for(
+                            kwargs.get("system") or "", kwargs.get("messages") or []
+                        ),
                         output=partial_text,
                         model_parameters=params or None,
                     )
@@ -415,7 +415,7 @@ def _enrich_fork_generation(
         }
         lf.update_current_generation(
             model=model,
-            input={"system": kwargs.get("system"), "messages": kwargs.get("messages")},
+            input=_langfuse_input_for(kwargs.get("system") or "", kwargs.get("messages") or []),
             output=output_text or None,
             model_parameters=params or None,
             usage_details={

@@ -695,10 +695,16 @@ async def _record_partial_failure(
             )
 
     client = get_langfuse()
-    if client is not None and partial_text:
+    if client is not None:
         try:
             client.update_current_generation(
-                output=partial_text[:_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX],
+                model=model,
+                input=_langfuse_input_for(system_prompt, messages),
+                output=(
+                    partial_text[:_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX] if partial_text else None
+                ),
+                model_parameters=_extract_model_parameters(request_kwargs or {}),
+                metadata={"duration_ms": elapsed_ms},
             )
         except Exception as lf_exc:
             log.debug("Langfuse partial-failure enrichment failed: %s", lf_exc)

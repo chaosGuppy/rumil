@@ -127,7 +127,7 @@ async def test_record_partial_failure_writes_exchange_with_error_and_partial(
 
 
 @pytest.mark.asyncio
-async def test_record_partial_failure_enriches_langfuse_with_partial_output(
+async def test_record_partial_failure_enriches_langfuse_with_full_shape(
     metadata, db_mock, trace_mock, langfuse_url, langfuse_mock
 ):
     await _record_partial_failure(
@@ -140,13 +140,22 @@ async def test_record_partial_failure_enriches_langfuse_with_partial_output(
         system_prompt="sys",
         messages=[{"role": "user", "content": "hi"}],
         elapsed_ms=10,
+        request_kwargs={"model": "claude-opus-4-7", "max_tokens": 100},
     )
 
-    langfuse_mock.update_current_generation.assert_called_once_with(output="partial output")
+    langfuse_mock.update_current_generation.assert_called_once()
+    kwargs = langfuse_mock.update_current_generation.call_args.kwargs
+    assert kwargs["model"] == "claude-opus-4-7"
+    assert kwargs["input"] == {
+        "system": "sys",
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    assert kwargs["output"] == "partial output"
+    assert kwargs["model_parameters"] == {"model": "claude-opus-4-7", "max_tokens": 100}
 
 
 @pytest.mark.asyncio
-async def test_record_partial_failure_skips_langfuse_when_no_partial_text(
+async def test_record_partial_failure_enriches_langfuse_even_without_partial_text(
     metadata, db_mock, trace_mock, langfuse_url, langfuse_mock
 ):
     await _record_partial_failure(
@@ -161,7 +170,13 @@ async def test_record_partial_failure_skips_langfuse_when_no_partial_text(
         elapsed_ms=10,
     )
 
-    langfuse_mock.update_current_generation.assert_not_called()
+    langfuse_mock.update_current_generation.assert_called_once()
+    kwargs = langfuse_mock.update_current_generation.call_args.kwargs
+    assert kwargs["input"] == {
+        "system": "sys",
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    assert kwargs["output"] is None
 
 
 @pytest.mark.asyncio

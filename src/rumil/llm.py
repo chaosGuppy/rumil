@@ -766,7 +766,10 @@ def _langfuse_input_for(system_prompt: str, messages: Sequence[dict]) -> list[di
     system message at the top, and "Open in Playground" pre-fills it
     correctly.
     """
-    return [{"role": "system", "content": system_prompt}, *_serialize_messages(messages)]
+    serialized = list(_serialize_messages(messages))
+    if not system_prompt:
+        return serialized
+    return [{"role": "system", "content": system_prompt}, *serialized]
 
 
 def _enrich_langfuse_generation(

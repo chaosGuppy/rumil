@@ -1,8 +1,8 @@
 """`_langfuse_input_for` and per-site enrichment fold system_prompt into input.
 
-Langfuse has no dedicated `system` field. We fold it into `input` as
-`{"system": ..., "messages": [...]}` so the trace is self-contained and the
-playground can replay the call faithfully.
+Langfuse has no dedicated `system` field. We prepend a `{"role": "system", ...}`
+entry to a flat ChatML list so the trace UI shows the system message at the
+top and "Open in Playground" pre-fills it correctly.
 """
 
 from types import SimpleNamespace
@@ -24,6 +24,12 @@ def test_langfuse_input_for_prepends_system_as_chatml_message():
         {"role": "system", "content": "you are helpful"},
         {"role": "user", "content": "hi"},
     ]
+
+
+def test_langfuse_input_for_omits_system_when_empty():
+    payload = _langfuse_input_for("", [{"role": "user", "content": "hi"}])
+
+    assert payload == [{"role": "user", "content": "hi"}]
 
 
 def test_langfuse_input_for_handles_content_blocks():

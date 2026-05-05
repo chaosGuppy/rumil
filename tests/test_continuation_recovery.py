@@ -99,7 +99,10 @@ async def test_continuation_recovery_completes_truncated_json(
         db=db_mock,
     )
 
-    assert isinstance(result, _Schema)
+    assert result is not None
+    parsed, full = result
+    assert isinstance(parsed, _Schema)
+    assert full == partial + continuation
     assert call_api.await_count == 1
 
 
@@ -131,7 +134,10 @@ async def test_continuation_recovery_retries_until_success(
         max_attempts=2,
     )
 
-    assert isinstance(result, _Schema)
+    assert result is not None
+    parsed, full = result
+    assert isinstance(parsed, _Schema)
+    assert full == partial + ' more text"}]}'
     assert call_api.await_count == 2
 
 
@@ -247,7 +253,7 @@ async def test_structured_call_parse_recovers_when_recovery_enabled(
     )
 
     assert isinstance(result.parsed, _Schema)
-    assert result.response_text == partial
+    assert result.response_text == partial + '"}]}'
     assert call_api.await_count == 1
 
 

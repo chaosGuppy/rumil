@@ -1618,7 +1618,7 @@ async def _continuation_recovery_for_parse(
     metadata: LLMExchangeMetadata | None,
     db: DB | None,
     max_attempts: int = 2,
-) -> T | None:
+) -> tuple[T, str] | None:
     """Try to recover a clean parse by asking the model to complete the JSON.
 
     Mirrors the multi-turn pattern from
@@ -1627,11 +1627,15 @@ async def _continuation_recovery_for_parse(
     model to finish from where it stopped, concatenate the new fragment
     onto the partial, and re-validate. Bounded by ``max_attempts``.
 
-    Returns the parsed model on success, or ``None`` if all attempts
-    fail (the caller is expected to re-raise the original error). Each
-    continuation attempt routes through ``call_anthropic_api`` so it
-    gets its own ``call_llm_exchanges`` row tagged
-    ``phase="<original>:continueN"`` for trace visibility.
+    Returns ``(parsed, full_text)`` on success — the reconstructed
+    `partial + continuation` JSON, valid against ``response_model`` —
+    so callers can persist it as the assistant turn in conversation
+    history without poisoning later turns with the original truncated
+    string. Returns ``None`` if all attempts fail (the caller is
+    expected to re-raise the original error). Each continuation
+    attempt routes through ``call_anthropic_api`` so it gets its own
+    ``call_llm_exchanges`` row tagged ``phase="<original>:continueN"``
+    for trace visibility.
     """
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
@@ -1672,7 +1676,7 @@ async def _continuation_recovery_for_parse(
             return None
         full = full + more
         try:
-            return response_model.model_validate_json(full)
+            return response_model.model_validate_json(full), full
         except ValidationError:
             log.debug(
                 "Continuation attempt %d still didn't parse cleanly; trying again",
@@ -1778,14 +1782,15 @@ async def _structured_call_parse(
                 db=db,
             )
             if recovered is not None:
+                parsed_model, full_text = recovered
                 log.info(
                     "structured_call_parse: recovered via continuation after "
                     "ValidationError (phase=%s)",
                     metadata.phase if metadata else "structured_call",
                 )
                 return StructuredCallResult(
-                    parsed=recovered,
-                    response_text=partial_text,
+                    parsed=parsed_model,
+                    response_text=full_text,
                     duration_ms=elapsed_ms,
                 )
         raise

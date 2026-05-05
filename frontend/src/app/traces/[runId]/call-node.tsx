@@ -750,8 +750,9 @@ function StatusDot({ status }: { status: string }) {
 
 const EventSection = memo(function EventSection({ event }: { event: TraceEvent }) {
   const isWarning = event.event === "warning";
-  const isError = event.event === "error";
   const isExchange = event.event === "llm_exchange";
+  const exchangeFailed = isExchange && !!event.error;
+  const isError = event.event === "error" || exchangeFailed;
 
   const [exchangeDetail, setExchangeDetail] = useState<LlmExchangeOut | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
@@ -794,6 +795,11 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         {isExchange && (
           <span className="trace-exchange-info">
             {event.phase.replace(/_/g, " ")}{event.round != null ? ` round ${event.round}` : ""}
+            {exchangeFailed && (
+              <span className="trace-exchange-failed-badge" title={event.error ?? undefined}>
+                failed
+              </span>
+            )}
             {event.input_tokens != null && (
               <TokenMeter
                 inputTokens={event.input_tokens}

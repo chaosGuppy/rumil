@@ -1524,6 +1524,18 @@
   margin-top: 4px;
 }
 
+.trace-exchange-failed-badge {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #b33;
+  background: #fdf2f2;
+  border: 1px solid #f0caca;
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
 /* Expand button */
 
 .trace-expand-btn {

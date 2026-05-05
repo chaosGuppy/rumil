@@ -904,7 +904,13 @@ class DB:
 
     async def resolve_page_id(self, page_id: str) -> str | None:
         """Resolve a page ID to a full UUID. Handles both full UUIDs and
-        8-char short IDs. Returns the full UUID if found, or None."""
+        8-char short IDs. Returns the full UUID if found, or None.
+
+        For longer strings that miss exact match, falls back to a prefix
+        match on the first 8 characters — this catches UUID-mistyping
+        (e.g. an LLM transposing a middle segment) so long as the first
+        8 hex chars are correct and unambiguous.
+        """
         if not page_id:
             log.debug("resolve_page_id: empty page_id")
             return None
@@ -913,29 +919,40 @@ class DB:
         if rows:
             log.debug("resolve_page_id: exact match for %s", page_id[:8])
             return rows[0]["id"]
-        # Try prefix match for short IDs
-        if len(page_id) <= 8:
+        # Try prefix match for short IDs, or fall back to first-8-char
+        # prefix for longer inputs that just missed exact match.
+        if len(page_id) <= 8 or not page_id.startswith("http"):
+            prefix = page_id if len(page_id) <= 8 else page_id[:8]
             rows = _rows(
                 await self._execute(
-                    self.client.table("pages").select("id").like("id", f"{page_id}%")
+                    self.client.table("pages").select("id").like("id", f"{prefix}%")
                 )
             )
             if len(rows) == 1:
-                log.debug(
-                    "resolve_page_id: prefix match %s -> %s",
-                    page_id,
-                    rows[0]["id"][:8],
-                )
-                return rows[0]["id"]
+                resolved = rows[0]["id"]
+                if len(page_id) > 8 and resolved != page_id:
+                    log.info(
+                        "resolve_page_id: %s missed exact, recovered via first-8-char prefix to %s",
+                        page_id,
+                        resolved[:8],
+                    )
+                else:
+                    log.debug(
+                        "resolve_page_id: prefix match %s -> %s",
+                        prefix,
+                        resolved[:8],
+                    )
+                return resolved
             if len(rows) > 1:
                 log.warning(
                     "Ambiguous short ID '%s' matches %d pages",
-                    page_id,
+                    prefix,
                     len(rows),
                 )
-            else:
+                return None
+            if len(page_id) <= 8:
                 log.debug("resolve_page_id: no prefix match for %s", page_id)
-            return None
+                return None
         if page_id.startswith("http"):
             rows = _rows(
                 await self._execute(

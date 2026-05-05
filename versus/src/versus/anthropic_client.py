@@ -136,7 +136,7 @@ def _enrich_anthropic_generation(
         }
         update_generation(
             model=model,
-            input=messages,
+            input={"system": payload.get("system"), "messages": messages},
             output=_maybe_extract_text(resp) or None,
             model_parameters=params or None,
             usage_details={

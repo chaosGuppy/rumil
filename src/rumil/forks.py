@@ -403,7 +403,7 @@ def _enrich_fork_generation(
         }
         lf.update_current_generation(
             model=model,
-            input=kwargs.get("messages"),
+            input={"system": kwargs.get("system"), "messages": kwargs.get("messages")},
             output=output_text or None,
             model_parameters=params or None,
             usage_details={

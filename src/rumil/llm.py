@@ -1758,7 +1758,7 @@ async def _structured_call_parse(
             system_prompt=system_prompt,
             messages=msg_list,
             elapsed_ms=elapsed_ms,
-            request_kwargs=parse_kwargs,
+            request_kwargs=_capture_request_kwargs(cfg),
         )
         if (
             continuation_recovery

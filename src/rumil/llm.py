@@ -1596,6 +1596,91 @@ def _inject_into_last_user_message(
     return msgs
 
 
+_CONTINUATION_NUDGE = (
+    "Your previous response was cut off mid-string before the JSON could "
+    "close. Continue from exactly where you stopped — do not restate, "
+    "repeat, or summarize anything you already wrote. Close the open "
+    'string with a quote (`"`), complete any remaining items, and end '
+    "with `]}`. Output ONLY the continuation text starting from the "
+    "next character after where you stopped."
+)
+
+
+async def _continuation_recovery_for_parse(
+    *,
+    response_model: type[T],
+    system_prompt: str,
+    msg_list: Sequence[dict],
+    partial_text: str,
+    model: str,
+    cfg: ModelConfig,
+    cache: bool,
+    metadata: LLMExchangeMetadata | None,
+    db: DB | None,
+    max_attempts: int = 2,
+) -> T | None:
+    """Try to recover a clean parse by asking the model to complete the JSON.
+
+    Mirrors the multi-turn pattern from
+    ``draft_and_edit._continue_editor_until_complete``: send the partial
+    response back as an assistant turn, append a user nudge asking the
+    model to finish from where it stopped, concatenate the new fragment
+    onto the partial, and re-validate. Bounded by ``max_attempts``.
+
+    Returns the parsed model on success, or ``None`` if all attempts
+    fail (the caller is expected to re-raise the original error). Each
+    continuation attempt routes through ``call_anthropic_api`` so it
+    gets its own ``call_llm_exchanges`` row tagged
+    ``phase="<original>:continueN"`` for trace visibility.
+    """
+    settings = get_settings()
+    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    full = partial_text
+    for attempt in range(max_attempts):
+        cont_messages: list[dict] = [
+            *msg_list,
+            {"role": "assistant", "content": full},
+            {"role": "user", "content": _CONTINUATION_NUDGE},
+        ]
+        cont_metadata = (
+            replace(metadata, phase=f"{metadata.phase}:continue{attempt + 1}")
+            if metadata is not None
+            else None
+        )
+        try:
+            api_resp = await call_anthropic_api(
+                client,
+                model,
+                system_prompt,
+                cont_messages,
+                metadata=cont_metadata,
+                db=db,
+                cache=cache,
+                model_config=cfg,
+            )
+        except Exception as exc:
+            log.warning(
+                "Continuation attempt %d/%d raised %s; aborting recovery",
+                attempt + 1,
+                max_attempts,
+                type(exc).__name__,
+            )
+            return None
+        more = "".join(b.text for b in api_resp.message.content if isinstance(b, TextBlock))
+        if not more:
+            log.debug("Continuation attempt %d produced no text; aborting", attempt + 1)
+            return None
+        full = full + more
+        try:
+            return response_model.model_validate_json(full)
+        except ValidationError:
+            log.debug(
+                "Continuation attempt %d still didn't parse cleanly; trying again",
+                attempt + 1,
+            )
+    return None
+
+
 @observe(as_type="generation", name="anthropic.messages.parse")
 async def _structured_call_parse(
     system_prompt: str,
@@ -1610,6 +1695,7 @@ async def _structured_call_parse(
     max_tokens: int | None = None,
     disable_thinking: bool = False,
     cache: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]:
     """Structured output via messages.parse.
 
@@ -1674,6 +1760,34 @@ async def _structured_call_parse(
             elapsed_ms=elapsed_ms,
             request_kwargs=parse_kwargs,
         )
+        if (
+            continuation_recovery
+            and response_model is not None
+            and isinstance(exc, ValidationError)
+            and partial_text
+        ):
+            recovered = await _continuation_recovery_for_parse(
+                response_model=response_model,
+                system_prompt=system_prompt,
+                msg_list=msg_list,
+                partial_text=partial_text,
+                model=model,
+                cfg=cfg,
+                cache=cache,
+                metadata=metadata,
+                db=db,
+            )
+            if recovered is not None:
+                log.info(
+                    "structured_call_parse: recovered via continuation after "
+                    "ValidationError (phase=%s)",
+                    metadata.phase if metadata else "structured_call",
+                )
+                return StructuredCallResult(
+                    parsed=recovered,
+                    response_text=partial_text,
+                    duration_ms=elapsed_ms,
+                )
         raise
     elapsed_ms = getattr(response, "_elapsed_ms", 0)
     parsed = parse_anthropic_response(response.content)
@@ -1754,6 +1868,7 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -1773,6 +1888,7 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -1810,6 +1926,7 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T] | StructuredCallResult[BaseModel]:
     """Run an LLM call that returns structured output matching response_model.
 
@@ -1903,4 +2020,5 @@ async def structured_call(
         max_tokens=max_tokens,
         disable_thinking=disable_thinking,
         cache=cache,
+        continuation_recovery=continuation_recovery,
     )

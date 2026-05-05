@@ -739,6 +739,7 @@ class UpdateViewWorkspaceUpdater(WorkspaceUpdater):
                     phase=f"deep_review_batch_{batch_idx}",
                 ),
                 db=infra.db,
+                continuation_recovery=True,
             )
 
             messages.append({"role": "assistant", "content": result.response_text or ""})

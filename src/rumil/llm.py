@@ -557,8 +557,15 @@ async def _save_exchange(
     user_messages: Sequence[dict] | None = None,
     request_kwargs: dict | None = None,
     thinking_blocks: dict | None = None,
+    error: str | None = None,
 ) -> None:
-    """Persist an LLM exchange and record a trace event."""
+    """Persist an LLM exchange and record a trace event.
+
+    Pass ``error`` to mark this exchange as a recovered failure — the row
+    still carries any partial ``response_text`` we managed to capture, but
+    consumers (trace UI, find_confusion, forks) can distinguish it from a
+    successful exchange via the non-null error column.
+    """
     exchange_id = await db.save_llm_exchange(
         call_id=metadata.call_id,
         phase=metadata.phase,
@@ -576,6 +583,7 @@ async def _save_exchange(
         model=model,
         request_kwargs=request_kwargs,
         thinking_blocks=thinking_blocks,
+        error=error,
     )
     cost_usd = compute_cost(
         model=model,
@@ -599,8 +607,101 @@ async def _save_exchange(
                 cost_usd=cost_usd or None,
                 has_thinking=thinking_blocks is not None,
                 langfuse_trace_url=langfuse_trace_url_for_current_observation(),
+                error=error,
             )
         )
+
+
+_PARTIAL_FAILURE_ERROR_MAX = 5000
+_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX = 200_000
+
+
+def _partial_from_validation_error(exc: ValidationError) -> str | None:
+    """Pull the full malformed input string out of a pydantic ValidationError.
+
+    Pydantic v2's ``str(exc)`` truncates the ``input_value`` repr to ~80
+    chars, but ``exc.errors()[0]["input"]`` carries the full original
+    string. The Anthropic SDK's ``messages.parse`` raises this exception
+    inside its post-parser when ``model_validate_json`` rejects the
+    response — that's the only place we can recover the malformed text.
+    """
+    try:
+        first = exc.errors()[0]
+        inp = first.get("input")
+    except (IndexError, KeyError):
+        return None
+    return inp if isinstance(inp, str) else None
+
+
+async def _record_partial_failure(
+    *,
+    exc: BaseException,
+    partial_text: str | None,
+    partial_tool_calls: list[dict] | None,
+    metadata: LLMExchangeMetadata | None,
+    db: DB | None,
+    model: str,
+    system_prompt: str,
+    messages: Sequence[dict],
+    elapsed_ms: int,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cache_creation_input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
+    request_kwargs: dict | None = None,
+    thinking_blocks: dict | None = None,
+) -> None:
+    """Persist whatever forensics we have for a failed LLM call.
+
+    Two writes, both clearly marked as error state:
+
+    - ``call_llm_exchanges`` row with non-null ``error`` and any partial
+      response_text we managed to recover. Skipped if metadata/db missing.
+    - ``update_current_generation(output=partial)`` on the active langfuse
+      span. ``@observe`` already sets ``level=ERROR`` and
+      ``status_message`` when the wrapped call re-raises, so we only need
+      to attach the partial output here — don't double-set level.
+
+    Both writes are best-effort; an exception in either is logged and
+    swallowed so the original failure still propagates cleanly.
+    """
+    error_str = f"{type(exc).__name__}: {exc}"[:_PARTIAL_FAILURE_ERROR_MAX]
+
+    if metadata and db:
+        try:
+            serialized = _serialize_messages(messages) if len(messages) > 1 else None
+            await _save_exchange(
+                metadata,
+                db=db,
+                model=model,
+                system_prompt=system_prompt,
+                response_text=partial_text,
+                tool_calls=partial_tool_calls or [],
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                duration_ms=elapsed_ms,
+                cache_creation_input_tokens=cache_creation_input_tokens,
+                cache_read_input_tokens=cache_read_input_tokens,
+                user_messages=serialized,
+                request_kwargs=request_kwargs,
+                thinking_blocks=thinking_blocks,
+                error=error_str,
+            )
+        except Exception as save_exc:
+            log.warning(
+                "Failed to persist partial-failure exchange for call %s: %s",
+                metadata.call_id[:8],
+                save_exc,
+            )
+
+    client = get_langfuse()
+    if client is not None and partial_text:
+        try:
+            client.update_current_generation(
+                output=partial_text[:_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX],
+            )
+        except Exception as lf_exc:
+            log.debug("Langfuse partial-failure enrichment failed: %s", lf_exc)
 
 
 def _extract_model_parameters(api_kwargs: dict) -> dict:
@@ -753,6 +854,10 @@ async def call_anthropic_api(
         len(messages),
     )
 
+    # Partial-state container populated by ``_do_api_call`` on failure.
+    # Re-populated each retry; reflects only the final failed attempt.
+    partial_state: dict[str, Any] = {}
+
     @_api_retry
     async def _do_api_call() -> anthropic.types.Message:
         start = time.monotonic()
@@ -762,7 +867,22 @@ async def call_anthropic_api(
         # call with large context + high max_tokens — e.g. d&e's editor
         # stage on a long essay.
         async with client.messages.stream(**kwargs) as stream:
-            response = await stream.get_final_message()
+            try:
+                response = await stream.get_final_message()
+            except Exception:
+                # Capture whatever was decoded before the stream raised —
+                # ``current_message_snapshot`` is only valid while the
+                # context manager is open, so do this here, not in the
+                # outer except. Asserting access on an empty stream
+                # raises AssertionError; treat as no partial.
+                snapshot_content: list | None = None
+                try:
+                    snapshot_content = stream.current_message_snapshot.content
+                except Exception:
+                    snapshot_content = None
+                partial_state["snapshot_content"] = snapshot_content
+                partial_state["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+                raise
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
         return response
@@ -771,6 +891,25 @@ async def call_anthropic_api(
         response = await _do_api_call()
     except Exception as e:
         log.error("API call failed: %s", e, exc_info=True)
+        snapshot_content = partial_state.get("snapshot_content")
+        partial_text: str | None = None
+        partial_tool_calls: list[dict] | None = None
+        if snapshot_content is not None:
+            partial_parsed = parse_anthropic_response(snapshot_content)
+            partial_text = partial_parsed.text or None
+            partial_tool_calls = partial_parsed.tool_calls or None
+        await _record_partial_failure(
+            exc=e,
+            partial_text=partial_text,
+            partial_tool_calls=partial_tool_calls,
+            metadata=metadata,
+            db=db,
+            model=model,
+            system_prompt=system_prompt,
+            messages=messages,
+            elapsed_ms=partial_state.get("elapsed_ms", 0),
+            request_kwargs=_capture_request_kwargs(cfg),
+        )
         trace = get_trace()
         if trace:
             phase = metadata.phase if metadata else "api_call"
@@ -998,14 +1137,20 @@ async def call_google_api(
         len(messages),
     )
 
+    partial_state: dict[str, Any] = {}
+
     @_api_retry
     async def _do_api_call() -> Any:
         start = time.monotonic()
-        response = await client.aio.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
-        )
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+        except Exception:
+            partial_state["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+            raise
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
         return response
@@ -1014,6 +1159,20 @@ async def call_google_api(
         response = await _do_api_call()
     except Exception as e:
         log.error("Google API call failed: %s", e, exc_info=True)
+        # Non-streaming path — no partial response to recover from the
+        # google-genai SDK. Still record a forensic row so the trace UI
+        # / find_confusion see the failed exchange.
+        await _record_partial_failure(
+            exc=e,
+            partial_text=None,
+            partial_tool_calls=None,
+            metadata=metadata,
+            db=db,
+            model=model,
+            system_prompt=system_prompt,
+            messages=messages,
+            elapsed_ms=partial_state.get("elapsed_ms", 0),
+        )
         trace = get_trace()
         if trace:
             phase = metadata.phase if metadata else "api_call"
@@ -1437,6 +1596,147 @@ def _inject_into_last_user_message(
     return msgs
 
 
+_CONTINUATION_NUDGE = (
+    "Your previous response was truncated. The text shown above is the "
+    "portion that completed cleanly — everything after the last "
+    "successfully-closed element was lost. Continue the JSON from "
+    "exactly where it ends: emit any remaining elements (with leading "
+    "comma if appropriate) and the closing brackets needed to make the "
+    "concatenation a valid JSON object matching the schema. Output ONLY "
+    "the continuation text — do not restate or repeat the portion shown."
+)
+
+
+def _safe_truncate_partial_json(partial: str) -> str | None:
+    """Trim partial JSON to the last clean structural boundary.
+
+    Walks ``partial`` tracking quote/escape state and brace depth,
+    recording every position where a ``}`` or ``]`` closes a
+    non-outermost element (depth-after-close > 0). Returns the prefix
+    up to and including the last such close — a "between elements"
+    state where a continuation can splice cleanly without landing inside
+    a string or mid-escape.
+
+    Returns ``None`` if no such boundary exists (e.g. truncation
+    happened inside the first sub-element, or the partial is a flat
+    object with no sub-element closes).
+    """
+    in_string = False
+    escape = False
+    depth = 0
+    last_boundary = -1
+    for i, c in enumerate(partial):
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            continue
+        if c == '"':
+            in_string = True
+        elif c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+            if depth > 0:
+                last_boundary = i + 1
+    if last_boundary == -1:
+        return None
+    return partial[:last_boundary]
+
+
+async def _continuation_recovery_for_parse(
+    *,
+    response_model: type[T],
+    system_prompt: str,
+    msg_list: Sequence[dict],
+    partial_text: str,
+    model: str,
+    cfg: ModelConfig,
+    cache: bool,
+    metadata: LLMExchangeMetadata | None,
+    db: DB | None,
+    max_attempts: int = 2,
+) -> tuple[T, str] | None:
+    """Try to recover a clean parse by asking the model to complete the JSON.
+
+    Mirrors the multi-turn pattern from
+    ``draft_and_edit._continue_editor_until_complete``: send the partial
+    response back as an assistant turn, append a user nudge asking the
+    model to finish from where it stopped, concatenate the new fragment
+    onto the partial, and re-validate. Bounded by ``max_attempts``.
+
+    Returns ``(parsed, full_text)`` on success — the reconstructed
+    `partial + continuation` JSON, valid against ``response_model`` —
+    so callers can persist it as the assistant turn in conversation
+    history without poisoning later turns with the original truncated
+    string. Returns ``None`` if all attempts fail (the caller is
+    expected to re-raise the original error). Each continuation
+    attempt routes through ``call_anthropic_api`` so it gets its own
+    ``call_llm_exchanges`` row tagged ``phase="<original>:continueN"``
+    for trace visibility.
+    """
+    trimmed = _safe_truncate_partial_json(partial_text)
+    if trimmed is None:
+        log.debug(
+            "Continuation recovery: no clean splice boundary in partial "
+            "(truncation likely inside first sub-element); aborting"
+        )
+        return None
+    settings = get_settings()
+    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    for attempt in range(max_attempts):
+        # Reset each attempt to the clean trimmed prefix — compounding
+        # a failed continuation across retries just sends the model
+        # invalid mid-stream context. Re-sample from the same splice
+        # point instead.
+        cont_messages: list[dict] = [
+            *msg_list,
+            {"role": "assistant", "content": trimmed},
+            {"role": "user", "content": _CONTINUATION_NUDGE},
+        ]
+        cont_metadata = (
+            replace(metadata, phase=f"{metadata.phase}:continue{attempt + 1}")
+            if metadata is not None
+            else None
+        )
+        try:
+            api_resp = await call_anthropic_api(
+                client,
+                model,
+                system_prompt,
+                cont_messages,
+                metadata=cont_metadata,
+                db=db,
+                cache=cache,
+                model_config=cfg,
+            )
+        except Exception as exc:
+            log.warning(
+                "Continuation attempt %d/%d raised %s; aborting recovery",
+                attempt + 1,
+                max_attempts,
+                type(exc).__name__,
+            )
+            return None
+        more = "".join(b.text for b in api_resp.message.content if isinstance(b, TextBlock))
+        if not more:
+            log.debug("Continuation attempt %d produced no text; aborting", attempt + 1)
+            return None
+        full = trimmed + more
+        try:
+            return response_model.model_validate_json(full), full
+        except ValidationError:
+            log.debug(
+                "Continuation attempt %d still didn't parse cleanly; retrying",
+                attempt + 1,
+            )
+    return None
+
+
 @observe(as_type="generation", name="anthropic.messages.parse")
 async def _structured_call_parse(
     system_prompt: str,
@@ -1451,6 +1751,7 @@ async def _structured_call_parse(
     max_tokens: int | None = None,
     disable_thinking: bool = False,
     cache: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]:
     """Structured output via messages.parse.
 
@@ -1487,8 +1788,65 @@ async def _structured_call_parse(
         resp._elapsed_ms = int((time.monotonic() - t0) * 1000)  # type: ignore[attr-defined]
         return resp
 
-    response: Any = await _do_parse()
-    elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
+    parse_start = time.monotonic()
+    try:
+        response: Any = await _do_parse()
+    except Exception as exc:
+        # Cover both shapes of failure: (a) ``messages.parse`` runs
+        # ``model_validate_json`` on the response text inside the SDK's
+        # post-parser — on failure the response object is discarded but
+        # the malformed text is preserved on the ``ValidationError`` via
+        # ``errors()[0]["input"]`` (#444 / #446); (b) any other exception
+        # (API error after retries, network failure, etc.) — no partial
+        # text to recover, but we still want a forensic row so the trace
+        # UI / find_confusion can see the failed exchange.
+        partial_text = (
+            _partial_from_validation_error(exc) if isinstance(exc, ValidationError) else None
+        )
+        elapsed_ms = int((time.monotonic() - parse_start) * 1000)
+        await _record_partial_failure(
+            exc=exc,
+            partial_text=partial_text,
+            partial_tool_calls=None,
+            metadata=metadata,
+            db=db,
+            model=model,
+            system_prompt=system_prompt,
+            messages=msg_list,
+            elapsed_ms=elapsed_ms,
+            request_kwargs=_capture_request_kwargs(cfg),
+        )
+        if (
+            continuation_recovery
+            and response_model is not None
+            and isinstance(exc, ValidationError)
+            and partial_text
+        ):
+            recovered = await _continuation_recovery_for_parse(
+                response_model=response_model,
+                system_prompt=system_prompt,
+                msg_list=msg_list,
+                partial_text=partial_text,
+                model=model,
+                cfg=cfg,
+                cache=cache,
+                metadata=metadata,
+                db=db,
+            )
+            if recovered is not None:
+                parsed_model, full_text = recovered
+                log.info(
+                    "structured_call_parse: recovered via continuation after "
+                    "ValidationError (phase=%s)",
+                    metadata.phase if metadata else "structured_call",
+                )
+                return StructuredCallResult(
+                    parsed=parsed_model,
+                    response_text=full_text,
+                    duration_ms=elapsed_ms,
+                )
+        raise
+    elapsed_ms = getattr(response, "_elapsed_ms", 0)
     parsed = parse_anthropic_response(response.content)
     response_text = parsed.text
     _enrich_langfuse_generation(
@@ -1567,6 +1925,7 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -1586,6 +1945,7 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -1623,6 +1983,7 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T] | StructuredCallResult[BaseModel]:
     """Run an LLM call that returns structured output matching response_model.
 
@@ -1716,4 +2077,5 @@ async def structured_call(
         max_tokens=max_tokens,
         disable_thinking=disable_thinking,
         cache=cache,
+        continuation_recovery=continuation_recovery,
     )

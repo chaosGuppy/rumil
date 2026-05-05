@@ -412,26 +412,27 @@ def test_build_abstract_does_not_leak_source_ids():
     from versus.tasks.judge_pair import _build_abstract
 
     pair = _make_pair(
-        continuation_a_id="human",
-        continuation_b_id="anthropic/claude-opus-4-7",
-        source_a_id="human",
-        source_b_id="anthropic/claude-opus-4-7",
+        continuation_a_id="anthropic/claude-opus-4-7",
+        continuation_a_text="Neutral continuation text alpha.",
+        continuation_b_id="openai/gpt-5.4",
+        continuation_b_text="Neutral continuation text beta.",
+        source_a_id="anthropic/claude-opus-4-7",
+        source_b_id="openai/gpt-5.4",
     )
     abstract = _build_abstract(pair)
 
     # Raw source ids must not surface in the abstract — it's read into
-    # the parent-context prioritization scoring step, which is agent-
-    # visible.
+    # the parent-context prioritization scoring step (agent-visible)
+    # and now also carries the pair body for view-creation paths.
     assert "anthropic/claude-opus-4-7" not in abstract
-    assert "human" not in abstract.lower()
+    assert "openai/gpt-5.4" not in abstract
 
 
-def test_build_abstract_does_not_leak_essay_id_or_prefix_text():
+def test_build_abstract_does_not_leak_essay_id():
     from versus.tasks.judge_pair import _build_abstract
 
     pair = _make_pair(
         essay_id="forethought__the-ai-frontier",
-        prefix_text="The opening of an essay about a sensitive topic.",
         prefix_hash="deadbeefcafef00d",
     )
     abstract = _build_abstract(pair)
@@ -439,9 +440,25 @@ def test_build_abstract_does_not_leak_essay_id_or_prefix_text():
     # essay_id leaks the source via the namespacing prefix.
     assert "forethought" not in abstract
     assert "the-ai-frontier" not in abstract
-    # The abstract intentionally omits prefix text (substring truncation
-    # is misleading; agents that need it read the question content).
-    assert "sensitive topic" not in abstract
+
+
+def test_build_abstract_includes_pair_body():
+    """The abstract carries the full pair body verbatim so research-phase
+    calls that render the scope question at ABSTRACT detail (the default
+    in build_embedding_based_context — see issue #448) still see the
+    essay continuations they're meant to assess."""
+    from versus.tasks.judge_pair import _build_abstract
+
+    pair = _make_pair(
+        prefix_text="PREFIX_SIGIL_OPENING",
+        continuation_a_text="CONT_A_SIGIL_BODY",
+        continuation_b_text="CONT_B_SIGIL_BODY",
+    )
+    abstract = _build_abstract(pair)
+
+    assert "PREFIX_SIGIL_OPENING" in abstract
+    assert "CONT_A_SIGIL_BODY" in abstract
+    assert "CONT_B_SIGIL_BODY" in abstract
 
 
 def test_build_abstract_includes_dimension_for_meta_evaluation_framing():
@@ -472,17 +489,17 @@ def test_ensure_versus_question_sets_page_abstract():
 
 def test_ensure_versus_question_abstract_does_not_leak_source_ids():
     pair = _make_pair(
-        continuation_a_id="human",
-        source_a_id="human",
-        continuation_b_id="anthropic/claude-opus-4-7",
-        source_b_id="anthropic/claude-opus-4-7",
+        continuation_a_id="anthropic/claude-opus-4-7",
+        continuation_a_text="Neutral continuation text alpha.",
+        continuation_b_id="openai/gpt-5.4",
+        continuation_b_text="Neutral continuation text beta.",
+        source_a_id="anthropic/claude-opus-4-7",
+        source_b_id="openai/gpt-5.4",
     )
     page = _make_question_page_synchronously(pair)
 
     assert "anthropic/claude-opus-4-7" not in page.abstract
-    # `human` as a substring is risky (English word), but as a literal
-    # source label it must not appear — guard against the obvious leak.
-    assert "human" not in page.abstract.lower()
+    assert "openai/gpt-5.4" not in page.abstract
 
 
 def test_build_headline_uses_prefix_hash_not_essay_id():

@@ -65,20 +65,27 @@ def chat(
     client = client or httpx.Client(timeout=timeout)
     try:
         last_resp: dict | None = None
-        for attempt in range(retries + 1):
-            r = client.post(API_URL, headers=_headers(), json=payload)
-            r.raise_for_status()
-            last_resp = r.json()
-            content = last_resp["choices"][0]["message"].get("content")
-            if content is not None and content != "":
+        try:
+            for attempt in range(retries + 1):
+                r = client.post(API_URL, headers=_headers(), json=payload)
+                r.raise_for_status()
+                last_resp = r.json()
+                content = last_resp["choices"][0]["message"].get("content")
+                if content is not None and content != "":
+                    _enrich_openrouter_generation(model, messages, payload, last_resp)
+                    return last_resp
+                # empty content: transient upstream failure — backoff + retry
+                if attempt < retries:
+                    _time.sleep(1.5 * (attempt + 1))
+            if last_resp is not None:
                 _enrich_openrouter_generation(model, messages, payload, last_resp)
-                return last_resp
-            # empty content: transient upstream failure — backoff + retry
-            if attempt < retries:
-                _time.sleep(1.5 * (attempt + 1))
-        if last_resp is not None:
-            _enrich_openrouter_generation(model, messages, payload, last_resp)
-        return last_resp  # caller's extract_text will raise a clean error
+            return last_resp  # caller's extract_text will raise a clean error
+        except Exception:
+            # Enrich the active langfuse generation with whatever request
+            # context we have so the failed span isn't bare. ``@observe``
+            # will layer ``level=ERROR`` + ``status_message`` on re-raise.
+            _enrich_openrouter_generation(model, messages, payload, last_resp or {})
+            raise
     finally:
         if close:
             client.close()

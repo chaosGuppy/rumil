@@ -7439,6 +7439,17 @@
               }
             ],
             "title": "Langfuse Trace Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           }
         },
         "type": "object",
@@ -7457,7 +7468,8 @@
           "cost_usd",
           "has_thinking",
           "tool_uses",
-          "langfuse_trace_url"
+          "langfuse_trace_url",
+          "error"
         ],
         "title": "LLMExchangeEventOut"
       },

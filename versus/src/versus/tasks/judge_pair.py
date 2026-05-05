@@ -119,25 +119,28 @@ def _build_abstract(pair: PairContext) -> str:
     """Compose the Versus Question's ``abstract``.
 
     Read by parent-context renderers (notably
-    :func:`rumil.orchestrators.common.score_items_sequentially`) when
-    the orch's prioritization scoring step needs to know what its
-    parent question is about. Intentionally fixed-shape and
-    dimension-aware: NO essay text. The synthetic Question
-    headline ("Versus judgment: ...") is misleading on its own —
-    "general_quality" reads like a topic when it's a dimension —
-    so this abstract clarifies the framing for meta-evaluation
-    agents without leaking essay content.
+    :func:`rumil.orchestrators.common.score_items_sequentially`) and
+    by any rumil call type whose context builder renders the scope
+    question at ``PageDetail.ABSTRACT`` (the current default for
+    ``build_embedding_based_context``; see issue #448). Without the
+    pair body here, view-creation and other research-phase calls
+    that scope to a versus question see only the dimension framing
+    and never the actual essay continuations they're meant to assess.
 
-    Essay content is intentionally NOT spliced in here: substring-
-    truncation of source text (``prefix_text[:N]``) is the kind of
-    silent-mid-clause cut that misleads agents. Research-phase
-    calls that genuinely need the essay get it via the Question's
-    ``content`` field; meta-evaluation calls only need the framing.
+    Mirrors :func:`_format_pair_content` rather than carrying a
+    scoring-specific instruction, so the same abstract reads
+    sensibly across the call types that consume it. Inlining the
+    full pair content (no truncation) avoids the silent mid-clause
+    ``prefix_text[:N]`` concern that motivated the earlier
+    framing-only version.
     """
     return (
-        f"Versus pairwise judging task on dimension '{pair.task_name}'. "
-        "Score considerations by their relevance to comparing two "
-        "essay continuations on this dimension."
+        "Two continuations of the same essay opening are compared on one dimension. "
+        "Workspace material may be consulted if it bears on the essay's subject.\n\n"
+        f"## Dimension\n\n{pair.task_name}\n\n"
+        f"## Essay opening\n\n{pair.prefix_text}\n\n"
+        f"## Continuation A\n\n{pair.continuation_a_text}\n\n"
+        f"## Continuation B\n\n{pair.continuation_b_text}\n"
     )
 
 

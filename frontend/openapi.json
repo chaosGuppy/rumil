@@ -3561,6 +3561,171 @@
         }
       }
     },
+    "/api/atlas/feed/recent_work": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Recent Work Feed",
+        "description": "Recent claims / judgements / views with workflow + run + call\nprovenance. The \"what has rumil been producing\" view \u2014 content,\nnot just structure.",
+        "operationId": "get_recent_work_feed_api_atlas_feed_recent_work_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "workflow_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workflow Name"
+            }
+          },
+          {
+            "name": "page_types",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "judgement,claim,view",
+              "title": "Page Types"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentWorkFeed"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/pages/{question_id}/trajectory": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Question Trajectory",
+        "description": "Every judgement and view a question has accumulated, in time\norder, with credence/robustness deltas and the considerations that\nlanded in each judgement window. The \"is this question converging\"\nview.",
+        "operationId": "get_question_trajectory_api_atlas_pages__question_id__trajectory_get",
+        "parameters": [
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Question Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionTrajectory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/novelty": {
       "get": {
         "tags": [
@@ -14681,6 +14846,124 @@
         ],
         "title": "QuestionStatsOut"
       },
+      "QuestionTrajectory": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "question_headline": {
+            "type": "string",
+            "title": "Question Headline"
+          },
+          "question_abstract": {
+            "type": "string",
+            "title": "Question Abstract",
+            "default": ""
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "n_runs_touched": {
+            "type": "integer",
+            "title": "N Runs Touched",
+            "default": 0
+          },
+          "n_judgements": {
+            "type": "integer",
+            "title": "N Judgements",
+            "default": 0
+          },
+          "n_views": {
+            "type": "integer",
+            "title": "N Views",
+            "default": 0
+          },
+          "n_considerations": {
+            "type": "integer",
+            "title": "N Considerations",
+            "default": 0
+          },
+          "judgements": {
+            "items": {
+              "$ref": "#/components/schemas/TrajectoryJudgement"
+            },
+            "type": "array",
+            "title": "Judgements",
+            "default": []
+          },
+          "views": {
+            "items": {
+              "$ref": "#/components/schemas/TrajectoryView"
+            },
+            "type": "array",
+            "title": "Views",
+            "default": []
+          },
+          "considerations": {
+            "items": {
+              "$ref": "#/components/schemas/TrajectoryConsideration"
+            },
+            "type": "array",
+            "title": "Considerations",
+            "default": []
+          },
+          "credences": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Credences",
+            "default": []
+          },
+          "credence_volatility": {
+            "type": "number",
+            "title": "Credence Volatility",
+            "default": 0.0
+          },
+          "latest_credence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Credence"
+          },
+          "latest_robustness": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Robustness"
+          },
+          "converging": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Converging"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "question_headline"
+        ],
+        "title": "QuestionTrajectory"
+      },
       "ReadStartedEventOut": {
         "properties": {
           "ts": {
@@ -15057,6 +15340,170 @@
         ],
         "title": "RecentTextRow",
         "description": "One row in the chronological completions feed.\n\n``flavor`` is a derived label so the FE doesn't have to re-parse\n``source_id`` patterns: ``human`` / ``single-shot`` / ``orch`` /\n``paraphrase`` / ``other``. ``workflow`` is populated for orch rows.\nOptional generation knobs (``temperature``, ``max_tokens``,\n``thinking_mode``, ``budget``, etc.) collapse the params snapshot to\njust the bits worth showing in a compact table."
+      },
+      "RecentWorkFeed": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecentWorkItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "n_items": {
+            "type": "integer",
+            "title": "N Items"
+          },
+          "filters_applied": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Filters Applied",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "n_items"
+        ],
+        "title": "RecentWorkFeed"
+      },
+      "RecentWorkItem": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "page_type": {
+            "type": "string",
+            "title": "Page Type"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "abstract": {
+            "type": "string",
+            "title": "Abstract",
+            "default": ""
+          },
+          "content_preview": {
+            "type": "string",
+            "title": "Content Preview",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Name"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id",
+            "default": ""
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type",
+            "default": ""
+          },
+          "credence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credence"
+          },
+          "credence_reasoning": {
+            "type": "string",
+            "title": "Credence Reasoning",
+            "default": ""
+          },
+          "robustness": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness"
+          },
+          "importance": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "superseded": {
+            "type": "boolean",
+            "title": "Superseded",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id",
+          "page_type",
+          "headline"
+        ],
+        "title": "RecentWorkItem",
+        "description": "One entry in the recent-work feed \u2014 a page produced by a recent\nrun, surfaced atlas-side as actual content (not just structure)."
       },
       "RecurseFailedEventOut": {
         "properties": {
@@ -17382,6 +17829,296 @@
         ],
         "title": "TraceEventRecord",
         "description": "One trace event lifted from a call's ``trace_json``.\n\nThe ``payload`` dict holds the event's full body except the\ndiscriminator ``event`` field (which lives on ``kind``); shape is\narbitrary so the FE can render typed events richly."
+      },
+      "TrajectoryConsideration": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "page_type": {
+            "type": "string",
+            "title": "Page Type"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "abstract": {
+            "type": "string",
+            "title": "Abstract",
+            "default": ""
+          },
+          "credence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credence"
+          },
+          "robustness": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type",
+            "default": ""
+          },
+          "landed_after_judgement_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Landed After Judgement Id"
+          },
+          "landed_before_judgement_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Landed Before Judgement Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id",
+          "page_type",
+          "headline"
+        ],
+        "title": "TrajectoryConsideration",
+        "description": "A consideration page (claim) created during the question's\ntrajectory. Annotated with the judgement window it landed in so\nthe FE can attribute \"what changed between J_n and J_{n+1}\"."
+      },
+      "TrajectoryJudgement": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "abstract": {
+            "type": "string",
+            "title": "Abstract",
+            "default": ""
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "default": ""
+          },
+          "credence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credence"
+          },
+          "credence_reasoning": {
+            "type": "string",
+            "title": "Credence Reasoning",
+            "default": ""
+          },
+          "robustness": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Robustness"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Name"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id",
+            "default": ""
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type",
+            "default": ""
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          },
+          "delta_credence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Credence"
+          },
+          "delta_robustness": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Robustness"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id",
+          "headline"
+        ],
+        "title": "TrajectoryJudgement",
+        "description": "One judgement on a question, in trajectory order."
+      },
+      "TrajectoryView": {
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "title": "Page Id"
+          },
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "abstract": {
+            "type": "string",
+            "title": "Abstract",
+            "default": ""
+          },
+          "n_view_items": {
+            "type": "integer",
+            "title": "N View Items",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "superseded_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_id",
+          "headline"
+        ],
+        "title": "TrajectoryView"
       },
       "UpdatePlanCreatedEventOut": {
         "properties": {

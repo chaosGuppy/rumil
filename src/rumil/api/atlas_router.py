@@ -84,6 +84,8 @@ from rumil.atlas.schemas import (
     PromptHistory,
     PromptImpact,
     PromptIndex,
+    QuestionTrajectory,
+    RecentWorkFeed,
     RegistryRollup,
     RenderedPromptSample,
     RunDiff,
@@ -98,6 +100,7 @@ from rumil.atlas.schemas import (
 )
 from rumil.atlas.search import search_atlas
 from rumil.atlas.stats import build_call_type_stats, build_move_stats
+from rumil.atlas.wisdom import build_question_trajectory, build_recent_work_feed
 from rumil.atlas.workflows import get_workflow_profile, list_workflow_summaries
 from rumil.database import DB
 from rumil.settings import get_settings
@@ -601,6 +604,42 @@ def get_gaps(
     _user: AuthUser = Depends(get_current_user),
 ) -> GapsReport:
     return build_gaps_report(project_id=project_id)
+
+
+@router.get("/feed/recent_work", response_model=RecentWorkFeed)
+async def get_recent_work_feed(
+    project_id: str | None = None,
+    workflow_name: str | None = None,
+    page_types: str = "judgement,claim,view",
+    limit: int = 50,
+    db: DB = Depends(_get_db),
+) -> RecentWorkFeed:
+    """Recent claims / judgements / views with workflow + run + call
+    provenance. The "what has rumil been producing" view — content,
+    not just structure."""
+    types = [t.strip() for t in page_types.split(",") if t.strip()]
+    return await build_recent_work_feed(
+        db,
+        project_id=project_id,
+        page_types=types or ("judgement", "claim", "view"),
+        workflow_name=workflow_name,
+        limit=limit,
+    )
+
+
+@router.get("/pages/{question_id}/trajectory", response_model=QuestionTrajectory)
+async def get_question_trajectory(
+    question_id: str,
+    db: DB = Depends(_get_db),
+) -> QuestionTrajectory:
+    """Every judgement and view a question has accumulated, in time
+    order, with credence/robustness deltas and the considerations that
+    landed in each judgement window. The "is this question converging"
+    view."""
+    out = await build_question_trajectory(db, question_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"question not found: {question_id}")
+    return out
 
 
 @router.get("/novelty", response_model=NoveltyReport)

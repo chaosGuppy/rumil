@@ -38,6 +38,9 @@ export default function AtlasLayout({
               {l.label}
             </Link>
           ))}
+          <Link href="/atlas/feed" className="atlas-nav-link">
+            recent work
+          </Link>
           <Link href="/atlas/gaps" className="atlas-nav-link">
             gaps
           </Link>

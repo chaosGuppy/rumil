@@ -4199,3 +4199,219 @@ a:hover .atlas-graph-node-rect {
   font-weight: 600;
   letter-spacing: 0.04em;
 }
+
+/* ---- recent work feed ---- */
+.atlas-feed-row {
+  border: 1px solid var(--a-line);
+  border-left-width: 3px;
+  background: var(--a-bg-paper);
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.65rem;
+  font-family: var(--a-sans);
+}
+.atlas-feed-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.4rem;
+}
+.atlas-feed-row-time {
+  color: var(--a-muted);
+  font-family: var(--a-mono);
+  font-size: 0.7rem;
+  margin-left: auto;
+}
+.atlas-feed-row-headline {
+  font-weight: 500;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  margin-bottom: 0.35rem;
+}
+.atlas-feed-row-abstract {
+  color: var(--a-fg-soft);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin-bottom: 0.35rem;
+}
+.atlas-feed-row-preview {
+  color: var(--a-fg-soft);
+  font-family: var(--a-mono);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  background: var(--a-bg);
+  padding: 0.35rem 0.55rem;
+  margin-bottom: 0.4rem;
+  border-left: 2px solid var(--a-line);
+  max-height: 8rem;
+  overflow: auto;
+}
+.atlas-feed-row-reasoning {
+  color: var(--a-fg-soft);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin-bottom: 0.4rem;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--a-accent-soft);
+}
+.atlas-feed-row-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  font-size: 0.7rem;
+  font-family: var(--a-mono);
+  color: var(--a-muted);
+  align-items: center;
+}
+.atlas-feed-row-foot a {
+  color: var(--a-accent);
+  text-decoration: none;
+}
+.atlas-feed-row-foot a:hover {
+  text-decoration: underline;
+}
+.atlas-feed-row-project {
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+/* ---- question trajectory ---- */
+.atlas-trajectory {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  position: relative;
+}
+.atlas-trajectory::before {
+  content: "";
+  position: absolute;
+  left: 0.35rem;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  width: 1px;
+  background: var(--a-line);
+}
+.atlas-trajectory-judgement {
+  position: relative;
+  background: var(--a-bg-paper);
+  border: 1px solid var(--a-line);
+  border-left: 3px solid var(--a-accent);
+  padding: 0.65rem 0.85rem;
+  margin-left: 1.4rem;
+  font-family: var(--a-sans);
+}
+.atlas-trajectory-judgement::before {
+  content: "";
+  position: absolute;
+  left: -1.05rem;
+  top: 0.85rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  background: var(--a-accent);
+  border-radius: 50%;
+}
+.atlas-trajectory-jhead {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+.atlas-trajectory-jindex {
+  font-family: var(--a-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--a-accent);
+  background: var(--a-accent-soft);
+  padding: 0.1rem 0.4rem;
+  border-radius: 2px;
+}
+.atlas-trajectory-jts {
+  font-family: var(--a-mono);
+  font-size: 0.7rem;
+  color: var(--a-muted);
+}
+.atlas-trajectory-jheadline {
+  font-weight: 500;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  margin-bottom: 0.35rem;
+}
+.atlas-trajectory-jabstract {
+  color: var(--a-fg-soft);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin-bottom: 0.4rem;
+}
+.atlas-trajectory-jreasoning {
+  color: var(--a-fg-soft);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin-bottom: 0.4rem;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--a-accent-soft);
+}
+.atlas-trajectory-cons-block {
+  margin-top: 0.6rem;
+  margin-left: 1.2rem;
+  padding-left: 0.7rem;
+  border-left: 1px dashed var(--a-line);
+}
+.atlas-trajectory-cons-head {
+  font-family: var(--a-mono);
+  font-size: 0.66rem;
+  color: var(--a-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.35rem;
+}
+.atlas-trajectory-cons {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.18rem 0;
+  font-family: var(--a-sans);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.atlas-trajectory-cons-glyph {
+  font-family: var(--a-mono);
+  font-size: 0.85rem;
+  width: 0.9rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+.atlas-trajectory-cons-meta {
+  display: inline-flex;
+  gap: 0.45rem;
+  font-family: var(--a-mono);
+  font-size: 0.66rem;
+  color: var(--a-muted);
+  flex-shrink: 0;
+}
+.atlas-trajectory-cons-meta a {
+  color: inherit;
+  text-decoration: none;
+}
+.atlas-trajectory-cons-headline {
+  flex: 1;
+  min-width: 0;
+}
+.atlas-trajectory-cons-headline a {
+  color: var(--a-fg);
+  text-decoration: none;
+}
+.atlas-trajectory-cons-headline a:hover {
+  text-decoration: underline;
+}
+.atlas-trajectory-view {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--a-bg-paper);
+  border: 1px solid var(--a-line);
+  padding: 0.45rem 0.7rem;
+  font-family: var(--a-sans);
+  font-size: 0.85rem;
+}

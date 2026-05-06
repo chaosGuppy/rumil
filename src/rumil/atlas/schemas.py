@@ -335,6 +335,107 @@ class NoveltyItem(BaseModel):
     seen_count: int = 0
 
 
+class RecentWorkItem(BaseModel):
+    """One entry in the recent-work feed — a page produced by a recent
+    run, surfaced atlas-side as actual content (not just structure).
+    """
+
+    page_id: str
+    page_type: str
+    headline: str
+    abstract: str = ""
+    content_preview: str = ""
+    created_at: str = ""
+    project_id: str = ""
+    project_name: str | None = None
+    run_id: str = ""
+    run_name: str | None = None
+    workflow_name: str | None = None
+    call_id: str = ""
+    call_type: str = ""
+    credence: int | None = None
+    credence_reasoning: str = ""
+    robustness: int | None = None
+    importance: int | None = None
+    superseded: bool = False
+
+
+class RecentWorkFeed(BaseModel):
+    items: list[RecentWorkItem]
+    n_items: int
+    filters_applied: dict[str, str] = {}
+
+
+class TrajectoryJudgement(BaseModel):
+    """One judgement on a question, in trajectory order."""
+
+    page_id: str
+    headline: str
+    abstract: str = ""
+    content: str = ""
+    credence: int | None = None
+    credence_reasoning: str = ""
+    robustness: int | None = None
+    created_at: str = ""
+    run_id: str = ""
+    run_name: str | None = None
+    call_id: str = ""
+    call_type: str = ""
+    superseded_by: str | None = None
+    delta_credence: int | None = None
+    delta_robustness: int | None = None
+
+
+class TrajectoryView(BaseModel):
+    page_id: str
+    headline: str
+    abstract: str = ""
+    n_view_items: int = 0
+    created_at: str = ""
+    run_id: str = ""
+    superseded_by: str | None = None
+
+
+class TrajectoryConsideration(BaseModel):
+    """A consideration page (claim) created during the question's
+    trajectory. Annotated with the judgement window it landed in so
+    the FE can attribute "what changed between J_n and J_{n+1}"."""
+
+    page_id: str
+    page_type: str
+    headline: str
+    abstract: str = ""
+    credence: int | None = None
+    robustness: int | None = None
+    direction: str | None = None
+    strength: float | None = None
+    role: str | None = None
+    created_at: str = ""
+    run_id: str = ""
+    call_type: str = ""
+    landed_after_judgement_id: str | None = None
+    landed_before_judgement_id: str | None = None
+
+
+class QuestionTrajectory(BaseModel):
+    question_id: str
+    question_headline: str
+    question_abstract: str = ""
+    project_id: str = ""
+    n_runs_touched: int = 0
+    n_judgements: int = 0
+    n_views: int = 0
+    n_considerations: int = 0
+    judgements: list[TrajectoryJudgement] = []
+    views: list[TrajectoryView] = []
+    considerations: list[TrajectoryConsideration] = []
+    credences: list[int] = []
+    credence_volatility: float = 0.0
+    latest_credence: int | None = None
+    latest_robustness: int | None = None
+    converging: bool | None = None
+
+
 class NoveltyReport(BaseModel):
     items: list[NoveltyItem]
     counts_by_kind: dict[str, int]

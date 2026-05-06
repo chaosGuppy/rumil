@@ -5278,6 +5278,76 @@ export type QuestionStatsOut = {
 };
 
 /**
+ * QuestionTrajectory
+ */
+export type QuestionTrajectory = {
+    /**
+     * Question Id
+     */
+    question_id: string;
+    /**
+     * Question Headline
+     */
+    question_headline: string;
+    /**
+     * Question Abstract
+     */
+    question_abstract?: string;
+    /**
+     * Project Id
+     */
+    project_id?: string;
+    /**
+     * N Runs Touched
+     */
+    n_runs_touched?: number;
+    /**
+     * N Judgements
+     */
+    n_judgements?: number;
+    /**
+     * N Views
+     */
+    n_views?: number;
+    /**
+     * N Considerations
+     */
+    n_considerations?: number;
+    /**
+     * Judgements
+     */
+    judgements?: Array<TrajectoryJudgement>;
+    /**
+     * Views
+     */
+    views?: Array<TrajectoryView>;
+    /**
+     * Considerations
+     */
+    considerations?: Array<TrajectoryConsideration>;
+    /**
+     * Credences
+     */
+    credences?: Array<number>;
+    /**
+     * Credence Volatility
+     */
+    credence_volatility?: number;
+    /**
+     * Latest Credence
+     */
+    latest_credence?: number | null;
+    /**
+     * Latest Robustness
+     */
+    latest_robustness?: number | null;
+    /**
+     * Converging
+     */
+    converging?: boolean | null;
+};
+
+/**
  * ReadStartedEventOut
  */
 export type ReadStartedEventOut = {
@@ -5490,6 +5560,107 @@ export type RecentTextRow = {
      * Stale
      */
     stale: boolean;
+};
+
+/**
+ * RecentWorkFeed
+ */
+export type RecentWorkFeed = {
+    /**
+     * Items
+     */
+    items: Array<RecentWorkItem>;
+    /**
+     * N Items
+     */
+    n_items: number;
+    /**
+     * Filters Applied
+     */
+    filters_applied?: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * RecentWorkItem
+ *
+ * One entry in the recent-work feed — a page produced by a recent
+ * run, surfaced atlas-side as actual content (not just structure).
+ */
+export type RecentWorkItem = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Type
+     */
+    page_type: string;
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Abstract
+     */
+    abstract?: string;
+    /**
+     * Content Preview
+     */
+    content_preview?: string;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Project Id
+     */
+    project_id?: string;
+    /**
+     * Project Name
+     */
+    project_name?: string | null;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Run Name
+     */
+    run_name?: string | null;
+    /**
+     * Workflow Name
+     */
+    workflow_name?: string | null;
+    /**
+     * Call Id
+     */
+    call_id?: string;
+    /**
+     * Call Type
+     */
+    call_type?: string;
+    /**
+     * Credence
+     */
+    credence?: number | null;
+    /**
+     * Credence Reasoning
+     */
+    credence_reasoning?: string;
+    /**
+     * Robustness
+     */
+    robustness?: number | null;
+    /**
+     * Importance
+     */
+    importance?: number | null;
+    /**
+     * Superseded
+     */
+    superseded?: boolean;
 };
 
 /**
@@ -7031,6 +7202,174 @@ export type TraceEventRecord = {
     payload: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * TrajectoryConsideration
+ *
+ * A consideration page (claim) created during the question's
+ * trajectory. Annotated with the judgement window it landed in so
+ * the FE can attribute "what changed between J_n and J_{n+1}".
+ */
+export type TrajectoryConsideration = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Type
+     */
+    page_type: string;
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Abstract
+     */
+    abstract?: string;
+    /**
+     * Credence
+     */
+    credence?: number | null;
+    /**
+     * Robustness
+     */
+    robustness?: number | null;
+    /**
+     * Direction
+     */
+    direction?: string | null;
+    /**
+     * Strength
+     */
+    strength?: number | null;
+    /**
+     * Role
+     */
+    role?: string | null;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Call Type
+     */
+    call_type?: string;
+    /**
+     * Landed After Judgement Id
+     */
+    landed_after_judgement_id?: string | null;
+    /**
+     * Landed Before Judgement Id
+     */
+    landed_before_judgement_id?: string | null;
+};
+
+/**
+ * TrajectoryJudgement
+ *
+ * One judgement on a question, in trajectory order.
+ */
+export type TrajectoryJudgement = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Abstract
+     */
+    abstract?: string;
+    /**
+     * Content
+     */
+    content?: string;
+    /**
+     * Credence
+     */
+    credence?: number | null;
+    /**
+     * Credence Reasoning
+     */
+    credence_reasoning?: string;
+    /**
+     * Robustness
+     */
+    robustness?: number | null;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Run Name
+     */
+    run_name?: string | null;
+    /**
+     * Call Id
+     */
+    call_id?: string;
+    /**
+     * Call Type
+     */
+    call_type?: string;
+    /**
+     * Superseded By
+     */
+    superseded_by?: string | null;
+    /**
+     * Delta Credence
+     */
+    delta_credence?: number | null;
+    /**
+     * Delta Robustness
+     */
+    delta_robustness?: number | null;
+};
+
+/**
+ * TrajectoryView
+ */
+export type TrajectoryView = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Headline
+     */
+    headline: string;
+    /**
+     * Abstract
+     */
+    abstract?: string;
+    /**
+     * N View Items
+     */
+    n_view_items?: number;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Superseded By
+     */
+    superseded_by?: string | null;
 };
 
 /**
@@ -9595,6 +9934,95 @@ export type GetGapsApiAtlasGapsGetResponses = {
 };
 
 export type GetGapsApiAtlasGapsGetResponse = GetGapsApiAtlasGapsGetResponses[keyof GetGapsApiAtlasGapsGetResponses];
+
+export type GetRecentWorkFeedApiAtlasFeedRecentWorkGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Workflow Name
+         */
+        workflow_name?: string | null;
+        /**
+         * Page Types
+         */
+        page_types?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/atlas/feed/recent_work';
+};
+
+export type GetRecentWorkFeedApiAtlasFeedRecentWorkGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRecentWorkFeedApiAtlasFeedRecentWorkGetError = GetRecentWorkFeedApiAtlasFeedRecentWorkGetErrors[keyof GetRecentWorkFeedApiAtlasFeedRecentWorkGetErrors];
+
+export type GetRecentWorkFeedApiAtlasFeedRecentWorkGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RecentWorkFeed;
+};
+
+export type GetRecentWorkFeedApiAtlasFeedRecentWorkGetResponse = GetRecentWorkFeedApiAtlasFeedRecentWorkGetResponses[keyof GetRecentWorkFeedApiAtlasFeedRecentWorkGetResponses];
+
+export type GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Question Id
+         */
+        question_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/pages/{question_id}/trajectory';
+};
+
+export type GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetError = GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetErrors[keyof GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetErrors];
+
+export type GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: QuestionTrajectory;
+};
+
+export type GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetResponse = GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetResponses[keyof GetQuestionTrajectoryApiAtlasPagesQuestionIdTrajectoryGetResponses];
 
 export type GetNoveltyApiAtlasNoveltyGetData = {
     body?: never;

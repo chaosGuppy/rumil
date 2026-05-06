@@ -1956,6 +1956,103 @@
         }
       }
     },
+    "/api/atlas/registry/prompts/{name}/impact": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Prompt Impact",
+        "operationId": "get_prompt_impact_api_atlas_registry_prompts__name__impact_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "call_type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "n_runs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "title": "N Runs"
+            }
+          },
+          {
+            "name": "max_revisions",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 6,
+              "title": "Max Revisions"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptImpact"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/workflows": {
       "get": {
         "tags": [
@@ -2764,6 +2861,22 @@
                 }
               ],
               "title": "Since"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
             }
           },
           {
@@ -6665,6 +6778,17 @@
               }
             ],
             "title": "Since"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
           },
           "pathology": {
             "$ref": "#/components/schemas/PathologyCounts",
@@ -12391,6 +12515,118 @@
         ],
         "title": "PromptHistoryEntry",
         "description": "One git commit that touched a prompt file.\n\n``content_hash`` is sha-256 of the file as it stood at this commit\n(not the git blob hash) \u2014 same shape as the live file's\n``PromptDoc.content_hash`` so an iterator can spot-check whether a\nparticular run's prompt matched any of the historical revisions."
+      },
+      "PromptImpact": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "revisions": {
+            "items": {
+              "$ref": "#/components/schemas/PromptImpactRevisionStats"
+            },
+            "type": "array",
+            "title": "Revisions"
+          },
+          "n_revisions": {
+            "type": "integer",
+            "title": "N Revisions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "call_type",
+          "revisions",
+          "n_revisions"
+        ],
+        "title": "PromptImpact"
+      },
+      "PromptImpactRevisionStats": {
+        "properties": {
+          "commit_short": {
+            "type": "string",
+            "title": "Commit Short"
+          },
+          "commit_ts": {
+            "type": "string",
+            "title": "Commit Ts"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject",
+            "default": ""
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "window_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start"
+          },
+          "window_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End"
+          },
+          "n_invocations": {
+            "type": "integer",
+            "title": "N Invocations",
+            "default": 0
+          },
+          "mean_cost_usd": {
+            "type": "number",
+            "title": "Mean Cost Usd",
+            "default": 0.0
+          },
+          "mean_rounds": {
+            "type": "number",
+            "title": "Mean Rounds",
+            "default": 0.0
+          },
+          "mean_pages_loaded": {
+            "type": "number",
+            "title": "Mean Pages Loaded",
+            "default": 0.0
+          },
+          "error_pct": {
+            "type": "number",
+            "title": "Error Pct",
+            "default": 0.0
+          },
+          "lying_complete_pct": {
+            "type": "number",
+            "title": "Lying Complete Pct",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "commit_short",
+          "commit_ts",
+          "content_hash"
+        ],
+        "title": "PromptImpactRevisionStats",
+        "description": "Stats slice between two prompt-edit revisions.\n\n``window_start`` is the prior revision's commit_ts (exclusive); the\ncurrent entry's commit_ts is ``window_end``. ``call_stats`` is the\nsame shape as ``CallTypeStats`` but scoped to the [start, end)\nwindow \u2014 comparing two adjacent rows shows whether a prompt edit\nlanded alongside a measurable cost / round / pathology shift."
       },
       "PromptPart": {
         "properties": {

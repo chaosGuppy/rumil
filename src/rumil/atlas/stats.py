@@ -57,21 +57,30 @@ async def _calls_in_runs(
     run_ids: Sequence[str],
     *,
     call_type: str | None = None,
+    chunk: int = 100,
 ) -> list[dict[str, Any]]:
+    """Fetch calls across many runs, chunked to dodge postgrest's URL
+    length limit (HTTP 414 once ~250 run_ids land in a single ``in_``).
+    """
     if not run_ids:
         return []
-    query = (
-        db.client.table("calls")
-        .select(
-            "id, call_type, status, cost_usd, created_at, completed_at, "
-            "scope_page_id, run_id, trace_json"
+    out: list[dict[str, Any]] = []
+    ids = list(run_ids)
+    for i in range(0, len(ids), chunk):
+        batch = ids[i : i + chunk]
+        query = (
+            db.client.table("calls")
+            .select(
+                "id, call_type, status, cost_usd, created_at, completed_at, "
+                "scope_page_id, run_id, trace_json"
+            )
+            .in_("run_id", batch)
         )
-        .in_("run_id", list(run_ids))
-    )
-    if call_type:
-        query = query.eq("call_type", call_type)
-    res = await db._execute(query)
-    return list(res.data or [])
+        if call_type:
+            query = query.eq("call_type", call_type)
+        res = await db._execute(query)
+        out.extend(list(res.data or []))
+    return out
 
 
 def _events(call_row: dict[str, Any]) -> list[dict[str, Any]]:
@@ -277,12 +286,15 @@ async def build_call_type_stats(
     project_id: str | None = None,
     n_runs: int = 50,
     since: str | None = None,
+    until: str | None = None,
     bucket: str | None = None,
 ) -> CallTypeStats:
     run_ids = await _recent_run_ids(db, project_id, n_runs)
     rows = await _calls_in_runs(db, run_ids, call_type=call_type.value)
     if since:
         rows = [r for r in rows if (r.get("created_at") or "") >= since]
+    if until:
+        rows = [r for r in rows if (r.get("created_at") or "") < until]
 
     n_invocations = len(rows)
     runs_seen = {str(r.get("run_id")) for r in rows if r.get("run_id")}
@@ -390,6 +402,7 @@ async def build_call_type_stats(
         series=series,
         bucket=bucket,
         since=since,
+        until=until,
         top_moves=[MoveCount(move_type=k, count=v) for k, v in move_counts.most_common(20)],
         top_co_firings=[
             CoFiringCount(a=a, b=b, count=v) for (a, b), v in co_firing.most_common(20)

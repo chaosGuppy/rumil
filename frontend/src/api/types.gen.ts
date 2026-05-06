@@ -755,6 +755,10 @@ export type CallTypeStats = {
      * Since
      */
     since?: string | null;
+    /**
+     * Until
+     */
+    until?: string | null;
     pathology?: PathologyCounts;
 };
 
@@ -4286,6 +4290,90 @@ export type PromptHistoryEntry = {
      * Char Count
      */
     char_count?: number;
+};
+
+/**
+ * PromptImpact
+ */
+export type PromptImpact = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Revisions
+     */
+    revisions: Array<PromptImpactRevisionStats>;
+    /**
+     * N Revisions
+     */
+    n_revisions: number;
+};
+
+/**
+ * PromptImpactRevisionStats
+ *
+ * Stats slice between two prompt-edit revisions.
+ *
+ * ``window_start`` is the prior revision's commit_ts (exclusive); the
+ * current entry's commit_ts is ``window_end``. ``call_stats`` is the
+ * same shape as ``CallTypeStats`` but scoped to the [start, end)
+ * window — comparing two adjacent rows shows whether a prompt edit
+ * landed alongside a measurable cost / round / pathology shift.
+ */
+export type PromptImpactRevisionStats = {
+    /**
+     * Commit Short
+     */
+    commit_short: string;
+    /**
+     * Commit Ts
+     */
+    commit_ts: string;
+    /**
+     * Subject
+     */
+    subject?: string;
+    /**
+     * Content Hash
+     */
+    content_hash: string;
+    /**
+     * Window Start
+     */
+    window_start?: string | null;
+    /**
+     * Window End
+     */
+    window_end?: string | null;
+    /**
+     * N Invocations
+     */
+    n_invocations?: number;
+    /**
+     * Mean Cost Usd
+     */
+    mean_cost_usd?: number;
+    /**
+     * Mean Rounds
+     */
+    mean_rounds?: number;
+    /**
+     * Mean Pages Loaded
+     */
+    mean_pages_loaded?: number;
+    /**
+     * Error Pct
+     */
+    error_pct?: number;
+    /**
+     * Lying Complete Pct
+     */
+    lying_complete_pct?: number;
 };
 
 /**
@@ -7928,6 +8016,59 @@ export type GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetResponses = {
 
 export type GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetResponse = GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetResponses[keyof GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetResponses];
 
+export type GetPromptImpactApiAtlasRegistryPromptsNameImpactGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query: {
+        /**
+         * Call Type
+         */
+        call_type: string;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * N Runs
+         */
+        n_runs?: number;
+        /**
+         * Max Revisions
+         */
+        max_revisions?: number;
+    };
+    url: '/api/atlas/registry/prompts/{name}/impact';
+};
+
+export type GetPromptImpactApiAtlasRegistryPromptsNameImpactGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPromptImpactApiAtlasRegistryPromptsNameImpactGetError = GetPromptImpactApiAtlasRegistryPromptsNameImpactGetErrors[keyof GetPromptImpactApiAtlasRegistryPromptsNameImpactGetErrors];
+
+export type GetPromptImpactApiAtlasRegistryPromptsNameImpactGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PromptImpact;
+};
+
+export type GetPromptImpactApiAtlasRegistryPromptsNameImpactGetResponse = GetPromptImpactApiAtlasRegistryPromptsNameImpactGetResponses[keyof GetPromptImpactApiAtlasRegistryPromptsNameImpactGetResponses];
+
 export type ListWorkflowsApiAtlasWorkflowsGetData = {
     body?: never;
     headers?: {
@@ -8404,6 +8545,10 @@ export type GetCallTypeStatsApiAtlasCallsCallTypeStatsGetData = {
          * Since
          */
         since?: string | null;
+        /**
+         * Until
+         */
+        until?: string | null;
         /**
          * Bucket
          */

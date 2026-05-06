@@ -193,6 +193,37 @@ class PromptHistory(BaseModel):
     truncated: bool = False
 
 
+class PromptImpactRevisionStats(BaseModel):
+    """Stats slice between two prompt-edit revisions.
+
+    ``window_start`` is the prior revision's commit_ts (exclusive); the
+    current entry's commit_ts is ``window_end``. ``call_stats`` is the
+    same shape as ``CallTypeStats`` but scoped to the [start, end)
+    window — comparing two adjacent rows shows whether a prompt edit
+    landed alongside a measurable cost / round / pathology shift.
+    """
+
+    commit_short: str
+    commit_ts: str
+    subject: str = ""
+    content_hash: str
+    window_start: str | None = None
+    window_end: str | None = None
+    n_invocations: int = 0
+    mean_cost_usd: float = 0.0
+    mean_rounds: float = 0.0
+    mean_pages_loaded: float = 0.0
+    error_pct: float = 0.0
+    lying_complete_pct: float = 0.0
+
+
+class PromptImpact(BaseModel):
+    name: str
+    call_type: str
+    revisions: list[PromptImpactRevisionStats]
+    n_revisions: int
+
+
 class RunOutcome(BaseModel):
     """Coarse "did this run succeed at its job" signal.
 
@@ -492,6 +523,7 @@ class CallTypeStats(BaseModel):
     series: list[StatsBucket] = []
     bucket: str | None = None
     since: str | None = None
+    until: str | None = None
     pathology: PathologyCounts = PathologyCounts()
 
 

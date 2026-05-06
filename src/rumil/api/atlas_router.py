@@ -36,6 +36,7 @@ from rumil.atlas.events import build_call_event_dump
 from rumil.atlas.gaps import build_gaps_report
 from rumil.atlas.graph import build_workflow_graph
 from rumil.atlas.history import build_prompt_history
+from rumil.atlas.impact import build_prompt_impact
 from rumil.atlas.live import build_live_snapshot
 from rumil.atlas.overlay import build_workflow_overlay
 from rumil.atlas.pages import build_page_calls, build_page_timeline
@@ -66,6 +67,7 @@ from rumil.atlas.schemas import (
     PromptComposition,
     PromptDoc,
     PromptHistory,
+    PromptImpact,
     RegistryRollup,
     RenderedPromptSample,
     RunDiff,
@@ -258,6 +260,34 @@ def get_prompt_history(
     return hist
 
 
+@router.get("/registry/prompts/{name}/impact", response_model=PromptImpact)
+async def get_prompt_impact(
+    name: str,
+    call_type: str,
+    project_id: str | None = None,
+    n_runs: int = 200,
+    max_revisions: int = 6,
+    db: DB = Depends(_get_db),
+) -> PromptImpact:
+    from rumil.models import CallType
+
+    try:
+        ct = CallType(call_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"call type not found: {call_type}") from exc
+    out = await build_prompt_impact(
+        db,
+        name,
+        ct,
+        project_id=project_id,
+        n_runs=n_runs,
+        max_revisions=max_revisions,
+    )
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"prompt not found: {name}")
+    return out
+
+
 @router.get("/workflows", response_model=list[WorkflowSummary])
 def list_workflows(
     _user: AuthUser = Depends(get_current_user),
@@ -382,6 +412,7 @@ async def get_call_type_stats(
     project_id: str | None = None,
     n_runs: int = 50,
     since: str | None = None,
+    until: str | None = None,
     bucket: str | None = None,
     db: DB = Depends(_get_db),
 ) -> CallTypeStats:
@@ -407,6 +438,7 @@ async def get_call_type_stats(
         project_id=project_id,
         n_runs=n_runs,
         since=since,
+        until=until,
         bucket=bucket,
     )
 

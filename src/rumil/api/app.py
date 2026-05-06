@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter, ValidationError
 
+from rumil.api.atlas_router import router as atlas_router
 from rumil.api.auth import AuthUser, _get_admin_db, get_current_user, is_admin, require_admin
 from rumil.api.forks_router import router as forks_router
 from rumil.api.jobs import router as jobs_router
@@ -88,6 +89,9 @@ app.include_router(versus_router)
 
 
 app.include_router(forks_router)
+
+
+app.include_router(atlas_router)
 
 
 async def _assert_page_access(db: DB, page_id: str) -> Page:

@@ -612,6 +612,127 @@ export type CallTypeFruitScoreItem = {
 };
 
 /**
+ * CallTypeInvocationCount
+ */
+export type CallTypeInvocationCount = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * CallTypeStats
+ *
+ * Empirical stats for one CallType across recent runs.
+ */
+export type CallTypeStats = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Scanned Runs
+     */
+    scanned_runs: number;
+    /**
+     * Runs With Call
+     */
+    runs_with_call: number;
+    /**
+     * N Invocations
+     */
+    n_invocations: number;
+    /**
+     * Mean Cost Usd
+     */
+    mean_cost_usd?: number;
+    /**
+     * Total Cost Usd
+     */
+    total_cost_usd?: number;
+    /**
+     * Mean Pages Loaded
+     */
+    mean_pages_loaded?: number;
+    /**
+     * Mean Rounds
+     */
+    mean_rounds?: number;
+    /**
+     * Status Counts
+     */
+    status_counts?: {
+        [key: string]: number;
+    };
+    /**
+     * Top Moves
+     */
+    top_moves?: Array<MoveCount>;
+    /**
+     * Top Co Firings
+     */
+    top_co_firings?: Array<CoFiringCount>;
+    /**
+     * Recent Errors
+     */
+    recent_errors?: Array<string>;
+};
+
+/**
+ * CallTypeSummary
+ */
+export type CallTypeSummary = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Has Dispatch
+     */
+    has_dispatch: boolean;
+    /**
+     * Dispatch Name
+     */
+    dispatch_name?: string | null;
+    /**
+     * Prompt Files
+     */
+    prompt_files: Array<string>;
+    /**
+     * Moves By Preset
+     */
+    moves_by_preset: {
+        [key: string]: Array<string>;
+    };
+    /**
+     * Runner Class
+     */
+    runner_class?: string | null;
+    /**
+     * Context Builder
+     */
+    context_builder?: string | null;
+    /**
+     * Workspace Updater
+     */
+    workspace_updater?: string | null;
+    /**
+     * Closing Reviewer
+     */
+    closing_reviewer?: string | null;
+    composition?: PromptComposition | null;
+};
+
+/**
  * CallsForQuestion
  */
 export type CallsForQuestion = {
@@ -767,6 +888,24 @@ export type ClaimScoreItem = {
      * Reasoning
      */
     reasoning?: string;
+};
+
+/**
+ * CoFiringCount
+ */
+export type CoFiringCount = {
+    /**
+     * A
+     */
+    a: string;
+    /**
+     * B
+     */
+    b: string;
+    /**
+     * Count
+     */
+    count: number;
 };
 
 /**
@@ -1162,6 +1301,60 @@ export type DispatchExecutedEventOut = {
      * Child Call Id
      */
     child_call_id: string | null;
+};
+
+/**
+ * DispatchFrequency
+ */
+export type DispatchFrequency = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Avg Per Run
+     */
+    avg_per_run: number;
+    /**
+     * Runs With At Least One
+     */
+    runs_with_at_least_one: number;
+};
+
+/**
+ * DispatchSummary
+ */
+export type DispatchSummary = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Fields
+     */
+    fields: Array<JsonSchemaField>;
+    /**
+     * Is Recurse
+     */
+    is_recurse?: boolean;
+    /**
+     * Raw Schema
+     */
+    raw_schema?: {
+        [key: string]: unknown;
+    } | null;
 };
 
 /**
@@ -1814,6 +2007,46 @@ export type ForkOverrides = {
 };
 
 /**
+ * GapItem
+ *
+ * One detected inconsistency surfaced on /atlas/gaps.
+ */
+export type GapItem = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Target
+     */
+    target: string;
+    /**
+     * Detail
+     */
+    detail?: string;
+    /**
+     * Href
+     */
+    href?: string | null;
+};
+
+/**
+ * GapsReport
+ */
+export type GapsReport = {
+    /**
+     * Items
+     */
+    items: Array<GapItem>;
+    /**
+     * Counts By Kind
+     */
+    counts_by_kind: {
+        [key: string]: number;
+    };
+};
+
+/**
  * GenJudgeCell
  *
  * One (gen_model, judge_model) cell with its rendered colors.
@@ -2006,6 +2239,54 @@ export type JobListItem = {
      * Logs Url
      */
     logs_url?: string;
+};
+
+/**
+ * JsonSchemaField
+ *
+ * One field of a payload schema, projected for the atlas UI.
+ */
+export type JsonSchemaField = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Type
+     */
+    type: string;
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Required
+     */
+    required?: boolean;
+    /**
+     * Default
+     */
+    default?: unknown | null;
+    /**
+     * Enum
+     */
+    enum?: Array<string> | null;
+    /**
+     * Items Type
+     */
+    items_type?: string | null;
+    /**
+     * Items Ref
+     */
+    items_ref?: string | null;
+    /**
+     * Minimum
+     */
+    minimum?: number | null;
+    /**
+     * Maximum
+     */
+    maximum?: number | null;
 };
 
 /**
@@ -2713,6 +2994,92 @@ export type Matrix = {
 };
 
 /**
+ * MoveCount
+ */
+export type MoveCount = {
+    /**
+     * Move Type
+     */
+    move_type: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * MoveStats
+ *
+ * Empirical stats for one MoveType across recent runs.
+ */
+export type MoveStats = {
+    /**
+     * Move Type
+     */
+    move_type: string;
+    /**
+     * Scanned Runs
+     */
+    scanned_runs: number;
+    /**
+     * Runs With Move
+     */
+    runs_with_move: number;
+    /**
+     * N Invocations
+     */
+    n_invocations: number;
+    /**
+     * Invocations By Call Type
+     */
+    invocations_by_call_type?: Array<CallTypeInvocationCount>;
+    /**
+     * Last Seen
+     */
+    last_seen?: string | null;
+};
+
+/**
+ * MoveSummary
+ */
+export type MoveSummary = {
+    /**
+     * Move Type
+     */
+    move_type: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Fields
+     */
+    fields: Array<JsonSchemaField>;
+    /**
+     * Used In Call Types
+     */
+    used_in_call_types: Array<string>;
+    /**
+     * Used In Presets
+     */
+    used_in_presets: Array<string>;
+    /**
+     * Code Path
+     */
+    code_path: string;
+    /**
+     * Raw Schema
+     */
+    raw_schema?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
  * MoveTraceItem
  */
 export type MoveTraceItem = {
@@ -2868,6 +3235,44 @@ export type OrchestratorRunResponse = {
      * Trace Url
      */
     trace_url?: string;
+};
+
+/**
+ * OverlayCall
+ */
+export type OverlayCall = {
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number;
+    /**
+     * Pages Loaded
+     */
+    pages_loaded?: number;
+    /**
+     * N Dispatches
+     */
+    n_dispatches?: number;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Duration Seconds
+     */
+    duration_seconds?: number | null;
 };
 
 /**
@@ -3124,6 +3529,24 @@ export type PageRef = {
 export type PageType = 'source' | 'claim' | 'question' | 'judgement' | 'wiki' | 'summary' | 'view' | 'view_item' | 'view_meta' | 'spec_item' | 'artefact';
 
 /**
+ * PageTypeSummary
+ */
+export type PageTypeSummary = {
+    /**
+     * Page Type
+     */
+    page_type: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Layer Hint
+     */
+    layer_hint?: string | null;
+};
+
+/**
  * PaginatedPagesOut
  */
 export type PaginatedPagesOut = {
@@ -3356,6 +3779,130 @@ export type ProjectStatsOut = {
      * Project Id
      */
     project_id: string;
+};
+
+/**
+ * PromptComposition
+ *
+ * Ordered prompt parts that compose into a call's system prompt.
+ */
+export type PromptComposition = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Parts
+     */
+    parts: Array<PromptPart>;
+    /**
+     * Total Chars
+     */
+    total_chars: number;
+};
+
+/**
+ * PromptDoc
+ *
+ * A prompt markdown file rendered for the atlas UI.
+ */
+export type PromptDoc = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Char Count
+     */
+    char_count: number;
+    /**
+     * Referenced By
+     */
+    referenced_by?: Array<string>;
+    /**
+     * Sections
+     */
+    sections?: Array<PromptSection>;
+    /**
+     * Used In Compositions
+     */
+    used_in_compositions?: Array<string>;
+};
+
+/**
+ * PromptPart
+ *
+ * One file's contribution to a system-prompt composition.
+ */
+export type PromptPart = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Location
+     */
+    location?: string;
+    /**
+     * Condition
+     */
+    condition?: string | null;
+    /**
+     * Optional
+     */
+    optional?: boolean;
+    /**
+     * Char Count
+     */
+    char_count?: number;
+    /**
+     * Sections
+     */
+    sections?: Array<PromptSection>;
+    /**
+     * Exists
+     */
+    exists?: boolean;
+};
+
+/**
+ * PromptSection
+ *
+ * One ## section within a prompt file.
+ */
+export type PromptSection = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Level
+     */
+    level: number;
+    /**
+     * Anchor
+     */
+    anchor: string;
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Char Count
+     */
+    char_count: number;
 };
 
 /**
@@ -3844,6 +4391,68 @@ export type ReflectStartedEventOut = {
 };
 
 /**
+ * RegistryRollup
+ *
+ * Top-level /atlas/registry response — counts + summaries for the index.
+ */
+export type RegistryRollup = {
+    /**
+     * N Moves
+     */
+    n_moves: number;
+    /**
+     * N Dispatches
+     */
+    n_dispatches: number;
+    /**
+     * N Call Types
+     */
+    n_call_types: number;
+    /**
+     * N Page Types
+     */
+    n_page_types: number;
+    /**
+     * N Workflows
+     */
+    n_workflows: number;
+    /**
+     * N Prompt Files
+     */
+    n_prompt_files: number;
+    /**
+     * Move Summaries
+     */
+    move_summaries: Array<MoveSummary>;
+    /**
+     * Dispatch Summaries
+     */
+    dispatch_summaries: Array<DispatchSummary>;
+    /**
+     * Call Type Summaries
+     */
+    call_type_summaries: Array<CallTypeSummary>;
+    /**
+     * Page Type Summaries
+     */
+    page_type_summaries: Array<PageTypeSummary>;
+    /**
+     * Workflow Summaries
+     */
+    workflow_summaries: Array<WorkflowSummary>;
+    /**
+     * Presets
+     */
+    presets: {
+        [key: string]: Array<string>;
+    };
+    /**
+     * Available Calls Presets
+     */
+    available_calls_presets: Array<string>;
+};
+
+/**
  * RenderQuestionSubgraphEventOut
  */
 export type RenderQuestionSubgraphEventOut = {
@@ -4084,6 +4693,81 @@ export type RunCallExperimentOut = {
 };
 
 /**
+ * RunFlow
+ *
+ * Single run's flow — calls in order with which workflow stage they
+ * correspond to (best-effort) and what they did.
+ */
+export type RunFlow = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Workflow Name
+     */
+    workflow_name?: string | null;
+    /**
+     * Nodes
+     */
+    nodes?: Array<RunFlowNode>;
+};
+
+/**
+ * RunFlowNode
+ */
+export type RunFlowNode = {
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Parent Call Id
+     */
+    parent_call_id?: string | null;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Call Type Description
+     */
+    call_type_description?: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number;
+    /**
+     * Pages Loaded
+     */
+    pages_loaded?: number;
+    /**
+     * N Dispatches
+     */
+    n_dispatches?: number;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Duration Seconds
+     */
+    duration_seconds?: number | null;
+    /**
+     * Stage Id
+     */
+    stage_id?: string | null;
+    /**
+     * Summary
+     */
+    summary?: string;
+};
+
+/**
  * RunListItemOut
  */
 export type RunListItemOut = {
@@ -4153,6 +4837,78 @@ export type RunPrioExperimentOut = {
      * Created At
      */
     created_at: string;
+};
+
+/**
+ * RunRollup
+ *
+ * Per-run summary used in workflow aggregate views.
+ */
+export type RunRollup = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Name
+     */
+    name?: string;
+    /**
+     * Question Id
+     */
+    question_id?: string | null;
+    /**
+     * Question Headline
+     */
+    question_headline?: string | null;
+    /**
+     * N Calls
+     */
+    n_calls?: number;
+    /**
+     * N Dispatches
+     */
+    n_dispatches?: number;
+    /**
+     * N Pages Loaded
+     */
+    n_pages_loaded?: number;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number;
+    /**
+     * Duration Seconds
+     */
+    duration_seconds?: number | null;
+    /**
+     * Last Status
+     */
+    last_status?: string | null;
+    /**
+     * Stages Taken
+     */
+    stages_taken?: Array<string>;
+    /**
+     * Stages Skipped
+     */
+    stages_skipped?: Array<string>;
+    /**
+     * Dispatch Counts
+     */
+    dispatch_counts?: {
+        [key: string]: number;
+    };
+    /**
+     * Call Status Counts
+     */
+    call_status_counts?: {
+        [key: string]: number;
+    };
 };
 
 /**
@@ -4297,6 +5053,60 @@ export type ScoutPassStartedEventOut = {
 };
 
 /**
+ * SearchHit
+ */
+export type SearchHit = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Snippet
+     */
+    snippet?: string;
+    /**
+     * Score
+     */
+    score?: number;
+    /**
+     * Href
+     */
+    href?: string | null;
+};
+
+/**
+ * SearchResults
+ */
+export type SearchResults = {
+    /**
+     * Query
+     */
+    query: string;
+    /**
+     * Hits
+     */
+    hits: Array<SearchHit>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * By Kind
+     */
+    by_kind: {
+        [key: string]: number;
+    };
+};
+
+/**
  * SmallGridRow
  */
 export type SmallGridRow = {
@@ -4420,6 +5230,32 @@ export type SourceSummary = {
      * Avg Delta Pct
      */
     avg_delta_pct: number;
+};
+
+/**
+ * StageInvocation
+ */
+export type StageInvocation = {
+    /**
+     * Stage Id
+     */
+    stage_id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Taken Count
+     */
+    taken_count: number;
+    /**
+     * Skipped Count
+     */
+    skipped_count: number;
+    /**
+     * Total Runs
+     */
+    total_runs: number;
 };
 
 /**
@@ -4901,6 +5737,299 @@ export type WebResearchCompleteEventOut = {
     findings: Array<{
         [key: string]: unknown;
     }>;
+};
+
+/**
+ * WorkflowAggregate
+ */
+export type WorkflowAggregate = {
+    /**
+     * Workflow Name
+     */
+    workflow_name: string;
+    /**
+     * N Runs
+     */
+    n_runs: number;
+    /**
+     * Runs
+     */
+    runs: Array<RunRollup>;
+    /**
+     * Stage Invocations
+     */
+    stage_invocations: Array<StageInvocation>;
+    /**
+     * Dispatch Frequencies
+     */
+    dispatch_frequencies: Array<DispatchFrequency>;
+    /**
+     * Pages Loaded Per Run
+     */
+    pages_loaded_per_run?: Array<number>;
+    /**
+     * Cost Per Run
+     */
+    cost_per_run?: Array<number>;
+    /**
+     * Dispatches Per Run
+     */
+    dispatches_per_run?: Array<number>;
+    /**
+     * Calls Per Run
+     */
+    calls_per_run?: Array<number>;
+    /**
+     * Sparkline
+     */
+    sparkline?: Array<number>;
+};
+
+/**
+ * WorkflowGraph
+ */
+export type WorkflowGraph = {
+    /**
+     * Nodes
+     */
+    nodes: Array<WorkflowGraphNode>;
+    /**
+     * Edges
+     */
+    edges: Array<WorkflowGraphEdge>;
+};
+
+/**
+ * WorkflowGraphEdge
+ */
+export type WorkflowGraphEdge = {
+    /**
+     * From Id
+     */
+    from_id: string;
+    /**
+     * To Id
+     */
+    to_id: string;
+    /**
+     * Via Stage
+     */
+    via_stage?: string | null;
+};
+
+/**
+ * WorkflowGraphNode
+ */
+export type WorkflowGraphNode = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Kind
+     */
+    kind: string;
+};
+
+/**
+ * WorkflowOverlay
+ */
+export type WorkflowOverlay = {
+    /**
+     * Workflow Name
+     */
+    workflow_name: string;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    profile: WorkflowProfile;
+    /**
+     * Stages
+     */
+    stages: Array<WorkflowOverlayStage>;
+    /**
+     * N Calls
+     */
+    n_calls?: number;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number;
+    /**
+     * Duration Seconds
+     */
+    duration_seconds?: number | null;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Finished At
+     */
+    finished_at?: string | null;
+};
+
+/**
+ * WorkflowOverlayStage
+ */
+export type WorkflowOverlayStage = {
+    /**
+     * Stage Id
+     */
+    stage_id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Fired
+     */
+    fired?: boolean;
+    /**
+     * Skipped
+     */
+    skipped?: boolean;
+    /**
+     * Skipped Reason
+     */
+    skipped_reason?: string | null;
+    /**
+     * Iterations
+     */
+    iterations?: number;
+    /**
+     * Calls
+     */
+    calls?: Array<OverlayCall>;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number;
+    /**
+     * Pages Loaded
+     */
+    pages_loaded?: number;
+};
+
+/**
+ * WorkflowProfile
+ */
+export type WorkflowProfile = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Code Paths
+     */
+    code_paths?: Array<string>;
+    /**
+     * Relevant Settings
+     */
+    relevant_settings?: Array<string>;
+    /**
+     * Stages
+     */
+    stages?: Array<WorkflowStage>;
+    /**
+     * Recurses Into
+     */
+    recurses_into?: Array<string>;
+    /**
+     * Fingerprint Keys
+     */
+    fingerprint_keys?: Array<string>;
+    /**
+     * Notes
+     */
+    notes?: Array<string>;
+};
+
+/**
+ * WorkflowStage
+ *
+ * One stage in a workflow's spec — what runs, when, and with what.
+ */
+export type WorkflowStage = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Prompt Files
+     */
+    prompt_files?: Array<string>;
+    /**
+     * Available Dispatch Call Types
+     */
+    available_dispatch_call_types?: Array<string>;
+    /**
+     * Available Move Types
+     */
+    available_move_types?: Array<string>;
+    /**
+     * Optional
+     */
+    optional?: boolean;
+    /**
+     * Branch Condition
+     */
+    branch_condition?: string | null;
+    /**
+     * Loop
+     */
+    loop?: boolean;
+    /**
+     * Recurses Into
+     */
+    recurses_into?: Array<string>;
+    /**
+     * Note
+     */
+    note?: string | null;
+};
+
+/**
+ * WorkflowSummary
+ */
+export type WorkflowSummary = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Code Paths
+     */
+    code_paths?: Array<string>;
 };
 
 /**
@@ -5465,6 +6594,810 @@ export type DeleteForkApiExchangeForksForkIdDeleteResponses = {
 };
 
 export type DeleteForkApiExchangeForksForkIdDeleteResponse = DeleteForkApiExchangeForksForkIdDeleteResponses[keyof DeleteForkApiExchangeForksForkIdDeleteResponses];
+
+export type GetRegistryRollupApiAtlasRegistryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/registry';
+};
+
+export type GetRegistryRollupApiAtlasRegistryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRegistryRollupApiAtlasRegistryGetError = GetRegistryRollupApiAtlasRegistryGetErrors[keyof GetRegistryRollupApiAtlasRegistryGetErrors];
+
+export type GetRegistryRollupApiAtlasRegistryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RegistryRollup;
+};
+
+export type GetRegistryRollupApiAtlasRegistryGetResponse = GetRegistryRollupApiAtlasRegistryGetResponses[keyof GetRegistryRollupApiAtlasRegistryGetResponses];
+
+export type ListMovesApiAtlasRegistryMovesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/registry/moves';
+};
+
+export type ListMovesApiAtlasRegistryMovesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListMovesApiAtlasRegistryMovesGetError = ListMovesApiAtlasRegistryMovesGetErrors[keyof ListMovesApiAtlasRegistryMovesGetErrors];
+
+export type ListMovesApiAtlasRegistryMovesGetResponses = {
+    /**
+     * Response List Moves Api Atlas Registry Moves Get
+     *
+     * Successful Response
+     */
+    200: Array<MoveSummary>;
+};
+
+export type ListMovesApiAtlasRegistryMovesGetResponse = ListMovesApiAtlasRegistryMovesGetResponses[keyof ListMovesApiAtlasRegistryMovesGetResponses];
+
+export type GetMoveApiAtlasRegistryMovesMoveTypeGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Move Type
+         */
+        move_type: string;
+    };
+    query?: never;
+    url: '/api/atlas/registry/moves/{move_type}';
+};
+
+export type GetMoveApiAtlasRegistryMovesMoveTypeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMoveApiAtlasRegistryMovesMoveTypeGetError = GetMoveApiAtlasRegistryMovesMoveTypeGetErrors[keyof GetMoveApiAtlasRegistryMovesMoveTypeGetErrors];
+
+export type GetMoveApiAtlasRegistryMovesMoveTypeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MoveSummary;
+};
+
+export type GetMoveApiAtlasRegistryMovesMoveTypeGetResponse = GetMoveApiAtlasRegistryMovesMoveTypeGetResponses[keyof GetMoveApiAtlasRegistryMovesMoveTypeGetResponses];
+
+export type ListDispatchesApiAtlasRegistryDispatchesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/registry/dispatches';
+};
+
+export type ListDispatchesApiAtlasRegistryDispatchesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListDispatchesApiAtlasRegistryDispatchesGetError = ListDispatchesApiAtlasRegistryDispatchesGetErrors[keyof ListDispatchesApiAtlasRegistryDispatchesGetErrors];
+
+export type ListDispatchesApiAtlasRegistryDispatchesGetResponses = {
+    /**
+     * Response List Dispatches Api Atlas Registry Dispatches Get
+     *
+     * Successful Response
+     */
+    200: Array<DispatchSummary>;
+};
+
+export type ListDispatchesApiAtlasRegistryDispatchesGetResponse = ListDispatchesApiAtlasRegistryDispatchesGetResponses[keyof ListDispatchesApiAtlasRegistryDispatchesGetResponses];
+
+export type GetDispatchApiAtlasRegistryDispatchesCallTypeGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Call Type
+         */
+        call_type: string;
+    };
+    query?: never;
+    url: '/api/atlas/registry/dispatches/{call_type}';
+};
+
+export type GetDispatchApiAtlasRegistryDispatchesCallTypeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDispatchApiAtlasRegistryDispatchesCallTypeGetError = GetDispatchApiAtlasRegistryDispatchesCallTypeGetErrors[keyof GetDispatchApiAtlasRegistryDispatchesCallTypeGetErrors];
+
+export type GetDispatchApiAtlasRegistryDispatchesCallTypeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DispatchSummary;
+};
+
+export type GetDispatchApiAtlasRegistryDispatchesCallTypeGetResponse = GetDispatchApiAtlasRegistryDispatchesCallTypeGetResponses[keyof GetDispatchApiAtlasRegistryDispatchesCallTypeGetResponses];
+
+export type ListCallTypesApiAtlasRegistryCallsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/registry/calls';
+};
+
+export type ListCallTypesApiAtlasRegistryCallsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListCallTypesApiAtlasRegistryCallsGetError = ListCallTypesApiAtlasRegistryCallsGetErrors[keyof ListCallTypesApiAtlasRegistryCallsGetErrors];
+
+export type ListCallTypesApiAtlasRegistryCallsGetResponses = {
+    /**
+     * Response List Call Types Api Atlas Registry Calls Get
+     *
+     * Successful Response
+     */
+    200: Array<CallTypeSummary>;
+};
+
+export type ListCallTypesApiAtlasRegistryCallsGetResponse = ListCallTypesApiAtlasRegistryCallsGetResponses[keyof ListCallTypesApiAtlasRegistryCallsGetResponses];
+
+export type GetCallTypeApiAtlasRegistryCallsCallTypeGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Call Type
+         */
+        call_type: string;
+    };
+    query?: never;
+    url: '/api/atlas/registry/calls/{call_type}';
+};
+
+export type GetCallTypeApiAtlasRegistryCallsCallTypeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCallTypeApiAtlasRegistryCallsCallTypeGetError = GetCallTypeApiAtlasRegistryCallsCallTypeGetErrors[keyof GetCallTypeApiAtlasRegistryCallsCallTypeGetErrors];
+
+export type GetCallTypeApiAtlasRegistryCallsCallTypeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CallTypeSummary;
+};
+
+export type GetCallTypeApiAtlasRegistryCallsCallTypeGetResponse = GetCallTypeApiAtlasRegistryCallsCallTypeGetResponses[keyof GetCallTypeApiAtlasRegistryCallsCallTypeGetResponses];
+
+export type ListPageTypesApiAtlasRegistryPagesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/registry/pages';
+};
+
+export type ListPageTypesApiAtlasRegistryPagesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListPageTypesApiAtlasRegistryPagesGetError = ListPageTypesApiAtlasRegistryPagesGetErrors[keyof ListPageTypesApiAtlasRegistryPagesGetErrors];
+
+export type ListPageTypesApiAtlasRegistryPagesGetResponses = {
+    /**
+     * Response List Page Types Api Atlas Registry Pages Get
+     *
+     * Successful Response
+     */
+    200: Array<PageTypeSummary>;
+};
+
+export type ListPageTypesApiAtlasRegistryPagesGetResponse = ListPageTypesApiAtlasRegistryPagesGetResponses[keyof ListPageTypesApiAtlasRegistryPagesGetResponses];
+
+export type GetPageTypeApiAtlasRegistryPagesPageTypeGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Page Type
+         */
+        page_type: string;
+    };
+    query?: never;
+    url: '/api/atlas/registry/pages/{page_type}';
+};
+
+export type GetPageTypeApiAtlasRegistryPagesPageTypeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageTypeApiAtlasRegistryPagesPageTypeGetError = GetPageTypeApiAtlasRegistryPagesPageTypeGetErrors[keyof GetPageTypeApiAtlasRegistryPagesPageTypeGetErrors];
+
+export type GetPageTypeApiAtlasRegistryPagesPageTypeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PageTypeSummary;
+};
+
+export type GetPageTypeApiAtlasRegistryPagesPageTypeGetResponse = GetPageTypeApiAtlasRegistryPagesPageTypeGetResponses[keyof GetPageTypeApiAtlasRegistryPagesPageTypeGetResponses];
+
+export type GetCompositionApiAtlasRegistryCompositionsKeyGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Key
+         */
+        key: string;
+    };
+    query?: never;
+    url: '/api/atlas/registry/compositions/{key}';
+};
+
+export type GetCompositionApiAtlasRegistryCompositionsKeyGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCompositionApiAtlasRegistryCompositionsKeyGetError = GetCompositionApiAtlasRegistryCompositionsKeyGetErrors[keyof GetCompositionApiAtlasRegistryCompositionsKeyGetErrors];
+
+export type GetCompositionApiAtlasRegistryCompositionsKeyGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PromptComposition;
+};
+
+export type GetCompositionApiAtlasRegistryCompositionsKeyGetResponse = GetCompositionApiAtlasRegistryCompositionsKeyGetResponses[keyof GetCompositionApiAtlasRegistryCompositionsKeyGetResponses];
+
+export type ListPromptsApiAtlasRegistryPromptsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/registry/prompts';
+};
+
+export type ListPromptsApiAtlasRegistryPromptsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListPromptsApiAtlasRegistryPromptsGetError = ListPromptsApiAtlasRegistryPromptsGetErrors[keyof ListPromptsApiAtlasRegistryPromptsGetErrors];
+
+export type ListPromptsApiAtlasRegistryPromptsGetResponses = {
+    /**
+     * Response List Prompts Api Atlas Registry Prompts Get
+     *
+     * Successful Response
+     */
+    200: Array<string>;
+};
+
+export type ListPromptsApiAtlasRegistryPromptsGetResponse = ListPromptsApiAtlasRegistryPromptsGetResponses[keyof ListPromptsApiAtlasRegistryPromptsGetResponses];
+
+export type GetPromptApiAtlasRegistryPromptsNameGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/atlas/registry/prompts/{name}';
+};
+
+export type GetPromptApiAtlasRegistryPromptsNameGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPromptApiAtlasRegistryPromptsNameGetError = GetPromptApiAtlasRegistryPromptsNameGetErrors[keyof GetPromptApiAtlasRegistryPromptsNameGetErrors];
+
+export type GetPromptApiAtlasRegistryPromptsNameGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PromptDoc;
+};
+
+export type GetPromptApiAtlasRegistryPromptsNameGetResponse = GetPromptApiAtlasRegistryPromptsNameGetResponses[keyof GetPromptApiAtlasRegistryPromptsNameGetResponses];
+
+export type ListWorkflowsApiAtlasWorkflowsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/workflows';
+};
+
+export type ListWorkflowsApiAtlasWorkflowsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListWorkflowsApiAtlasWorkflowsGetError = ListWorkflowsApiAtlasWorkflowsGetErrors[keyof ListWorkflowsApiAtlasWorkflowsGetErrors];
+
+export type ListWorkflowsApiAtlasWorkflowsGetResponses = {
+    /**
+     * Response List Workflows Api Atlas Workflows Get
+     *
+     * Successful Response
+     */
+    200: Array<WorkflowSummary>;
+};
+
+export type ListWorkflowsApiAtlasWorkflowsGetResponse = ListWorkflowsApiAtlasWorkflowsGetResponses[keyof ListWorkflowsApiAtlasWorkflowsGetResponses];
+
+export type GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/workflows/graph';
+};
+
+export type GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetError = GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetErrors[keyof GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetErrors];
+
+export type GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkflowGraph;
+};
+
+export type GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetResponse = GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetResponses[keyof GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetResponses];
+
+export type GetWorkflowApiAtlasWorkflowsNameGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/atlas/workflows/{name}';
+};
+
+export type GetWorkflowApiAtlasWorkflowsNameGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWorkflowApiAtlasWorkflowsNameGetError = GetWorkflowApiAtlasWorkflowsNameGetErrors[keyof GetWorkflowApiAtlasWorkflowsNameGetErrors];
+
+export type GetWorkflowApiAtlasWorkflowsNameGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkflowProfile;
+};
+
+export type GetWorkflowApiAtlasWorkflowsNameGetResponse = GetWorkflowApiAtlasWorkflowsNameGetResponses[keyof GetWorkflowApiAtlasWorkflowsNameGetResponses];
+
+export type GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/atlas/workflows/{name}/aggregate';
+};
+
+export type GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetError = GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetErrors[keyof GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetErrors];
+
+export type GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkflowAggregate;
+};
+
+export type GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponse = GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponses[keyof GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponses];
+
+export type GetRunFlowEndpointApiAtlasRunsRunIdFlowGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/runs/{run_id}/flow';
+};
+
+export type GetRunFlowEndpointApiAtlasRunsRunIdFlowGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRunFlowEndpointApiAtlasRunsRunIdFlowGetError = GetRunFlowEndpointApiAtlasRunsRunIdFlowGetErrors[keyof GetRunFlowEndpointApiAtlasRunsRunIdFlowGetErrors];
+
+export type GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunFlow;
+};
+
+export type GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponse = GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponses[keyof GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponses];
+
+export type GetCallTypeStatsApiAtlasCallsCallTypeStatsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Call Type
+         */
+        call_type: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * N Runs
+         */
+        n_runs?: number;
+    };
+    url: '/api/atlas/calls/{call_type}/stats';
+};
+
+export type GetCallTypeStatsApiAtlasCallsCallTypeStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCallTypeStatsApiAtlasCallsCallTypeStatsGetError = GetCallTypeStatsApiAtlasCallsCallTypeStatsGetErrors[keyof GetCallTypeStatsApiAtlasCallsCallTypeStatsGetErrors];
+
+export type GetCallTypeStatsApiAtlasCallsCallTypeStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CallTypeStats;
+};
+
+export type GetCallTypeStatsApiAtlasCallsCallTypeStatsGetResponse = GetCallTypeStatsApiAtlasCallsCallTypeStatsGetResponses[keyof GetCallTypeStatsApiAtlasCallsCallTypeStatsGetResponses];
+
+export type GetMoveStatsApiAtlasMovesMoveTypeStatsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Move Type
+         */
+        move_type: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * N Runs
+         */
+        n_runs?: number;
+    };
+    url: '/api/atlas/moves/{move_type}/stats';
+};
+
+export type GetMoveStatsApiAtlasMovesMoveTypeStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMoveStatsApiAtlasMovesMoveTypeStatsGetError = GetMoveStatsApiAtlasMovesMoveTypeStatsGetErrors[keyof GetMoveStatsApiAtlasMovesMoveTypeStatsGetErrors];
+
+export type GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MoveStats;
+};
+
+export type GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponse = GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponses[keyof GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponses];
+
+export type GetGapsApiAtlasGapsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/atlas/gaps';
+};
+
+export type GetGapsApiAtlasGapsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetGapsApiAtlasGapsGetError = GetGapsApiAtlasGapsGetErrors[keyof GetGapsApiAtlasGapsGetErrors];
+
+export type GetGapsApiAtlasGapsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: GapsReport;
+};
+
+export type GetGapsApiAtlasGapsGetResponse = GetGapsApiAtlasGapsGetResponses[keyof GetGapsApiAtlasGapsGetResponses];
+
+export type GetSearchApiAtlasSearchGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Q
+         */
+        q?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/atlas/search';
+};
+
+export type GetSearchApiAtlasSearchGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetSearchApiAtlasSearchGetError = GetSearchApiAtlasSearchGetErrors[keyof GetSearchApiAtlasSearchGetErrors];
+
+export type GetSearchApiAtlasSearchGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SearchResults;
+};
+
+export type GetSearchApiAtlasSearchGetResponse = GetSearchApiAtlasSearchGetResponses[keyof GetSearchApiAtlasSearchGetResponses];
+
+export type GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/workflows/{name}/runs/{run_id}/overlay';
+};
+
+export type GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetError = GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetErrors[keyof GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetErrors];
+
+export type GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkflowOverlay;
+};
+
+export type GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetResponse = GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetResponses[keyof GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetResponses];
 
 export type HealthzHealthzGetData = {
     body?: never;

@@ -1,0 +1,55 @@
+import Link from "next/link";
+import type { MoveSummary } from "@/api";
+import { atlasFetch } from "../_lib/fetch";
+import { Crumbs } from "../_components/Crumbs";
+import { Filter } from "../_components/Filter";
+
+export const metadata = { title: "moves" };
+
+export default async function MovesList() {
+  const moves = await atlasFetch<MoveSummary[]>(
+    "/api/atlas/registry/moves",
+    [],
+  );
+  const sorted = moves.slice().sort((a, b) => a.name.localeCompare(b.name));
+
+  const items = sorted.map((m) => ({
+    searchKey: `${m.name} ${m.move_type} ${m.description ?? ""}`,
+    node: <MoveRow key={m.move_type} m={m} />,
+  }));
+
+  return (
+    <div>
+      <div className="atlas-page-head">
+        <div className="atlas-page-head-main">
+          <Crumbs items={[{ label: "atlas", href: "/atlas" }, { label: "moves" }]} />
+          <h1 className="is-sans">moves</h1>
+          <p className="atlas-lede">
+            The tools made available to LLMs inside a call. Each carries a
+            payload schema where every field has a description written for the
+            model — those docstrings are this section&apos;s killer feature.
+          </p>
+        </div>
+      </div>
+      <Filter items={items} placeholder="filter moves…" />
+    </div>
+  );
+}
+
+function MoveRow({ m }: { m: MoveSummary }) {
+  const usedCount = (m.used_in_call_types ?? []).length;
+  return (
+    <Link href={`/atlas/moves/${encodeURIComponent(m.move_type)}`} className="atlas-row">
+      <div className="atlas-row-name">{m.name}</div>
+      <div className="atlas-row-desc">{m.description}</div>
+      <div className="atlas-row-meta">
+        <span className="atlas-chip is-muted">
+          {usedCount} call{usedCount === 1 ? "" : "s"}
+        </span>
+        <span className="atlas-chip is-muted">
+          {(m.fields ?? []).length} fields
+        </span>
+      </div>
+    </Link>
+  );
+}

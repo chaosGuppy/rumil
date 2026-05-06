@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateOrchestratorRunApiJobsOrchestratorRunsPostData, CreateOrchestratorRunApiJobsOrchestratorRunsPostErrors, CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses, DeleteForkApiExchangeForksForkIdDeleteData, DeleteForkApiExchangeForksForkIdDeleteErrors, DeleteForkApiExchangeForksForkIdDeleteResponses, FireApiExchangeForksPostData, FireApiExchangeForksPostErrors, FireApiExchangeForksPostResponses, GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetBaseApiExchangeForksBaseExchangeIdGetData, GetBaseApiExchangeForksBaseExchangeIdGetErrors, GetBaseApiExchangeForksBaseExchangeIdGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetData, GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetErrors, GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetDiagnosticsApiVersusDiagnosticsGetData, GetDiagnosticsApiVersusDiagnosticsGetErrors, GetDiagnosticsApiVersusDiagnosticsGetResponses, GetEssayApiVersusEssaysEssayIdGetData, GetEssayApiVersusEssaysEssayIdGetErrors, GetEssayApiVersusEssaysEssayIdGetResponses, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses, GetJudgmentByKeyApiVersusJudgmentsByKeyGetData, GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors, GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetMeApiAuthMeGetData, GetMeApiAuthMeGetErrors, GetMeApiAuthMeGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetErrors, GetRealtimeConfigApiRealtimeConfigGetResponses, GetRecentApiVersusRecentGetData, GetRecentApiVersusRecentGetErrors, GetRecentApiVersusRecentGetResponses, GetResultsApiVersusResultsGetData, GetResultsApiVersusResultsGetErrors, GetResultsApiVersusResultsGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListEssaysApiVersusEssaysGetData, ListEssaysApiVersusEssaysGetErrors, ListEssaysApiVersusEssaysGetResponses, ListExperimentsApiExperimentsGetData, ListExperimentsApiExperimentsGetErrors, ListExperimentsApiExperimentsGetResponses, ListForksApiExchangeForksGetData, ListForksApiExchangeForksGetErrors, ListForksApiExchangeForksGetResponses, ListJobsApiJobsGetData, ListJobsApiJobsGetErrors, ListJobsApiJobsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses } from './types.gen';
+import type { CreateOrchestratorRunApiJobsOrchestratorRunsPostData, CreateOrchestratorRunApiJobsOrchestratorRunsPostErrors, CreateOrchestratorRunApiJobsOrchestratorRunsPostResponses, DeleteForkApiExchangeForksForkIdDeleteData, DeleteForkApiExchangeForksForkIdDeleteErrors, DeleteForkApiExchangeForksForkIdDeleteResponses, FireApiExchangeForksPostData, FireApiExchangeForksPostErrors, FireApiExchangeForksPostResponses, GetAbEvalApiAbEvalsEvalIdGetData, GetAbEvalApiAbEvalsEvalIdGetErrors, GetAbEvalApiAbEvalsEvalIdGetResponses, GetBaseApiExchangeForksBaseExchangeIdGetData, GetBaseApiExchangeForksBaseExchangeIdGetErrors, GetBaseApiExchangeForksBaseExchangeIdGetResponses, GetCallApiCallsCallIdGetData, GetCallApiCallsCallIdGetErrors, GetCallApiCallsCallIdGetResponses, GetCallEventsApiCallsCallIdEventsGetData, GetCallEventsApiCallsCallIdEventsGetErrors, GetCallEventsApiCallsCallIdEventsGetResponses, GetCallTypeApiAtlasRegistryCallsCallTypeGetData, GetCallTypeApiAtlasRegistryCallsCallTypeGetErrors, GetCallTypeApiAtlasRegistryCallsCallTypeGetResponses, GetCallTypeStatsApiAtlasCallsCallTypeStatsGetData, GetCallTypeStatsApiAtlasCallsCallTypeStatsGetErrors, GetCallTypeStatsApiAtlasCallsCallTypeStatsGetResponses, GetChildCallsApiCallsCallIdChildrenGetData, GetChildCallsApiCallsCallIdChildrenGetErrors, GetChildCallsApiCallsCallIdChildrenGetResponses, GetCompositionApiAtlasRegistryCompositionsKeyGetData, GetCompositionApiAtlasRegistryCompositionsKeyGetErrors, GetCompositionApiAtlasRegistryCompositionsKeyGetResponses, GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetData, GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetErrors, GetContextEvalDiffApiContextEvalsGoldRunIdVsCandidateRunIdGetResponses, GetDependenciesApiPagesPageIdDependenciesGetData, GetDependenciesApiPagesPageIdDependenciesGetErrors, GetDependenciesApiPagesPageIdDependenciesGetResponses, GetDependentsApiPagesPageIdDependentsGetData, GetDependentsApiPagesPageIdDependentsGetErrors, GetDependentsApiPagesPageIdDependentsGetResponses, GetDiagnosticsApiVersusDiagnosticsGetData, GetDiagnosticsApiVersusDiagnosticsGetErrors, GetDiagnosticsApiVersusDiagnosticsGetResponses, GetDispatchApiAtlasRegistryDispatchesCallTypeGetData, GetDispatchApiAtlasRegistryDispatchesCallTypeGetErrors, GetDispatchApiAtlasRegistryDispatchesCallTypeGetResponses, GetEssayApiVersusEssaysEssayIdGetData, GetEssayApiVersusEssaysEssayIdGetErrors, GetEssayApiVersusEssaysEssayIdGetResponses, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetData, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetErrors, GetEssayJudgmentsApiVersusEssaysEssayIdJudgmentsGetResponses, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetData, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetErrors, GetEssaySourcesApiVersusEssaysEssayIdSourcesGetResponses, GetGapsApiAtlasGapsGetData, GetGapsApiAtlasGapsGetErrors, GetGapsApiAtlasGapsGetResponses, GetJudgmentByKeyApiVersusJudgmentsByKeyGetData, GetJudgmentByKeyApiVersusJudgmentsByKeyGetErrors, GetJudgmentByKeyApiVersusJudgmentsByKeyGetResponses, GetLinksFromApiPagesPageIdLinksFromGetData, GetLinksFromApiPagesPageIdLinksFromGetErrors, GetLinksFromApiPagesPageIdLinksFromGetResponses, GetLinksToApiPagesPageIdLinksToGetData, GetLinksToApiPagesPageIdLinksToGetErrors, GetLinksToApiPagesPageIdLinksToGetResponses, GetLlmExchangeApiLlmExchangesExchangeIdGetData, GetLlmExchangeApiLlmExchangesExchangeIdGetErrors, GetLlmExchangeApiLlmExchangesExchangeIdGetResponses, GetMeApiAuthMeGetData, GetMeApiAuthMeGetErrors, GetMeApiAuthMeGetResponses, GetMoveApiAtlasRegistryMovesMoveTypeGetData, GetMoveApiAtlasRegistryMovesMoveTypeGetErrors, GetMoveApiAtlasRegistryMovesMoveTypeGetResponses, GetMoveStatsApiAtlasMovesMoveTypeStatsGetData, GetMoveStatsApiAtlasMovesMoveTypeStatsGetErrors, GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponses, GetPageApiPagesPageIdGetData, GetPageApiPagesPageIdGetErrors, GetPageApiPagesPageIdGetResponses, GetPageByShortIdApiPagesShortShortIdGetData, GetPageByShortIdApiPagesShortShortIdGetErrors, GetPageByShortIdApiPagesShortShortIdGetResponses, GetPageCountsApiPagesPageIdCountsGetData, GetPageCountsApiPagesPageIdCountsGetErrors, GetPageCountsApiPagesPageIdCountsGetResponses, GetPageDetailApiPagesPageIdDetailGetData, GetPageDetailApiPagesPageIdDetailGetErrors, GetPageDetailApiPagesPageIdDetailGetResponses, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetData, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetErrors, GetPageLoadStatsApiRunsRunIdPageLoadStatsGetResponses, GetPageRunApiPagesPageIdRunGetData, GetPageRunApiPagesPageIdRunGetErrors, GetPageRunApiPagesPageIdRunGetResponses, GetPageTypeApiAtlasRegistryPagesPageTypeGetData, GetPageTypeApiAtlasRegistryPagesPageTypeGetErrors, GetPageTypeApiAtlasRegistryPagesPageTypeGetResponses, GetProjectApiProjectsProjectIdGetData, GetProjectApiProjectsProjectIdGetErrors, GetProjectApiProjectsProjectIdGetResponses, GetProjectStatsApiProjectsProjectIdStatsGetData, GetProjectStatsApiProjectsProjectIdStatsGetErrors, GetProjectStatsApiProjectsProjectIdStatsGetResponses, GetPromptApiAtlasRegistryPromptsNameGetData, GetPromptApiAtlasRegistryPromptsNameGetErrors, GetPromptApiAtlasRegistryPromptsNameGetResponses, GetQuestionStatsApiPagesPageIdStatsGetData, GetQuestionStatsApiPagesPageIdStatsGetErrors, GetQuestionStatsApiPagesPageIdStatsGetResponses, GetRealtimeConfigApiRealtimeConfigGetData, GetRealtimeConfigApiRealtimeConfigGetErrors, GetRealtimeConfigApiRealtimeConfigGetResponses, GetRecentApiVersusRecentGetData, GetRecentApiVersusRecentGetErrors, GetRecentApiVersusRecentGetResponses, GetRegistryRollupApiAtlasRegistryGetData, GetRegistryRollupApiAtlasRegistryGetErrors, GetRegistryRollupApiAtlasRegistryGetResponses, GetResultsApiVersusResultsGetData, GetResultsApiVersusResultsGetErrors, GetResultsApiVersusResultsGetResponses, GetRunFlowEndpointApiAtlasRunsRunIdFlowGetData, GetRunFlowEndpointApiAtlasRunsRunIdFlowGetErrors, GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponses, GetRunTraceTreeApiRunsRunIdTraceTreeGetData, GetRunTraceTreeApiRunsRunIdTraceTreeGetErrors, GetRunTraceTreeApiRunsRunIdTraceTreeGetResponses, GetSearchApiAtlasSearchGetData, GetSearchApiAtlasSearchGetErrors, GetSearchApiAtlasSearchGetResponses, GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetData, GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetErrors, GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponses, GetWorkflowApiAtlasWorkflowsNameGetData, GetWorkflowApiAtlasWorkflowsNameGetErrors, GetWorkflowApiAtlasWorkflowsNameGetResponses, GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetData, GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetErrors, GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetResponses, GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetData, GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetErrors, GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetResponses, HealthzHealthzGetData, HealthzHealthzGetResponses, ListCallsApiProjectsProjectIdCallsGetData, ListCallsApiProjectsProjectIdCallsGetErrors, ListCallsApiProjectsProjectIdCallsGetResponses, ListCallTypesApiAtlasRegistryCallsGetData, ListCallTypesApiAtlasRegistryCallsGetErrors, ListCallTypesApiAtlasRegistryCallsGetResponses, ListDispatchesApiAtlasRegistryDispatchesGetData, ListDispatchesApiAtlasRegistryDispatchesGetErrors, ListDispatchesApiAtlasRegistryDispatchesGetResponses, ListEssaysApiVersusEssaysGetData, ListEssaysApiVersusEssaysGetErrors, ListEssaysApiVersusEssaysGetResponses, ListExperimentsApiExperimentsGetData, ListExperimentsApiExperimentsGetErrors, ListExperimentsApiExperimentsGetResponses, ListForksApiExchangeForksGetData, ListForksApiExchangeForksGetErrors, ListForksApiExchangeForksGetResponses, ListJobsApiJobsGetData, ListJobsApiJobsGetErrors, ListJobsApiJobsGetResponses, ListLlmExchangesApiCallsCallIdLlmExchangesGetData, ListLlmExchangesApiCallsCallIdLlmExchangesGetErrors, ListLlmExchangesApiCallsCallIdLlmExchangesGetResponses, ListMovesApiAtlasRegistryMovesGetData, ListMovesApiAtlasRegistryMovesGetErrors, ListMovesApiAtlasRegistryMovesGetResponses, ListPagesApiProjectsProjectIdPagesGetData, ListPagesApiProjectsProjectIdPagesGetErrors, ListPagesApiProjectsProjectIdPagesGetResponses, ListPageTypesApiAtlasRegistryPagesGetData, ListPageTypesApiAtlasRegistryPagesGetErrors, ListPageTypesApiAtlasRegistryPagesGetResponses, ListProjectRunsApiProjectsProjectIdRunsGetData, ListProjectRunsApiProjectsProjectIdRunsGetErrors, ListProjectRunsApiProjectsProjectIdRunsGetResponses, ListProjectsApiProjectsGetData, ListProjectsApiProjectsGetErrors, ListProjectsApiProjectsGetResponses, ListPromptsApiAtlasRegistryPromptsGetData, ListPromptsApiAtlasRegistryPromptsGetErrors, ListPromptsApiAtlasRegistryPromptsGetResponses, ListRootQuestionsApiProjectsProjectIdQuestionsGetData, ListRootQuestionsApiProjectsProjectIdQuestionsGetErrors, ListRootQuestionsApiProjectsProjectIdQuestionsGetResponses, ListWorkflowsApiAtlasWorkflowsGetData, ListWorkflowsApiAtlasWorkflowsGetErrors, ListWorkflowsApiAtlasWorkflowsGetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -137,6 +137,116 @@ export const fireApiExchangeForksPost = <ThrowOnError extends boolean = false>(o
  * Delete Fork
  */
 export const deleteForkApiExchangeForksForkIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteForkApiExchangeForksForkIdDeleteData, ThrowOnError>) => (options.client ?? client).delete<DeleteForkApiExchangeForksForkIdDeleteResponses, DeleteForkApiExchangeForksForkIdDeleteErrors, ThrowOnError>({ url: '/api/exchange-forks/{fork_id}', ...options });
+
+/**
+ * Get Registry Rollup
+ */
+export const getRegistryRollupApiAtlasRegistryGet = <ThrowOnError extends boolean = false>(options?: Options<GetRegistryRollupApiAtlasRegistryGetData, ThrowOnError>) => (options?.client ?? client).get<GetRegistryRollupApiAtlasRegistryGetResponses, GetRegistryRollupApiAtlasRegistryGetErrors, ThrowOnError>({ url: '/api/atlas/registry', ...options });
+
+/**
+ * List Moves
+ */
+export const listMovesApiAtlasRegistryMovesGet = <ThrowOnError extends boolean = false>(options?: Options<ListMovesApiAtlasRegistryMovesGetData, ThrowOnError>) => (options?.client ?? client).get<ListMovesApiAtlasRegistryMovesGetResponses, ListMovesApiAtlasRegistryMovesGetErrors, ThrowOnError>({ url: '/api/atlas/registry/moves', ...options });
+
+/**
+ * Get Move
+ */
+export const getMoveApiAtlasRegistryMovesMoveTypeGet = <ThrowOnError extends boolean = false>(options: Options<GetMoveApiAtlasRegistryMovesMoveTypeGetData, ThrowOnError>) => (options.client ?? client).get<GetMoveApiAtlasRegistryMovesMoveTypeGetResponses, GetMoveApiAtlasRegistryMovesMoveTypeGetErrors, ThrowOnError>({ url: '/api/atlas/registry/moves/{move_type}', ...options });
+
+/**
+ * List Dispatches
+ */
+export const listDispatchesApiAtlasRegistryDispatchesGet = <ThrowOnError extends boolean = false>(options?: Options<ListDispatchesApiAtlasRegistryDispatchesGetData, ThrowOnError>) => (options?.client ?? client).get<ListDispatchesApiAtlasRegistryDispatchesGetResponses, ListDispatchesApiAtlasRegistryDispatchesGetErrors, ThrowOnError>({ url: '/api/atlas/registry/dispatches', ...options });
+
+/**
+ * Get Dispatch
+ */
+export const getDispatchApiAtlasRegistryDispatchesCallTypeGet = <ThrowOnError extends boolean = false>(options: Options<GetDispatchApiAtlasRegistryDispatchesCallTypeGetData, ThrowOnError>) => (options.client ?? client).get<GetDispatchApiAtlasRegistryDispatchesCallTypeGetResponses, GetDispatchApiAtlasRegistryDispatchesCallTypeGetErrors, ThrowOnError>({ url: '/api/atlas/registry/dispatches/{call_type}', ...options });
+
+/**
+ * List Call Types
+ */
+export const listCallTypesApiAtlasRegistryCallsGet = <ThrowOnError extends boolean = false>(options?: Options<ListCallTypesApiAtlasRegistryCallsGetData, ThrowOnError>) => (options?.client ?? client).get<ListCallTypesApiAtlasRegistryCallsGetResponses, ListCallTypesApiAtlasRegistryCallsGetErrors, ThrowOnError>({ url: '/api/atlas/registry/calls', ...options });
+
+/**
+ * Get Call Type
+ */
+export const getCallTypeApiAtlasRegistryCallsCallTypeGet = <ThrowOnError extends boolean = false>(options: Options<GetCallTypeApiAtlasRegistryCallsCallTypeGetData, ThrowOnError>) => (options.client ?? client).get<GetCallTypeApiAtlasRegistryCallsCallTypeGetResponses, GetCallTypeApiAtlasRegistryCallsCallTypeGetErrors, ThrowOnError>({ url: '/api/atlas/registry/calls/{call_type}', ...options });
+
+/**
+ * List Page Types
+ */
+export const listPageTypesApiAtlasRegistryPagesGet = <ThrowOnError extends boolean = false>(options?: Options<ListPageTypesApiAtlasRegistryPagesGetData, ThrowOnError>) => (options?.client ?? client).get<ListPageTypesApiAtlasRegistryPagesGetResponses, ListPageTypesApiAtlasRegistryPagesGetErrors, ThrowOnError>({ url: '/api/atlas/registry/pages', ...options });
+
+/**
+ * Get Page Type
+ */
+export const getPageTypeApiAtlasRegistryPagesPageTypeGet = <ThrowOnError extends boolean = false>(options: Options<GetPageTypeApiAtlasRegistryPagesPageTypeGetData, ThrowOnError>) => (options.client ?? client).get<GetPageTypeApiAtlasRegistryPagesPageTypeGetResponses, GetPageTypeApiAtlasRegistryPagesPageTypeGetErrors, ThrowOnError>({ url: '/api/atlas/registry/pages/{page_type}', ...options });
+
+/**
+ * Get Composition
+ */
+export const getCompositionApiAtlasRegistryCompositionsKeyGet = <ThrowOnError extends boolean = false>(options: Options<GetCompositionApiAtlasRegistryCompositionsKeyGetData, ThrowOnError>) => (options.client ?? client).get<GetCompositionApiAtlasRegistryCompositionsKeyGetResponses, GetCompositionApiAtlasRegistryCompositionsKeyGetErrors, ThrowOnError>({ url: '/api/atlas/registry/compositions/{key}', ...options });
+
+/**
+ * List Prompts
+ */
+export const listPromptsApiAtlasRegistryPromptsGet = <ThrowOnError extends boolean = false>(options?: Options<ListPromptsApiAtlasRegistryPromptsGetData, ThrowOnError>) => (options?.client ?? client).get<ListPromptsApiAtlasRegistryPromptsGetResponses, ListPromptsApiAtlasRegistryPromptsGetErrors, ThrowOnError>({ url: '/api/atlas/registry/prompts', ...options });
+
+/**
+ * Get Prompt
+ */
+export const getPromptApiAtlasRegistryPromptsNameGet = <ThrowOnError extends boolean = false>(options: Options<GetPromptApiAtlasRegistryPromptsNameGetData, ThrowOnError>) => (options.client ?? client).get<GetPromptApiAtlasRegistryPromptsNameGetResponses, GetPromptApiAtlasRegistryPromptsNameGetErrors, ThrowOnError>({ url: '/api/atlas/registry/prompts/{name}', ...options });
+
+/**
+ * List Workflows
+ */
+export const listWorkflowsApiAtlasWorkflowsGet = <ThrowOnError extends boolean = false>(options?: Options<ListWorkflowsApiAtlasWorkflowsGetData, ThrowOnError>) => (options?.client ?? client).get<ListWorkflowsApiAtlasWorkflowsGetResponses, ListWorkflowsApiAtlasWorkflowsGetErrors, ThrowOnError>({ url: '/api/atlas/workflows', ...options });
+
+/**
+ * Get Workflow Graph Endpoint
+ */
+export const getWorkflowGraphEndpointApiAtlasWorkflowsGraphGet = <ThrowOnError extends boolean = false>(options?: Options<GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetData, ThrowOnError>) => (options?.client ?? client).get<GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetResponses, GetWorkflowGraphEndpointApiAtlasWorkflowsGraphGetErrors, ThrowOnError>({ url: '/api/atlas/workflows/graph', ...options });
+
+/**
+ * Get Workflow
+ */
+export const getWorkflowApiAtlasWorkflowsNameGet = <ThrowOnError extends boolean = false>(options: Options<GetWorkflowApiAtlasWorkflowsNameGetData, ThrowOnError>) => (options.client ?? client).get<GetWorkflowApiAtlasWorkflowsNameGetResponses, GetWorkflowApiAtlasWorkflowsNameGetErrors, ThrowOnError>({ url: '/api/atlas/workflows/{name}', ...options });
+
+/**
+ * Get Workflow Aggregate
+ */
+export const getWorkflowAggregateApiAtlasWorkflowsNameAggregateGet = <ThrowOnError extends boolean = false>(options: Options<GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetData, ThrowOnError>) => (options.client ?? client).get<GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponses, GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetErrors, ThrowOnError>({ url: '/api/atlas/workflows/{name}/aggregate', ...options });
+
+/**
+ * Get Run Flow Endpoint
+ */
+export const getRunFlowEndpointApiAtlasRunsRunIdFlowGet = <ThrowOnError extends boolean = false>(options: Options<GetRunFlowEndpointApiAtlasRunsRunIdFlowGetData, ThrowOnError>) => (options.client ?? client).get<GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponses, GetRunFlowEndpointApiAtlasRunsRunIdFlowGetErrors, ThrowOnError>({ url: '/api/atlas/runs/{run_id}/flow', ...options });
+
+/**
+ * Get Call Type Stats
+ */
+export const getCallTypeStatsApiAtlasCallsCallTypeStatsGet = <ThrowOnError extends boolean = false>(options: Options<GetCallTypeStatsApiAtlasCallsCallTypeStatsGetData, ThrowOnError>) => (options.client ?? client).get<GetCallTypeStatsApiAtlasCallsCallTypeStatsGetResponses, GetCallTypeStatsApiAtlasCallsCallTypeStatsGetErrors, ThrowOnError>({ url: '/api/atlas/calls/{call_type}/stats', ...options });
+
+/**
+ * Get Move Stats
+ */
+export const getMoveStatsApiAtlasMovesMoveTypeStatsGet = <ThrowOnError extends boolean = false>(options: Options<GetMoveStatsApiAtlasMovesMoveTypeStatsGetData, ThrowOnError>) => (options.client ?? client).get<GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponses, GetMoveStatsApiAtlasMovesMoveTypeStatsGetErrors, ThrowOnError>({ url: '/api/atlas/moves/{move_type}/stats', ...options });
+
+/**
+ * Get Gaps
+ */
+export const getGapsApiAtlasGapsGet = <ThrowOnError extends boolean = false>(options?: Options<GetGapsApiAtlasGapsGetData, ThrowOnError>) => (options?.client ?? client).get<GetGapsApiAtlasGapsGetResponses, GetGapsApiAtlasGapsGetErrors, ThrowOnError>({ url: '/api/atlas/gaps', ...options });
+
+/**
+ * Get Search
+ */
+export const getSearchApiAtlasSearchGet = <ThrowOnError extends boolean = false>(options?: Options<GetSearchApiAtlasSearchGetData, ThrowOnError>) => (options?.client ?? client).get<GetSearchApiAtlasSearchGetResponses, GetSearchApiAtlasSearchGetErrors, ThrowOnError>({ url: '/api/atlas/search', ...options });
+
+/**
+ * Get Workflow Overlay Endpoint
+ */
+export const getWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGet = <ThrowOnError extends boolean = false>(options: Options<GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetData, ThrowOnError>) => (options.client ?? client).get<GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetResponses, GetWorkflowOverlayEndpointApiAtlasWorkflowsNameRunsRunIdOverlayGetErrors, ThrowOnError>({ url: '/api/atlas/workflows/{name}/runs/{run_id}/overlay', ...options });
 
 /**
  * Healthz

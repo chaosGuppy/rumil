@@ -1038,6 +1038,1325 @@
         }
       }
     },
+    "/api/atlas/registry": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Registry Rollup",
+        "operationId": "get_registry_rollup_api_atlas_registry_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryRollup"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/moves": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "List Moves",
+        "operationId": "list_moves_api_atlas_registry_moves_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MoveSummary"
+                  },
+                  "title": "Response List Moves Api Atlas Registry Moves Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/moves/{move_type}": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Move",
+        "operationId": "get_move_api_atlas_registry_moves__move_type__get",
+        "parameters": [
+          {
+            "name": "move_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Move Type"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoveSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/dispatches": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "List Dispatches",
+        "operationId": "list_dispatches_api_atlas_registry_dispatches_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DispatchSummary"
+                  },
+                  "title": "Response List Dispatches Api Atlas Registry Dispatches Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/dispatches/{call_type}": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Dispatch",
+        "operationId": "get_dispatch_api_atlas_registry_dispatches__call_type__get",
+        "parameters": [
+          {
+            "name": "call_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DispatchSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/calls": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "List Call Types",
+        "operationId": "list_call_types_api_atlas_registry_calls_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CallTypeSummary"
+                  },
+                  "title": "Response List Call Types Api Atlas Registry Calls Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/calls/{call_type}": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Call Type",
+        "operationId": "get_call_type_api_atlas_registry_calls__call_type__get",
+        "parameters": [
+          {
+            "name": "call_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallTypeSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/pages": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "List Page Types",
+        "operationId": "list_page_types_api_atlas_registry_pages_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PageTypeSummary"
+                  },
+                  "title": "Response List Page Types Api Atlas Registry Pages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/pages/{page_type}": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Page Type",
+        "operationId": "get_page_type_api_atlas_registry_pages__page_type__get",
+        "parameters": [
+          {
+            "name": "page_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Page Type"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageTypeSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/compositions/{key}": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Composition",
+        "operationId": "get_composition_api_atlas_registry_compositions__key__get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptComposition"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/prompts": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "List Prompts",
+        "operationId": "list_prompts_api_atlas_registry_prompts_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response List Prompts Api Atlas Registry Prompts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/registry/prompts/{name}": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Prompt",
+        "operationId": "get_prompt_api_atlas_registry_prompts__name__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptDoc"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/workflows": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "List Workflows",
+        "operationId": "list_workflows_api_atlas_workflows_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowSummary"
+                  },
+                  "title": "Response List Workflows Api Atlas Workflows Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/workflows/graph": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Workflow Graph Endpoint",
+        "operationId": "get_workflow_graph_endpoint_api_atlas_workflows_graph_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowGraph"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/workflows/{name}": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Workflow",
+        "operationId": "get_workflow_api_atlas_workflows__name__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowProfile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/workflows/{name}/aggregate": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Workflow Aggregate",
+        "operationId": "get_workflow_aggregate_api_atlas_workflows__name__aggregate_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowAggregate"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/runs/{run_id}/flow": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Run Flow Endpoint",
+        "operationId": "get_run_flow_endpoint_api_atlas_runs__run_id__flow_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunFlow"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/calls/{call_type}/stats": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Call Type Stats",
+        "operationId": "get_call_type_stats_api_atlas_calls__call_type__stats_get",
+        "parameters": [
+          {
+            "name": "call_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "n_runs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "N Runs"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallTypeStats"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/moves/{move_type}/stats": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Move Stats",
+        "operationId": "get_move_stats_api_atlas_moves__move_type__stats_get",
+        "parameters": [
+          {
+            "name": "move_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Move Type"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "n_runs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "N Runs"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoveStats"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/gaps": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Gaps",
+        "operationId": "get_gaps_api_atlas_gaps_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GapsReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/search": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Search",
+        "operationId": "get_search_api_atlas_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResults"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/workflows/{name}/runs/{run_id}/overlay": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Workflow Overlay Endpoint",
+        "operationId": "get_workflow_overlay_endpoint_api_atlas_workflows__name__runs__run_id__overlay_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowOverlay"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -4394,6 +5713,212 @@
         ],
         "title": "CallTypeFruitScoreItem"
       },
+      "CallTypeInvocationCount": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type",
+          "count"
+        ],
+        "title": "CallTypeInvocationCount"
+      },
+      "CallTypeStats": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "scanned_runs": {
+            "type": "integer",
+            "title": "Scanned Runs"
+          },
+          "runs_with_call": {
+            "type": "integer",
+            "title": "Runs With Call"
+          },
+          "n_invocations": {
+            "type": "integer",
+            "title": "N Invocations"
+          },
+          "mean_cost_usd": {
+            "type": "number",
+            "title": "Mean Cost Usd",
+            "default": 0.0
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd",
+            "default": 0.0
+          },
+          "mean_pages_loaded": {
+            "type": "number",
+            "title": "Mean Pages Loaded",
+            "default": 0.0
+          },
+          "mean_rounds": {
+            "type": "number",
+            "title": "Mean Rounds",
+            "default": 0.0
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Status Counts",
+            "default": {}
+          },
+          "top_moves": {
+            "items": {
+              "$ref": "#/components/schemas/MoveCount"
+            },
+            "type": "array",
+            "title": "Top Moves",
+            "default": []
+          },
+          "top_co_firings": {
+            "items": {
+              "$ref": "#/components/schemas/CoFiringCount"
+            },
+            "type": "array",
+            "title": "Top Co Firings",
+            "default": []
+          },
+          "recent_errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recent Errors",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type",
+          "scanned_runs",
+          "runs_with_call",
+          "n_invocations"
+        ],
+        "title": "CallTypeStats",
+        "description": "Empirical stats for one CallType across recent runs."
+      },
+      "CallTypeSummary": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "has_dispatch": {
+            "type": "boolean",
+            "title": "Has Dispatch"
+          },
+          "dispatch_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Name"
+          },
+          "prompt_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Prompt Files"
+          },
+          "moves_by_preset": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Moves By Preset"
+          },
+          "runner_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runner Class"
+          },
+          "context_builder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Builder"
+          },
+          "workspace_updater": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Updater"
+          },
+          "closing_reviewer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Reviewer"
+          },
+          "composition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptComposition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type",
+          "description",
+          "has_dispatch",
+          "prompt_files",
+          "moves_by_preset"
+        ],
+        "title": "CallTypeSummary"
+      },
       "CallsForQuestion": {
         "properties": {
           "question_id": {
@@ -4628,6 +6153,29 @@
           "page_id"
         ],
         "title": "ClaimScoreItem"
+      },
+      "CoFiringCount": {
+        "properties": {
+          "a": {
+            "type": "string",
+            "title": "A"
+          },
+          "b": {
+            "type": "string",
+            "title": "B"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "a",
+          "b",
+          "count"
+        ],
+        "title": "CoFiringCount"
       },
       "ConditionMeta": {
         "properties": {
@@ -5227,6 +6775,82 @@
           "child_call_id"
         ],
         "title": "DispatchExecutedEventOut"
+      },
+      "DispatchFrequency": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "avg_per_run": {
+            "type": "number",
+            "title": "Avg Per Run"
+          },
+          "runs_with_at_least_one": {
+            "type": "integer",
+            "title": "Runs With At Least One"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type",
+          "total",
+          "avg_per_run",
+          "runs_with_at_least_one"
+        ],
+        "title": "DispatchFrequency"
+      },
+      "DispatchSummary": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/JsonSchemaField"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "is_recurse": {
+            "type": "boolean",
+            "title": "Is Recurse",
+            "default": false
+          },
+          "raw_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Schema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type",
+          "name",
+          "description",
+          "fields"
+        ],
+        "title": "DispatchSummary"
       },
       "DispatchTraceItem": {
         "properties": {
@@ -6215,6 +7839,65 @@
         "title": "ForkOverrides",
         "description": "Partial overrides for a base exchange.\n\nFields left as ``None`` inherit from the base. ``tools`` is a full\nreplacement \u2014 to remove a tool, omit it from the override; to add or\nedit one, include the desired full Anthropic tool dict\n(``{\"name\", \"description\", \"input_schema\"}``).\n\n``thinking_off`` toggles adaptive thinking off for models that have it\nenabled by default (Opus 4.7/4.6, Sonnet 4.6). Leaving as ``None``\ninherits the model's default behavior; ``True`` disables thinking even\non models where it's normally always-on."
       },
+      "GapItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          },
+          "href": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Href"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "target"
+        ],
+        "title": "GapItem",
+        "description": "One detected inconsistency surfaced on /atlas/gaps."
+      },
+      "GapsReport": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GapItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "counts_by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts By Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "counts_by_kind"
+        ],
+        "title": "GapsReport"
+      },
       "GenJudgeCell": {
         "properties": {
           "gen_model": {
@@ -6521,6 +8204,102 @@
         ],
         "title": "JobListItem",
         "description": "One row in GET /api/jobs. Built from a V1Job's metadata only."
+      },
+      "JsonSchemaField": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": false
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "enum": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enum"
+          },
+          "items_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Type"
+          },
+          "items_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Ref"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "JsonSchemaField",
+        "description": "One field of a payload schema, projected for the atlas UI."
       },
       "JudgeBiasRowOut": {
         "properties": {
@@ -7869,6 +9648,136 @@
         ],
         "title": "Matrix"
       },
+      "MoveCount": {
+        "properties": {
+          "move_type": {
+            "type": "string",
+            "title": "Move Type"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "move_type",
+          "count"
+        ],
+        "title": "MoveCount"
+      },
+      "MoveStats": {
+        "properties": {
+          "move_type": {
+            "type": "string",
+            "title": "Move Type"
+          },
+          "scanned_runs": {
+            "type": "integer",
+            "title": "Scanned Runs"
+          },
+          "runs_with_move": {
+            "type": "integer",
+            "title": "Runs With Move"
+          },
+          "n_invocations": {
+            "type": "integer",
+            "title": "N Invocations"
+          },
+          "invocations_by_call_type": {
+            "items": {
+              "$ref": "#/components/schemas/CallTypeInvocationCount"
+            },
+            "type": "array",
+            "title": "Invocations By Call Type",
+            "default": []
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "move_type",
+          "scanned_runs",
+          "runs_with_move",
+          "n_invocations"
+        ],
+        "title": "MoveStats",
+        "description": "Empirical stats for one MoveType across recent runs."
+      },
+      "MoveSummary": {
+        "properties": {
+          "move_type": {
+            "type": "string",
+            "title": "Move Type"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/JsonSchemaField"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "used_in_call_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Used In Call Types"
+          },
+          "used_in_presets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Used In Presets"
+          },
+          "code_path": {
+            "type": "string",
+            "title": "Code Path"
+          },
+          "raw_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Schema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "move_type",
+          "name",
+          "description",
+          "fields",
+          "used_in_call_types",
+          "used_in_presets",
+          "code_path"
+        ],
+        "title": "MoveSummary"
+      },
       "MoveTraceItem": {
         "properties": {
           "type": {
@@ -8122,6 +10031,66 @@
           "run_id"
         ],
         "title": "OrchestratorRunResponse"
+      },
+      "OverlayCall": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd",
+            "default": 0.0
+          },
+          "pages_loaded": {
+            "type": "integer",
+            "title": "Pages Loaded",
+            "default": 0
+          },
+          "n_dispatches": {
+            "type": "integer",
+            "title": "N Dispatches",
+            "default": 0
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_id",
+          "call_type",
+          "status"
+        ],
+        "title": "OverlayCall"
       },
       "Page": {
         "properties": {
@@ -8593,6 +10562,35 @@
         ],
         "title": "PageType"
       },
+      "PageTypeSummary": {
+        "properties": {
+          "page_type": {
+            "type": "string",
+            "title": "Page Type"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "layer_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layer Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_type",
+          "description"
+        ],
+        "title": "PageTypeSummary"
+      },
       "PaginatedPagesOut": {
         "properties": {
           "items": {
@@ -8913,6 +10911,178 @@
           "project_id"
         ],
         "title": "ProjectStatsOut"
+      },
+      "PromptComposition": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/PromptPart"
+            },
+            "type": "array",
+            "title": "Parts"
+          },
+          "total_chars": {
+            "type": "integer",
+            "title": "Total Chars"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type",
+          "parts",
+          "total_chars"
+        ],
+        "title": "PromptComposition",
+        "description": "Ordered prompt parts that compose into a call's system prompt."
+      },
+      "PromptDoc": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "char_count": {
+            "type": "integer",
+            "title": "Char Count"
+          },
+          "referenced_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Referenced By",
+            "default": []
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/PromptSection"
+            },
+            "type": "array",
+            "title": "Sections",
+            "default": []
+          },
+          "used_in_compositions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Used In Compositions",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "content",
+          "char_count"
+        ],
+        "title": "PromptDoc",
+        "description": "A prompt markdown file rendered for the atlas UI."
+      },
+      "PromptPart": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "location": {
+            "type": "string",
+            "title": "Location",
+            "default": "system"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condition"
+          },
+          "optional": {
+            "type": "boolean",
+            "title": "Optional",
+            "default": false
+          },
+          "char_count": {
+            "type": "integer",
+            "title": "Char Count",
+            "default": 0
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/PromptSection"
+            },
+            "type": "array",
+            "title": "Sections",
+            "default": []
+          },
+          "exists": {
+            "type": "boolean",
+            "title": "Exists",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "role"
+        ],
+        "title": "PromptPart",
+        "description": "One file's contribution to a system-prompt composition."
+      },
+      "PromptSection": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "level": {
+            "type": "integer",
+            "title": "Level"
+          },
+          "anchor": {
+            "type": "string",
+            "title": "Anchor"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "char_count": {
+            "type": "integer",
+            "title": "Char Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "level",
+          "anchor",
+          "body",
+          "char_count"
+        ],
+        "title": "PromptSection",
+        "description": "One ## section within a prompt file."
       },
       "ProposedSubquestion": {
         "properties": {
@@ -9659,6 +11829,104 @@
         ],
         "title": "ReflectStartedEventOut"
       },
+      "RegistryRollup": {
+        "properties": {
+          "n_moves": {
+            "type": "integer",
+            "title": "N Moves"
+          },
+          "n_dispatches": {
+            "type": "integer",
+            "title": "N Dispatches"
+          },
+          "n_call_types": {
+            "type": "integer",
+            "title": "N Call Types"
+          },
+          "n_page_types": {
+            "type": "integer",
+            "title": "N Page Types"
+          },
+          "n_workflows": {
+            "type": "integer",
+            "title": "N Workflows"
+          },
+          "n_prompt_files": {
+            "type": "integer",
+            "title": "N Prompt Files"
+          },
+          "move_summaries": {
+            "items": {
+              "$ref": "#/components/schemas/MoveSummary"
+            },
+            "type": "array",
+            "title": "Move Summaries"
+          },
+          "dispatch_summaries": {
+            "items": {
+              "$ref": "#/components/schemas/DispatchSummary"
+            },
+            "type": "array",
+            "title": "Dispatch Summaries"
+          },
+          "call_type_summaries": {
+            "items": {
+              "$ref": "#/components/schemas/CallTypeSummary"
+            },
+            "type": "array",
+            "title": "Call Type Summaries"
+          },
+          "page_type_summaries": {
+            "items": {
+              "$ref": "#/components/schemas/PageTypeSummary"
+            },
+            "type": "array",
+            "title": "Page Type Summaries"
+          },
+          "workflow_summaries": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowSummary"
+            },
+            "type": "array",
+            "title": "Workflow Summaries"
+          },
+          "presets": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Presets"
+          },
+          "available_calls_presets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Calls Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "n_moves",
+          "n_dispatches",
+          "n_call_types",
+          "n_page_types",
+          "n_workflows",
+          "n_prompt_files",
+          "move_summaries",
+          "dispatch_summaries",
+          "call_type_summaries",
+          "page_type_summaries",
+          "workflow_summaries",
+          "presets",
+          "available_calls_presets"
+        ],
+        "title": "RegistryRollup",
+        "description": "Top-level /atlas/registry response \u2014 counts + summaries for the index."
+      },
       "RenderQuestionSubgraphEventOut": {
         "properties": {
           "ts": {
@@ -10052,6 +12320,131 @@
         ],
         "title": "RunCallExperimentOut"
       },
+      "RunFlow": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/RunFlowNode"
+            },
+            "type": "array",
+            "title": "Nodes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "RunFlow",
+        "description": "Single run's flow \u2014 calls in order with which workflow stage they\ncorrespond to (best-effort) and what they did."
+      },
+      "RunFlowNode": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "parent_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "call_type_description": {
+            "type": "string",
+            "title": "Call Type Description",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd",
+            "default": 0.0
+          },
+          "pages_loaded": {
+            "type": "integer",
+            "title": "Pages Loaded",
+            "default": 0
+          },
+          "n_dispatches": {
+            "type": "integer",
+            "title": "N Dispatches",
+            "default": 0
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "stage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_id",
+          "call_type",
+          "status"
+        ],
+        "title": "RunFlowNode"
+      },
       "RunListItemOut": {
         "properties": {
           "run_id": {
@@ -10158,6 +12551,126 @@
           "created_at"
         ],
         "title": "RunPrioExperimentOut"
+      },
+      "RunRollup": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "question_headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Headline"
+          },
+          "n_calls": {
+            "type": "integer",
+            "title": "N Calls",
+            "default": 0
+          },
+          "n_dispatches": {
+            "type": "integer",
+            "title": "N Dispatches",
+            "default": 0
+          },
+          "n_pages_loaded": {
+            "type": "integer",
+            "title": "N Pages Loaded",
+            "default": 0
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd",
+            "default": 0.0
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          },
+          "stages_taken": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Stages Taken",
+            "default": []
+          },
+          "stages_skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Stages Skipped",
+            "default": []
+          },
+          "dispatch_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Dispatch Counts",
+            "default": {}
+          },
+          "call_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Call Status Counts",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "created_at"
+        ],
+        "title": "RunRollup",
+        "description": "Per-run summary used in workflow aggregate views."
       },
       "RunSummaryOut": {
         "properties": {
@@ -10386,6 +12899,84 @@
         ],
         "title": "ScoutPassStartedEventOut"
       },
+      "SearchHit": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet",
+            "default": ""
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "default": 0.0
+          },
+          "href": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Href"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "title"
+        ],
+        "title": "SearchHit"
+      },
+      "SearchResults": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array",
+            "title": "Hits"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "hits",
+          "total",
+          "by_kind"
+        ],
+        "title": "SearchResults"
+      },
       "SmallGridRow": {
         "properties": {
           "condition": {
@@ -10560,6 +13151,39 @@
           "avg_delta_pct"
         ],
         "title": "SourceSummary"
+      },
+      "StageInvocation": {
+        "properties": {
+          "stage_id": {
+            "type": "string",
+            "title": "Stage Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "taken_count": {
+            "type": "integer",
+            "title": "Taken Count"
+          },
+          "skipped_count": {
+            "type": "integer",
+            "title": "Skipped Count"
+          },
+          "total_runs": {
+            "type": "integer",
+            "title": "Total Runs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage_id",
+          "label",
+          "taken_count",
+          "skipped_count",
+          "total_runs"
+        ],
+        "title": "StageInvocation"
       },
       "SubagentCompletedEventOut": {
         "properties": {
@@ -11283,6 +13907,489 @@
           "findings"
         ],
         "title": "WebResearchCompleteEventOut"
+      },
+      "WorkflowAggregate": {
+        "properties": {
+          "workflow_name": {
+            "type": "string",
+            "title": "Workflow Name"
+          },
+          "n_runs": {
+            "type": "integer",
+            "title": "N Runs"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunRollup"
+            },
+            "type": "array",
+            "title": "Runs"
+          },
+          "stage_invocations": {
+            "items": {
+              "$ref": "#/components/schemas/StageInvocation"
+            },
+            "type": "array",
+            "title": "Stage Invocations"
+          },
+          "dispatch_frequencies": {
+            "items": {
+              "$ref": "#/components/schemas/DispatchFrequency"
+            },
+            "type": "array",
+            "title": "Dispatch Frequencies"
+          },
+          "pages_loaded_per_run": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Pages Loaded Per Run",
+            "default": []
+          },
+          "cost_per_run": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Cost Per Run",
+            "default": []
+          },
+          "dispatches_per_run": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Dispatches Per Run",
+            "default": []
+          },
+          "calls_per_run": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Calls Per Run",
+            "default": []
+          },
+          "sparkline": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Sparkline",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_name",
+          "n_runs",
+          "runs",
+          "stage_invocations",
+          "dispatch_frequencies"
+        ],
+        "title": "WorkflowAggregate"
+      },
+      "WorkflowGraph": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowGraphNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowGraphEdge"
+            },
+            "type": "array",
+            "title": "Edges"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "WorkflowGraph"
+      },
+      "WorkflowGraphEdge": {
+        "properties": {
+          "from_id": {
+            "type": "string",
+            "title": "From Id"
+          },
+          "to_id": {
+            "type": "string",
+            "title": "To Id"
+          },
+          "via_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Stage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_id",
+          "to_id"
+        ],
+        "title": "WorkflowGraphEdge"
+      },
+      "WorkflowGraphNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "kind"
+        ],
+        "title": "WorkflowGraphNode"
+      },
+      "WorkflowOverlay": {
+        "properties": {
+          "workflow_name": {
+            "type": "string",
+            "title": "Workflow Name"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/WorkflowProfile"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowOverlayStage"
+            },
+            "type": "array",
+            "title": "Stages"
+          },
+          "n_calls": {
+            "type": "integer",
+            "title": "N Calls",
+            "default": 0
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd",
+            "default": 0.0
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "workflow_name",
+          "run_id",
+          "profile",
+          "stages"
+        ],
+        "title": "WorkflowOverlay"
+      },
+      "WorkflowOverlayStage": {
+        "properties": {
+          "stage_id": {
+            "type": "string",
+            "title": "Stage Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "fired": {
+            "type": "boolean",
+            "title": "Fired",
+            "default": false
+          },
+          "skipped": {
+            "type": "boolean",
+            "title": "Skipped",
+            "default": false
+          },
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          },
+          "iterations": {
+            "type": "integer",
+            "title": "Iterations",
+            "default": 0
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/OverlayCall"
+            },
+            "type": "array",
+            "title": "Calls",
+            "default": []
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd",
+            "default": 0.0
+          },
+          "pages_loaded": {
+            "type": "integer",
+            "title": "Pages Loaded",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage_id",
+          "label"
+        ],
+        "title": "WorkflowOverlayStage"
+      },
+      "WorkflowProfile": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "code_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Code Paths",
+            "default": []
+          },
+          "relevant_settings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Relevant Settings",
+            "default": []
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStage"
+            },
+            "type": "array",
+            "title": "Stages",
+            "default": []
+          },
+          "recurses_into": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recurses Into",
+            "default": []
+          },
+          "fingerprint_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fingerprint Keys",
+            "default": []
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "summary"
+        ],
+        "title": "WorkflowProfile"
+      },
+      "WorkflowStage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "prompt_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Prompt Files",
+            "default": []
+          },
+          "available_dispatch_call_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Dispatch Call Types",
+            "default": []
+          },
+          "available_move_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Move Types",
+            "default": []
+          },
+          "optional": {
+            "type": "boolean",
+            "title": "Optional",
+            "default": false
+          },
+          "branch_condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Condition"
+          },
+          "loop": {
+            "type": "boolean",
+            "title": "Loop",
+            "default": false
+          },
+          "recurses_into": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recurses Into",
+            "default": []
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "WorkflowStage",
+        "description": "One stage in a workflow's spec \u2014 what runs, when, and with what."
+      },
+      "WorkflowSummary": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "code_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Code Paths",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "summary"
+        ],
+        "title": "WorkflowSummary"
       },
       "Workspace": {
         "type": "string",

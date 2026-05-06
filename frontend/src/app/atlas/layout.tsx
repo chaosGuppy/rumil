@@ -44,6 +44,9 @@ export default function AtlasLayout({
           <Link href="/atlas/gaps" className="atlas-nav-link">
             gaps
           </Link>
+          <Link href="/atlas/errors" className="atlas-nav-link">
+            errors
+          </Link>
           <Link href="/atlas/novelty" className="atlas-nav-link">
             novelty
           </Link>

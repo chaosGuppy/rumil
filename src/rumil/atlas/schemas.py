@@ -666,6 +666,33 @@ class ErrorRef(BaseModel):
     source: str = "error_event"
 
 
+class ErrorListItem(BaseModel):
+    """One row in the chronological errors index.
+
+    Each error came from a ``call_llm_exchanges`` row whose ``error``
+    column is non-empty. ``project_name`` is best-effort: if the project
+    join fails (deleted project, etc.) it stays empty.
+    """
+
+    created_at: str
+    exchange_id: str
+    call_id: str
+    call_type: str = ""
+    run_id: str = ""
+    project_id: str = ""
+    project_name: str = ""
+    message: str = ""
+    source: str = "llm_exchange"
+
+
+class ErrorIndex(BaseModel):
+    """Chronological list of recent errors across all calls/runs."""
+
+    items: list[ErrorListItem]
+    n_scanned: int = 0
+    truncated: bool = False
+
+
 class PathologyCounts(BaseModel):
     """Frequency of failure / instability patterns across a call type's
     recent invocations. Each `*_pct` is a 0-100 fraction of the call

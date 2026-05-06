@@ -3561,6 +3561,102 @@
         }
       }
     },
+    "/api/atlas/errors": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Errors",
+        "description": "Chronological list of recent errored exchanges across all\ncalls/runs. Newest first.",
+        "operationId": "get_errors_api_atlas_errors_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "call_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1000,
+              "title": "Scan"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorIndex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/feed/recent_work": {
       "get": {
         "tags": [
@@ -9181,6 +9277,87 @@
           "phase"
         ],
         "title": "ErrorEventOut"
+      },
+      "ErrorIndex": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "n_scanned": {
+            "type": "integer",
+            "title": "N Scanned",
+            "default": 0
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "ErrorIndex",
+        "description": "Chronological list of recent errors across all calls/runs."
+      },
+      "ErrorListItem": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "exchange_id": {
+            "type": "string",
+            "title": "Exchange Id"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type",
+            "default": ""
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "project_name": {
+            "type": "string",
+            "title": "Project Name",
+            "default": ""
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "llm_exchange"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "exchange_id",
+          "call_id"
+        ],
+        "title": "ErrorListItem",
+        "description": "One row in the chronological errors index.\n\nEach error came from a ``call_llm_exchanges`` row whose ``error``\ncolumn is non-empty. ``project_name`` is best-effort: if the project\njoin fails (deleted project, etc.) it stays empty."
       },
       "ErrorRef": {
         "properties": {

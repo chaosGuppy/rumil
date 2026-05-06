@@ -67,6 +67,7 @@ from rumil.atlas.schemas import (
     CallTypeSummary,
     CallTypeVarianceSummary,
     DispatchSummary,
+    ErrorIndex,
     ExchangePlaygroundContext,
     ExchangeSearchResults,
     GapsReport,
@@ -99,7 +100,7 @@ from rumil.atlas.schemas import (
     WorkflowSummary,
 )
 from rumil.atlas.search import search_atlas
-from rumil.atlas.stats import build_call_type_stats, build_move_stats
+from rumil.atlas.stats import build_call_type_stats, build_error_index, build_move_stats
 from rumil.atlas.wisdom import build_question_trajectory, build_recent_work_feed
 from rumil.atlas.workflows import get_workflow_profile, list_workflow_summaries
 from rumil.database import DB
@@ -604,6 +605,21 @@ def get_gaps(
     _user: AuthUser = Depends(get_current_user),
 ) -> GapsReport:
     return build_gaps_report(project_id=project_id)
+
+
+@router.get("/errors", response_model=ErrorIndex)
+async def get_errors(
+    project_id: str | None = None,
+    call_type: str | None = None,
+    limit: int = 100,
+    scan: int = 1000,
+    db: DB = Depends(_get_db),
+) -> ErrorIndex:
+    """Chronological list of recent errored exchanges across all
+    calls/runs. Newest first."""
+    return await build_error_index(
+        db, project_id=project_id, call_type=call_type, limit=limit, scan=scan
+    )
 
 
 @router.get("/feed/recent_work", response_model=RecentWorkFeed)

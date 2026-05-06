@@ -27,6 +27,8 @@ from rumil.atlas.schemas import (
     CallTypeInvocationCount,
     CallTypeStats,
     CoFiringCount,
+    ErrorIndex,
+    ErrorListItem,
     ErrorRef,
     HistogramBin,
     MoveCount,
@@ -569,3 +571,86 @@ async def build_move_stats(
         superseded_n=superseded_n,
         survival_pct=survival_pct,
     )
+
+
+async def build_error_index(
+    db: DB,
+    *,
+    project_id: str | None = None,
+    call_type: str | None = None,
+    limit: int = 100,
+    scan: int = 1000,
+) -> ErrorIndex:
+    """Chronological list of recent errored exchanges.
+
+    Scans up to ``scan`` most recent ``call_llm_exchanges`` rows whose
+    ``error`` is non-empty, joins each to its parent call (for
+    call_type / run_id / project_id) and project (for project name),
+    and returns the newest-first slice up to ``limit``.
+
+    Trace-only ``ErrorEvent`` rows (events on a call without an
+    associated exchange) are not included here — they're surfaced on
+    the per-call-type stats panel as ``recent_errors`` instead.
+    """
+    query = (
+        db.client.table("call_llm_exchanges")
+        .select("id, call_id, error, created_at")
+        .not_.is_("error", "null")
+        .neq("error", "")
+        .order("created_at", desc=True)
+        .limit(scan)
+    )
+    res = await db._execute(query)
+    rows = list(res.data or [])
+    n_scanned = len(rows)
+    if not rows:
+        return ErrorIndex(items=[], n_scanned=0, truncated=False)
+
+    call_ids = list({str(r.get("call_id")) for r in rows if r.get("call_id")})
+    calls_by_id: dict[str, dict[str, Any]] = {}
+    if call_ids:
+        cres = await db._execute(
+            db.client.table("calls").select("id, call_type, run_id, project_id").in_("id", call_ids)
+        )
+        for c in cres.data or []:
+            calls_by_id[str(c.get("id") or "")] = c
+
+    project_ids = list(
+        {str(c.get("project_id")) for c in calls_by_id.values() if c.get("project_id")}
+    )
+    projects_by_id: dict[str, str] = {}
+    if project_ids:
+        pres = await db._execute(
+            db.client.table("projects").select("id, name").in_("id", project_ids)
+        )
+        for p in pres.data or []:
+            projects_by_id[str(p.get("id") or "")] = str(p.get("name") or "")
+
+    items: list[ErrorListItem] = []
+    for r in rows:
+        cid = str(r.get("call_id") or "")
+        call = calls_by_id.get(cid) or {}
+        if project_id and str(call.get("project_id") or "") != project_id:
+            continue
+        ct = str(call.get("call_type") or "")
+        if call_type and ct != call_type:
+            continue
+        msg = str(r.get("error") or "").strip()
+        items.append(
+            ErrorListItem(
+                created_at=str(r.get("created_at") or ""),
+                exchange_id=str(r.get("id") or ""),
+                call_id=cid,
+                call_type=ct,
+                run_id=str(call.get("run_id") or ""),
+                project_id=str(call.get("project_id") or ""),
+                project_name=projects_by_id.get(str(call.get("project_id") or ""), ""),
+                message=msg[:500],
+                source="llm_exchange",
+            )
+        )
+        if len(items) >= limit:
+            break
+
+    truncated = n_scanned >= scan and len(items) >= limit
+    return ErrorIndex(items=items, n_scanned=n_scanned, truncated=truncated)

@@ -1723,6 +1723,74 @@ export type ErrorEventOut = {
 };
 
 /**
+ * ErrorIndex
+ *
+ * Chronological list of recent errors across all calls/runs.
+ */
+export type ErrorIndex = {
+    /**
+     * Items
+     */
+    items: Array<ErrorListItem>;
+    /**
+     * N Scanned
+     */
+    n_scanned?: number;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+};
+
+/**
+ * ErrorListItem
+ *
+ * One row in the chronological errors index.
+ *
+ * Each error came from a ``call_llm_exchanges`` row whose ``error``
+ * column is non-empty. ``project_name`` is best-effort: if the project
+ * join fails (deleted project, etc.) it stays empty.
+ */
+export type ErrorListItem = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Exchange Id
+     */
+    exchange_id: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type?: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Project Id
+     */
+    project_id?: string;
+    /**
+     * Project Name
+     */
+    project_name?: string;
+    /**
+     * Message
+     */
+    message?: string;
+    /**
+     * Source
+     */
+    source?: string;
+};
+
+/**
  * ErrorRef
  *
  * One recent error excerpt with provenance for cross-linking.
@@ -9998,6 +10066,54 @@ export type GetGapsApiAtlasGapsGetResponses = {
 };
 
 export type GetGapsApiAtlasGapsGetResponse = GetGapsApiAtlasGapsGetResponses[keyof GetGapsApiAtlasGapsGetResponses];
+
+export type GetErrorsApiAtlasErrorsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Call Type
+         */
+        call_type?: string | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Scan
+         */
+        scan?: number;
+    };
+    url: '/api/atlas/errors';
+};
+
+export type GetErrorsApiAtlasErrorsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetErrorsApiAtlasErrorsGetError = GetErrorsApiAtlasErrorsGetErrors[keyof GetErrorsApiAtlasErrorsGetErrors];
+
+export type GetErrorsApiAtlasErrorsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ErrorIndex;
+};
+
+export type GetErrorsApiAtlasErrorsGetResponse = GetErrorsApiAtlasErrorsGetResponses[keyof GetErrorsApiAtlasErrorsGetResponses];
 
 export type GetRecentWorkFeedApiAtlasFeedRecentWorkGetData = {
     body?: never;

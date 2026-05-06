@@ -37,6 +37,11 @@ from rumil.atlas.gaps import build_gaps_report
 from rumil.atlas.graph import build_workflow_graph
 from rumil.atlas.history import build_prompt_history
 from rumil.atlas.impact import build_prompt_impact
+from rumil.atlas.invocations import (
+    build_call_type_invocations,
+    build_dispatch_invocations,
+    build_move_invocations,
+)
 from rumil.atlas.live import build_live_snapshot
 from rumil.atlas.overlay import build_workflow_overlay
 from rumil.atlas.pages import build_page_calls, build_page_timeline
@@ -63,6 +68,7 @@ from rumil.atlas.schemas import (
     ExchangeSearchResults,
     GapsReport,
     InFlightQueue,
+    InvocationIndex,
     LiveRunSnapshot,
     MoveStats,
     MoveSummary,
@@ -471,6 +477,61 @@ async def get_move_stats(
     db: DB = Depends(_get_db),
 ) -> MoveStats:
     return await build_move_stats(db, move_type, project_id=project_id, n_runs=n_runs)
+
+
+@router.get("/calls/{call_type}/invocations", response_model=InvocationIndex)
+async def get_call_type_invocations(
+    call_type: str,
+    project_id: str | None = None,
+    limit: int = 10,
+    scan: int = 300,
+    db: DB = Depends(_get_db),
+) -> InvocationIndex:
+    from rumil.models import CallType
+
+    if call_type in {"recurse", "recurse_claim"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{call_type!r} is a dispatch tool, not a CallType. "
+                f"Use /api/atlas/dispatches/{call_type}/invocations."
+            ),
+        )
+    try:
+        ct = CallType(call_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=f"call type not found: {call_type}") from exc
+    return await build_call_type_invocations(db, ct, project_id=project_id, limit=limit, scan=scan)
+
+
+@router.get("/dispatches/{call_type}/invocations", response_model=InvocationIndex)
+async def get_dispatch_invocations(
+    call_type: str,
+    project_id: str | None = None,
+    limit: int = 10,
+    scan: int = 500,
+    db: DB = Depends(_get_db),
+) -> InvocationIndex:
+    out = await build_dispatch_invocations(
+        db, call_type, project_id=project_id, limit=limit, scan=scan
+    )
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"dispatch not found: {call_type}")
+    return out
+
+
+@router.get("/moves/{move_type}/invocations", response_model=InvocationIndex)
+async def get_move_invocations(
+    move_type: str,
+    project_id: str | None = None,
+    limit: int = 10,
+    scan: int = 500,
+    db: DB = Depends(_get_db),
+) -> InvocationIndex:
+    out = await build_move_invocations(db, move_type, project_id=project_id, limit=limit, scan=scan)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"move not found: {move_type}")
+    return out
 
 
 @router.get("/gaps", response_model=GapsReport)

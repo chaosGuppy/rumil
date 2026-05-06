@@ -608,6 +608,79 @@ class TraceEventRecord(BaseModel):
     payload: dict
 
 
+class InvocationRequest(BaseModel):
+    """Anthropic-API-shape request body for a recorded LLM exchange.
+
+    ``messages`` is the message stack as the API received it — a list
+    of ``{role, content}`` dicts where ``content`` is a string or a
+    list of typed blocks. ``tools`` is the JSON-Schema-shaped tools
+    list. ``thinking`` mirrors the Anthropic ``thinking`` request param
+    when present.
+    """
+
+    model: str = ""
+    system: str = ""
+    messages: list[dict] = []
+    tools: list[dict] = []
+    temperature: float | None = None
+    max_tokens: int | None = None
+    thinking: dict | None = None
+
+
+class InvocationResponse(BaseModel):
+    """Anthropic-API-shape response for a recorded LLM exchange."""
+
+    content: list[dict] = []
+    stop_reason: str | None = None
+    usage: dict | None = None
+    error: str | None = None
+    response_text: str = ""
+    tool_calls: list[dict] = []
+
+
+class InvocationMatch(BaseModel):
+    """When the index is keyed on a move or dispatch, the specific
+    tool_use block within the exchange that matched."""
+
+    tool_name: str
+    tool_input: dict
+    tool_use_id: str | None = None
+    block_index: int | None = None
+
+
+class InvocationRecord(BaseModel):
+    exchange_id: str
+    call_id: str
+    call_type: str
+    run_id: str = ""
+    project_id: str = ""
+    created_at: str = ""
+    phase: str = ""
+    round: int | None = None
+    cost_usd: float | None = None
+    duration_ms: int | None = None
+    status: str = ""
+    has_error: bool = False
+    request: InvocationRequest
+    response: InvocationResponse
+    match: InvocationMatch | None = None
+
+
+class InvocationIndex(BaseModel):
+    """Recent example invocations of a call type, dispatch, or move.
+
+    Used by atlas's detail pages to show "what does a real invocation of
+    this look like?" without forcing an operator to navigate into
+    individual run flow trees.
+    """
+
+    kind: str
+    target: str
+    items: list[InvocationRecord]
+    n_scanned: int
+    truncated: bool = False
+
+
 class ForkSummary(BaseModel):
     """Compact summary of a fork for atlas rendering."""
 

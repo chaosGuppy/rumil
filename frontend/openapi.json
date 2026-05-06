@@ -3083,6 +3083,270 @@
         }
       }
     },
+    "/api/atlas/calls/{call_type}/invocations": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Call Type Invocations",
+        "operationId": "get_call_type_invocations_api_atlas_calls__call_type__invocations_get",
+        "parameters": [
+          {
+            "name": "call_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 300,
+              "title": "Scan"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvocationIndex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/dispatches/{call_type}/invocations": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Dispatch Invocations",
+        "operationId": "get_dispatch_invocations_api_atlas_dispatches__call_type__invocations_get",
+        "parameters": [
+          {
+            "name": "call_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "title": "Scan"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvocationIndex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/moves/{move_type}/invocations": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Move Invocations",
+        "operationId": "get_move_invocations_api_atlas_moves__move_type__invocations_get",
+        "parameters": [
+          {
+            "name": "move_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Move Type"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "title": "Scan"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvocationIndex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/gaps": {
       "get": {
         "tags": [
@@ -9932,6 +10196,322 @@
           "stuck_threshold_seconds"
         ],
         "title": "InFlightQueue"
+      },
+      "InvocationIndex": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InvocationRecord"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "n_scanned": {
+            "type": "integer",
+            "title": "N Scanned"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "target",
+          "items",
+          "n_scanned"
+        ],
+        "title": "InvocationIndex",
+        "description": "Recent example invocations of a call type, dispatch, or move.\n\nUsed by atlas's detail pages to show \"what does a real invocation of\nthis look like?\" without forcing an operator to navigate into\nindividual run flow trees."
+      },
+      "InvocationMatch": {
+        "properties": {
+          "tool_name": {
+            "type": "string",
+            "title": "Tool Name"
+          },
+          "tool_input": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Tool Input"
+          },
+          "tool_use_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Use Id"
+          },
+          "block_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Index"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_name",
+          "tool_input"
+        ],
+        "title": "InvocationMatch",
+        "description": "When the index is keyed on a move or dispatch, the specific\ntool_use block within the exchange that matched."
+      },
+      "InvocationRecord": {
+        "properties": {
+          "exchange_id": {
+            "type": "string",
+            "title": "Exchange Id"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "round": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": ""
+          },
+          "has_error": {
+            "type": "boolean",
+            "title": "Has Error",
+            "default": false
+          },
+          "request": {
+            "$ref": "#/components/schemas/InvocationRequest"
+          },
+          "response": {
+            "$ref": "#/components/schemas/InvocationResponse"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvocationMatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "exchange_id",
+          "call_id",
+          "call_type",
+          "request",
+          "response"
+        ],
+        "title": "InvocationRecord"
+      },
+      "InvocationRequest": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "system": {
+            "type": "string",
+            "title": "System",
+            "default": ""
+          },
+          "messages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Messages",
+            "default": []
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tools",
+            "default": []
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking"
+          }
+        },
+        "type": "object",
+        "title": "InvocationRequest",
+        "description": "Anthropic-API-shape request body for a recorded LLM exchange.\n\n``messages`` is the message stack as the API received it \u2014 a list\nof ``{role, content}`` dicts where ``content`` is a string or a\nlist of typed blocks. ``tools`` is the JSON-Schema-shaped tools\nlist. ``thinking`` mirrors the Anthropic ``thinking`` request param\nwhen present."
+      },
+      "InvocationResponse": {
+        "properties": {
+          "content": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Content",
+            "default": []
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "response_text": {
+            "type": "string",
+            "title": "Response Text",
+            "default": ""
+          },
+          "tool_calls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tool Calls",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "InvocationResponse",
+        "description": "Anthropic-API-shape response for a recorded LLM exchange."
       },
       "JobListItem": {
         "properties": {

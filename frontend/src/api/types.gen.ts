@@ -2641,6 +2641,208 @@ export type InFlightQueue = {
 };
 
 /**
+ * InvocationIndex
+ *
+ * Recent example invocations of a call type, dispatch, or move.
+ *
+ * Used by atlas's detail pages to show "what does a real invocation of
+ * this look like?" without forcing an operator to navigate into
+ * individual run flow trees.
+ */
+export type InvocationIndex = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Target
+     */
+    target: string;
+    /**
+     * Items
+     */
+    items: Array<InvocationRecord>;
+    /**
+     * N Scanned
+     */
+    n_scanned: number;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+};
+
+/**
+ * InvocationMatch
+ *
+ * When the index is keyed on a move or dispatch, the specific
+ * tool_use block within the exchange that matched.
+ */
+export type InvocationMatch = {
+    /**
+     * Tool Name
+     */
+    tool_name: string;
+    /**
+     * Tool Input
+     */
+    tool_input: {
+        [key: string]: unknown;
+    };
+    /**
+     * Tool Use Id
+     */
+    tool_use_id?: string | null;
+    /**
+     * Block Index
+     */
+    block_index?: number | null;
+};
+
+/**
+ * InvocationRecord
+ */
+export type InvocationRecord = {
+    /**
+     * Exchange Id
+     */
+    exchange_id: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Project Id
+     */
+    project_id?: string;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Phase
+     */
+    phase?: string;
+    /**
+     * Round
+     */
+    round?: number | null;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number | null;
+    /**
+     * Duration Ms
+     */
+    duration_ms?: number | null;
+    /**
+     * Status
+     */
+    status?: string;
+    /**
+     * Has Error
+     */
+    has_error?: boolean;
+    request: InvocationRequest;
+    response: InvocationResponse;
+    match?: InvocationMatch | null;
+};
+
+/**
+ * InvocationRequest
+ *
+ * Anthropic-API-shape request body for a recorded LLM exchange.
+ *
+ * ``messages`` is the message stack as the API received it — a list
+ * of ``{role, content}`` dicts where ``content`` is a string or a
+ * list of typed blocks. ``tools`` is the JSON-Schema-shaped tools
+ * list. ``thinking`` mirrors the Anthropic ``thinking`` request param
+ * when present.
+ */
+export type InvocationRequest = {
+    /**
+     * Model
+     */
+    model?: string;
+    /**
+     * System
+     */
+    system?: string;
+    /**
+     * Messages
+     */
+    messages?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Tools
+     */
+    tools?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Temperature
+     */
+    temperature?: number | null;
+    /**
+     * Max Tokens
+     */
+    max_tokens?: number | null;
+    /**
+     * Thinking
+     */
+    thinking?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * InvocationResponse
+ *
+ * Anthropic-API-shape response for a recorded LLM exchange.
+ */
+export type InvocationResponse = {
+    /**
+     * Content
+     */
+    content?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Stop Reason
+     */
+    stop_reason?: string | null;
+    /**
+     * Usage
+     */
+    usage?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Response Text
+     */
+    response_text?: string;
+    /**
+     * Tool Calls
+     */
+    tool_calls?: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
  * JobListItem
  *
  * One row in GET /api/jobs. Built from a V1Job's metadata only.
@@ -8940,6 +9142,153 @@ export type GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponses = {
 };
 
 export type GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponse = GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponses[keyof GetMoveStatsApiAtlasMovesMoveTypeStatsGetResponses];
+
+export type GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Call Type
+         */
+        call_type: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Scan
+         */
+        scan?: number;
+    };
+    url: '/api/atlas/calls/{call_type}/invocations';
+};
+
+export type GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetError = GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetErrors[keyof GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetErrors];
+
+export type GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: InvocationIndex;
+};
+
+export type GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetResponse = GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetResponses[keyof GetCallTypeInvocationsApiAtlasCallsCallTypeInvocationsGetResponses];
+
+export type GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Call Type
+         */
+        call_type: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Scan
+         */
+        scan?: number;
+    };
+    url: '/api/atlas/dispatches/{call_type}/invocations';
+};
+
+export type GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetError = GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetErrors[keyof GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetErrors];
+
+export type GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: InvocationIndex;
+};
+
+export type GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetResponse = GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetResponses[keyof GetDispatchInvocationsApiAtlasDispatchesCallTypeInvocationsGetResponses];
+
+export type GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Move Type
+         */
+        move_type: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Scan
+         */
+        scan?: number;
+    };
+    url: '/api/atlas/moves/{move_type}/invocations';
+};
+
+export type GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetError = GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetErrors[keyof GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetErrors];
+
+export type GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: InvocationIndex;
+};
+
+export type GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetResponse = GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetResponses[keyof GetMoveInvocationsApiAtlasMovesMoveTypeInvocationsGetResponses];
 
 export type GetGapsApiAtlasGapsGetData = {
     body?: never;

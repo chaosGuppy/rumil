@@ -37,24 +37,6 @@ export default async function WorkflowsList() {
         </div>
       </div>
 
-      {graph && graphNodes.length > 0 && (
-        <section className="atlas-section">
-          <div className="atlas-section-head">
-            <h2>recurse graph</h2>
-            <span className="atlas-section-meta">
-              who can dispatch into whom · self-loops shown as dashed flag arcs
-            </span>
-          </div>
-          <RecurseGraph
-            nodes={graphNodes}
-            edges={graph.edges ?? []}
-            groupOrder={["orchestrator", "versus_workflow"]}
-            groupLabels={{ orchestrator: "orchestrators", versus_workflow: "versus" }}
-            height={300}
-          />
-        </section>
-      )}
-
       <section className="atlas-section">
         <div className="atlas-section-head">
           <h2>orchestrators</h2>
@@ -64,7 +46,12 @@ export default async function WorkflowsList() {
         </div>
         <div className="atlas-grid-cards">
           {orchestrators.map((w) => (
-            <WorkflowCard key={w.name} w={w} kind="is-orchestrator" />
+            <WorkflowCard
+              key={w.name}
+              w={w}
+              kind="is-orchestrator"
+              recurses={recurseSummary(graph, w.name)}
+            />
           ))}
         </div>
       </section>
@@ -78,20 +65,68 @@ export default async function WorkflowsList() {
         </div>
         <div className="atlas-grid-cards">
           {versusFlows.map((w) => (
-            <WorkflowCard key={w.name} w={w} kind="is-versus" />
+            <WorkflowCard
+              key={w.name}
+              w={w}
+              kind="is-versus"
+              recurses={recurseSummary(graph, w.name)}
+            />
           ))}
         </div>
       </section>
+
+      {graph && graphNodes.length > 0 && (
+        <details className="atlas-section" style={{ marginTop: "2rem" }}>
+          <summary
+            className="atlas-section-head"
+            style={{ cursor: "pointer", listStyle: "revert" }}
+          >
+            <h2 style={{ display: "inline-block", margin: 0 }}>recurse graph</h2>
+            <span className="atlas-section-meta" style={{ marginLeft: "0.6rem" }}>
+              full graph · click to expand
+            </span>
+          </summary>
+          <div style={{ marginTop: "0.85rem" }}>
+            <RecurseGraph
+              nodes={graphNodes}
+              edges={graph.edges ?? []}
+              groupOrder={["orchestrator", "versus_workflow"]}
+              groupLabels={{ orchestrator: "orchestrators", versus_workflow: "versus" }}
+              height={300}
+            />
+          </div>
+        </details>
+      )}
     </div>
   );
+}
+
+function recurseSummary(
+  graph: WorkflowGraph | null,
+  name: string,
+): { selfLoop: boolean; targets: string[] } {
+  if (!graph) return { selfLoop: false, targets: [] };
+  const targets = new Set<string>();
+  let selfLoop = false;
+  for (const e of graph.edges ?? []) {
+    if (e.from_id !== name) continue;
+    if (e.to_id === name) {
+      selfLoop = true;
+    } else {
+      targets.add(e.to_id);
+    }
+  }
+  return { selfLoop, targets: [...targets].sort() };
 }
 
 function WorkflowCard({
   w,
   kind,
+  recurses,
 }: {
   w: WorkflowSummary;
   kind: "is-orchestrator" | "is-versus";
+  recurses?: { selfLoop: boolean; targets: string[] };
 }) {
   return (
     <article className="atlas-card">
@@ -102,6 +137,29 @@ function WorkflowCard({
         <span className={`atlas-chip ${kind}`}>{w.kind.replace("_", " ")}</span>
       </div>
       <p className="atlas-card-summary">{w.summary}</p>
+      {recurses && (recurses.selfLoop || recurses.targets.length > 0) && (
+        <div
+          className="atlas-card-summary"
+          style={{ fontSize: "0.7rem", color: "var(--a-muted)", marginTop: "-0.25rem" }}
+        >
+          recurses{" "}
+          {recurses.selfLoop && (
+            <span style={{ color: "var(--a-accent)" }}>↻ self</span>
+          )}
+          {recurses.selfLoop && recurses.targets.length > 0 && " · "}
+          {recurses.targets.length > 0 && (
+            <>
+              →{" "}
+              {recurses.targets.map((t, i) => (
+                <span key={t}>
+                  <Link href={`/atlas/workflows/${t}`}>{t}</Link>
+                  {i < recurses.targets.length - 1 && ", "}
+                </span>
+              ))}
+            </>
+          )}
+        </div>
+      )}
       <div className="atlas-chip-row">
         <Link href={`/atlas/workflows/${w.name}`} className="atlas-chip is-accent">
           stages →

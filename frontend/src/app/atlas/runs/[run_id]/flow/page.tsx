@@ -186,7 +186,7 @@ function FlowNode({ n, index }: { n: TreeNode; index: number }) {
         <span>{n.n_dispatches ?? 0}d</span>
         {(n.n_llm_exchanges ?? 0) > 0 && (
           <Link
-            href={`/atlas/exchanges/search?q=&call_type=${encodeURIComponent(n.call_type)}`}
+            href={`/atlas/calls/by_id/${encodeURIComponent(n.call_id)}/exchanges`}
             style={{ fontFamily: "var(--a-mono)" }}
             title="exchanges captured for this call"
           >

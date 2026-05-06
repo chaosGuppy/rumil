@@ -63,11 +63,25 @@ async def build_recent_work_feed(
     project_id: str | None = None,
     page_types: Sequence[str] = _WISDOM_PAGE_TYPES_DEFAULT,
     workflow_name: str | None = None,
+    call_type: str | None = None,
+    exclude_test_projects: bool = True,
     limit: int = 50,
 ) -> RecentWorkFeed:
     """Recent pages produced by the system, with workflow/run/call
     provenance. Ordered newest first.
+
+    ``exclude_test_projects`` (default True) drops projects whose name
+    contains "test" (case-insensitive) — scratch / smoke-test projects
+    pollute the global feed otherwise. Set False or pass an explicit
+    ``project_id`` to bypass.
     """
+    test_project_ids: set[str] = set()
+    if exclude_test_projects and not project_id:
+        tres = await db._execute(db.client.table("projects").select("id").ilike("name", "%test%"))
+        test_project_ids = {str(p.get("id")) for p in (tres.data or []) if p.get("id")}
+
+    needs_post_filter = bool(workflow_name) or bool(test_project_ids)
+    fetch_limit = max(limit * 4, 100) if needs_post_filter else limit
     query = (
         db.client.table("pages")
         .select(
@@ -78,25 +92,31 @@ async def build_recent_work_feed(
         )
         .in_("page_type", list(page_types))
         .order("created_at", desc=True)
-        .limit(max(limit * 4, 100) if workflow_name else limit)
+        .limit(fetch_limit)
     )
     if project_id:
         query = query.eq("project_id", project_id)
+    if call_type:
+        query = query.eq("provenance_call_type", call_type)
     res = await db._execute(query)
     rows = list(res.data or [])
+    rows = [r for r in rows if str(r.get("project_id") or "") not in test_project_ids]
+    filters_applied = {
+        k: v
+        for k, v in {
+            "project_id": project_id,
+            "workflow_name": workflow_name,
+            "call_type": call_type,
+            "page_types": ",".join(page_types),
+            "exclude_test_projects": ("true" if exclude_test_projects and not project_id else None),
+        }.items()
+        if v
+    }
     if not rows:
         return RecentWorkFeed(
             items=[],
             n_items=0,
-            filters_applied={
-                k: v
-                for k, v in {
-                    "project_id": project_id,
-                    "workflow_name": workflow_name,
-                    "page_types": ",".join(page_types),
-                }.items()
-                if v
-            },
+            filters_applied=filters_applied,
         )
 
     run_ids = list({str(r.get("run_id")) for r in rows if r.get("run_id")})
@@ -151,19 +171,7 @@ async def build_recent_work_feed(
         if len(items) >= limit:
             break
 
-    return RecentWorkFeed(
-        items=items,
-        n_items=len(items),
-        filters_applied={
-            k: v
-            for k, v in {
-                "project_id": project_id,
-                "workflow_name": workflow_name,
-                "page_types": ",".join(page_types),
-            }.items()
-            if v
-        },
-    )
+    return RecentWorkFeed(items=items, n_items=len(items), filters_applied=filters_applied)
 
 
 async def _judgements_for_question(db: DB, question_id: str) -> list[dict[str, Any]]:
@@ -377,13 +385,19 @@ async def build_question_trajectory(db: DB, question_id: str) -> QuestionTraject
             )
         )
 
-    n_runs_touched = len(
-        {
-            str(r.get("run_id"))
-            for r in [*judgement_rows, *view_rows, *consideration_rows]
-            if r.get("run_id")
-        }
+    output_run_ids = {
+        str(r.get("run_id"))
+        for r in [*judgement_rows, *view_rows, *consideration_rows]
+        if r.get("run_id")
+    }
+    n_runs_touched = len(output_run_ids)
+
+    cres = await db._execute(
+        db.client.table("calls").select("run_id").eq("scope_page_id", question_id)
     )
+    all_scope_run_ids = {str(r.get("run_id")) for r in (cres.data or []) if r.get("run_id")}
+    silent_run_ids = sorted(all_scope_run_ids - output_run_ids)
+    n_runs_silent = len(silent_run_ids)
     cred_floats = [float(c) for c in credences]
     volatility = round(_stdev(cred_floats), 3)
     latest_credence = credences[-1] if credences else None
@@ -407,6 +421,8 @@ async def build_question_trajectory(db: DB, question_id: str) -> QuestionTraject
         question_abstract=page.abstract or "",
         project_id=str(getattr(page, "project_id", "") or ""),
         n_runs_touched=n_runs_touched,
+        n_runs_silent=n_runs_silent,
+        silent_run_ids=silent_run_ids,
         n_judgements=len(judgements),
         n_views=len(views),
         n_considerations=len(considerations),

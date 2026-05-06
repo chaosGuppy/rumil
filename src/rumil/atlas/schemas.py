@@ -423,6 +423,8 @@ class QuestionTrajectory(BaseModel):
     question_abstract: str = ""
     project_id: str = ""
     n_runs_touched: int = 0
+    n_runs_silent: int = 0
+    silent_run_ids: list[str] = []
     n_judgements: int = 0
     n_views: int = 0
     n_considerations: int = 0

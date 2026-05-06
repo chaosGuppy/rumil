@@ -5358,6 +5358,14 @@ export type QuestionTrajectory = {
      */
     n_runs_touched?: number;
     /**
+     * N Runs Silent
+     */
+    n_runs_silent?: number;
+    /**
+     * Silent Run Ids
+     */
+    silent_run_ids?: Array<string>;
+    /**
      * N Judgements
      */
     n_judgements?: number;
@@ -10010,9 +10018,17 @@ export type GetRecentWorkFeedApiAtlasFeedRecentWorkGetData = {
          */
         workflow_name?: string | null;
         /**
+         * Call Type
+         */
+        call_type?: string | null;
+        /**
          * Page Types
          */
         page_types?: string;
+        /**
+         * Exclude Test Projects
+         */
+        exclude_test_projects?: boolean;
         /**
          * Limit
          */

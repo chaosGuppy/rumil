@@ -610,19 +610,29 @@ def get_gaps(
 async def get_recent_work_feed(
     project_id: str | None = None,
     workflow_name: str | None = None,
+    call_type: str | None = None,
     page_types: str = "judgement,claim,view",
+    exclude_test_projects: bool = True,
     limit: int = 50,
     db: DB = Depends(_get_db),
 ) -> RecentWorkFeed:
     """Recent claims / judgements / views with workflow + run + call
     provenance. The "what has rumil been producing" view — content,
-    not just structure."""
+    not just structure.
+
+    Filters: ``project_id``, ``workflow_name``, ``call_type``,
+    ``page_types`` (comma-sep). ``exclude_test_projects`` (default
+    True) drops projects with "test" in the name; pass an explicit
+    ``project_id`` or set this False to bypass.
+    """
     types = [t.strip() for t in page_types.split(",") if t.strip()]
     return await build_recent_work_feed(
         db,
         project_id=project_id,
         page_types=types or ("judgement", "claim", "view"),
         workflow_name=workflow_name,
+        call_type=call_type,
+        exclude_test_projects=exclude_test_projects,
         limit=limit,
     )
 

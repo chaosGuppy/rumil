@@ -341,6 +341,11 @@ export const getGapsApiAtlasGapsGet = <ThrowOnError extends boolean = false>(opt
  * Recent claims / judgements / views with workflow + run + call
  * provenance. The "what has rumil been producing" view — content,
  * not just structure.
+ *
+ * Filters: ``project_id``, ``workflow_name``, ``call_type``,
+ * ``page_types`` (comma-sep). ``exclude_test_projects`` (default
+ * True) drops projects with "test" in the name; pass an explicit
+ * ``project_id`` or set this False to bypass.
  */
 export const getRecentWorkFeedApiAtlasFeedRecentWorkGet = <ThrowOnError extends boolean = false>(options?: Options<GetRecentWorkFeedApiAtlasFeedRecentWorkGetData, ThrowOnError>) => (options?.client ?? client).get<GetRecentWorkFeedApiAtlasFeedRecentWorkGetResponses, GetRecentWorkFeedApiAtlasFeedRecentWorkGetErrors, ThrowOnError>({ url: '/api/atlas/feed/recent_work', ...options });
 

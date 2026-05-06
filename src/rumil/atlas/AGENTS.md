@@ -85,6 +85,11 @@ This frames every design choice:
 - `search.py` — text search over registry + prompt content.
 - `overlay.py` — live-trace overlay for a run on its workflow's stage
   diagram.
+- `wisdom.py` — content-shaped surfaces: recent-work feed and
+  per-question trajectory (judgements, views, considerations across
+  runs, plus credence volatility / converging detection). Where atlas
+  starts answering "is the system getting wiser?" rather than "what
+  parts exist".
 
 ## Conventions for adding to atlas
 
@@ -101,6 +106,32 @@ This frames every design choice:
   prose fails CI.
 - Avoid hand-curating cross-references that can be derived. Cross-refs
   in atlas should fall out of the registry, not be maintained by hand.
+
+## Atlas as its own debugging surface
+
+Atlas isn't just *for* humans — it's a useful surface for **agents
+investigating rumil's behavior**. The trajectory-ergonomics pattern that's
+worked well so far:
+
+1. Spawn an agent (general-purpose or Explore) with a focused brief like
+   "use atlas to investigate question X's trajectory; tell me what's
+   ergonomically broken or missing." Hand it the relevant atlas URLs.
+2. The agent navigates atlas like a human would, hits the same friction
+   points (missing fields, silently-ignored filters, scratch pollution,
+   cryptic labels), and reports them.
+3. Each reported item becomes a concrete fix: a missing aggregation, a
+   prose label, a structured-output gap in a prompt.
+
+This pattern produced bugs 1–9 in the chrome-session pass and findings
+(a)–(f) in the trajectory ergonomics pass. The findings tend to surface
+two kinds of issues at once: **atlas display gaps** (we have the data
+but don't show it) and **upstream data gaps** (we don't actually capture
+what we need — null `credence`, null consideration `direction`, etc.).
+The latter are the more valuable ones; atlas just makes them visible.
+
+When you find such an upstream gap, the fix usually doesn't live in
+atlas — it lives in a move payload schema, a prompt file, or a closing
+review. Resist the urge to paper over with FE filtering.
 
 ## What atlas is not
 

@@ -3567,7 +3567,7 @@
           "atlas"
         ],
         "summary": "Get Recent Work Feed",
-        "description": "Recent claims / judgements / views with workflow + run + call\nprovenance. The \"what has rumil been producing\" view \u2014 content,\nnot just structure.",
+        "description": "Recent claims / judgements / views with workflow + run + call\nprovenance. The \"what has rumil been producing\" view \u2014 content,\nnot just structure.\n\nFilters: ``project_id``, ``workflow_name``, ``call_type``,\n``page_types`` (comma-sep). ``exclude_test_projects`` (default\nTrue) drops projects with \"test\" in the name; pass an explicit\n``project_id`` or set this False to bypass.",
         "operationId": "get_recent_work_feed_api_atlas_feed_recent_work_get",
         "parameters": [
           {
@@ -3597,6 +3597,22 @@
             }
           },
           {
+            "name": "call_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Call Type"
+            }
+          },
+          {
             "name": "page_types",
             "in": "query",
             "required": false,
@@ -3604,6 +3620,16 @@
               "type": "string",
               "default": "judgement,claim,view",
               "title": "Page Types"
+            }
+          },
+          {
+            "name": "exclude_test_projects",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Exclude Test Projects"
             }
           },
           {
@@ -14943,6 +14969,19 @@
             "type": "integer",
             "title": "N Runs Touched",
             "default": 0
+          },
+          "n_runs_silent": {
+            "type": "integer",
+            "title": "N Runs Silent",
+            "default": 0
+          },
+          "silent_run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Silent Run Ids",
+            "default": []
           },
           "n_judgements": {
             "type": "integer",

@@ -83,10 +83,28 @@ export default async function TrajectoryPage({
       </div>
 
       <div className="atlas-stat-grid" style={{ marginBottom: "1.5rem" }}>
-        <div className="atlas-stat">
+        <div
+          className="atlas-stat"
+          title="distinct runs that produced a judgement, view, or consideration on this question"
+        >
           <span className="atlas-stat-num">{traj.n_runs_touched}</span>
-          <span className="atlas-stat-label">runs touched</span>
+          <span className="atlas-stat-label">runs with output</span>
         </div>
+        {(traj.n_runs_silent ?? 0) > 0 && (
+          <div
+            className="atlas-stat"
+            title="runs that scoped at least one call to this question but produced no judgement/view/consideration"
+            style={{
+              background: "var(--a-warm-soft)",
+              borderColor: "var(--a-warm)",
+            }}
+          >
+            <span className="atlas-stat-num" style={{ color: "var(--a-warm)" }}>
+              {traj.n_runs_silent}
+            </span>
+            <span className="atlas-stat-label">silent runs</span>
+          </div>
+        )}
         <div className="atlas-stat">
           <span className="atlas-stat-num">{traj.n_judgements}</span>
           <span className="atlas-stat-label">judgements</span>
@@ -179,6 +197,30 @@ export default async function TrajectoryPage({
           <div className="atlas-rows">
             {views.map((v) => (
               <ViewRow key={v.page_id} v={v} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(traj.silent_run_ids ?? []).length > 0 && (
+        <section className="atlas-section">
+          <div className="atlas-section-head">
+            <h2>silent runs</h2>
+            <span className="atlas-section-meta">
+              runs that scoped a call to this question but produced no
+              judgement / view / consideration · {traj.silent_run_ids?.length ?? 0}
+            </span>
+          </div>
+          <div className="atlas-chip-row">
+            {(traj.silent_run_ids ?? []).map((rid) => (
+              <Link
+                key={rid}
+                href={`/atlas/runs/${encodeURIComponent(rid)}/flow`}
+                className="atlas-chip"
+                title="run flow"
+              >
+                run {rid.slice(0, 8)} →
+              </Link>
             ))}
           </div>
         </section>

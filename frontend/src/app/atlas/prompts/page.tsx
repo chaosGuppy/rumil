@@ -74,17 +74,6 @@ export default async function PromptsList({
         <div className="atlas-page-head-main">
           <Crumbs items={[{ label: "atlas", href: "/atlas" }, { label: "prompts" }]} />
           <h1 className="is-sans">prompt files</h1>
-          <p className="atlas-lede">
-            The markdown that runs the system. Sorted by{" "}
-            <span className="atlas-mono">use intensity</span> by default —
-            preamble / grounding / citations rank at the top because they
-            compose into ~every call. Use intensity blends static reach
-            (<span className="atlas-mono">n_compositions</span>: call-type
-            compositions referencing this file) with dynamic reach
-            (<span className="atlas-mono">recent_invocations</span>: count
-            of those call types in the last{" "}
-            {idx.n_scanned_exchanges || 500} exchanges).
-          </p>
         </div>
       </div>
 

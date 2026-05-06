@@ -738,16 +738,42 @@ def _extract_model_parameters(api_kwargs: dict) -> dict:
     return params
 
 
+def _anthropic_tool_calls_to_openai(tool_calls: Sequence[dict]) -> list[dict]:
+    """Translate the model's tool-use blocks into Langfuse's expected shape.
+
+    Langfuse's IOPreview pairs each tool call with the matching tool
+    definition (rendering counts on the def, vs. "not called") by reading
+    a ``tool_calls`` array on the assistant message in the OpenAI shape:
+    ``[{"name": ..., "arguments": "<json string>"}]``. We translate from
+    Anthropic's ``{"name", "input"}`` shape — and drop server-side blocks
+    (e.g. ``web_search_tool_result``) which carry a ``type`` field and
+    aren't model-issued calls.
+    """
+    out: list[dict] = []
+    for tc in tool_calls:
+        if tc.get("type"):
+            continue
+        out.append(
+            {
+                "name": tc.get("name"),
+                "arguments": json.dumps(tc.get("input", {})),
+            }
+        )
+    return out
+
+
 def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
     """Render the assistant turn for Langfuse's IOPreview.
 
-    When the response contains thinking or redacted-thinking blocks, we
-    return a ChatML-shaped assistant message so Langfuse's
-    ``ThinkingBlock`` / ``RedactedThinkingBlock`` UI components light up.
-    Otherwise we return the joined text (or ``None``) to preserve the
-    existing string output for non-thinking models.
+    When the response contains thinking, redacted-thinking, or tool-use
+    blocks, we return a ChatML-shaped assistant message so Langfuse's
+    ``ThinkingBlock`` / ``RedactedThinkingBlock`` UI components light up
+    and the tool-definition cards count actual invocations. Otherwise we
+    return the joined text (or ``None``) to preserve the existing string
+    output for plain text responses.
     """
-    if not parsed.has_thinking:
+    invoked = _anthropic_tool_calls_to_openai(parsed.tool_calls)
+    if not parsed.has_thinking and not invoked:
         return parsed.text or None
     output: dict = {"role": "assistant", "content": parsed.text}
     if parsed.thinking:
@@ -756,6 +782,8 @@ def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
         output["thinking"] = [{"content": t["content"]} for t in parsed.thinking]
     if parsed.redacted_thinking:
         output["redacted_thinking"] = [{"data": r["data"]} for r in parsed.redacted_thinking]
+    if invoked:
+        output["tool_calls"] = invoked
     return output
 
 
@@ -863,7 +891,7 @@ def _enrich_langfuse_generation(
         log.debug("Langfuse enrichment failed: %s", exc)
 
 
-@observe(as_type="generation", name="anthropic.messages.create")
+@observe(as_type="generation", name="anthropic.messages.create", capture_output=False)
 async def call_anthropic_api(
     client: anthropic.AsyncAnthropic,
     model: str,
@@ -1161,7 +1189,7 @@ def _enrich_langfuse_generation_google(
         log.debug("Langfuse enrichment (google) failed: %s", exc)
 
 
-@observe(as_type="generation", name="google.generate_content")
+@observe(as_type="generation", name="google.generate_content", capture_output=False)
 async def call_google_api(
     model: str,
     system_prompt: str,
@@ -1808,7 +1836,7 @@ async def _continuation_recovery_for_parse(
     return None
 
 
-@observe(as_type="generation", name="anthropic.messages.parse")
+@observe(as_type="generation", name="anthropic.messages.parse", capture_output=False)
 async def _structured_call_parse(
     system_prompt: str,
     response_model: type[T] | None,

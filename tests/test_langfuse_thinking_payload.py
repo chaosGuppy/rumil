@@ -15,10 +15,11 @@ def _parsed(
     text_parts: list[str] | None = None,
     thinking: list[dict] | None = None,
     redacted_thinking: list[dict] | None = None,
+    tool_calls: list[dict] | None = None,
 ) -> ParsedAnthropicResponse:
     return ParsedAnthropicResponse(
         text_parts=text_parts or [],
-        tool_calls=[],
+        tool_calls=tool_calls or [],
         thinking=thinking or [],
         redacted_thinking=redacted_thinking or [],
     )
@@ -107,4 +108,57 @@ def test_thinking_with_empty_text_still_emits_dict():
         "role": "assistant",
         "content": "",
         "thinking": [{"content": "internal-only"}],
+    }
+
+
+def test_tool_calls_emitted_in_openai_shape():
+    parsed = _parsed(
+        text_parts=["calling now"],
+        tool_calls=[
+            {"name": "search", "input": {"query": "ravens"}},
+            {"name": "load_page", "input": {"page_id": "abc12345"}},
+        ],
+    )
+
+    out = _langfuse_output_for(parsed)
+
+    assert out == {
+        "role": "assistant",
+        "content": "calling now",
+        "tool_calls": [
+            {"name": "search", "arguments": '{"query": "ravens"}'},
+            {"name": "load_page", "arguments": '{"page_id": "abc12345"}'},
+        ],
+    }
+
+
+def test_server_tool_results_excluded_from_tool_calls():
+    # Server-side blocks (e.g. web_search_tool_result) carry a `type` field
+    # and are not model-issued calls — they must not pair with definitions.
+    parsed = _parsed(
+        text_parts=["done"],
+        tool_calls=[
+            {"name": "web_search", "input": {"q": "x"}},
+            {"type": "web_search_tool_result", "tool_use_id": "abc", "content": []},
+        ],
+    )
+
+    out = _langfuse_output_for(parsed)
+
+    assert isinstance(out, dict)
+    assert out["tool_calls"] == [{"name": "web_search", "arguments": '{"q": "x"}'}]
+
+
+def test_tool_calls_without_thinking_still_emit_assistant_dict():
+    parsed = _parsed(
+        text_parts=["plain"],
+        tool_calls=[{"name": "noop", "input": {}}],
+    )
+
+    out = _langfuse_output_for(parsed)
+
+    assert out == {
+        "role": "assistant",
+        "content": "plain",
+        "tool_calls": [{"name": "noop", "arguments": "{}"}],
     }

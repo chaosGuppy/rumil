@@ -47,6 +47,10 @@ export function CallStatsPanel({
     stats.p50_cost_usd != null ||
     stats.p90_cost_usd != null ||
     stats.p99_cost_usd != null;
+  const reviewN = stats.closing_review_n ?? 0;
+  const inadequatePct = stats.context_inadequate_pct ?? 0;
+  const confHisto = stats.confidence_histogram ?? [];
+  const fruitHisto = stats.remaining_fruit_histogram ?? [];
 
   return (
     <section className="atlas-section">
@@ -142,6 +146,84 @@ export function CallStatsPanel({
                 <span className="atlas-percentile-label">p99 cost</span>
                 <span className="atlas-percentile-value">{fmtCost(stats.p99_cost_usd)}</span>
               </div>
+            </div>
+          )}
+
+          {reviewN > 0 && (
+            <div style={{ marginBottom: "1rem" }}>
+              <div
+                className="atlas-stat-panel-meta"
+                style={{ marginBottom: "0.4rem", display: "flex", gap: "0.4rem", alignItems: "baseline" }}
+              >
+                <span>closing review</span>
+                <span style={{ color: "var(--a-muted)", fontWeight: 400 }}>
+                  · self-assessed by the LLM at the end of each call
+                  · n={reviewN}
+                </span>
+              </div>
+              <div className="atlas-stat-mini-grid">
+                <div className="atlas-stat-mini">
+                  <div
+                    className="atlas-stat-mini-num"
+                    style={{
+                      color:
+                        inadequatePct >= 30
+                          ? "var(--a-warm)"
+                          : inadequatePct >= 10
+                          ? "var(--a-flag)"
+                          : undefined,
+                    }}
+                  >
+                    {inadequatePct.toFixed(1)}%
+                  </div>
+                  <div
+                    className="atlas-stat-mini-label"
+                    title="share of closing reviews where the LLM said context_was_adequate=false"
+                  >
+                    context inadequate
+                  </div>
+                </div>
+                <div className="atlas-stat-mini">
+                  <div className="atlas-stat-mini-num">{fmtNum(stats.mean_confidence, 2)}</div>
+                  <div
+                    className="atlas-stat-mini-label"
+                    title="mean of confidence_in_output (0-5) reported in closing reviews"
+                  >
+                    mean confidence (0–5)
+                  </div>
+                </div>
+                <div className="atlas-stat-mini">
+                  <div className="atlas-stat-mini-num">{fmtNum(stats.mean_remaining_fruit, 1)}</div>
+                  <div
+                    className="atlas-stat-mini-label"
+                    title="mean of remaining_fruit (0-10) reported in closing reviews — higher = LLM thinks more useful work remains"
+                  >
+                    mean remaining fruit (0–10)
+                  </div>
+                </div>
+              </div>
+              {(confHisto.length > 0 || fruitHisto.length > 0) && (
+                <div className="atlas-histo-grid" style={{ marginTop: "0.75rem" }}>
+                  {confHisto.length > 0 && (
+                    <div className="atlas-histo">
+                      <div className="atlas-histo-head">
+                        <span className="atlas-histo-title">confidence_in_output</span>
+                        <span className="atlas-histo-meta">{confHisto.length} bins</span>
+                      </div>
+                      <Histogram bins={confHisto} color="var(--a-success)" />
+                    </div>
+                  )}
+                  {fruitHisto.length > 0 && (
+                    <div className="atlas-histo">
+                      <div className="atlas-histo-head">
+                        <span className="atlas-histo-title">remaining_fruit</span>
+                        <span className="atlas-histo-meta">{fruitHisto.length} bins</span>
+                      </div>
+                      <Histogram bins={fruitHisto} color="var(--a-warm)" />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

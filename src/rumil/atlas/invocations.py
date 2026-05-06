@@ -60,6 +60,8 @@ def _request_from_exchange(row: dict[str, Any]) -> InvocationRequest:
             temperature=rk.get("temperature"),
             max_tokens=rk.get("max_tokens"),
             thinking=rk.get("thinking") if isinstance(rk.get("thinking"), dict) else None,
+            raw_kwargs=dict(rk),
+            provenance="logged",
         )
 
     user_messages = row.get("user_messages")

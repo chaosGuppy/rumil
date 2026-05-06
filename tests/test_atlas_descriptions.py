@@ -221,14 +221,14 @@ def test_every_workflow_loop_pair_resolves_to_real_stages():
     the corresponding workflow's profile."""
     profiles_by_name = {p.name: p for p in all_profiles()}
     loop_pairs = {
-        "two_phase": ("main_phase_loop", {"main_phase_prioritization", "execute_dispatches"}),
+        "two_phase": ("main_phase_loop", {"main_phase_prioritization"}),
         "experimental": (
             "experimental_prio_loop",
-            {"experimental_prioritization", "experimental_execute"},
+            {"experimental_prioritization"},
         ),
         "claim_investigation": (
             "claim_main_loop",
-            {"claim_phase2_prioritization", "claim_execute"},
+            {"claim_phase2_prioritization"},
         ),
         "draft_and_edit": (
             "dae_round_loop",

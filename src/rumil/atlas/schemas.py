@@ -710,6 +710,12 @@ class CallTypeStats(BaseModel):
     until: str | None = None
     pathology: PathologyCounts = PathologyCounts()
     low_n: bool = False
+    closing_review_n: int = 0
+    context_inadequate_pct: float = 0.0
+    mean_confidence: float = 0.0
+    mean_remaining_fruit: float = 0.0
+    confidence_histogram: list[HistogramBin] = []
+    remaining_fruit_histogram: list[HistogramBin] = []
 
 
 class MoveStats(BaseModel):
@@ -721,6 +727,10 @@ class MoveStats(BaseModel):
     n_invocations: int
     invocations_by_call_type: list[CallTypeInvocationCount] = []
     last_seen: str | None = None
+    created_pages_n: int = 0
+    survived_n: int = 0
+    superseded_n: int = 0
+    survival_pct: float = 0.0
 
 
 class StageInvocation(BaseModel):
@@ -801,6 +811,12 @@ class InvocationRequest(BaseModel):
     list of typed blocks. ``tools`` is the JSON-Schema-shaped tools
     list. ``thinking`` mirrors the Anthropic ``thinking`` request param
     when present.
+
+    ``raw_kwargs`` is the literal ``request_kwargs`` dict captured at
+    send time, when available. ``provenance="logged"`` means the parsed
+    fields above came from that dict; ``"reconstructed"`` means they
+    were assembled from legacy ``system_prompt``/``user_messages``
+    columns and the wire request was not preserved.
     """
 
     model: str = ""
@@ -810,6 +826,8 @@ class InvocationRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     thinking: dict | None = None
+    raw_kwargs: dict | None = None
+    provenance: str = "reconstructed"
 
 
 class InvocationResponse(BaseModel):

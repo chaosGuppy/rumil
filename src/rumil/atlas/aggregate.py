@@ -170,7 +170,7 @@ def _count_pages_loaded(events: Iterable[dict[str, Any]]) -> int:
             ):
                 refs = e.get(key) or []
                 for ref in refs:
-                    pid = ref.get("page_id") if isinstance(ref, dict) else ref
+                    pid = ref.get("id") or ref.get("page_id") if isinstance(ref, dict) else ref
                     if isinstance(pid, str):
                         seen.add(pid)
     return len(seen)
@@ -392,16 +392,20 @@ def _rollup_run(
             stages_taken.add(setup_stage)
         # Skipped tracking doesn't translate cleanly; clear it for wrappers.
         stages_skipped = set()
-    # Loop stages: marked as fired when any of their body stages fired.
+    # Loop stages: marked as fired when their loop-specific prio stage
+    # fired. ``execute_dispatches`` is NOT a loop-body marker because it
+    # also runs after the initial (non-loop) prioritization — pre-fix,
+    # using execute_dispatches as a body marker meant initial-only runs
+    # got main_phase_loop attributed to them.
     loop_pairs = {
-        "two_phase": ("main_phase_loop", {"main_phase_prioritization", "execute_dispatches"}),
+        "two_phase": ("main_phase_loop", {"main_phase_prioritization"}),
         "experimental": (
             "experimental_prio_loop",
-            {"experimental_prioritization", "experimental_execute"},
+            {"experimental_prioritization"},
         ),
         "claim_investigation": (
             "claim_main_loop",
-            {"claim_phase2_prioritization", "claim_execute"},
+            {"claim_phase2_prioritization"},
         ),
         "draft_and_edit": (
             "dae_round_loop",

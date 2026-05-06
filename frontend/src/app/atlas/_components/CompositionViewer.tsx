@@ -118,7 +118,7 @@ function PartPill({ part }: { part: PromptPart }) {
       <span className="atlas-comp-pill-meta">{fmtChars(part.char_count)}c</span>
       {part.condition && (
         <span className="atlas-comp-pill-cond" title={part.condition}>
-          if · {part.condition.length > 32 ? part.condition.slice(0, 30) + "…" : part.condition}
+          if · {part.condition}
         </span>
       )}
     </Link>

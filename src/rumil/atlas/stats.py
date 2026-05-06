@@ -74,7 +74,7 @@ async def _calls_in_runs(
             db.client.table("calls")
             .select(
                 "id, call_type, status, cost_usd, created_at, completed_at, "
-                "scope_page_id, run_id, trace_json"
+                "scope_page_id, run_id, trace_json, review_json"
             )
             .in_("run_id", batch)
         )
@@ -111,7 +111,7 @@ def _pages_loaded(events: Iterable[dict[str, Any]]) -> int:
             ):
                 refs = e.get(key) or []
                 for ref in refs:
-                    pid = ref.get("page_id") if isinstance(ref, dict) else ref
+                    pid = ref.get("id") or ref.get("page_id") if isinstance(ref, dict) else ref
                     if isinstance(pid, str):
                         seen.add(pid)
     return len(seen)
@@ -352,6 +352,27 @@ async def build_call_type_stats(
     rounds = [_rounds_for_call(_events(r)) for r in rows]
     statuses: Counter[str] = Counter(str(r.get("status") or "unknown") for r in rows)
 
+    review_rows: list[dict[str, Any]] = []
+    for r in rows:
+        rj = r.get("review_json")
+        if isinstance(rj, dict):
+            review_rows.append(rj)
+    confidences = [
+        float(rj["confidence_in_output"])
+        for rj in review_rows
+        if isinstance(rj.get("confidence_in_output"), (int, float))
+    ]
+    remaining_fruits = [
+        float(rj["remaining_fruit"])
+        for rj in review_rows
+        if isinstance(rj.get("remaining_fruit"), (int, float))
+    ]
+    inadequate_n = sum(1 for rj in review_rows if rj.get("context_was_adequate") is False)
+    closing_review_n = len(review_rows)
+    context_inadequate_pct = (
+        round(100.0 * inadequate_n / closing_review_n, 2) if closing_review_n else 0.0
+    )
+
     move_counts: Counter[str] = Counter()
     co_firing: Counter[tuple[str, str]] = Counter()
     error_refs: list[ErrorRef] = []
@@ -464,6 +485,12 @@ async def build_call_type_stats(
         ],
         recent_errors=error_refs[:5],
         pathology=pathology,
+        closing_review_n=closing_review_n,
+        context_inadequate_pct=context_inadequate_pct,
+        mean_confidence=_mean(confidences),
+        mean_remaining_fruit=_mean(remaining_fruits),
+        confidence_histogram=_histogram_bins(confidences),
+        remaining_fruit_histogram=_histogram_bins(remaining_fruits, integer=True),
     )
 
 
@@ -480,16 +507,27 @@ async def build_move_stats(
     by_call_type: Counter[str] = Counter()
     runs_seen: set[str] = set()
     last_seen: str | None = None
+    created_page_ids: set[str] = set()
 
     for r in rows:
         events = _events(r)
-        n = sum(
-            1
-            for e in events
-            if e.get("event") == event_keys.MOVES_EXECUTED
-            for m in (e.get("moves") or [])
-            if isinstance(m, dict) and (m.get("type") or m.get("move_type")) == move_type
-        )
+        n = 0
+        for e in events:
+            if e.get("event") != event_keys.MOVES_EXECUTED:
+                continue
+            for m in e.get("moves") or []:
+                if not isinstance(m, dict):
+                    continue
+                if (m.get("type") or m.get("move_type")) != move_type:
+                    continue
+                n += 1
+                for ref in m.get("page_refs") or []:
+                    if isinstance(ref, dict):
+                        pid = ref.get("id") or ref.get("page_id")
+                        if isinstance(pid, str):
+                            created_page_ids.add(pid)
+                    elif isinstance(ref, str):
+                        created_page_ids.add(ref)
         if n:
             invocations_total += n
             by_call_type[str(r.get("call_type") or "unknown")] += n
@@ -500,6 +538,23 @@ async def build_move_stats(
             if isinstance(ts, str) and (last_seen is None or ts > last_seen):
                 last_seen = ts
 
+    survived_n = 0
+    superseded_n = 0
+    if created_page_ids:
+        ids = list(created_page_ids)
+        for i in range(0, len(ids), 200):
+            batch = ids[i : i + 200]
+            res = await db._execute(
+                db.client.table("pages").select("id, is_superseded").in_("id", batch)
+            )
+            for p in res.data or []:
+                if p.get("is_superseded"):
+                    superseded_n += 1
+                else:
+                    survived_n += 1
+    created_pages_n = survived_n + superseded_n
+    survival_pct = round(100.0 * survived_n / created_pages_n, 2) if created_pages_n else 0.0
+
     return MoveStats(
         move_type=move_type,
         scanned_runs=len(run_ids),
@@ -509,4 +564,8 @@ async def build_move_stats(
             CallTypeInvocationCount(call_type=ct, count=n) for ct, n in by_call_type.most_common(20)
         ],
         last_seen=last_seen,
+        created_pages_n=created_pages_n,
+        survived_n=survived_n,
+        superseded_n=superseded_n,
+        survival_pct=survival_pct,
     )

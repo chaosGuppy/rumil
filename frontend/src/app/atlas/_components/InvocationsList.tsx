@@ -112,17 +112,67 @@ export function InvocationsList({
           </span>
         </div>
       ) : (
-        <ol className="atlas-inv-list">
-          {items.map((rec) => (
-            <InvocationRow
-              key={rec.exchange_id}
-              rec={rec}
-              showCallTypeChip={showCallTypeChip}
-            />
-          ))}
-        </ol>
+        <>
+          <ErrorBanner items={items} />
+          <ol className="atlas-inv-list">
+            {items.map((rec) => (
+              <InvocationRow
+                key={rec.exchange_id}
+                rec={rec}
+                showCallTypeChip={showCallTypeChip}
+              />
+            ))}
+          </ol>
+        </>
       )}
     </section>
+  );
+}
+
+function ErrorBanner({ items }: { items: InvocationRecord[] }) {
+  const errored = items.filter((r) => r.has_error);
+  if (errored.length === 0) return null;
+  return (
+    <div
+      style={{
+        border: "1px solid var(--a-warm)",
+        background: "var(--a-warm-soft)",
+        padding: "0.6rem 0.8rem",
+        borderRadius: "3px",
+        marginBottom: "0.6rem",
+        fontSize: "0.8rem",
+        fontFamily: "var(--a-sans)",
+      }}
+    >
+      <div style={{ marginBottom: "0.35rem", color: "var(--a-warm)" }}>
+        <strong>
+          {errored.length} of {items.length} exchange{items.length === 1 ? "" : "s"}{" "}
+          errored
+        </strong>{" "}
+        — auto-expanded below.
+      </div>
+      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+        {errored.slice(0, 5).map((rec) => (
+          <li
+            key={rec.exchange_id}
+            style={{
+              fontFamily: "var(--a-mono)",
+              fontSize: "0.74rem",
+              color: "var(--a-fg-soft)",
+              padding: "0.15rem 0",
+            }}
+          >
+            <a
+              href={`#exch-${rec.exchange_id}`}
+              style={{ color: "var(--a-accent)", textDecoration: "none" }}
+            >
+              {rec.exchange_id.slice(0, 8)} →
+            </a>{" "}
+            {trunc(rec.response.error ?? "(no message)", 200)}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -133,7 +183,7 @@ function InvocationRow({
   rec: InvocationRecord;
   showCallTypeChip: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(rec.has_error);
   const headline = previewRecordHeadline(rec);
   const phaseLabel =
     rec.phase && rec.round != null
@@ -141,7 +191,10 @@ function InvocationRow({
       : rec.phase ?? null;
 
   return (
-    <li className={`atlas-inv-item${open ? " is-open" : ""}`}>
+    <li
+      id={`exch-${rec.exchange_id}`}
+      className={`atlas-inv-item${open ? " is-open" : ""}${rec.has_error ? " is-error" : ""}`}
+    >
       <button
         type="button"
         className="atlas-inv-row"
@@ -235,6 +288,9 @@ function RequestBlock({ req }: { req: InvocationRequest }) {
   const tools = req.tools ?? [];
   const system = req.system ?? "";
   const SYSTEM_INLINE_MAX = 2000;
+  const provenance = req.provenance ?? "reconstructed";
+  const rawKwargs = req.raw_kwargs ?? null;
+  const [showRaw, setShowRaw] = useState(false);
 
   return (
     <div className="atlas-inv-block">
@@ -262,8 +318,51 @@ function RequestBlock({ req }: { req: InvocationRequest }) {
               <span className="atlas-inv-tag-thinking">thinking</span>
             </>
           )}
+          <span className="atlas-sep">·</span>
+          <span
+            style={{
+              fontFamily: "var(--a-mono)",
+              fontSize: "0.66rem",
+              padding: "0.05rem 0.35rem",
+              borderRadius: "2px",
+              background:
+                provenance === "logged" ? "var(--a-success-soft)" : "var(--a-warm-soft)",
+              color: provenance === "logged" ? "var(--a-success)" : "var(--a-warm)",
+            }}
+            title={
+              provenance === "logged"
+                ? "request_kwargs captured at send time — this is the actual wire request"
+                : "no request_kwargs in DB; assembled from system_prompt/user_messages columns"
+            }
+          >
+            {provenance}
+          </span>
+          {rawKwargs && (
+            <>
+              <span className="atlas-sep">·</span>
+              <button
+                type="button"
+                className="atlas-inv-mini-toggle"
+                onClick={() => setShowRaw((v) => !v)}
+              >
+                {showRaw ? "hide raw kwargs" : "view raw kwargs"}
+              </button>
+            </>
+          )}
         </span>
       </div>
+
+      {showRaw && rawKwargs && (
+        <div className="atlas-inv-msg">
+          <div className="atlas-inv-msg-head">
+            <span className="atlas-inv-role">raw_kwargs</span>
+            <span className="atlas-inv-msg-meta">request_kwargs as logged</span>
+          </div>
+          <pre className="atlas-inv-text">
+            {JSON.stringify(rawKwargs, null, 2)}
+          </pre>
+        </div>
+      )}
 
       {system && (
         <SystemSection system={system} inlineMax={SYSTEM_INLINE_MAX} />

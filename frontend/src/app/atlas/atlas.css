@@ -541,6 +541,8 @@
   font-size: 0.85rem;
   font-weight: 500;
   color: var(--a-rule);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .atlas-row-desc {
   font-size: 0.83rem;
@@ -550,6 +552,7 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-width: 0;
 }
 .atlas-row-meta {
   font-family: var(--a-mono);
@@ -3451,6 +3454,17 @@ a:hover .atlas-graph-node-rect {
 .atlas-inv-item.is-open {
   background: var(--a-bg);
   box-shadow: inset 2px 0 0 var(--a-rule);
+}
+.atlas-inv-item.is-error {
+  background: var(--a-warm-soft);
+  box-shadow: inset 3px 0 0 var(--a-warm);
+}
+.atlas-inv-item.is-error.is-open {
+  box-shadow: inset 3px 0 0 var(--a-warm);
+}
+.atlas-inv-item.is-error:target {
+  outline: 2px solid var(--a-warm);
+  outline-offset: -2px;
 }
 
 /* ---- collapsed row ---- */

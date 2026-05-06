@@ -115,9 +115,36 @@ export default async function WorkflowDetail({
           {wf.fingerprint_keys && wf.fingerprint_keys.length > 0 && (
             <div className="atlas-aside-block">
               <h3>fingerprint keys</h3>
+              <p
+                style={{
+                  color: "var(--a-muted)",
+                  fontSize: "0.74rem",
+                  fontFamily: "var(--a-sans)",
+                  lineHeight: 1.5,
+                  margin: "-0.2rem 0 0.55rem",
+                }}
+              >
+                Run-config dimensions that distinguish two runs of this
+                workflow for dedup. Two runs with the same values across
+                these keys are considered equivalent.
+              </p>
               <ul className="atlas-aside-list">
                 {wf.fingerprint_keys.map((k) => (
-                  <li key={k}>{k}</li>
+                  <li key={k}>
+                    <span className="atlas-codepath" title={fingerprintHint(k)}>
+                      {k}
+                    </span>
+                    <span
+                      style={{
+                        marginLeft: "0.4rem",
+                        color: "var(--a-muted)",
+                        fontFamily: "var(--a-sans)",
+                        fontSize: "0.7rem",
+                      }}
+                    >
+                      {fingerprintCategory(k)}
+                    </span>
+                  </li>
                 ))}
               </ul>
             </div>
@@ -140,6 +167,21 @@ export default async function WorkflowDetail({
       </div>
     </div>
   );
+}
+
+function fingerprintCategory(key: string): string {
+  if (key.endsWith("_prompt_hash")) return "prompt content";
+  if (key.endsWith("_model")) return "model id";
+  if (key.startsWith("with_")) return "feature flag";
+  if (key === "budget") return "budget";
+  if (key === "settings.*") return "all settings";
+  if (key.startsWith("settings.")) return "settings field";
+  return "constructor kwarg";
+}
+
+function fingerprintHint(key: string): string {
+  const cat = fingerprintCategory(key);
+  return `${key} — ${cat}. Two runs with different values for this key are kept as distinct fingerprints.`;
 }
 
 function StageBlock({ stage, isLast }: { stage: WorkflowStage; isLast: boolean }) {

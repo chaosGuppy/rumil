@@ -38,9 +38,30 @@ export default async function MovesList() {
 
 function MoveRow({ m }: { m: MoveSummary }) {
   const usedCount = (m.used_in_call_types ?? []).length;
+  // move_type is the unique identifier (e.g. CREATE_QUESTION vs
+  // CREATE_SCOUT_QUESTION). Multiple move_types can share the same
+  // ``name`` (the LLM-facing tool name) — surface move_type as the
+  // primary label so the rows don't read as duplicates.
+  const sameNameDifferentType = m.move_type.toLowerCase() !== m.name.toLowerCase();
   return (
     <Link href={`/atlas/moves/${encodeURIComponent(m.move_type)}`} className="atlas-row">
-      <div className="atlas-row-name">{m.name}</div>
+      <div className="atlas-row-name">
+        {m.move_type}
+        {sameNameDifferentType && (
+          <span
+            style={{
+              color: "var(--a-muted)",
+              marginLeft: "0.5rem",
+              fontFamily: "var(--a-mono)",
+              fontSize: "0.74rem",
+              fontWeight: 400,
+            }}
+            title="LLM-facing tool name"
+          >
+            tool: {m.name}
+          </span>
+        )}
+      </div>
       <div className="atlas-row-desc">{m.description}</div>
       <div className="atlas-row-meta">
         <span className="atlas-chip is-muted">

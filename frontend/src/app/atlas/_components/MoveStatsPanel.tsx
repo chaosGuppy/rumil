@@ -56,6 +56,52 @@ export function MoveStatsPanel({ stats }: { stats: MoveStats }) {
             </div>
           </div>
 
+          {(stats.created_pages_n ?? 0) > 0 && (
+            <div style={{ margin: "1rem 0" }}>
+              <div
+                className="atlas-stat-panel-meta"
+                style={{ marginBottom: "0.4rem", display: "flex", gap: "0.4rem", alignItems: "baseline" }}
+              >
+                <span>page survival</span>
+                <span style={{ color: "var(--a-muted)", fontWeight: 400 }}>
+                  · of pages this move created in scanned runs, share still alive (not superseded)
+                </span>
+              </div>
+              <div className="atlas-stat-mini-grid">
+                <div className="atlas-stat-mini">
+                  <div
+                    className="atlas-stat-mini-num"
+                    style={{
+                      color:
+                        (stats.survival_pct ?? 0) >= 70
+                          ? "var(--a-success)"
+                          : (stats.survival_pct ?? 0) <= 40
+                          ? "var(--a-warm)"
+                          : undefined,
+                    }}
+                  >
+                    {(stats.survival_pct ?? 0).toFixed(1)}%
+                  </div>
+                  <div className="atlas-stat-mini-label" title="survived / created_pages_n">
+                    survival rate
+                  </div>
+                </div>
+                <div className="atlas-stat-mini">
+                  <div className="atlas-stat-mini-num">{stats.survived_n ?? 0}</div>
+                  <div className="atlas-stat-mini-label">still alive</div>
+                </div>
+                <div className="atlas-stat-mini">
+                  <div className="atlas-stat-mini-num">{stats.superseded_n ?? 0}</div>
+                  <div className="atlas-stat-mini-label">superseded</div>
+                </div>
+                <div className="atlas-stat-mini">
+                  <div className="atlas-stat-mini-num">{stats.created_pages_n ?? 0}</div>
+                  <div className="atlas-stat-mini-label">created pages tracked</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {byCallType.length > 0 && (
             <div>
               <div className="atlas-stat-panel-meta" style={{ marginBottom: "0.4rem" }}>

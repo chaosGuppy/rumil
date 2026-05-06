@@ -764,6 +764,30 @@ export type CallTypeStats = {
      * Low N
      */
     low_n?: boolean;
+    /**
+     * Closing Review N
+     */
+    closing_review_n?: number;
+    /**
+     * Context Inadequate Pct
+     */
+    context_inadequate_pct?: number;
+    /**
+     * Mean Confidence
+     */
+    mean_confidence?: number;
+    /**
+     * Mean Remaining Fruit
+     */
+    mean_remaining_fruit?: number;
+    /**
+     * Confidence Histogram
+     */
+    confidence_histogram?: Array<HistogramBin>;
+    /**
+     * Remaining Fruit Histogram
+     */
+    remaining_fruit_histogram?: Array<HistogramBin>;
 };
 
 /**
@@ -2805,6 +2829,12 @@ export type InvocationRecord = {
  * list of typed blocks. ``tools`` is the JSON-Schema-shaped tools
  * list. ``thinking`` mirrors the Anthropic ``thinking`` request param
  * when present.
+ *
+ * ``raw_kwargs`` is the literal ``request_kwargs`` dict captured at
+ * send time, when available. ``provenance="logged"`` means the parsed
+ * fields above came from that dict; ``"reconstructed"`` means they
+ * were assembled from legacy ``system_prompt``/``user_messages``
+ * columns and the wire request was not preserved.
  */
 export type InvocationRequest = {
     /**
@@ -2841,6 +2871,16 @@ export type InvocationRequest = {
     thinking?: {
         [key: string]: unknown;
     } | null;
+    /**
+     * Raw Kwargs
+     */
+    raw_kwargs?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Provenance
+     */
+    provenance?: string;
 };
 
 /**
@@ -3778,6 +3818,22 @@ export type MoveStats = {
      * Last Seen
      */
     last_seen?: string | null;
+    /**
+     * Created Pages N
+     */
+    created_pages_n?: number;
+    /**
+     * Survived N
+     */
+    survived_n?: number;
+    /**
+     * Superseded N
+     */
+    superseded_n?: number;
+    /**
+     * Survival Pct
+     */
+    survival_pct?: number;
 };
 
 /**

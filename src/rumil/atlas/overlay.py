@@ -158,6 +158,32 @@ async def build_workflow_overlay(
                     continue
                 stage_calls[exec_stage_id].append(child)
 
+    # Fallback pass: view-refresh and red-team calls dispatched directly by
+    # the orchestrator (parent_call_id=self._parent_call_id, which is None
+    # on top-level runs) are siblings of the prioritization calls, not
+    # children. Catch any view/red_team calls in the run that didn't get
+    # bucketed above and assign them to the appropriate stage.
+    already_bucketed: set[str] = {
+        str(c.get("id")) for stage_list in stage_calls.values() for c in stage_list
+    }
+    view_call_types = {
+        CallType.CREATE_VIEW.value,
+        CallType.UPDATE_VIEW.value,
+        CallType.CREATE_VIEW_MAX_EFFORT.value,
+        CallType.UPDATE_VIEW_MAX_EFFORT.value,
+        CallType.CREATE_FREEFORM_VIEW.value,
+        CallType.UPDATE_FREEFORM_VIEW.value,
+    }
+    for c in call_rows:
+        cid = str(c.get("id"))
+        if cid in already_bucketed:
+            continue
+        ct = c.get("call_type")
+        if view_stage and ct in view_call_types:
+            stage_calls[view_stage].append(c)
+        elif red_stage and ct == CallType.RED_TEAM.value:
+            stage_calls[red_stage].append(c)
+
     stages: list[WorkflowOverlayStage] = []
     for stage in profile.stages:
         calls = stage_calls.get(stage.id, [])

@@ -7706,6 +7706,42 @@
             "type": "boolean",
             "title": "Low N",
             "default": false
+          },
+          "closing_review_n": {
+            "type": "integer",
+            "title": "Closing Review N",
+            "default": 0
+          },
+          "context_inadequate_pct": {
+            "type": "number",
+            "title": "Context Inadequate Pct",
+            "default": 0.0
+          },
+          "mean_confidence": {
+            "type": "number",
+            "title": "Mean Confidence",
+            "default": 0.0
+          },
+          "mean_remaining_fruit": {
+            "type": "number",
+            "title": "Mean Remaining Fruit",
+            "default": 0.0
+          },
+          "confidence_histogram": {
+            "items": {
+              "$ref": "#/components/schemas/HistogramBin"
+            },
+            "type": "array",
+            "title": "Confidence Histogram",
+            "default": []
+          },
+          "remaining_fruit_histogram": {
+            "items": {
+              "$ref": "#/components/schemas/HistogramBin"
+            },
+            "type": "array",
+            "title": "Remaining Fruit Histogram",
+            "default": []
           }
         },
         "type": "object",
@@ -10882,11 +10918,28 @@
               }
             ],
             "title": "Thinking"
+          },
+          "raw_kwargs": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Kwargs"
+          },
+          "provenance": {
+            "type": "string",
+            "title": "Provenance",
+            "default": "reconstructed"
           }
         },
         "type": "object",
         "title": "InvocationRequest",
-        "description": "Anthropic-API-shape request body for a recorded LLM exchange.\n\n``messages`` is the message stack as the API received it \u2014 a list\nof ``{role, content}`` dicts where ``content`` is a string or a\nlist of typed blocks. ``tools`` is the JSON-Schema-shaped tools\nlist. ``thinking`` mirrors the Anthropic ``thinking`` request param\nwhen present."
+        "description": "Anthropic-API-shape request body for a recorded LLM exchange.\n\n``messages`` is the message stack as the API received it \u2014 a list\nof ``{role, content}`` dicts where ``content`` is a string or a\nlist of typed blocks. ``tools`` is the JSON-Schema-shaped tools\nlist. ``thinking`` mirrors the Anthropic ``thinking`` request param\nwhen present.\n\n``raw_kwargs`` is the literal ``request_kwargs`` dict captured at\nsend time, when available. ``provenance=\"logged\"`` means the parsed\nfields above came from that dict; ``\"reconstructed\"`` means they\nwere assembled from legacy ``system_prompt``/``user_messages``\ncolumns and the wire request was not preserved."
       },
       "InvocationResponse": {
         "properties": {
@@ -12616,6 +12669,26 @@
               }
             ],
             "title": "Last Seen"
+          },
+          "created_pages_n": {
+            "type": "integer",
+            "title": "Created Pages N",
+            "default": 0
+          },
+          "survived_n": {
+            "type": "integer",
+            "title": "Survived N",
+            "default": 0
+          },
+          "superseded_n": {
+            "type": "integer",
+            "title": "Superseded N",
+            "default": 0
+          },
+          "survival_pct": {
+            "type": "number",
+            "title": "Survival Pct",
+            "default": 0.0
           }
         },
         "type": "object",

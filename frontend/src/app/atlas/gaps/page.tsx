@@ -10,9 +10,24 @@ const KIND_LABELS: Record<string, string> = {
   move_in_no_preset: "unrouted move",
 };
 
+const KIND_GO_LABELS: Record<string, string> = {
+  orphan_prompt_file: "open prompt →",
+  move_in_no_preset: "open move →",
+  call_type_without_runner: "open call →",
+  dispatchable_without_dispatch_def: "open call →",
+  call_type_without_description: "open call →",
+  page_type_without_description: "open page →",
+  workflow_setting_missing: "open workflow →",
+  workflow_code_path_missing: "open workflow →",
+};
+
 function kindClass(kind: string): string {
   if (kind.startsWith("orphan_")) return "is-orphan";
   return "";
+}
+
+function goLabel(kind: string): string {
+  return KIND_GO_LABELS[kind] ?? "open →";
 }
 
 export default async function GapsPage({
@@ -96,7 +111,7 @@ function GapRow({ item }: { item: GapItem }) {
       <span className="atlas-gap-detail">{item.detail || ""}</span>
       {item.href ? (
         <Link href={item.href} className="atlas-count-link">
-          go
+          {goLabel(item.kind)}
         </Link>
       ) : (
         <span style={{ color: "var(--a-muted)", fontSize: "0.7rem" }}>—</span>

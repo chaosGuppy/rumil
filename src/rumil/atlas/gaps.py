@@ -57,7 +57,16 @@ def _all_referenced_prompts() -> set[str]:
     return refs
 
 
-def build_gaps_report() -> GapsReport:
+def build_gaps_report(*, project_id: str | None = None) -> GapsReport:
+    """Build the registry-level gaps report.
+
+    ``project_id`` is accepted for forward compatibility — the current
+    checks are all registry-level (move/dispatch/call/page-type wiring,
+    orphan prompts, missing settings) and workspace-agnostic. Routes
+    pass it through; future workspace-scoped checks (orphan questions,
+    runs without provenance) can be added without changing the surface.
+    """
+    del project_id  # registry-level checks only — see docstring
     items: list[GapItem] = []
 
     runner_idx = _runner_index()

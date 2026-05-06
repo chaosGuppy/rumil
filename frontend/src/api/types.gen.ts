@@ -812,6 +812,59 @@ export type CallTypeSummary = {
 };
 
 /**
+ * CallTypeVariance
+ *
+ * One row of the cross-call-type variance summary.
+ *
+ * ``cv`` is coefficient of variation (stdev / mean). Higher → more
+ * unstable cost behaviour, more likely to surprise an iterator.
+ */
+export type CallTypeVariance = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * N Invocations
+     */
+    n_invocations: number;
+    /**
+     * Mean Cost Usd
+     */
+    mean_cost_usd?: number;
+    /**
+     * P50 Cost Usd
+     */
+    p50_cost_usd?: number;
+    /**
+     * P99 Cost Usd
+     */
+    p99_cost_usd?: number;
+    /**
+     * Cv
+     */
+    cv?: number;
+    /**
+     * P99 P50 Ratio
+     */
+    p99_p50_ratio?: number | null;
+};
+
+/**
+ * CallTypeVarianceSummary
+ */
+export type CallTypeVarianceSummary = {
+    /**
+     * Rows
+     */
+    rows: Array<CallTypeVariance>;
+    /**
+     * N Runs Scanned
+     */
+    n_runs_scanned: number;
+};
+
+/**
  * CallsForQuestion
  */
 export type CallsForQuestion = {
@@ -2366,6 +2419,82 @@ export type ImpactFilterEventOut = {
      * Pare Model
      */
     pare_model: string | null;
+};
+
+/**
+ * InFlightCall
+ */
+export type InFlightCall = {
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Project Id
+     */
+    project_id?: string;
+    /**
+     * Workflow Name
+     */
+    workflow_name?: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Last Event Ts
+     */
+    last_event_ts?: string | null;
+    /**
+     * Seconds Since Start
+     */
+    seconds_since_start?: number | null;
+    /**
+     * Seconds Since Last Event
+     */
+    seconds_since_last_event?: number | null;
+    /**
+     * Is Stuck
+     */
+    is_stuck?: boolean;
+};
+
+/**
+ * InFlightQueue
+ */
+export type InFlightQueue = {
+    /**
+     * Items
+     */
+    items: Array<InFlightCall>;
+    /**
+     * N Running
+     */
+    n_running: number;
+    /**
+     * N Pending
+     */
+    n_pending: number;
+    /**
+     * N Stuck
+     */
+    n_stuck: number;
+    /**
+     * Stuck Threshold Seconds
+     */
+    stuck_threshold_seconds: number;
 };
 
 /**
@@ -5464,6 +5593,14 @@ export type RunFlowNode = {
      * N Llm Exchanges
      */
     n_llm_exchanges?: number;
+    /**
+     * Depth
+     */
+    depth?: number;
+    /**
+     * Recurse Depth
+     */
+    recurse_depth?: number;
 };
 
 /**
@@ -8629,7 +8766,12 @@ export type GetGapsApiAtlasGapsGetData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string | null;
+    };
     url: '/api/atlas/gaps';
 };
 
@@ -8650,6 +8792,94 @@ export type GetGapsApiAtlasGapsGetResponses = {
 };
 
 export type GetGapsApiAtlasGapsGetResponse = GetGapsApiAtlasGapsGetResponses[keyof GetGapsApiAtlasGapsGetResponses];
+
+export type GetCallVarianceApiAtlasCallsVarianceGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * N Runs
+         */
+        n_runs?: number;
+        /**
+         * Min Invocations
+         */
+        min_invocations?: number;
+    };
+    url: '/api/atlas/calls/variance';
+};
+
+export type GetCallVarianceApiAtlasCallsVarianceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCallVarianceApiAtlasCallsVarianceGetError = GetCallVarianceApiAtlasCallsVarianceGetErrors[keyof GetCallVarianceApiAtlasCallsVarianceGetErrors];
+
+export type GetCallVarianceApiAtlasCallsVarianceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CallTypeVarianceSummary;
+};
+
+export type GetCallVarianceApiAtlasCallsVarianceGetResponse = GetCallVarianceApiAtlasCallsVarianceGetResponses[keyof GetCallVarianceApiAtlasCallsVarianceGetResponses];
+
+export type GetInFlightQueueApiAtlasRunsInFlightGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Stuck Seconds
+         */
+        stuck_seconds?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/atlas/runs/in_flight';
+};
+
+export type GetInFlightQueueApiAtlasRunsInFlightGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetInFlightQueueApiAtlasRunsInFlightGetError = GetInFlightQueueApiAtlasRunsInFlightGetErrors[keyof GetInFlightQueueApiAtlasRunsInFlightGetErrors];
+
+export type GetInFlightQueueApiAtlasRunsInFlightGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: InFlightQueue;
+};
+
+export type GetInFlightQueueApiAtlasRunsInFlightGetResponse = GetInFlightQueueApiAtlasRunsInFlightGetResponses[keyof GetInFlightQueueApiAtlasRunsInFlightGetResponses];
 
 export type GetSearchApiAtlasSearchGetData = {
     body?: never;

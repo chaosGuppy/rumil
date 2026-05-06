@@ -606,6 +606,29 @@ async def build_run_flow(db: DB, run_id: str) -> RunFlow:
     from rumil.atlas.descriptions import CALL_TYPE_DESCRIPTIONS
     from rumil.atlas.events import closing_review_outcome
 
+    by_id = {str(c.get("id")): c for c in call_rows if c.get("id")}
+
+    def _depth_and_recurse(call_id: str, _seen: frozenset[str] = frozenset()) -> tuple[int, int]:
+        """Walk parent_call_id, counting depth + how many ancestors are
+        also PRIORITIZATION calls (atlas's proxy for recurse depth — a
+        recurse spawns a child PRIORITIZATION under a parent
+        PRIORITIZATION)."""
+        if call_id in _seen:
+            return 0, 0
+        c = by_id.get(call_id)
+        if c is None:
+            return 0, 0
+        parent = c.get("parent_call_id")
+        if not parent:
+            return 0, 0
+        d, r = _depth_and_recurse(str(parent), _seen | {call_id})
+        is_prio = c.get("call_type") == CallType.PRIORITIZATION.value
+        parent_is_prio = (
+            by_id.get(str(parent)) is not None
+            and by_id[str(parent)].get("call_type") == CallType.PRIORITIZATION.value
+        )
+        return d + 1, r + (1 if is_prio and parent_is_prio else 0)
+
     for c in call_rows:
         events = _events_of(c)
         stage_id, _skipped = _stages_for_call(workflow_name, c) if workflow_name else (None, False)
@@ -618,6 +641,7 @@ async def build_run_flow(db: DB, run_id: str) -> RunFlow:
             ct_desc = ""
         has_error = any(e.get("event") == "error" for e in events)
         n_llm = sum(1 for e in events if e.get("event") == "llm_exchange")
+        depth, recurse_depth = _depth_and_recurse(str(c.get("id") or ""))
         nodes.append(
             RunFlowNode(
                 call_id=str(c.get("id") or ""),
@@ -635,6 +659,8 @@ async def build_run_flow(db: DB, run_id: str) -> RunFlow:
                 closing_review_outcome=closing_review_outcome(c),
                 has_error_event=has_error,
                 n_llm_exchanges=n_llm,
+                depth=depth,
+                recurse_depth=recurse_depth,
             )
         )
     return RunFlow(run_id=run_id, workflow_name=workflow_name, nodes=nodes)

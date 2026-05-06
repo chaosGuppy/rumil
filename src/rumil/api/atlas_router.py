@@ -40,6 +40,7 @@ from rumil.atlas.impact import build_prompt_impact
 from rumil.atlas.live import build_live_snapshot
 from rumil.atlas.overlay import build_workflow_overlay
 from rumil.atlas.pages import build_page_calls, build_page_timeline
+from rumil.atlas.polish import build_in_flight_queue, build_variance_summary
 from rumil.atlas.prompt_parts import build_prompt_composition
 from rumil.atlas.registry import (
     build_call_type_summaries,
@@ -55,9 +56,11 @@ from rumil.atlas.schemas import (
     CallEventDump,
     CallTypeStats,
     CallTypeSummary,
+    CallTypeVarianceSummary,
     DispatchSummary,
     ExchangeSearchResults,
     GapsReport,
+    InFlightQueue,
     LiveRunSnapshot,
     MoveStats,
     MoveSummary,
@@ -455,9 +458,40 @@ async def get_move_stats(
 
 @router.get("/gaps", response_model=GapsReport)
 def get_gaps(
+    project_id: str | None = None,
     _user: AuthUser = Depends(get_current_user),
 ) -> GapsReport:
-    return build_gaps_report()
+    return build_gaps_report(project_id=project_id)
+
+
+@router.get("/calls/variance", response_model=CallTypeVarianceSummary)
+async def get_call_variance(
+    project_id: str | None = None,
+    n_runs: int = 100,
+    min_invocations: int = 3,
+    db: DB = Depends(_get_db),
+) -> CallTypeVarianceSummary:
+    return await build_variance_summary(
+        db,
+        project_id=project_id,
+        n_runs=n_runs,
+        min_invocations=min_invocations,
+    )
+
+
+@router.get("/runs/in_flight", response_model=InFlightQueue)
+async def get_in_flight_queue(
+    project_id: str | None = None,
+    stuck_seconds: int = 300,
+    limit: int = 100,
+    db: DB = Depends(_get_db),
+) -> InFlightQueue:
+    return await build_in_flight_queue(
+        db,
+        project_id=project_id,
+        stuck_seconds=stuck_seconds,
+        limit=limit,
+    )
 
 
 @router.get("/search", response_model=SearchResults)

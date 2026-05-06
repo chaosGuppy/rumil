@@ -3023,6 +3023,22 @@
         "operationId": "get_gaps_api_atlas_gaps_get",
         "parameters": [
           {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -3046,6 +3062,164 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GapsReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/calls/variance": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Call Variance",
+        "operationId": "get_call_variance_api_atlas_calls_variance_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "n_runs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "N Runs"
+            }
+          },
+          {
+            "name": "min_invocations",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 3,
+              "title": "Min Invocations"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallTypeVarianceSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/runs/in_flight": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get In Flight Queue",
+        "operationId": "get_in_flight_queue_api_atlas_runs_in_flight_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "stuck_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 300,
+              "title": "Stuck Seconds"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InFlightQueue"
                 }
               }
             }
@@ -6919,6 +7093,77 @@
         ],
         "title": "CallTypeSummary"
       },
+      "CallTypeVariance": {
+        "properties": {
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "n_invocations": {
+            "type": "integer",
+            "title": "N Invocations"
+          },
+          "mean_cost_usd": {
+            "type": "number",
+            "title": "Mean Cost Usd",
+            "default": 0.0
+          },
+          "p50_cost_usd": {
+            "type": "number",
+            "title": "P50 Cost Usd",
+            "default": 0.0
+          },
+          "p99_cost_usd": {
+            "type": "number",
+            "title": "P99 Cost Usd",
+            "default": 0.0
+          },
+          "cv": {
+            "type": "number",
+            "title": "Cv",
+            "default": 0.0
+          },
+          "p99_p50_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P99 P50 Ratio"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_type",
+          "n_invocations"
+        ],
+        "title": "CallTypeVariance",
+        "description": "One row of the cross-call-type variance summary.\n\n``cv`` is coefficient of variation (stdev / mean). Higher \u2192 more\nunstable cost behaviour, more likely to surprise an iterator."
+      },
+      "CallTypeVarianceSummary": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CallTypeVariance"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "n_runs_scanned": {
+            "type": "integer",
+            "title": "N Runs Scanned"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows",
+          "n_runs_scanned"
+        ],
+        "title": "CallTypeVarianceSummary"
+      },
       "CallsForQuestion": {
         "properties": {
           "question_id": {
@@ -9249,6 +9494,135 @@
           "pare_model"
         ],
         "title": "ImpactFilterEventOut"
+      },
+      "InFlightCall": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "workflow_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "last_event_ts": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event Ts"
+          },
+          "seconds_since_start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Since Start"
+          },
+          "seconds_since_last_event": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Since Last Event"
+          },
+          "is_stuck": {
+            "type": "boolean",
+            "title": "Is Stuck",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_id",
+          "call_type",
+          "run_id",
+          "status"
+        ],
+        "title": "InFlightCall"
+      },
+      "InFlightQueue": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InFlightCall"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "n_running": {
+            "type": "integer",
+            "title": "N Running"
+          },
+          "n_pending": {
+            "type": "integer",
+            "title": "N Pending"
+          },
+          "n_stuck": {
+            "type": "integer",
+            "title": "N Stuck"
+          },
+          "stuck_threshold_seconds": {
+            "type": "integer",
+            "title": "Stuck Threshold Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "n_running",
+          "n_pending",
+          "n_stuck",
+          "stuck_threshold_seconds"
+        ],
+        "title": "InFlightQueue"
       },
       "JobListItem": {
         "properties": {
@@ -14320,6 +14694,16 @@
           "n_llm_exchanges": {
             "type": "integer",
             "title": "N Llm Exchanges",
+            "default": 0
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth",
+            "default": 0
+          },
+          "recurse_depth": {
+            "type": "integer",
+            "title": "Recurse Depth",
             "default": 0
           }
         },

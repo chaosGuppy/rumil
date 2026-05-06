@@ -591,6 +591,8 @@ class RunFlowNode(BaseModel):
     closing_review_outcome: str | None = None
     has_error_event: bool = False
     n_llm_exchanges: int = 0
+    depth: int = 0
+    recurse_depth: int = 0
 
 
 class TraceEventRecord(BaseModel):
@@ -633,6 +635,49 @@ class RenderedPromptSample(BaseModel):
     response_text: str = ""
     has_error: bool = False
     anomalies: list[str] = []
+
+
+class CallTypeVariance(BaseModel):
+    """One row of the cross-call-type variance summary.
+
+    ``cv`` is coefficient of variation (stdev / mean). Higher → more
+    unstable cost behaviour, more likely to surprise an iterator.
+    """
+
+    call_type: str
+    n_invocations: int
+    mean_cost_usd: float = 0.0
+    p50_cost_usd: float = 0.0
+    p99_cost_usd: float = 0.0
+    cv: float = 0.0
+    p99_p50_ratio: float | None = None
+
+
+class CallTypeVarianceSummary(BaseModel):
+    rows: list[CallTypeVariance]
+    n_runs_scanned: int
+
+
+class InFlightCall(BaseModel):
+    call_id: str
+    call_type: str
+    run_id: str
+    project_id: str = ""
+    workflow_name: str | None = None
+    status: str
+    started_at: str | None = None
+    last_event_ts: str | None = None
+    seconds_since_start: float | None = None
+    seconds_since_last_event: float | None = None
+    is_stuck: bool = False
+
+
+class InFlightQueue(BaseModel):
+    items: list[InFlightCall]
+    n_running: int
+    n_pending: int
+    n_stuck: int
+    stuck_threshold_seconds: int
 
 
 class ExchangeSearchHit(BaseModel):

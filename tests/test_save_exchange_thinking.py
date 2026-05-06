@@ -202,3 +202,42 @@ async def test_no_available_tools_passes_none_to_db(metadata, db_mock, trace_moc
 
     kwargs = db_mock.save_llm_exchange.await_args.kwargs
     assert kwargs["available_tools"] is None
+
+
+@pytest.mark.asyncio
+async def test_response_schema_forwarded_to_db(metadata, db_mock, trace_mock, langfuse_url):
+    schema = {"name": "MyModel", "schema": {"type": "object", "properties": {}}}
+
+    await _save_exchange(
+        metadata,
+        db=db_mock,
+        model="claude-opus-4-7",
+        system_prompt="sys",
+        response_text="{}",
+        tool_calls=[],
+        input_tokens=1,
+        output_tokens=1,
+        duration_ms=1,
+        response_schema=schema,
+    )
+
+    kwargs = db_mock.save_llm_exchange.await_args.kwargs
+    assert kwargs["response_schema"] == schema
+
+
+@pytest.mark.asyncio
+async def test_no_response_schema_passes_none_to_db(metadata, db_mock, trace_mock, langfuse_url):
+    await _save_exchange(
+        metadata,
+        db=db_mock,
+        model="claude-haiku-4-5",
+        system_prompt="sys",
+        response_text="answer",
+        tool_calls=[],
+        input_tokens=1,
+        output_tokens=1,
+        duration_ms=1,
+    )
+
+    kwargs = db_mock.save_llm_exchange.await_args.kwargs
+    assert kwargs["response_schema"] is None

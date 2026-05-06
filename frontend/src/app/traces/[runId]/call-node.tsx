@@ -590,6 +590,26 @@ function WebSearchResultEntry({ tc }: { tc: Record<string, unknown> }) {
   );
 }
 
+function ResponseSchemaSection({
+  schema,
+}: {
+  schema: Record<string, unknown>;
+}) {
+  const name = (schema.name as string | undefined) ?? "response_schema";
+  const body = schema.schema ?? schema;
+  return (
+    <div className="trace-tool-calls">
+      <div className="trace-tool-calls-label">Response schema</div>
+      <details className="trace-tool-call">
+        <summary className="trace-tool-call-name">{name}</summary>
+        <pre className="trace-tool-call-input">
+          {JSON.stringify(body, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 function AvailableToolsList({
   tools,
 }: {
@@ -753,6 +773,11 @@ function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
       {detail.available_tools && detail.available_tools.length > 0 && (
         <AvailableToolsList
           tools={detail.available_tools as Array<Record<string, unknown>>}
+        />
+      )}
+      {detail.response_schema && (
+        <ResponseSchemaSection
+          schema={detail.response_schema as Record<string, unknown>}
         />
       )}
       {detail.thinking_blocks && (

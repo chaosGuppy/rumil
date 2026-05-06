@@ -883,6 +883,7 @@ async def get_llm_exchange(
         response_text=row.get("response_text"),
         tool_calls=row.get("tool_calls", []),
         available_tools=row.get("available_tools"),
+        response_schema=row.get("response_schema"),
         input_tokens=row.get("input_tokens"),
         output_tokens=row.get("output_tokens"),
         duration_ms=row.get("duration_ms"),

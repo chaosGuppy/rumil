@@ -80,6 +80,49 @@ def test_langfuse_input_for_returns_flat_list_when_tools_empty():
     ]
 
 
+def test_langfuse_input_for_includes_response_format_when_schema_present():
+    schema = {
+        "name": "MyModel",
+        "schema": {"type": "object", "properties": {"x": {"type": "string"}}},
+    }
+
+    payload = _langfuse_input_for(
+        "sys", [{"role": "user", "content": "hi"}], response_schema=schema
+    )
+
+    # Schema-only (no tools) still wraps as a dict so the response_format field surfaces.
+    assert payload == {
+        "messages": [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hi"},
+        ],
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "MyModel",
+                "schema": {"type": "object", "properties": {"x": {"type": "string"}}},
+                "strict": True,
+            },
+        },
+    }
+
+
+def test_langfuse_input_for_combines_tools_and_schema():
+    tools = [{"name": "noop", "description": "", "input_schema": {"type": "object"}}]
+    schema = {"name": "M", "schema": {"type": "object"}}
+
+    payload = _langfuse_input_for(
+        "sys",
+        [{"role": "user", "content": "hi"}],
+        tools=tools,
+        response_schema=schema,
+    )
+
+    assert isinstance(payload, dict)
+    assert "tools" in payload and "response_format" in payload
+    assert payload["response_format"]["json_schema"]["name"] == "M"
+
+
 @pytest.fixture
 def langfuse_client(mocker):
     client = mocker.MagicMock()

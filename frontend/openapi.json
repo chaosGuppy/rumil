@@ -7569,6 +7569,18 @@
             ],
             "title": "Available Tools"
           },
+          "response_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Schema"
+          },
           "input_tokens": {
             "anyOf": [
               {

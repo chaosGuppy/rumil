@@ -49,11 +49,13 @@ from rumil.atlas.registry import (
     get_prompt_doc,
     list_prompt_files,
 )
+from rumil.atlas.render import build_sample_render, search_exchanges
 from rumil.atlas.schemas import (
     CallEventDump,
     CallTypeStats,
     CallTypeSummary,
     DispatchSummary,
+    ExchangeSearchResults,
     GapsReport,
     LiveRunSnapshot,
     MoveStats,
@@ -65,6 +67,7 @@ from rumil.atlas.schemas import (
     PromptDoc,
     PromptHistory,
     RegistryRollup,
+    RenderedPromptSample,
     RunDiff,
     RunFlow,
     RunRollup,
@@ -193,6 +196,36 @@ def get_composition(
     if not comp.parts:
         raise HTTPException(status_code=404, detail=f"composition not found: {key}")
     return comp
+
+
+@router.get("/registry/calls/{call_type}/sample_render", response_model=RenderedPromptSample)
+async def get_sample_render(
+    call_type: str,
+    project_id: str | None = None,
+    run_id: str | None = None,
+    db: DB = Depends(_get_db),
+) -> RenderedPromptSample:
+    sample = await build_sample_render(db, call_type, project_id=project_id, run_id=run_id)
+    if sample is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no recent rendered exchange found for call type {call_type!r}",
+        )
+    return sample
+
+
+@router.get("/exchanges/search", response_model=ExchangeSearchResults)
+async def search_exchanges_endpoint(
+    q: str,
+    project_id: str | None = None,
+    call_type: str | None = None,
+    limit: int = 50,
+    scan: int = 500,
+    db: DB = Depends(_get_db),
+) -> ExchangeSearchResults:
+    return await search_exchanges(
+        db, q, project_id=project_id, call_type=call_type, limit=limit, scan=scan
+    )
 
 
 @router.get("/registry/prompts", response_model=list[str])

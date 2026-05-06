@@ -574,6 +574,54 @@ class TraceEventRecord(BaseModel):
     payload: dict
 
 
+class RenderedPromptSample(BaseModel):
+    """A real LLM exchange surfaced as a rendered-prompt sample.
+
+    The raw text of the system prompt + user messages as the model
+    actually saw them. Used to catch ``{{TASK}}`` leaks, parent-headline
+    pollution, and silent default mismatches that the
+    static composition view can't detect (since atlas's composition
+    only shows the template, not the substituted text).
+
+    ``anomalies`` lists detected pattern matches the FE can highlight —
+    today: literal ``{{...}}`` token survivors, fallback-task placeholder
+    leak, missing preamble.
+    """
+
+    exchange_id: str
+    call_id: str
+    call_type: str
+    run_id: str = ""
+    created_at: str = ""
+    model: str = ""
+    phase: str = ""
+    round: int | None = None
+    system_prompt: str = ""
+    user_message: str = ""
+    response_text: str = ""
+    has_error: bool = False
+    anomalies: list[str] = []
+
+
+class ExchangeSearchHit(BaseModel):
+    exchange_id: str
+    call_id: str
+    call_type: str
+    run_id: str = ""
+    created_at: str = ""
+    field: str
+    snippet: str
+    score: float = 1.0
+
+
+class ExchangeSearchResults(BaseModel):
+    query: str
+    hits: list[ExchangeSearchHit]
+    total: int
+    truncated: bool = False
+    n_scanned: int
+
+
 class CallEventDump(BaseModel):
     call_id: str
     call_type: str

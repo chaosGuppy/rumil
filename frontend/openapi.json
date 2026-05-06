@@ -1589,6 +1589,194 @@
         }
       }
     },
+    "/api/atlas/registry/calls/{call_type}/sample_render": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Sample Render",
+        "operationId": "get_sample_render_api_atlas_registry_calls__call_type__sample_render_get",
+        "parameters": [
+          {
+            "name": "call_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderedPromptSample"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/exchanges/search": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Search Exchanges Endpoint",
+        "operationId": "search_exchanges_endpoint_api_atlas_exchanges_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "call_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Call Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "title": "Scan"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeSearchResults"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/registry/prompts": {
       "get": {
         "tags": [
@@ -8136,6 +8324,90 @@
         ],
         "title": "EvaluationCompleteEventOut"
       },
+      "ExchangeSearchHit": {
+        "properties": {
+          "exchange_id": {
+            "type": "string",
+            "title": "Exchange Id"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "default": 1.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "exchange_id",
+          "call_id",
+          "call_type",
+          "field",
+          "snippet"
+        ],
+        "title": "ExchangeSearchHit"
+      },
+      "ExchangeSearchResults": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/ExchangeSearchHit"
+            },
+            "type": "array",
+            "title": "Hits"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "n_scanned": {
+            "type": "integer",
+            "title": "N Scanned"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "hits",
+          "total",
+          "n_scanned"
+        ],
+        "title": "ExchangeSearchResults"
+      },
       "ExperimentalScoringCompletedEventOut": {
         "properties": {
           "ts": {
@@ -13115,6 +13387,89 @@
           "response"
         ],
         "title": "RenderQuestionSubgraphEventOut"
+      },
+      "RenderedPromptSample": {
+        "properties": {
+          "exchange_id": {
+            "type": "string",
+            "title": "Exchange Id"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase",
+            "default": ""
+          },
+          "round": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round"
+          },
+          "system_prompt": {
+            "type": "string",
+            "title": "System Prompt",
+            "default": ""
+          },
+          "user_message": {
+            "type": "string",
+            "title": "User Message",
+            "default": ""
+          },
+          "response_text": {
+            "type": "string",
+            "title": "Response Text",
+            "default": ""
+          },
+          "has_error": {
+            "type": "boolean",
+            "title": "Has Error",
+            "default": false
+          },
+          "anomalies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Anomalies",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "exchange_id",
+          "call_id",
+          "call_type"
+        ],
+        "title": "RenderedPromptSample",
+        "description": "A real LLM exchange surfaced as a rendered-prompt sample.\n\nThe raw text of the system prompt + user messages as the model\nactually saw them. Used to catch ``{{TASK}}`` leaks, parent-headline\npollution, and silent default mismatches that the\nstatic composition view can't detect (since atlas's composition\nonly shows the template, not the substituted text).\n\n``anomalies`` lists detected pattern matches the FE can highlight \u2014\ntoday: literal ``{{...}}`` token survivors, fallback-task placeholder\nleak, missing preamble."
       },
       "ResultsBundle": {
         "properties": {

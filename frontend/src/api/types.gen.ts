@@ -1875,6 +1875,70 @@ export type EvaluationCompleteEventOut = {
 };
 
 /**
+ * ExchangeSearchHit
+ */
+export type ExchangeSearchHit = {
+    /**
+     * Exchange Id
+     */
+    exchange_id: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Field
+     */
+    field: string;
+    /**
+     * Snippet
+     */
+    snippet: string;
+    /**
+     * Score
+     */
+    score?: number;
+};
+
+/**
+ * ExchangeSearchResults
+ */
+export type ExchangeSearchResults = {
+    /**
+     * Query
+     */
+    query: string;
+    /**
+     * Hits
+     */
+    hits: Array<ExchangeSearchHit>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+    /**
+     * N Scanned
+     */
+    n_scanned: number;
+};
+
+/**
  * ExperimentalScoringCompletedEventOut
  */
 export type ExperimentalScoringCompletedEventOut = {
@@ -4878,6 +4942,76 @@ export type RenderQuestionSubgraphEventOut = {
 };
 
 /**
+ * RenderedPromptSample
+ *
+ * A real LLM exchange surfaced as a rendered-prompt sample.
+ *
+ * The raw text of the system prompt + user messages as the model
+ * actually saw them. Used to catch ``{{TASK}}`` leaks, parent-headline
+ * pollution, and silent default mismatches that the
+ * static composition view can't detect (since atlas's composition
+ * only shows the template, not the substituted text).
+ *
+ * ``anomalies`` lists detected pattern matches the FE can highlight —
+ * today: literal ``{{...}}`` token survivors, fallback-task placeholder
+ * leak, missing preamble.
+ */
+export type RenderedPromptSample = {
+    /**
+     * Exchange Id
+     */
+    exchange_id: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Model
+     */
+    model?: string;
+    /**
+     * Phase
+     */
+    phase?: string;
+    /**
+     * Round
+     */
+    round?: number | null;
+    /**
+     * System Prompt
+     */
+    system_prompt?: string;
+    /**
+     * User Message
+     */
+    user_message?: string;
+    /**
+     * Response Text
+     */
+    response_text?: string;
+    /**
+     * Has Error
+     */
+    has_error?: boolean;
+    /**
+     * Anomalies
+     */
+    anomalies?: Array<string>;
+};
+
+/**
  * ResultsBundle
  */
 export type ResultsBundle = {
@@ -7586,6 +7720,103 @@ export type GetCompositionApiAtlasRegistryCompositionsKeyGetResponses = {
 };
 
 export type GetCompositionApiAtlasRegistryCompositionsKeyGetResponse = GetCompositionApiAtlasRegistryCompositionsKeyGetResponses[keyof GetCompositionApiAtlasRegistryCompositionsKeyGetResponses];
+
+export type GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Call Type
+         */
+        call_type: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Run Id
+         */
+        run_id?: string | null;
+    };
+    url: '/api/atlas/registry/calls/{call_type}/sample_render';
+};
+
+export type GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetError = GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetErrors[keyof GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetErrors];
+
+export type GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenderedPromptSample;
+};
+
+export type GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetResponse = GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetResponses[keyof GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetResponses];
+
+export type SearchExchangesEndpointApiAtlasExchangesSearchGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Q
+         */
+        q: string;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Call Type
+         */
+        call_type?: string | null;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Scan
+         */
+        scan?: number;
+    };
+    url: '/api/atlas/exchanges/search';
+};
+
+export type SearchExchangesEndpointApiAtlasExchangesSearchGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SearchExchangesEndpointApiAtlasExchangesSearchGetError = SearchExchangesEndpointApiAtlasExchangesSearchGetErrors[keyof SearchExchangesEndpointApiAtlasExchangesSearchGetErrors];
+
+export type SearchExchangesEndpointApiAtlasExchangesSearchGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ExchangeSearchResults;
+};
+
+export type SearchExchangesEndpointApiAtlasExchangesSearchGetResponse = SearchExchangesEndpointApiAtlasExchangesSearchGetResponses[keyof SearchExchangesEndpointApiAtlasExchangesSearchGetResponses];
 
 export type ListPromptsApiAtlasRegistryPromptsGetData = {
     body?: never;

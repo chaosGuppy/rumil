@@ -545,6 +545,24 @@ class StatsBucket(BaseModel):
     mean_rounds: float = 0.0
 
 
+class ErrorRef(BaseModel):
+    """One recent error excerpt with provenance for cross-linking.
+
+    ``call_id`` is always present (the trace event lives on a call).
+    ``exchange_id`` is set when the error came from an
+    ``llm_exchange`` event (the exchange's own ``error`` field). When
+    the error came from a standalone ``ErrorEvent``, exchange_id is
+    None and the FE should link to the call's events dump or its run
+    flow instead.
+    """
+
+    message: str
+    call_id: str
+    run_id: str = ""
+    exchange_id: str | None = None
+    source: str = "error_event"
+
+
 class PathologyCounts(BaseModel):
     """Frequency of failure / instability patterns across a call type's
     recent invocations. Each `*_pct` is a 0-100 fraction of the call
@@ -578,7 +596,7 @@ class CallTypeStats(BaseModel):
     status_counts: dict[str, int] = {}
     top_moves: list[MoveCount] = []
     top_co_firings: list[CoFiringCount] = []
-    recent_errors: list[str] = []
+    recent_errors: list[ErrorRef] = []
     p50_cost_usd: float = 0.0
     p90_cost_usd: float = 0.0
     p99_cost_usd: float = 0.0

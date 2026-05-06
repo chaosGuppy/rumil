@@ -718,7 +718,7 @@ export type CallTypeStats = {
     /**
      * Recent Errors
      */
-    recent_errors?: Array<string>;
+    recent_errors?: Array<ErrorRef>;
     /**
      * P50 Cost Usd
      */
@@ -1696,6 +1696,41 @@ export type ErrorEventOut = {
      * Phase
      */
     phase: string;
+};
+
+/**
+ * ErrorRef
+ *
+ * One recent error excerpt with provenance for cross-linking.
+ *
+ * ``call_id`` is always present (the trace event lives on a call).
+ * ``exchange_id`` is set when the error came from an
+ * ``llm_exchange`` event (the exchange's own ``error`` field). When
+ * the error came from a standalone ``ErrorEvent``, exchange_id is
+ * None and the FE should link to the call's events dump or its run
+ * flow instead.
+ */
+export type ErrorRef = {
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Exchange Id
+     */
+    exchange_id?: string | null;
+    /**
+     * Source
+     */
+    source?: string;
 };
 
 /**

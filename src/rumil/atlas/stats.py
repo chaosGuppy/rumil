@@ -27,6 +27,7 @@ from rumil.atlas.schemas import (
     CallTypeInvocationCount,
     CallTypeStats,
     CoFiringCount,
+    ErrorRef,
     HistogramBin,
     MoveCount,
     MoveStats,
@@ -153,6 +154,53 @@ def _error_excerpt(events: Iterable[dict[str, Any]]) -> str | None:
             if isinstance(msg, str) and msg.strip():
                 return msg[:240]
     return None
+
+
+def _extract_error_refs(
+    events: Iterable[dict[str, Any]],
+    call_row: dict[str, Any],
+) -> list[ErrorRef]:
+    """Pull error excerpts from a call's trace_json with provenance.
+
+    Sources, in priority:
+    - Standalone ``ErrorEvent`` rows (no exchange_id available)
+    - ``llm_exchange`` events whose ``error`` field is non-empty
+      (carries ``exchange_id`` so atlas can deep-link)
+
+    Returns at most one ref per source event; capped at the call level
+    by the caller's slice.
+    """
+    refs: list[ErrorRef] = []
+    call_id = str(call_row.get("id") or "")
+    run_id = str(call_row.get("run_id") or "")
+    for e in events:
+        et = e.get("event")
+        if et == event_keys.ERROR:
+            msg = e.get("message")
+            if isinstance(msg, str) and msg.strip():
+                refs.append(
+                    ErrorRef(
+                        message=msg[:240],
+                        call_id=call_id,
+                        run_id=run_id,
+                        exchange_id=None,
+                        source="error_event",
+                    )
+                )
+        elif et == event_keys.LLM_EXCHANGE:
+            err_msg = e.get("error")
+            if isinstance(err_msg, str) and err_msg.strip():
+                ex_id = e.get("exchange_id")
+                refs.append(
+                    ErrorRef(
+                        message=err_msg[:240],
+                        call_id=call_id,
+                        run_id=run_id,
+                        exchange_id=str(ex_id) if isinstance(ex_id, str) else None,
+                        source="llm_exchange",
+                    )
+                )
+    return refs
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -306,7 +354,7 @@ async def build_call_type_stats(
 
     move_counts: Counter[str] = Counter()
     co_firing: Counter[tuple[str, str]] = Counter()
-    error_excerpts: list[str] = []
+    error_refs: list[ErrorRef] = []
     n_with_error = 0
     n_lying_complete = 0
     n_with_truncation = 0
@@ -321,9 +369,8 @@ async def build_call_type_stats(
         for i, a in enumerate(moves_in_call):
             for b in moves_in_call[i + 1 :]:
                 co_firing[(a, b)] += 1
-        err = _error_excerpt(events)
-        if err:
-            error_excerpts.append(err)
+        for err_ref in _extract_error_refs(events, r):
+            error_refs.append(err_ref)
         # Pathology dims.
         had_error = False
         had_truncation = False
@@ -415,7 +462,7 @@ async def build_call_type_stats(
         top_co_firings=[
             CoFiringCount(a=a, b=b, count=v) for (a, b), v in co_firing.most_common(20)
         ],
-        recent_errors=error_excerpts[:5],
+        recent_errors=error_refs[:5],
         pathology=pathology,
     )
 

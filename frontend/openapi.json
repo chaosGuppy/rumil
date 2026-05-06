@@ -7440,7 +7440,7 @@
           },
           "recent_errors": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/ErrorRef"
             },
             "type": "array",
             "title": "Recent Errors",
@@ -8954,6 +8954,46 @@
           "phase"
         ],
         "title": "ErrorEventOut"
+      },
+      "ErrorRef": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "exchange_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "error_event"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "call_id"
+        ],
+        "title": "ErrorRef",
+        "description": "One recent error excerpt with provenance for cross-linking.\n\n``call_id`` is always present (the trace event lives on a call).\n``exchange_id`` is set when the error came from an\n``llm_exchange`` event (the exchange's own ``error`` field). When\nthe error came from a standalone ``ErrorEvent``, exchange_id is\nNone and the FE should link to the call's events dump or its run\nflow instead."
       },
       "EssayDetail": {
         "properties": {

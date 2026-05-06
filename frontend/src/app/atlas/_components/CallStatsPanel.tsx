@@ -326,11 +326,46 @@ export function CallStatsPanel({
                 recent errors ({errors.length})
               </div>
               <ul className="atlas-error-list">
-                {errors.slice(0, 4).map((e, i) => (
-                  <li key={i}>
-                    {e.length > 280 ? e.slice(0, 277) + "…" : e}
-                  </li>
-                ))}
+                {errors.slice(0, 4).map((e, i) => {
+                  const msg = e.message ?? "";
+                  const trimmed = msg.length > 280 ? msg.slice(0, 277) + "…" : msg;
+                  return (
+                    <li key={i}>
+                      <div>{trimmed}</div>
+                      <div className="atlas-error-refs">
+                        {e.exchange_id && (
+                          <Link
+                            href={`/atlas/exchanges/${encodeURIComponent(
+                              e.exchange_id,
+                            )}/playground`}
+                            title="open this exchange in the playground"
+                          >
+                            exchange {e.exchange_id.slice(0, 8)} →
+                          </Link>
+                        )}
+                        {e.call_id && (
+                          <Link
+                            href={`/atlas/calls/by_id/${encodeURIComponent(
+                              e.call_id,
+                            )}/exchanges`}
+                            title="every exchange recorded against this call"
+                          >
+                            call {e.call_id.slice(0, 8)} →
+                          </Link>
+                        )}
+                        {e.run_id && (
+                          <Link
+                            href={`/atlas/runs/${encodeURIComponent(e.run_id)}/flow`}
+                            title="run flow"
+                          >
+                            run {e.run_id.slice(0, 8)} →
+                          </Link>
+                        )}
+                        <span className="atlas-error-source">{e.source}</span>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}

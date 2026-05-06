@@ -433,6 +433,7 @@ class Page(BaseModel):
     meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
     run_id: str = ""
     hidden: bool = False
+    scope_question_id: str | None = None
 
     def is_active(self) -> bool:
         return not self.is_superseded
@@ -454,6 +455,7 @@ class PageLink(BaseModel):
     impact_on_parent_question: int | None = None  # CHILD_QUESTION links: 0-10
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     run_id: str = ""
+    scope_question_id: str | None = None
 
 
 class CallSequence(BaseModel):

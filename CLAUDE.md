@@ -53,7 +53,7 @@ uv run python main.py --list-workspaces
 uv run python main.py "Your question here" --workspace test-scratch --smoke-test
 ```
 
-`--smoke-test` caps agent loop rounds at 2 per call, making runs fast and cheap. Use it for development and manual testing. When running smoke tests, don't override `--budget` unless there's a good reason to.
+`--smoke-test` caps agent loop rounds at a sensible number, making runs fast and cheap while leaving enough for the full flow to be exercised. When running smoke tests, don't override `--budget`.
 
 Tests: `uv run pytest`.
 
@@ -61,6 +61,7 @@ Tests: `uv run pytest`.
 Always use the supabase cli to create new migrations: `supabase migration new`.
 
 **Row-Level Security:** RLS is enabled on all tables with **no policies**. This means:
+
 - `service_role` (used by all backend code) bypasses RLS entirely — no performance impact, full access.
 - `anon` and `authenticated` roles are denied all table access by PostgreSQL's implicit-deny default.
 - The frontend anon key is only used for Realtime broadcast subscriptions, which do not touch the database.
@@ -81,6 +82,7 @@ Do NOT add "allow all" policies. If you need non-service-role access, add target
 **Call types** (`src/rumil/calls/`): Composition-based architecture using three pluggable stage ABCs. `CallRunner` (in `stages.py`) orchestrates the three phases by delegating to `ContextBuilder`, `WorkspaceUpdater`, and `ClosingReviewer` instances. Each call type lives in its own module (`find_considerations.py`, `assess.py`, `ingest.py`, etc.) as a thin `CallRunner` subclass. `common.py` has shared utilities (`run_agent_loop()`, `run_single_call()`, closing reviews). Public API re-exported from `__init__.py`.
 
 Architecture:
+
 - `CallRunner` (`stages.py`) — base class for all call types. Owns `run()` orchestration via `CallInfra` (bundles `CallTrace`, `MoveState`, DB, call). Subclasses set class-level `context_builder_cls`, `workspace_updater_cls`, `closing_reviewer_cls`, and `call_type` attributes, plus override `_make_*()` factory methods for parameterized stages and `task_description()`.
 - `ContextBuilder` ABC — `build_context(infra) -> ContextResult`. Implementations in `context_builders.py`: `EmbeddingContext`, `IngestEmbeddingContext`, `ScoutEmbeddingContext`, `WebResearchEmbeddingContext`, `BigAssessContext`.
 - `WorkspaceUpdater` ABC — `update_workspace(infra, context) -> UpdateResult`. Reusable implementations in `page_creators.py`: `SimpleAgentLoop` (single-pass), `MultiRoundLoop` (multi-round with fruit checks), `WebResearchLoop` (server tools + scraping). Call-specific implementations may live in the call's own module (e.g. `LinkerWorkspaceUpdater` in `link_subquestions.py`).
@@ -88,6 +90,7 @@ Architecture:
 - Data types (`stages.py`): `CallInfra` (shared infra), `ContextResult` (context output), `UpdateResult` (workspace update output).
 
 The three phases:
+
 1. **build_context** — `ContextBuilder.build_context()` returns `ContextResult`
 2. **update_workspace** — `WorkspaceUpdater.update_workspace()` returns `UpdateResult`
 3. **closing_review** — `ClosingReviewer.closing_review()` persists results and calls `mark_call_completed()`
@@ -107,16 +110,17 @@ To add a new call type: subclass `CallRunner`. Set `call_type`, override `_make_
 **Data layer** (`src/rumil/database.py`): Supabase (Postgres) via the `supabase` Python SDK. Tables: pages, page_links, calls, budget, page_ratings, page_flags, mutation_events, runs, projects. `DB.create(run_id, prod=True, staged=False)` classmethod handles connection setup (delegated to `settings.py`); defaults to local Supabase. When `staged=True`, writes tag rows with `staged`/`run_id` and mutations go to `mutation_events` (see "Staged Runs and the Mutation Log" above). Several operations use Postgres RPC functions defined in the migrations.
 
 **Projects vs Workspace enum** — two separate concepts with confusingly similar names:
+
 - **Project** (`projects` table, `project_id` FK): The user-facing isolation mechanism. The CLI `--workspace <name>` flag resolves to a `Project` row via `db.get_or_create_project(name)`, then `db.project_id` is set. Every query on pages/calls/runs/links filters by `project_id`, so projects are fully isolated from each other.
 - **Workspace enum** (`models.Workspace`): An internal layer within a project — `RESEARCH` (default, normal pages), `PRIORITIZATION` (prioritization call outputs). This is orthogonal to project_id; every page has both.
 
-**Data models** (`src/rumil/models.py`): Pydantic BaseModels for Page, PageLink, Call, Project. Used directly as both internal models and FastAPI response types (no separate `*Out` duplicates). Fields with defaults use `_all_fields_required` schema helper so they appear required in the OpenAPI spec. Key enums: PageType, CallType, CallStage, LinkType, ConsiderationDirection, MoveType. MoveType is the source of truth for valid moves — the moves registry maps each to its `MoveDef`. `DISPATCHABLE_CALL_TYPES` defines which `CallType`s prioritization can dispatch (find_considerations, assess, the scout_* family, and web_research) — the dispatch tool validates against it and the orchestrator dispatches on `CallType` enum values. Recursion dispatches (prioritization/claim-investigation sub-cycles) are not in this set; they are added separately via `RECURSE_DISPATCH_DEF` / `RECURSE_CLAIM_DISPATCH_DEF` passed as `extra_dispatch_defs`.
+**Data models** (`src/rumil/models.py`): Pydantic BaseModels for Page, PageLink, Call, Project. Used directly as both internal models and FastAPI response types (no separate `*Out` duplicates). Fields with defaults use `_all_fields_required` schema helper so they appear required in the OpenAPI spec. Key enums: PageType, CallType, CallStage, LinkType, ConsiderationDirection, MoveType. MoveType is the source of truth for valid moves — the moves registry maps each to its `MoveDef`. `DISPATCHABLE_CALL_TYPES` defines which `CallType`s prioritization can dispatch (find*considerations, assess, the scout*\* family, and web_research) — the dispatch tool validates against it and the orchestrator dispatches on `CallType` enum values. Recursion dispatches (prioritization/claim-investigation sub-cycles) are not in this set; they are added separately via `RECURSE_DISPATCH_DEF` / `RECURSE_CLAIM_DISPATCH_DEF` passed as `extra_dispatch_defs`.
 
 **Context building** (`src/rumil/context.py`): Assembles LLM context from DB state. `build_prioritization_context()` includes a question index with dispatchable IDs. `build_embedding_based_context()` uses vector similarity search (`embed_query` + `search_pages_by_vector`) to surface the most relevant pages from the entire workspace regardless of graph distance, filling a full-page tier then a summary tier within configurable char budgets (settings: `context_char_budget`, `full_page_char_fraction`, `summary_page_char_fraction`, `distillation_page_char_fraction`). Helper functions include `format_page()` for rendering individual pages and `render_page_and_immediate_children()` for depth-bounded page rendering.
 
 **Tracing** (`src/rumil/tracing/`): Package containing `tracer.py`, `trace_events.py`, and `broadcast.py`. `CallTrace` (in `tracing/tracer.py`) accumulates typed events during a call's lifecycle and persists them as JSONB in the `trace_json` column on `calls`. Events are defined as Pydantic models in `tracing/trace_events.py` with a `Literal` discriminator field (e.g. `event: Literal["context_built"] = "context_built"`). The `TraceEvent` discriminated union is the accepted type for `CallTrace.record()`. API envelope types in `schemas.py` inherit from these events and add `ts`/`call_id` fields. Frontend types are auto-generated. To add a new trace event: (1) define a new Pydantic model in `tracing/trace_events.py` with an `event: Literal["..."] = "..."` field, (2) add it to the `TraceEvent` union, (3) create a corresponding `*EventOut` subclass in `schemas.py` that inherits from both the event and `_TraceEnvelopeMixin`, (4) add it to the `TraceEventOut` union, (5) regenerate frontend types with `./scripts/generate-api-types.sh`, (6) handle the new event in the frontend's `EventSection` component in `call-node.tsx`.
 
-**Events** (`src/rumil/events.py`): In-process publish/subscribe bus for workspace lifecycle events (distinct from tracing — this is about extensibility hooks, not call-lifetime diagnostics). Events are Pydantic models subclassing `Event` with a `Literal` discriminator on `event_type` (e.g. `PageCreatedEvent.event_type: Literal["page_created"]`). Async handlers are registered per concrete event class and invoked sequentially by `fire(event)`. Dispatch is by *exact type*, not `isinstance` — register on the concrete class you care about. A raising handler is logged and swallowed; other handlers still run. Fire events **after** the underlying state has been persisted so handlers observe committed state. Use the bus for *optional* side effects that extend lifecycle points (e.g. auto-create a View on question creation); use direct calls for mandatory workflow — if A must do X after Y, call X directly rather than hiding it behind an event. Tests should scope registrations with `isolated_bus()` to avoid cross-test leakage. To add a new event type: (1) subclass `Event` in `events.py` with an `event_type: Literal["..."] = "..."` discriminator, (2) add fields describing the event, (3) fire instances from the appropriate lifecycle point after persistence.
+**Events** (`src/rumil/events.py`): In-process publish/subscribe bus for workspace lifecycle events (distinct from tracing — this is about extensibility hooks, not call-lifetime diagnostics). Events are Pydantic models subclassing `Event` with a `Literal` discriminator on `event_type` (e.g. `PageCreatedEvent.event_type: Literal["page_created"]`). Async handlers are registered per concrete event class and invoked sequentially by `fire(event)`. Dispatch is by _exact type_, not `isinstance` — register on the concrete class you care about. A raising handler is logged and swallowed; other handlers still run. Fire events **after** the underlying state has been persisted so handlers observe committed state. Use the bus for _optional_ side effects that extend lifecycle points (e.g. auto-create a View on question creation); use direct calls for mandatory workflow — if A must do X after Y, call X directly rather than hiding it behind an event. Tests should scope registrations with `isolated_bus()` to avoid cross-test leakage. To add a new event type: (1) subclass `Event` in `events.py` with an `event_type: Literal["..."] = "..."` discriminator, (2) add fields describing the event, (3) fire instances from the appropriate lifecycle point after persistence.
 
 **API** (`src/rumil/api/`): FastAPI read-only API for the frontend. Core models from `models.py` are used directly as response types. `schemas.py` defines composite response types (e.g. `CallTraceOut`) and trace event envelope types. `app.py` defines endpoints. Run with `./scripts/dev-api.sh` — this reads the API port from `frontend/.env.overrides` (then `frontend/.env`) so it matches what the frontend expects. To stop the server, read the port from those files (`NEXT_PUBLIC_API_URL`) and kill the process on that port.
 
@@ -143,7 +147,7 @@ Load-bearing invariants you shouldn't break in a passing edit:
 
 - **NEVER pass `--prod` when running `main.py` unless the user explicitly asks you to.** The production database contains real research data. Default to the local database for all testing, development, and exploratory runs.
 - **Never run `supabase db reset`** — this wipes the database and is destructive. To apply pending migrations, use `supabase migration up` instead. If you find yourself wanting to reset the database, stop and ask the user first.
-- Always scope your test runs to a temp/scratch workspace, e.g. `uv run main.py "Is the sky blue?" --workspace skyblue-scratch`
+- Always scope your test runs to a temp/scratch workspace, e.g. `uv run main.py "When will TAI emerge?" --workspace scratch`
 
 - **Settings precedence: dotenv beats shell env.** `Settings` overrides pydantic-settings' default source order so `.env` / `.env.overrides` win over exported shell variables (see `settings.py:settings_customise_sources`). This is intentional — per-worktree `.env.overrides` is the canonical override mechanism. If a value seems wrong, check the dotenv files before assuming `export FOO=...` took effect.
 
@@ -184,6 +188,7 @@ Whenever you run a script that prints a trace url, please report that trace url 
 ## Skills
 
 You must always invoke the relevant skill when doing certain types of work
+
 - **Writing unit tests** Always invoke the write-tests skill
 - **Writing frontend code** Always invoke the frontend-design skill
-When you write a plan that involes either of these things, always include a reminder to invoke the appropriate skill.
+  When you write a plan that involes either of these things, always include a reminder to invoke the appropriate skill.

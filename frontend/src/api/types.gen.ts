@@ -2977,6 +2977,10 @@ export type Page = {
      * Hidden
      */
     hidden: boolean;
+    /**
+     * Scope Question Id
+     */
+    scope_question_id: string | null;
 };
 
 /**
@@ -3064,6 +3068,10 @@ export type PageLink = {
      * Run Id
      */
     run_id: string;
+    /**
+     * Scope Question Id
+     */
+    scope_question_id: string | null;
 };
 
 /**

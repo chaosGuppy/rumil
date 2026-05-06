@@ -450,6 +450,18 @@ def _capture_request_kwargs(cfg: ModelConfig) -> dict:
     return cfg.to_record_dict()
 
 
+def _capture_response_schema(response_model: type[BaseModel] | None) -> dict | None:
+    """Extract the JSON Schema the model is constrained to produce.
+
+    Returned in our internal ``{"name", "schema"}`` shape. ``None`` for
+    unstructured calls so the column stays NULL — both ``_save_exchange``
+    and the Langfuse enrichment skip persistence on None.
+    """
+    if response_model is None:
+        return None
+    return {"name": response_model.__name__, "schema": response_model.model_json_schema()}
+
+
 @dataclass
 class ParsedAnthropicResponse:
     """Decomposition of an Anthropic Message's content blocks.
@@ -557,6 +569,8 @@ async def _save_exchange(
     user_messages: Sequence[dict] | None = None,
     request_kwargs: dict | None = None,
     thinking_blocks: dict | None = None,
+    available_tools: Sequence[dict] | None = None,
+    response_schema: dict | None = None,
     error: str | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event.
@@ -583,6 +597,8 @@ async def _save_exchange(
         model=model,
         request_kwargs=request_kwargs,
         thinking_blocks=thinking_blocks,
+        available_tools=available_tools,
+        response_schema=response_schema,
         error=error,
     )
     cost_usd = compute_cost(
@@ -650,6 +666,8 @@ async def _record_partial_failure(
     cache_read_input_tokens: int = 0,
     request_kwargs: dict | None = None,
     thinking_blocks: dict | None = None,
+    available_tools: Sequence[dict] | None = None,
+    response_schema: dict | None = None,
 ) -> None:
     """Persist whatever forensics we have for a failed LLM call.
 
@@ -685,6 +703,8 @@ async def _record_partial_failure(
                 user_messages=serialized,
                 request_kwargs=request_kwargs,
                 thinking_blocks=thinking_blocks,
+                available_tools=available_tools,
+                response_schema=response_schema,
                 error=error_str,
             )
         except Exception as save_exc:
@@ -699,7 +719,12 @@ async def _record_partial_failure(
         try:
             client.update_current_generation(
                 model=model,
-                input=_langfuse_input_for(system_prompt, messages),
+                input=_langfuse_input_for(
+                    system_prompt,
+                    messages,
+                    tools=available_tools,
+                    response_schema=response_schema,
+                ),
                 output=(
                     partial_text[:_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX] if partial_text else None
                 ),
@@ -734,16 +759,42 @@ def _extract_model_parameters(api_kwargs: dict) -> dict:
     return params
 
 
+def _anthropic_tool_calls_to_openai(tool_calls: Sequence[dict]) -> list[dict]:
+    """Translate the model's tool-use blocks into Langfuse's expected shape.
+
+    Langfuse's IOPreview pairs each tool call with the matching tool
+    definition (rendering counts on the def, vs. "not called") by reading
+    a ``tool_calls`` array on the assistant message in the OpenAI shape:
+    ``[{"name": ..., "arguments": "<json string>"}]``. We translate from
+    Anthropic's ``{"name", "input"}`` shape — and drop server-side blocks
+    (e.g. ``web_search_tool_result``) which carry a ``type`` field and
+    aren't model-issued calls.
+    """
+    out: list[dict] = []
+    for tc in tool_calls:
+        if tc.get("type"):
+            continue
+        out.append(
+            {
+                "name": tc.get("name"),
+                "arguments": json.dumps(tc.get("input", {})),
+            }
+        )
+    return out
+
+
 def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
     """Render the assistant turn for Langfuse's IOPreview.
 
-    When the response contains thinking or redacted-thinking blocks, we
-    return a ChatML-shaped assistant message so Langfuse's
-    ``ThinkingBlock`` / ``RedactedThinkingBlock`` UI components light up.
-    Otherwise we return the joined text (or ``None``) to preserve the
-    existing string output for non-thinking models.
+    When the response contains thinking, redacted-thinking, or tool-use
+    blocks, we return a ChatML-shaped assistant message so Langfuse's
+    ``ThinkingBlock`` / ``RedactedThinkingBlock`` UI components light up
+    and the tool-definition cards count actual invocations. Otherwise we
+    return the joined text (or ``None``) to preserve the existing string
+    output for plain text responses.
     """
-    if not parsed.has_thinking:
+    invoked = _anthropic_tool_calls_to_openai(parsed.tool_calls)
+    if not parsed.has_thinking and not invoked:
         return parsed.text or None
     output: dict = {"role": "assistant", "content": parsed.text}
     if parsed.thinking:
@@ -752,10 +803,57 @@ def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
         output["thinking"] = [{"content": t["content"]} for t in parsed.thinking]
     if parsed.redacted_thinking:
         output["redacted_thinking"] = [{"data": r["data"]} for r in parsed.redacted_thinking]
+    if invoked:
+        output["tool_calls"] = invoked
     return output
 
 
-def _langfuse_input_for(system_prompt: str, messages: Sequence[dict]) -> list[dict]:
+def _anthropic_tool_to_openai(tool: dict) -> dict:
+    """Translate one Anthropic tool def into the OpenAI/ChatML shape.
+
+    Langfuse's IOPreview parses tool definitions from the OpenAI shape
+    (``{"type": "function", "function": {"name", "description",
+    "parameters"}}``); fed Anthropic's native shape it falls back to a
+    raw JSON dump. The translation is mechanical — ``input_schema`` and
+    ``parameters`` are both JSON Schema — so we render here in the shape
+    Langfuse understands while keeping the DB row in Anthropic's literal
+    shape (that's what was on the wire).
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.get("name"),
+            "description": tool.get("description"),
+            "parameters": tool.get("input_schema"),
+        },
+    }
+
+
+def _response_schema_to_openai(schema: dict) -> dict:
+    """Translate our internal {name, schema} shape to OpenAI's response_format.
+
+    OpenAI's chat completion API accepts ``response_format = {"type":
+    "json_schema", "json_schema": {"name", "schema", "strict"}}``.
+    Mirroring that shape on the Langfuse generation lets the trace UI
+    surface the schema in the same way it does for OpenAI calls.
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema.get("name"),
+            "schema": schema.get("schema"),
+            "strict": True,
+        },
+    }
+
+
+def _langfuse_input_for(
+    system_prompt: str,
+    messages: Sequence[dict],
+    *,
+    tools: Sequence[dict] | None = None,
+    response_schema: dict | None = None,
+) -> list[dict] | dict:
     """Shape the ``input`` payload for Langfuse generations.
 
     Langfuse has no dedicated ``system`` field. Folding system into a
@@ -765,11 +863,27 @@ def _langfuse_input_for(system_prompt: str, messages: Sequence[dict]) -> list[di
     a flat ChatML list keeps both viewers happy: the trace UI shows the
     system message at the top, and "Open in Playground" pre-fills it
     correctly.
+
+    When ``tools`` or ``response_schema`` are present we wrap the same
+    flat ChatML list in a ``{"messages": [...], "tools": [...],
+    "response_format": {...}}`` dict — the shape the langfuse OpenAI
+    integration emits — translating each Anthropic tool def to OpenAI
+    ``{"type": "function", "function": {...}}`` and the schema to
+    OpenAI ``response_format`` so the trace UI surfaces both rather
+    than dumping raw JSON.
     """
     serialized = list(_serialize_messages(messages))
-    if not system_prompt:
-        return serialized
-    return [{"role": "system", "content": system_prompt}, *serialized]
+    flat: list[dict] = (
+        [{"role": "system", "content": system_prompt}, *serialized] if system_prompt else serialized
+    )
+    if not tools and not response_schema:
+        return flat
+    payload: dict = {"messages": flat}
+    if tools:
+        payload["tools"] = [_anthropic_tool_to_openai(t) for t in tools]
+    if response_schema:
+        payload["response_format"] = _response_schema_to_openai(response_schema)
+    return payload
 
 
 def _enrich_langfuse_generation(
@@ -781,6 +895,7 @@ def _enrich_langfuse_generation(
     elapsed_ms: int,
     parsed: ParsedAnthropicResponse,
     api_kwargs: dict | None = None,
+    response_schema: dict | None = None,
 ) -> None:
     """Populate the active Langfuse generation span with model, IO, and usage.
 
@@ -802,7 +917,12 @@ def _enrich_langfuse_generation(
         )
         client.update_current_generation(
             model=model,
-            input=_langfuse_input_for(system_prompt, messages),
+            input=_langfuse_input_for(
+                system_prompt,
+                messages,
+                tools=(api_kwargs or {}).get("tools"),
+                response_schema=response_schema,
+            ),
             output=_langfuse_output_for(parsed),
             model_parameters=_extract_model_parameters(api_kwargs or {}),
             usage_details={
@@ -821,7 +941,7 @@ def _enrich_langfuse_generation(
         log.debug("Langfuse enrichment failed: %s", exc)
 
 
-@observe(as_type="generation", name="anthropic.messages.create")
+@observe(as_type="generation", name="anthropic.messages.create", capture_output=False)
 async def call_anthropic_api(
     client: anthropic.AsyncAnthropic,
     model: str,
@@ -834,6 +954,7 @@ async def call_anthropic_api(
     cache: bool = False,
     effort: str | None = None,
     model_config: ModelConfig | None = None,
+    response_schema: dict | None = None,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
@@ -933,6 +1054,8 @@ async def call_anthropic_api(
             messages=messages,
             elapsed_ms=partial_state.get("elapsed_ms", 0),
             request_kwargs=_capture_request_kwargs(cfg),
+            available_tools=tools,
+            response_schema=response_schema,
         )
         trace = get_trace()
         if trace:
@@ -976,6 +1099,8 @@ async def call_anthropic_api(
                 user_messages=serialized,
                 request_kwargs=_capture_request_kwargs(cfg),
                 thinking_blocks=parsed.thinking_blocks_for_storage(),
+                available_tools=tools,
+                response_schema=response_schema,
             )
         except Exception as exc:
             log.error(
@@ -1000,6 +1125,7 @@ async def call_anthropic_api(
         elapsed_ms=elapsed_ms,
         parsed=parsed,
         api_kwargs=kwargs,
+        response_schema=response_schema,
     )
     return APIResponse(message=response, duration_ms=elapsed_ms)
 
@@ -1117,7 +1243,7 @@ def _enrich_langfuse_generation_google(
         log.debug("Langfuse enrichment (google) failed: %s", exc)
 
 
-@observe(as_type="generation", name="google.generate_content")
+@observe(as_type="generation", name="google.generate_content", capture_output=False)
 async def call_google_api(
     model: str,
     system_prompt: str,
@@ -1427,6 +1553,7 @@ async def _structured_call_cached(
     schema_text = _schema_instruction(response_model)
     inject_msgs = _inject_into_last_user_message(msg_list, schema_text)
     effective_model = model or settings.model
+    response_schema = _capture_response_schema(response_model)
 
     max_parse_attempts = 2
     for parse_attempt in range(max_parse_attempts):
@@ -1439,6 +1566,7 @@ async def _structured_call_cached(
             metadata=metadata,
             db=db,
             cache=cache,
+            response_schema=response_schema,
         )
         response_text = ""
         for block in api_resp.message.content:
@@ -1764,7 +1892,7 @@ async def _continuation_recovery_for_parse(
     return None
 
 
-@observe(as_type="generation", name="anthropic.messages.parse")
+@observe(as_type="generation", name="anthropic.messages.parse", capture_output=False)
 async def _structured_call_parse(
     system_prompt: str,
     response_model: type[T] | None,
@@ -1807,6 +1935,7 @@ async def _structured_call_parse(
         parse_kwargs["tools"] = tools
     if tool_choice is not None:
         parse_kwargs["tool_choice"] = tool_choice
+    response_schema = _capture_response_schema(response_model)
 
     @_api_retry
     async def _do_parse() -> Any:
@@ -1842,6 +1971,8 @@ async def _structured_call_parse(
             messages=msg_list,
             elapsed_ms=elapsed_ms,
             request_kwargs=_capture_request_kwargs(cfg),
+            available_tools=tools,
+            response_schema=response_schema,
         )
         if (
             continuation_recovery
@@ -1884,6 +2015,7 @@ async def _structured_call_parse(
         elapsed_ms=elapsed_ms,
         parsed=parsed,
         api_kwargs=parse_kwargs,
+        response_schema=response_schema,
     )
     if metadata and db:
         serialized: Sequence[dict] | None = None
@@ -1909,6 +2041,8 @@ async def _structured_call_parse(
             user_messages=serialized,
             request_kwargs=_capture_request_kwargs(cfg),
             thinking_blocks=parsed.thinking_blocks_for_storage(),
+            available_tools=tools,
+            response_schema=response_schema,
         )
     if response.parsed_output is not None:
         log.debug(

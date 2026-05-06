@@ -31,7 +31,6 @@ export default function AtlasLayout({
         <Link href="/atlas" className="atlas-brand">
           <span className="atlas-brand-mark">/</span>
           <span className="atlas-brand-name">atlas</span>
-          <span className="atlas-brand-sub">a self-description of rumil</span>
         </Link>
         <nav className="atlas-nav">
           {NAV_LINKS.slice(1).map((l) => (

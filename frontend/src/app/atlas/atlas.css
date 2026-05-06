@@ -24,6 +24,13 @@
   --a-versus: #7d3a78;
   --a-versus-soft: #f3ebf2;
 
+  /* outbound (atlas → rumil) link cues. centralized so styling is one-stop. */
+  --a-link-out-color: #8a4a17;
+  --a-link-out-color-soft: #b8521b;
+  --a-link-out-bg: #fbf4ec;
+  --a-link-out-border: #c89b6e;
+  --a-link-out-hint: "↗";
+
   --a-mono: var(--font-geist-mono), ui-monospace, "JetBrains Mono", Menlo, monospace;
   --a-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 
@@ -58,6 +65,11 @@
     --a-orchestrator-soft: #1a1f30;
     --a-versus: #c585bc;
     --a-versus-soft: #2a1d28;
+
+    --a-link-out-color: #e0a368;
+    --a-link-out-color-soft: #d97a3f;
+    --a-link-out-bg: #251c12;
+    --a-link-out-border: #6e4a26;
   }
 }
 
@@ -318,6 +330,48 @@
   flex-wrap: wrap;
   gap: 0.3rem;
   align-items: center;
+}
+
+/* cross-link: atlas → rumil. dashed border + warm tone + ↗ glyph signals
+   "you are leaving atlas". styling is driven by --a-link-out-* vars at the
+   top of this file so the cue can be retuned in one spot. */
+.atlas-xlink {
+  color: var(--a-link-out-color);
+  text-decoration: none;
+}
+.atlas-xlink:hover {
+  color: var(--a-link-out-color-soft);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.atlas-xlink::after {
+  content: " " var(--a-link-out-hint);
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
+/* chip variant — replaces .atlas-chip styling when both are applied */
+.atlas-chip.atlas-xlink {
+  background: var(--a-link-out-bg);
+  border: 1px dashed var(--a-link-out-border);
+  color: var(--a-link-out-color);
+}
+.atlas-chip.atlas-xlink:hover {
+  border-color: var(--a-link-out-color-soft);
+  color: var(--a-link-out-color-soft);
+  text-decoration: none;
+}
+.atlas-chip.atlas-xlink::after {
+  content: var(--a-link-out-hint);
+  font-size: 0.9em;
+  opacity: 0.8;
+  margin-left: 0.05rem;
+}
+
+.atlas-xlink.is-compact {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.35rem;
 }
 
 .atlas-count-link {

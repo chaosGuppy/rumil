@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { RunFlow, RunFlowNode } from "@/api";
 import { atlasFetch } from "../../../_lib/fetch";
 import { Crumbs } from "../../../_components/Crumbs";
+import { CrossLink } from "../../../_components/CrossLink";
 
 export const metadata = { title: "run flow" };
 
@@ -93,9 +94,9 @@ export default async function RunFlowPage({
                 {flow.workflow_name}
               </Link>
             )}
-            <Link href={`/traces/${run_id}`} className="atlas-chip is-accent">
-              full trace →
-            </Link>
+            <CrossLink to={`/traces/${run_id}`} chip>
+              full trace
+            </CrossLink>
           </div>
           <p className="atlas-lede">
             Every call in this run, indented by parent. Each node links to its

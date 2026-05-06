@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { LiveRunSnapshot } from "@/api";
 import { atlasFetch } from "../../../../../_lib/fetch";
 import { Crumbs } from "../../../../../_components/Crumbs";
+import { CrossLink } from "../../../../../_components/CrossLink";
 import { LiveRunner } from "./LiveRunner";
 
 export const metadata = { title: "live run" };
@@ -56,9 +57,9 @@ export default async function LiveRunPage({
             >
               run flow →
             </Link>
-            <Link href={`/traces/${run_id}`} className="atlas-chip">
-              full trace →
-            </Link>
+            <CrossLink to={`/traces/${run_id}`} chip>
+              full trace
+            </CrossLink>
           </div>
           <p className="atlas-lede">
             Stages light up as they fire. Polls every 2s while the run is

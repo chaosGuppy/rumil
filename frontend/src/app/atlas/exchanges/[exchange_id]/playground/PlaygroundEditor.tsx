@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import type {
   ExchangePlaygroundContext,
   ForkOut,
@@ -9,6 +8,7 @@ import type {
   ForkSummary,
 } from "@/api";
 import { ResponseText } from "../../../_components/ResponseText";
+import { CrossLink } from "../../../_components/CrossLink";
 
 const CLIENT_API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -428,7 +428,8 @@ function ForkCard({
       </header>
       {fork.has_error ? (
         <div className="atlas-pg-fork-error">
-          fork errored — see <Link href={`/traces/${base.run_id ?? ""}`}>trace</Link>{" "}
+          fork errored — see{" "}
+          <CrossLink to={`/traces/${base.run_id ?? ""}`}>trace</CrossLink>{" "}
           for detail
         </div>
       ) : (

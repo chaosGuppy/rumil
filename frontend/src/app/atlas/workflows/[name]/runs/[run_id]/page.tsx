@@ -8,6 +8,7 @@ import type {
 } from "@/api";
 import { atlasFetch } from "../../../../_lib/fetch";
 import { Crumbs } from "../../../../_components/Crumbs";
+import { CrossLink } from "../../../../_components/CrossLink";
 
 export const metadata = { title: "workflow run overlay" };
 
@@ -97,9 +98,9 @@ export default async function WorkflowRunOverlay({
             >
               workflow spec →
             </Link>
-            <Link href={`/traces/${run_id}`} className="atlas-chip">
-              full trace →
-            </Link>
+            <CrossLink to={`/traces/${run_id}`} chip>
+              full trace
+            </CrossLink>
           </div>
           <p className="atlas-lede">
             What actually happened on this run, painted onto the workflow&apos;s stage

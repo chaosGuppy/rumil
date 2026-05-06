@@ -41,6 +41,9 @@ export default function AtlasLayout({
           <Link href="/atlas/gaps" className="atlas-nav-link">
             gaps
           </Link>
+          <Link href="/atlas/novelty" className="atlas-nav-link">
+            novelty
+          </Link>
         </nav>
         <SearchBar />
         <Link href="/" className="atlas-back">

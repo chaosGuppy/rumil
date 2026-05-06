@@ -184,6 +184,15 @@ function FlowNode({ n, index }: { n: TreeNode; index: number }) {
         </span>
         <span>{n.pages_loaded ?? 0}p</span>
         <span>{n.n_dispatches ?? 0}d</span>
+        {(n.n_llm_exchanges ?? 0) > 0 && (
+          <Link
+            href={`/atlas/exchanges/search?q=&call_type=${encodeURIComponent(n.call_type)}`}
+            style={{ fontFamily: "var(--a-mono)" }}
+            title="exchanges captured for this call"
+          >
+            {n.n_llm_exchanges}x →
+          </Link>
+        )}
         <span>{fmtCost(n.cost_usd ?? 0)}</span>
         <span>{fmtDuration(n.duration_seconds)}</span>
       </div>

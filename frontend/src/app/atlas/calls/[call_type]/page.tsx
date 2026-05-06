@@ -129,12 +129,17 @@ export default async function CallDetail({
           )}
 
           {composition && (composition.parts?.length ?? 0) > 0 && (
-            <section className="atlas-section">
+            <section className="atlas-section" id="prompt">
               <div className="atlas-section-head">
                 <h2>prompt</h2>
                 <span className="atlas-section-meta">
                   composed from {composition.parts.length} part
-                  {composition.parts.length === 1 ? "" : "s"} · concise by default
+                  {composition.parts.length === 1 ? "" : "s"} · concise by default ·{" "}
+                  <Link
+                    href={`/atlas/calls/${encodeURIComponent(ct.call_type)}/sample_render`}
+                  >
+                    sample render →
+                  </Link>
                 </span>
               </div>
               <CompositionViewer composition={composition} />

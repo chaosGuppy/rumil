@@ -411,6 +411,7 @@ class LLMExchangeOut(BaseModel):
     user_messages: list[dict] | None = None
     response_text: str | None
     tool_calls: list[dict]
+    available_tools: list[dict] | None = None
     input_tokens: int | None
     output_tokens: int | None
     duration_ms: int | None

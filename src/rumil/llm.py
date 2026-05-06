@@ -557,6 +557,7 @@ async def _save_exchange(
     user_messages: Sequence[dict] | None = None,
     request_kwargs: dict | None = None,
     thinking_blocks: dict | None = None,
+    available_tools: Sequence[dict] | None = None,
     error: str | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event.
@@ -583,6 +584,7 @@ async def _save_exchange(
         model=model,
         request_kwargs=request_kwargs,
         thinking_blocks=thinking_blocks,
+        available_tools=available_tools,
         error=error,
     )
     cost_usd = compute_cost(
@@ -650,6 +652,7 @@ async def _record_partial_failure(
     cache_read_input_tokens: int = 0,
     request_kwargs: dict | None = None,
     thinking_blocks: dict | None = None,
+    available_tools: Sequence[dict] | None = None,
 ) -> None:
     """Persist whatever forensics we have for a failed LLM call.
 
@@ -685,6 +688,7 @@ async def _record_partial_failure(
                 user_messages=serialized,
                 request_kwargs=request_kwargs,
                 thinking_blocks=thinking_blocks,
+                available_tools=available_tools,
                 error=error_str,
             )
         except Exception as save_exc:
@@ -699,7 +703,7 @@ async def _record_partial_failure(
         try:
             client.update_current_generation(
                 model=model,
-                input=_langfuse_input_for(system_prompt, messages),
+                input=_langfuse_input_for(system_prompt, messages, tools=available_tools),
                 output=(
                     partial_text[:_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX] if partial_text else None
                 ),
@@ -755,7 +759,33 @@ def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
     return output
 
 
-def _langfuse_input_for(system_prompt: str, messages: Sequence[dict]) -> list[dict]:
+def _anthropic_tool_to_openai(tool: dict) -> dict:
+    """Translate one Anthropic tool def into the OpenAI/ChatML shape.
+
+    Langfuse's IOPreview parses tool definitions from the OpenAI shape
+    (``{"type": "function", "function": {"name", "description",
+    "parameters"}}``); fed Anthropic's native shape it falls back to a
+    raw JSON dump. The translation is mechanical — ``input_schema`` and
+    ``parameters`` are both JSON Schema — so we render here in the shape
+    Langfuse understands while keeping the DB row in Anthropic's literal
+    shape (that's what was on the wire).
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.get("name"),
+            "description": tool.get("description"),
+            "parameters": tool.get("input_schema"),
+        },
+    }
+
+
+def _langfuse_input_for(
+    system_prompt: str,
+    messages: Sequence[dict],
+    *,
+    tools: Sequence[dict] | None = None,
+) -> list[dict] | dict:
     """Shape the ``input`` payload for Langfuse generations.
 
     Langfuse has no dedicated ``system`` field. Folding system into a
@@ -765,11 +795,21 @@ def _langfuse_input_for(system_prompt: str, messages: Sequence[dict]) -> list[di
     a flat ChatML list keeps both viewers happy: the trace UI shows the
     system message at the top, and "Open in Playground" pre-fills it
     correctly.
+
+    When ``tools`` are present we wrap the same flat ChatML list in a
+    ``{"messages": [...], "tools": [...]}`` dict — the shape the
+    langfuse OpenAI integration emits — and translate each Anthropic
+    tool def into OpenAI's ``{"type": "function", "function": {...}}``
+    shape so Langfuse's IOPreview tool-definition UI renders rather
+    than dumping raw JSON.
     """
     serialized = list(_serialize_messages(messages))
-    if not system_prompt:
-        return serialized
-    return [{"role": "system", "content": system_prompt}, *serialized]
+    flat: list[dict] = (
+        [{"role": "system", "content": system_prompt}, *serialized] if system_prompt else serialized
+    )
+    if tools:
+        return {"messages": flat, "tools": [_anthropic_tool_to_openai(t) for t in tools]}
+    return flat
 
 
 def _enrich_langfuse_generation(
@@ -802,7 +842,9 @@ def _enrich_langfuse_generation(
         )
         client.update_current_generation(
             model=model,
-            input=_langfuse_input_for(system_prompt, messages),
+            input=_langfuse_input_for(
+                system_prompt, messages, tools=(api_kwargs or {}).get("tools")
+            ),
             output=_langfuse_output_for(parsed),
             model_parameters=_extract_model_parameters(api_kwargs or {}),
             usage_details={
@@ -933,6 +975,7 @@ async def call_anthropic_api(
             messages=messages,
             elapsed_ms=partial_state.get("elapsed_ms", 0),
             request_kwargs=_capture_request_kwargs(cfg),
+            available_tools=tools,
         )
         trace = get_trace()
         if trace:
@@ -976,6 +1019,7 @@ async def call_anthropic_api(
                 user_messages=serialized,
                 request_kwargs=_capture_request_kwargs(cfg),
                 thinking_blocks=parsed.thinking_blocks_for_storage(),
+                available_tools=tools,
             )
         except Exception as exc:
             log.error(
@@ -1842,6 +1886,7 @@ async def _structured_call_parse(
             messages=msg_list,
             elapsed_ms=elapsed_ms,
             request_kwargs=_capture_request_kwargs(cfg),
+            available_tools=tools,
         )
         if (
             continuation_recovery
@@ -1909,6 +1954,7 @@ async def _structured_call_parse(
             user_messages=serialized,
             request_kwargs=_capture_request_kwargs(cfg),
             thinking_blocks=parsed.thinking_blocks_for_storage(),
+            available_tools=tools,
         )
     if response.parsed_output is not None:
         log.debug(

@@ -2563,6 +2563,12 @@ export type LlmExchangeOut = {
         [key: string]: unknown;
     }>;
     /**
+     * Available Tools
+     */
+    available_tools?: Array<{
+        [key: string]: unknown;
+    }> | null;
+    /**
      * Input Tokens
      */
     input_tokens: number | null;

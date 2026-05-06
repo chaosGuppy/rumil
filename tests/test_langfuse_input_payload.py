@@ -44,6 +44,42 @@ def test_langfuse_input_for_handles_content_blocks():
     assert payload[2]["content"] == [{"type": "text", "text": "hello"}]
 
 
+def test_langfuse_input_for_wraps_messages_when_tools_present():
+    tools = [{"name": "search", "description": "search", "input_schema": {"type": "object"}}]
+
+    payload = _langfuse_input_for(
+        "you are helpful", [{"role": "user", "content": "hi"}], tools=tools
+    )
+
+    # Anthropic-shape tools translate to OpenAI shape so Langfuse's IOPreview
+    # renders with its tool-definition UI rather than dumping raw JSON.
+    assert payload == {
+        "messages": [
+            {"role": "system", "content": "you are helpful"},
+            {"role": "user", "content": "hi"},
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "description": "search",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
+    }
+
+
+def test_langfuse_input_for_returns_flat_list_when_tools_empty():
+    payload = _langfuse_input_for("you are helpful", [{"role": "user", "content": "hi"}], tools=[])
+
+    assert payload == [
+        {"role": "system", "content": "you are helpful"},
+        {"role": "user", "content": "hi"},
+    ]
+
+
 @pytest.fixture
 def langfuse_client(mocker):
     client = mocker.MagicMock()
@@ -84,6 +120,41 @@ def test_enrich_langfuse_generation_includes_system_in_input(langfuse_client):
         {"role": "system", "content": "you are helpful"},
         {"role": "user", "content": "hi"},
     ]
+
+
+def test_enrich_langfuse_generation_includes_tools_in_input(langfuse_client):
+    parsed = ParsedAnthropicResponse(
+        text_parts=["ok"], tool_calls=[], thinking=[], redacted_thinking=[]
+    )
+    tools = [{"name": "search", "description": "search", "input_schema": {"type": "object"}}]
+
+    _enrich_langfuse_generation(
+        model="claude-opus-4-7",
+        system_prompt="you are helpful",
+        messages=[{"role": "user", "content": "hi"}],
+        response=_fake_anthropic_response(),  # pyright: ignore[reportArgumentType]
+        elapsed_ms=10,
+        parsed=parsed,
+        api_kwargs={"model": "claude-opus-4-7", "max_tokens": 100, "tools": tools},
+    )
+
+    kwargs = langfuse_client.update_current_generation.call_args.kwargs
+    assert kwargs["input"] == {
+        "messages": [
+            {"role": "system", "content": "you are helpful"},
+            {"role": "user", "content": "hi"},
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "description": "search",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
+    }
 
 
 def test_enrich_langfuse_generation_google_includes_system_in_input(langfuse_client, mocker):

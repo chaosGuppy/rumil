@@ -590,6 +590,37 @@ function WebSearchResultEntry({ tc }: { tc: Record<string, unknown> }) {
   );
 }
 
+function AvailableToolsList({
+  tools,
+}: {
+  tools: Array<Record<string, unknown>>;
+}) {
+  return (
+    <div className="trace-tool-calls">
+      <div className="trace-tool-calls-label">
+        Available tools ({tools.length})
+      </div>
+      {tools.map((tool, i) => (
+        <details key={i} className="trace-tool-call">
+          <summary className="trace-tool-call-name">
+            {(tool.name as string | undefined) ?? `tool ${i}`}
+          </summary>
+          {tool.description ? (
+            <pre className="trace-tool-call-output">
+              {String(tool.description)}
+            </pre>
+          ) : null}
+          {tool.input_schema ? (
+            <pre className="trace-tool-call-input">
+              {JSON.stringify(tool.input_schema, null, 2)}
+            </pre>
+          ) : null}
+        </details>
+      ))}
+    </div>
+  );
+}
+
 function ToolCallsList({ toolCalls }: { toolCalls: Array<Record<string, unknown>> }) {
   const serverToolUses = toolCalls.filter((tc) => !tc.type);
   const webResults = toolCalls.filter((tc) => tc.type === "web_search_tool_result");
@@ -718,6 +749,11 @@ function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
         <MessageThread messages={detail.user_messages as Array<Record<string, unknown>>} />
       ) : (
         <CollapsiblePre label="User message" content={detail.user_message} />
+      )}
+      {detail.available_tools && detail.available_tools.length > 0 && (
+        <AvailableToolsList
+          tools={detail.available_tools as Array<Record<string, unknown>>}
+        />
       )}
       {detail.thinking_blocks && (
         <ThinkingSection blocks={detail.thinking_blocks} />

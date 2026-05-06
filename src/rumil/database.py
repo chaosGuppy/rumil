@@ -2884,6 +2884,7 @@ class DB:
         model: str | None = None,
         request_kwargs: dict[str, Any] | None = None,
         thinking_blocks: dict[str, Any] | None = None,
+        available_tools: Sequence[dict[str, Any]] | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         row: dict[str, Any] = {
@@ -2910,6 +2911,8 @@ class DB:
             row["request_kwargs"] = request_kwargs
         if thinking_blocks is not None:
             row["thinking_blocks"] = thinking_blocks
+        if available_tools is not None:
+            row["available_tools"] = list(available_tools)
         await self._execute(self.client.table("call_llm_exchanges").insert(row))
         return exchange_id
 

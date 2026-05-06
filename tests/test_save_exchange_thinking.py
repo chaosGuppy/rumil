@@ -155,3 +155,50 @@ async def test_error_forwarded_to_db_and_event(metadata, db_mock, trace_mock, la
     kwargs = db_mock.save_llm_exchange.await_args.kwargs
     assert kwargs["error"] == "boom"
     assert _recorded_event(trace_mock).error == "boom"
+
+
+@pytest.mark.asyncio
+async def test_available_tools_forwarded_to_db(metadata, db_mock, trace_mock, langfuse_url):
+    tools = [
+        {
+            "name": "search",
+            "description": "search the workspace",
+            "input_schema": {"type": "object"},
+        },
+        {"name": "load_page", "description": "load a page", "input_schema": {"type": "object"}},
+    ]
+
+    await _save_exchange(
+        metadata,
+        db=db_mock,
+        model="claude-opus-4-7",
+        system_prompt="sys",
+        response_text="answer",
+        tool_calls=[],
+        input_tokens=1,
+        output_tokens=1,
+        duration_ms=1,
+        available_tools=tools,
+    )
+
+    kwargs = db_mock.save_llm_exchange.await_args.kwargs
+    assert kwargs["available_tools"] == tools
+
+
+@pytest.mark.asyncio
+async def test_no_available_tools_passes_none_to_db(metadata, db_mock, trace_mock, langfuse_url):
+    await _save_exchange(
+        metadata,
+        db=db_mock,
+        model="claude-haiku-4-5",
+        system_prompt="sys",
+        response_text="answer",
+        tool_calls=[],
+        input_tokens=1,
+        output_tokens=1,
+        duration_ms=1,
+        # available_tools defaults to None
+    )
+
+    kwargs = db_mock.save_llm_exchange.await_args.kwargs
+    assert kwargs["available_tools"] is None

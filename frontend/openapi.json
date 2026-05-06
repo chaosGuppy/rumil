@@ -7554,6 +7554,21 @@
             "type": "array",
             "title": "Tool Calls"
           },
+          "available_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Tools"
+          },
           "input_tokens": {
             "anyOf": [
               {

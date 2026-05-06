@@ -220,7 +220,7 @@ class CallRunner(ABC):
 
     @observe(name="call.run")
     async def run(self) -> None:
-        call_db = await self.infra.db.fork()
+        call_db = await self.infra.db.fork(scope_question_id=self.infra.question_id or None)
         self.infra.db = call_db
         self.infra.state.db = call_db
         self.infra.trace.db = call_db

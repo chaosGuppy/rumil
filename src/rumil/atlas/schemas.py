@@ -154,6 +154,7 @@ class RegistryRollup(BaseModel):
     available_calls_presets: list[str]
     active_moves_preset: str = ""
     active_calls_preset: str = ""
+    pseudo_call_types: list[str] = []
 
 
 class PromptDoc(BaseModel):
@@ -167,6 +168,28 @@ class PromptDoc(BaseModel):
     referenced_by: list[str] = []
     sections: list[PromptSection] = []
     used_in_compositions: list[str] = []
+
+
+class PromptListItem(BaseModel):
+    """One row in the /atlas/registry/prompts index, with a use-intensity
+    signal so operators can sort by "what actually matters."
+
+    ``n_compositions`` is static (count of call types whose prompt
+    composition includes this file). ``recent_invocations`` is dynamic
+    — exchanges in the recent scan window whose call_type's
+    composition references this prompt.
+    """
+
+    name: str
+    char_count: int
+    n_sections: int = 0
+    n_compositions: int = 0
+    recent_invocations: int = 0
+
+
+class PromptIndex(BaseModel):
+    items: list[PromptListItem]
+    n_scanned_exchanges: int = 0
 
 
 class PromptHistoryEntry(BaseModel):
@@ -286,6 +309,37 @@ class GapItem(BaseModel):
 class GapsReport(BaseModel):
     items: list[GapItem]
     counts_by_kind: dict[str, int]
+
+
+class NoveltyItem(BaseModel):
+    """Something atlas observed in real data that it didn't statically
+    know about. The atlas-noticing-its-own-blind-spots loop.
+
+    ``kind`` taxonomy:
+    - ``unknown_tool_use``: tool_calls.name in call_llm_exchanges that
+      isn't a registered DispatchDef.name or MoveDef.name
+    - ``unknown_trace_event``: a trace_json event-type string not in
+      ``event_keys.ATLAS_READS`` or ``trace_events.TraceEvent`` union
+    - ``unknown_call_type``: a calls.call_type value that isn't a
+      CallType enum member (would only happen if the FK is bypassed)
+    - ``orphan_rendered_prompt``: a system_prompt fragment that doesn't
+      match any prompts/*.md content (heuristic — first-200-char
+      compare)
+    """
+
+    kind: str
+    target: str
+    detail: str = ""
+    sample_call_id: str | None = None
+    sample_run_id: str | None = None
+    seen_count: int = 0
+
+
+class NoveltyReport(BaseModel):
+    items: list[NoveltyItem]
+    counts_by_kind: dict[str, int]
+    n_scanned_exchanges: int = 0
+    n_scanned_calls: int = 0
 
 
 class SearchHit(BaseModel):

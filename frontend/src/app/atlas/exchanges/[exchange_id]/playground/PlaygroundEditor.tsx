@@ -8,6 +8,7 @@ import type {
   ForkOverrides,
   ForkSummary,
 } from "@/api";
+import { ResponseText } from "../../../_components/ResponseText";
 
 const CLIENT_API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -170,11 +171,13 @@ export function PlaygroundEditor({ ctx }: { ctx: ExchangePlaygroundContext }) {
           </span>
         </div>
         <div className="atlas-pg-response">
-          <pre className="atlas-pg-response-pre">
-            {responseExpanded || (ctx.response_text ?? "").length <= RESPONSE_PREVIEW_CHARS
-              ? ctx.response_text || "(empty response)"
-              : (ctx.response_text ?? "").slice(0, RESPONSE_PREVIEW_CHARS) + "…"}
-          </pre>
+          {responseExpanded || (ctx.response_text ?? "").length <= RESPONSE_PREVIEW_CHARS ? (
+            <ResponseText text={ctx.response_text || "(empty response)"} />
+          ) : (
+            <pre className="atlas-pg-response-pre">
+              {(ctx.response_text ?? "").slice(0, RESPONSE_PREVIEW_CHARS) + "…"}
+            </pre>
+          )}
           {(ctx.response_text ?? "").length > RESPONSE_PREVIEW_CHARS && (
             <button
               type="button"
@@ -430,7 +433,11 @@ function ForkCard({
         </div>
       ) : (
         <div className="atlas-pg-fork-body">
-          <pre className="atlas-pg-fork-pre">{preview || "(empty)"}</pre>
+          {expanded || !long ? (
+            <ResponseText text={preview || "(empty)"} />
+          ) : (
+            <pre className="atlas-pg-fork-pre">{preview || "(empty)"}</pre>
+          )}
           <div className="atlas-pg-fork-actions">
             {long && (
               <button

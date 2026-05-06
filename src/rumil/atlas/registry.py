@@ -394,6 +394,51 @@ def list_prompt_files() -> list[str]:
     return sorted(p.name for p in PROMPTS_DIR.glob("*.md"))
 
 
+def build_prompt_index(*, exchange_counts: dict[str, int] | None = None):
+    """Per-prompt-file rows for the /atlas/registry/prompts index, with
+    use-intensity counts.
+
+    ``exchange_counts`` maps a call_type or pseudo_call_type to the
+    number of recent exchanges for it; when provided, each prompt's
+    ``recent_invocations`` is the sum across compositions that
+    reference it. When None, dynamic counts are zero (the FE renders
+    the static counts only).
+    """
+    from rumil.atlas.prompt_parts import (
+        get_prompt_sections,
+        references_for_prompt_file,
+    )
+    from rumil.atlas.schemas import PromptIndex, PromptListItem
+
+    refs_by_file: dict[str, list[str]] = {}
+    for fname in list_prompt_files():
+        refs_by_file[fname] = references_for_prompt_file(fname)
+
+    items: list[PromptListItem] = []
+    for fname in list_prompt_files():
+        path = PROMPTS_DIR / fname
+        text = path.read_text(encoding="utf-8")
+        n_sections = len(get_prompt_sections(fname))
+        compositions = refs_by_file[fname]
+        recent = 0
+        if exchange_counts is not None:
+            for key in compositions:
+                recent += exchange_counts.get(key, 0)
+        items.append(
+            PromptListItem(
+                name=fname,
+                char_count=len(text),
+                n_sections=n_sections,
+                n_compositions=len(compositions),
+                recent_invocations=recent,
+            )
+        )
+    return PromptIndex(
+        items=items,
+        n_scanned_exchanges=sum(exchange_counts.values()) if exchange_counts else 0,
+    )
+
+
 def get_prompt_doc(name: str) -> PromptDoc | None:
     if not name.endswith(".md"):
         name = f"{name}.md"
@@ -430,6 +475,7 @@ def _prompt_referenced_by(name: str) -> list[str]:
 
 
 def build_registry_rollup(workflow_summaries: Sequence[WorkflowSummary]) -> RegistryRollup:
+    from rumil.atlas.prompt_parts import PSEUDO_CALL_TYPES
     from rumil.settings import get_settings
 
     settings = get_settings()
@@ -458,4 +504,5 @@ def build_registry_rollup(workflow_summaries: Sequence[WorkflowSummary]) -> Regi
         available_calls_presets=sorted(AVAILABLE_CALLS_PRESETS.keys()),
         active_moves_preset=str(getattr(settings, "available_moves", "") or ""),
         active_calls_preset=str(getattr(settings, "available_calls", "") or ""),
+        pseudo_call_types=list(PSEUDO_CALL_TYPES),
     )

@@ -44,6 +44,7 @@ from rumil.atlas.invocations import (
     build_move_invocations,
 )
 from rumil.atlas.live import build_live_snapshot
+from rumil.atlas.novelty import build_novelty_report
 from rumil.atlas.overlay import build_workflow_overlay
 from rumil.atlas.pages import build_page_calls, build_page_timeline
 from rumil.atlas.playground import build_playground_context
@@ -54,6 +55,7 @@ from rumil.atlas.registry import (
     build_dispatch_summaries,
     build_move_summaries,
     build_page_type_summaries,
+    build_prompt_index,
     build_registry_rollup,
     get_prompt_doc,
     list_prompt_files,
@@ -73,6 +75,7 @@ from rumil.atlas.schemas import (
     LiveRunSnapshot,
     MoveStats,
     MoveSummary,
+    NoveltyReport,
     PageInstanceCalls,
     PageTimeline,
     PageTypeSummary,
@@ -80,6 +83,7 @@ from rumil.atlas.schemas import (
     PromptDoc,
     PromptHistory,
     PromptImpact,
+    PromptIndex,
     RegistryRollup,
     RenderedPromptSample,
     RunDiff,
@@ -262,6 +266,43 @@ def list_prompts(
     _user: AuthUser = Depends(get_current_user),
 ) -> list[str]:
     return list_prompt_files()
+
+
+@router.get("/registry/prompts_index", response_model=PromptIndex)
+async def get_prompts_index(
+    project_id: str | None = None,
+    scan: int = 500,
+    db: DB = Depends(_get_db),
+) -> PromptIndex:
+    """Per-prompt rows with use-intensity counts.
+
+    For each file: char_count, n_sections, n_compositions (static —
+    how many call types reference it), recent_invocations (dynamic —
+    summed across the recent ``scan`` exchanges of those call types).
+    """
+    cols = "id, call_type, project_id"
+    res = await db._execute(
+        db.client.table("call_llm_exchanges")
+        .select("call_id, created_at")
+        .order("created_at", desc=True)
+        .limit(scan)
+    )
+    raw = list(res.data or [])
+    exchange_counts: dict[str, int] = {}
+    if raw:
+        call_ids = list({str(r.get("call_id")) for r in raw if r.get("call_id")})
+        cres = await db._execute(db.client.table("calls").select(cols).in_("id", call_ids))
+        meta = {str(c.get("id")): c for c in (cres.data or [])}
+        for r in raw:
+            cid = str(r.get("call_id") or "")
+            m = meta.get(cid) or {}
+            if project_id and m.get("project_id") != project_id:
+                continue
+            ct = str(m.get("call_type") or "")
+            if not ct:
+                continue
+            exchange_counts[ct] = exchange_counts.get(ct, 0) + 1
+    return build_prompt_index(exchange_counts=exchange_counts)
 
 
 @router.get("/registry/prompts/{name}", response_model=PromptDoc)
@@ -560,6 +601,26 @@ def get_gaps(
     _user: AuthUser = Depends(get_current_user),
 ) -> GapsReport:
     return build_gaps_report(project_id=project_id)
+
+
+@router.get("/novelty", response_model=NoveltyReport)
+async def get_novelty(
+    project_id: str | None = None,
+    scan_exchanges: int = 500,
+    scan_calls: int = 500,
+    db: DB = Depends(_get_db),
+) -> NoveltyReport:
+    """Things atlas observes in real data that aren't in its registry —
+    unknown tool_use names, unrecognised trace event kinds, call_type
+    values not on the enum, system_prompt prefixes that don't match
+    any prompts/*.md file. The atlas-noticing-its-own-blind-spots
+    surface."""
+    return await build_novelty_report(
+        db,
+        project_id=project_id,
+        scan_exchanges=scan_exchanges,
+        scan_calls=scan_calls,
+    )
 
 
 @router.get("/calls/variance", response_model=CallTypeVarianceSummary)

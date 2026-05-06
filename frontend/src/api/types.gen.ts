@@ -3827,6 +3827,74 @@ export type MovesExecutedEventOut = {
 };
 
 /**
+ * NoveltyItem
+ *
+ * Something atlas observed in real data that it didn't statically
+ * know about. The atlas-noticing-its-own-blind-spots loop.
+ *
+ * ``kind`` taxonomy:
+ * - ``unknown_tool_use``: tool_calls.name in call_llm_exchanges that
+ * isn't a registered DispatchDef.name or MoveDef.name
+ * - ``unknown_trace_event``: a trace_json event-type string not in
+ * ``event_keys.ATLAS_READS`` or ``trace_events.TraceEvent`` union
+ * - ``unknown_call_type``: a calls.call_type value that isn't a
+ * CallType enum member (would only happen if the FK is bypassed)
+ * - ``orphan_rendered_prompt``: a system_prompt fragment that doesn't
+ * match any prompts*.md content (heuristic — first-200-char
+ * compare)
+ */
+export type NoveltyItem = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Target
+     */
+    target: string;
+    /**
+     * Detail
+     */
+    detail?: string;
+    /**
+     * Sample Call Id
+     */
+    sample_call_id?: string | null;
+    /**
+     * Sample Run Id
+     */
+    sample_run_id?: string | null;
+    /**
+     * Seen Count
+     */
+    seen_count?: number;
+};
+
+/**
+ * NoveltyReport
+ */
+export type NoveltyReport = {
+    /**
+     * Items
+     */
+    items: Array<NoveltyItem>;
+    /**
+     * Counts By Kind
+     */
+    counts_by_kind: {
+        [key: string]: number;
+    };
+    /**
+     * N Scanned Exchanges
+     */
+    n_scanned_exchanges?: number;
+    /**
+     * N Scanned Calls
+     */
+    n_scanned_calls?: number;
+};
+
+/**
  * OrchestratorRunRequest
  *
  * Inputs for a remote orchestrator run.
@@ -4865,6 +4933,54 @@ export type PromptImpactRevisionStats = {
 };
 
 /**
+ * PromptIndex
+ */
+export type PromptIndex = {
+    /**
+     * Items
+     */
+    items: Array<PromptListItem>;
+    /**
+     * N Scanned Exchanges
+     */
+    n_scanned_exchanges?: number;
+};
+
+/**
+ * PromptListItem
+ *
+ * One row in the /atlas/registry/prompts index, with a use-intensity
+ * signal so operators can sort by "what actually matters."
+ *
+ * ``n_compositions`` is static (count of call types whose prompt
+ * composition includes this file). ``recent_invocations`` is dynamic
+ * — exchanges in the recent scan window whose call_type's
+ * composition references this prompt.
+ */
+export type PromptListItem = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Char Count
+     */
+    char_count: number;
+    /**
+     * N Sections
+     */
+    n_sections?: number;
+    /**
+     * N Compositions
+     */
+    n_compositions?: number;
+    /**
+     * Recent Invocations
+     */
+    recent_invocations?: number;
+};
+
+/**
  * PromptPart
  *
  * One file's contribution to a system-prompt composition.
@@ -5493,6 +5609,10 @@ export type RegistryRollup = {
      * Active Calls Preset
      */
     active_calls_preset?: string;
+    /**
+     * Pseudo Call Types
+     */
+    pseudo_call_types?: Array<string>;
 };
 
 /**
@@ -8492,6 +8612,46 @@ export type ListPromptsApiAtlasRegistryPromptsGetResponses = {
 
 export type ListPromptsApiAtlasRegistryPromptsGetResponse = ListPromptsApiAtlasRegistryPromptsGetResponses[keyof ListPromptsApiAtlasRegistryPromptsGetResponses];
 
+export type GetPromptsIndexApiAtlasRegistryPromptsIndexGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Scan
+         */
+        scan?: number;
+    };
+    url: '/api/atlas/registry/prompts_index';
+};
+
+export type GetPromptsIndexApiAtlasRegistryPromptsIndexGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPromptsIndexApiAtlasRegistryPromptsIndexGetError = GetPromptsIndexApiAtlasRegistryPromptsIndexGetErrors[keyof GetPromptsIndexApiAtlasRegistryPromptsIndexGetErrors];
+
+export type GetPromptsIndexApiAtlasRegistryPromptsIndexGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PromptIndex;
+};
+
+export type GetPromptsIndexApiAtlasRegistryPromptsIndexGetResponse = GetPromptsIndexApiAtlasRegistryPromptsIndexGetResponses[keyof GetPromptsIndexApiAtlasRegistryPromptsIndexGetResponses];
+
 export type GetPromptApiAtlasRegistryPromptsNameGetData = {
     body?: never;
     headers?: {
@@ -9400,6 +9560,50 @@ export type GetGapsApiAtlasGapsGetResponses = {
 };
 
 export type GetGapsApiAtlasGapsGetResponse = GetGapsApiAtlasGapsGetResponses[keyof GetGapsApiAtlasGapsGetResponses];
+
+export type GetNoveltyApiAtlasNoveltyGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Scan Exchanges
+         */
+        scan_exchanges?: number;
+        /**
+         * Scan Calls
+         */
+        scan_calls?: number;
+    };
+    url: '/api/atlas/novelty';
+};
+
+export type GetNoveltyApiAtlasNoveltyGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetNoveltyApiAtlasNoveltyGetError = GetNoveltyApiAtlasNoveltyGetErrors[keyof GetNoveltyApiAtlasNoveltyGetErrors];
+
+export type GetNoveltyApiAtlasNoveltyGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NoveltyReport;
+};
+
+export type GetNoveltyApiAtlasNoveltyGetResponse = GetNoveltyApiAtlasNoveltyGetResponses[keyof GetNoveltyApiAtlasNoveltyGetResponses];
 
 export type GetCallVarianceApiAtlasCallsVarianceGetData = {
     body?: never;

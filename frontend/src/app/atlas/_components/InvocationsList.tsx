@@ -8,6 +8,8 @@ import type {
   InvocationResponse,
 } from "@/api";
 import { fmtCost, fmtRelative, fmtWhen } from "../_lib/format";
+import { ToolCallView } from "./ToolCallView";
+import { ResponseText } from "./ResponseText";
 
 type Kind = "call_type" | "dispatch" | "move";
 
@@ -353,18 +355,9 @@ function ContentBlock({ block }: { block: { [key: string]: unknown } }) {
   }
   if (type === "tool_use") {
     const name = (block.name as string | undefined) ?? "tool";
-    const input = block.input ?? {};
-    return (
-      <div className="atlas-inv-tooluse">
-        <div className="atlas-inv-tooluse-head">
-          <span className="atlas-inv-tooluse-tag">tool_use</span>
-          <span className="atlas-inv-tooluse-name">{name}</span>
-        </div>
-        <pre className="atlas-inv-text is-json">
-          {JSON.stringify(input, null, 2)}
-        </pre>
-      </div>
-    );
+    const input = (block.input as { [key: string]: unknown } | undefined) ?? {};
+    const id = block.id as string | undefined;
+    return <ToolCallView name={name} input={input} tool_use_id={id} />;
   }
   if (type === "tool_result") {
     const toolUseId = (block.tool_use_id as string | undefined) ?? "";
@@ -504,7 +497,9 @@ function ResponseBlock({
         </div>
       ) : (
         res.response_text && (
-          <pre className="atlas-inv-text">{res.response_text}</pre>
+          <div className="atlas-inv-blocks">
+            <ResponseText text={res.response_text} />
+          </div>
         )
       )}
     </div>
@@ -523,24 +518,19 @@ function ResponseContentBlock({
     return <ThinkingBlock text={(block.thinking as string) ?? ""} />;
   }
   if (type === "text") {
-    return <pre className="atlas-inv-text">{(block.text as string) ?? ""}</pre>;
+    return <ResponseText text={(block.text as string) ?? ""} />;
   }
   if (type === "tool_use") {
     const name = (block.name as string | undefined) ?? "tool";
-    const input = block.input ?? {};
+    const input = (block.input as { [key: string]: unknown } | undefined) ?? {};
+    const id = block.id as string | undefined;
     return (
-      <div
-        className={`atlas-inv-tooluse${matched ? " is-matched" : ""}`}
-      >
-        <div className="atlas-inv-tooluse-head">
-          <span className="atlas-inv-tooluse-tag">tool_use</span>
-          <span className="atlas-inv-tooluse-name">{name}</span>
-          {matched && <span className="atlas-inv-matched-pill">matched</span>}
-        </div>
-        <pre className="atlas-inv-text is-json">
-          {JSON.stringify(input, null, 2)}
-        </pre>
-      </div>
+      <ToolCallView
+        name={name}
+        input={input}
+        matched={matched}
+        tool_use_id={id}
+      />
     );
   }
   return (

@@ -5,6 +5,8 @@ import type {
   CallTypeSummary,
   DispatchSummary,
   InvocationIndex,
+  PromptComposition,
+  RegistryRollup,
   WorkflowProfile,
   WorkflowSummary,
 } from "@/api";
@@ -41,7 +43,17 @@ export default async function CallDetail({
     `/api/atlas/registry/calls/${encodeURIComponent(call_type)}`,
     null,
   );
-  if (!ct) notFound();
+  if (!ct) {
+    const rollup = await atlasFetch<RegistryRollup | null>(
+      "/api/atlas/registry",
+      null,
+    );
+    const pseudoList = rollup?.pseudo_call_types ?? [];
+    if (pseudoList.includes(call_type)) {
+      return <PseudoCallTypeDetail callType={call_type} />;
+    }
+    notFound();
+  }
 
   const statsQs = new URLSearchParams();
   if (bucket && bucket !== "off") statsQs.set("bucket", bucket);
@@ -245,6 +257,104 @@ export default async function CallDetail({
                   </li>
                 ))
               )}
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+async function PseudoCallTypeDetail({ callType }: { callType: string }) {
+  const [composition, invocations] = await Promise.all([
+    atlasFetch<PromptComposition | null>(
+      `/api/atlas/registry/compositions/${encodeURIComponent(callType)}`,
+      null,
+    ),
+    atlasFetch<InvocationIndex | null>(
+      `/api/atlas/calls/${encodeURIComponent(callType)}/invocations?limit=10`,
+      null,
+    ),
+  ]);
+
+  return (
+    <div>
+      <div className="atlas-page-head">
+        <div className="atlas-page-head-main">
+          <Crumbs
+            items={[
+              { label: "atlas", href: "/atlas" },
+              { label: "calls", href: "/atlas/calls" },
+              { label: callType },
+            ]}
+          />
+          <h1>{callType}</h1>
+          <div className="atlas-chip-row" style={{ marginBottom: "0.85rem" }}>
+            <span className="atlas-chip is-flag">pseudo call type</span>
+          </div>
+          <div className="atlas-pseudo-note">
+            <strong>this is a pseudo call type</strong> — used by the prompt
+            composition layer; not a real <code>CallType</code> enum value.
+            It has a prompt composition but no runner, dispatch payload, or
+            available-moves preset.
+          </div>
+        </div>
+      </div>
+
+      <div className="atlas-split">
+        <div>
+          {composition && (composition.parts?.length ?? 0) > 0 ? (
+            <section className="atlas-section" id="prompt">
+              <div className="atlas-section-head">
+                <h2>prompt</h2>
+                <span className="atlas-section-meta">
+                  composed from {composition.parts.length} part
+                  {composition.parts.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <CompositionViewer composition={composition} />
+            </section>
+          ) : (
+            <section className="atlas-section">
+              <div className="atlas-section-head">
+                <h2>prompt</h2>
+              </div>
+              <p style={{ color: "var(--a-muted)", fontFamily: "var(--a-mono)", fontSize: "0.78rem" }}>
+                no composition found for this pseudo call type.
+              </p>
+            </section>
+          )}
+
+          {invocations && (invocations.items ?? []).length > 0 ? (
+            <InvocationsList index={invocations} kind="call_type" />
+          ) : (
+            <section className="atlas-section">
+              <div className="atlas-section-head">
+                <h2>recent invocations</h2>
+              </div>
+              <p style={{ color: "var(--a-muted)", fontFamily: "var(--a-mono)", fontSize: "0.78rem", lineHeight: 1.5 }}>
+                rendered prompts only — search via{" "}
+                <Link href="/atlas/exchanges/search">/atlas/exchanges/search</Link>
+                {" "}for invocations of this prompt.
+              </p>
+            </section>
+          )}
+        </div>
+
+        <aside className="atlas-aside">
+          <div className="atlas-aside-block">
+            <h3>about pseudo call types</h3>
+            <ul className="atlas-aside-list" style={{ fontFamily: "var(--a-sans)", fontSize: "0.83rem", lineHeight: 1.5 }}>
+              <li>
+                pseudo keys live in{" "}
+                <code style={{ fontFamily: "var(--a-mono)", fontSize: "0.76rem" }}>
+                  rumil.atlas.prompt_parts.PSEUDO_CALL_TYPES
+                </code>
+              </li>
+              <li style={{ color: "var(--a-muted)" }}>
+                they let prioritization phases and sub-loops have their own
+                composed prompts without inflating the CallType enum.
+              </li>
             </ul>
           </div>
         </aside>

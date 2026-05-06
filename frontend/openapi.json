@@ -1899,6 +1899,76 @@
         }
       }
     },
+    "/api/atlas/registry/prompts_index": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Prompts Index",
+        "description": "Per-prompt rows with use-intensity counts.\n\nFor each file: char_count, n_sections, n_compositions (static \u2014\nhow many call types reference it), recent_invocations (dynamic \u2014\nsummed across the recent ``scan`` exchanges of those call types).",
+        "operationId": "get_prompts_index_api_atlas_registry_prompts_index_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "scan",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "title": "Scan"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptIndex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/registry/prompts/{name}": {
       "get": {
         "tags": [
@@ -3474,6 +3544,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GapsReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/atlas/novelty": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Novelty",
+        "description": "Things atlas observes in real data that aren't in its registry \u2014\nunknown tool_use names, unrecognised trace event kinds, call_type\nvalues not on the enum, system_prompt prefixes that don't match\nany prompts/*.md file. The atlas-noticing-its-own-blind-spots\nsurface.",
+        "operationId": "get_novelty_api_atlas_novelty_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "scan_exchanges",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "title": "Scan Exchanges"
+            }
+          },
+          {
+            "name": "scan_calls",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "title": "Scan Calls"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoveltyReport"
                 }
               }
             }
@@ -12398,6 +12548,91 @@
         ],
         "title": "MovesExecutedEventOut"
       },
+      "NoveltyItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": ""
+          },
+          "sample_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Call Id"
+          },
+          "sample_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Run Id"
+          },
+          "seen_count": {
+            "type": "integer",
+            "title": "Seen Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "target"
+        ],
+        "title": "NoveltyItem",
+        "description": "Something atlas observed in real data that it didn't statically\nknow about. The atlas-noticing-its-own-blind-spots loop.\n\n``kind`` taxonomy:\n- ``unknown_tool_use``: tool_calls.name in call_llm_exchanges that\n  isn't a registered DispatchDef.name or MoveDef.name\n- ``unknown_trace_event``: a trace_json event-type string not in\n  ``event_keys.ATLAS_READS`` or ``trace_events.TraceEvent`` union\n- ``unknown_call_type``: a calls.call_type value that isn't a\n  CallType enum member (would only happen if the FK is bypassed)\n- ``orphan_rendered_prompt``: a system_prompt fragment that doesn't\n  match any prompts/*.md content (heuristic \u2014 first-200-char\n  compare)"
+      },
+      "NoveltyReport": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NoveltyItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "counts_by_kind": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts By Kind"
+          },
+          "n_scanned_exchanges": {
+            "type": "integer",
+            "title": "N Scanned Exchanges",
+            "default": 0
+          },
+          "n_scanned_calls": {
+            "type": "integer",
+            "title": "N Scanned Calls",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "counts_by_kind"
+        ],
+        "title": "NoveltyReport"
+      },
       "OrchestratorRunRequest": {
         "properties": {
           "question": {
@@ -13986,6 +14221,61 @@
         "title": "PromptImpactRevisionStats",
         "description": "Stats slice between two prompt-edit revisions.\n\n``window_start`` is the prior revision's commit_ts (exclusive); the\ncurrent entry's commit_ts is ``window_end``. ``call_stats`` is the\nsame shape as ``CallTypeStats`` but scoped to the [start, end)\nwindow \u2014 comparing two adjacent rows shows whether a prompt edit\nlanded alongside a measurable cost / round / pathology shift."
       },
+      "PromptIndex": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PromptListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "n_scanned_exchanges": {
+            "type": "integer",
+            "title": "N Scanned Exchanges",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "PromptIndex"
+      },
+      "PromptListItem": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "char_count": {
+            "type": "integer",
+            "title": "Char Count"
+          },
+          "n_sections": {
+            "type": "integer",
+            "title": "N Sections",
+            "default": 0
+          },
+          "n_compositions": {
+            "type": "integer",
+            "title": "N Compositions",
+            "default": 0
+          },
+          "recent_invocations": {
+            "type": "integer",
+            "title": "Recent Invocations",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "char_count"
+        ],
+        "title": "PromptListItem",
+        "description": "One row in the /atlas/registry/prompts index, with a use-intensity\nsignal so operators can sort by \"what actually matters.\"\n\n``n_compositions`` is static (count of call types whose prompt\ncomposition includes this file). ``recent_invocations`` is dynamic\n\u2014 exchanges in the recent scan window whose call_type's\ncomposition references this prompt."
+      },
       "PromptPart": {
         "properties": {
           "name": {
@@ -14929,6 +15219,14 @@
             "type": "string",
             "title": "Active Calls Preset",
             "default": ""
+          },
+          "pseudo_call_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pseudo Call Types",
+            "default": []
           }
         },
         "type": "object",

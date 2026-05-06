@@ -3296,3 +3296,367 @@ a:hover .atlas-graph-node-rect {
   padding: 0.55rem 0.8rem 0.7rem;
   border-top: 1px dashed var(--a-line);
 }
+
+/* ============================================================ overflow guards
+   Long content (system prompts, tool inputs, JSON dumps, embedded URLs) must
+   scroll inside its panel rather than push the whole page wider. The atlas
+   shell sets a max-width via .atlas-main; descendants of the split layout
+   need min-width: 0 so they can actually shrink in their grid/flex track,
+   and pre/code blocks need word-break + overflow-x to constrain long lines. */
+
+.atlas-shell {
+  overflow-x: hidden;
+}
+.atlas-main {
+  min-width: 0;
+}
+.atlas-split {
+  min-width: 0;
+}
+.atlas-split > * {
+  min-width: 0;
+}
+.atlas-section,
+.atlas-page-head,
+.atlas-page-head-main {
+  min-width: 0;
+}
+.atlas-comp,
+.atlas-comp-body,
+.atlas-part-card,
+.atlas-part-card-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.atlas-section-card-body {
+  min-width: 0;
+  overflow-x: auto;
+}
+/* markdown inside composition expanded view: long URLs and inline code */
+.atlas-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.atlas-markdown a,
+.atlas-markdown code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.atlas-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+/* Invocation expanded body: scroll long text/JSON in-place */
+.atlas-inv-item,
+.atlas-inv-body,
+.atlas-inv-block,
+.atlas-inv-msg,
+.atlas-inv-blocks,
+.atlas-inv-tooluse,
+.atlas-inv-toolresult,
+.atlas-inv-thinking,
+.atlas-inv-tools {
+  min-width: 0;
+}
+.atlas-inv-text {
+  overflow-x: auto;
+}
+.atlas-inv-tooluse pre.atlas-inv-text,
+.atlas-inv-toolresult pre.atlas-inv-text {
+  max-width: 100%;
+}
+/* Run flow rows: tree text never wraps but should scroll if very deep */
+.atlas-flow-node {
+  min-width: 0;
+}
+.atlas-flow-tree {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* ============================================================ ToolCallView */
+
+.atlas-tcv {
+  border: 1px solid var(--a-line);
+  background: var(--a-bg);
+  border-radius: 2px;
+  min-width: 0;
+}
+.atlas-tcv.is-matched {
+  border-color: var(--a-warm);
+  border-left-width: 3px;
+  background: var(--a-warm-soft);
+}
+.atlas-tcv-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--a-line);
+  font-family: var(--a-mono);
+  flex-wrap: wrap;
+}
+.atlas-tcv-tag {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 2px;
+  background: var(--a-line);
+  color: var(--a-fg-soft);
+}
+.atlas-tcv-name {
+  font-size: 0.78rem;
+  color: var(--a-accent);
+  font-weight: 500;
+}
+.atlas-tcv-matched {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--a-warm);
+  border: 1px solid var(--a-warm);
+  background: var(--a-bg-paper);
+  padding: 0.05rem 0.4rem;
+  border-radius: 2px;
+}
+.atlas-tcv-id {
+  font-size: 0.66rem;
+  color: var(--a-muted);
+  font-family: var(--a-mono);
+}
+.atlas-tcv-spacer { flex: 1 1 auto; }
+.atlas-tcv-toggle {
+  font-family: var(--a-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--a-fg-soft);
+  background: var(--a-bg-paper);
+  border: 1px solid var(--a-line-strong);
+  padding: 0.1rem 0.45rem;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.atlas-tcv-toggle:hover {
+  color: var(--a-rule);
+  border-color: var(--a-rule);
+}
+.atlas-tcv-toggle[aria-pressed="true"] {
+  background: var(--a-rule);
+  color: var(--a-bg-paper);
+  border-color: var(--a-rule);
+}
+.atlas-tcv-body {
+  padding: 0.5rem 0.65rem;
+  min-width: 0;
+}
+.atlas-tcv-empty {
+  font-family: var(--a-mono);
+  font-size: 0.72rem;
+  color: var(--a-muted);
+  font-style: italic;
+}
+.atlas-tcv-raw {
+  margin: 0;
+  font-family: var(--a-mono);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--a-fg-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 100%;
+}
+.atlas-tcv-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.atlas-tcv-rows.is-nested {
+  border-left: 2px solid var(--a-line);
+  padding-left: 0.6rem;
+  gap: 0.35rem;
+}
+.atlas-tcv-row {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) 1fr;
+  gap: 0.7rem;
+  align-items: baseline;
+  min-width: 0;
+}
+@media (max-width: 48rem) {
+  .atlas-tcv-row {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+  }
+}
+.atlas-tcv-key {
+  margin: 0;
+  font-family: var(--a-mono);
+  font-size: 0.72rem;
+  color: var(--a-accent);
+  letter-spacing: 0.02em;
+  word-break: break-word;
+}
+.atlas-tcv-val {
+  margin: 0;
+  min-width: 0;
+}
+.atlas-tcv-chip {
+  display: inline-block;
+  font-family: var(--a-mono);
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 2px;
+  background: var(--a-line);
+  color: var(--a-fg-soft);
+  margin: 0;
+}
+.atlas-tcv-chip.is-num {
+  background: var(--a-accent-soft);
+  color: var(--a-accent);
+  font-variant-numeric: tabular-nums;
+}
+.atlas-tcv-chip.is-bool {
+  background: var(--a-flag-soft);
+  color: var(--a-flag);
+}
+.atlas-tcv-chip.is-null {
+  font-style: italic;
+  color: var(--a-muted);
+}
+.atlas-tcv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.atlas-tcv-string {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.atlas-tcv-string-text {
+  margin: 0;
+  font-family: var(--a-mono);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--a-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 100%;
+}
+.atlas-tcv-mini {
+  align-self: flex-start;
+  font-family: var(--a-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--a-accent);
+  background: transparent;
+  border: 1px solid var(--a-accent-line);
+  padding: 0.05rem 0.4rem;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.atlas-tcv-mini:hover {
+  background: var(--a-accent-soft);
+}
+.atlas-tcv-nested {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border-left: 2px solid var(--a-line);
+  padding-left: 0.6rem;
+}
+.atlas-tcv-nested-item {
+  display: grid;
+  grid-template-columns: 2.5rem 1fr;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.atlas-tcv-nested-idx {
+  font-family: var(--a-mono);
+  font-size: 0.66rem;
+  color: var(--a-muted);
+}
+.atlas-tcv-nested-body {
+  min-width: 0;
+}
+
+/* ============================================================ ResponseText */
+
+.atlas-rt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.atlas-rt-text {
+  margin: 0;
+  font-family: var(--a-mono);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--a-fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 100%;
+}
+.atlas-rt-text:empty {
+  display: none;
+}
+.atlas-rt-json {
+  border: 1px solid var(--a-accent-line);
+  background: var(--a-bg-paper);
+  border-radius: 2px;
+  min-width: 0;
+}
+.atlas-rt-json-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px solid var(--a-accent-line);
+  background: var(--a-accent-soft);
+  font-family: var(--a-mono);
+  flex-wrap: wrap;
+}
+.atlas-rt-json-tag {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 2px;
+  background: var(--a-accent);
+  color: var(--a-bg-paper);
+}
+.atlas-rt-json-meta {
+  font-size: 0.68rem;
+  color: var(--a-accent);
+  font-variant-numeric: tabular-nums;
+}
+.atlas-rt-json-spacer { flex: 1 1 auto; }
+.atlas-rt-json-body {
+  padding: 0.55rem 0.65rem;
+  min-width: 0;
+}
+
+/* ============================================================ pseudo call type */
+
+.atlas-pseudo-note {
+  border-left: 3px solid var(--a-flag);
+  background: var(--a-flag-soft);
+  color: var(--a-flag);
+  padding: 0.5rem 0.8rem;
+  font-family: var(--a-mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin-bottom: 1rem;
+}
+.atlas-pseudo-note strong {
+  color: var(--a-rule);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}

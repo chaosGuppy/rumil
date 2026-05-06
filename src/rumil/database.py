@@ -2387,7 +2387,14 @@ class DB:
                 )
             )
         )
-        link_snapshot = rows[0] if rows else {}
+        if not rows:
+            # Link is invisible to this DB's staged/scope view. Recording an
+            # empty mutation event would corrupt the log (retroactive staging
+            # cannot restore from an empty payload), and the DELETE below is
+            # unfiltered — proceeding would silently bypass the visibility
+            # filter the snapshot fetch just enforced.
+            return
+        link_snapshot = rows[0]
         await self.record_mutation_event("delete_link", link_id, link_snapshot)
         if not self.staged:
             await self._execute(self.client.table("page_links").delete().eq("id", link_id))
@@ -3299,6 +3306,7 @@ class DB:
                     "created_at": payload.get("created_at"),
                     "run_id": payload.get("run_id", run_id),
                     "staged": was_own_link,
+                    "scope_question_id": payload.get("scope_question_id"),
                 }
                 await self._execute(self.client.table("page_links").upsert(restore_row))
 

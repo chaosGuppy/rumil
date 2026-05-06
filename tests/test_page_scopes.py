@@ -22,7 +22,7 @@ from rumil.calls.stages import (
     UpdateResult,
     WorkspaceUpdater,
 )
-from rumil.database import DB
+from rumil.database import DB, _rows
 from rumil.models import (
     Call,
     CallStatus,
@@ -366,3 +366,61 @@ async def test_run_prioritization_call_enters_scoped_mode(writer_db, mocker):
 
     assert seen["scope"] == question.id
     assert writer_db.scope_question_id is None
+
+
+async def test_delete_link_refuses_when_invisible_to_caller(writer_db, project_id):
+    """A scoped DB cannot delete an out-of-scope link.
+
+    Without this guard, the snapshot fetch (scope-filtered) returns nothing
+    while the unfiltered DELETE still removes the row, producing a
+    delete_link mutation event with an empty payload — retroactive staging
+    cannot then restore the link.
+    """
+    q1 = await _make_question(writer_db, "q1")
+    q2 = await _make_question(writer_db, "q2")
+    a = await _make_page(writer_db, "claim a")
+    b = await _make_page(writer_db, "claim b")
+    link = await _link(writer_db, a, b, scope_question_id=q1.id)
+
+    reader_q2 = await _make_db(project_id, scope_question_id=q2.id)
+    try:
+        await reader_q2.delete_link(link.id)
+    finally:
+        await reader_q2.close()
+
+    assert await writer_db.get_link(link.id) is not None
+
+    events = _rows(
+        await writer_db._execute(
+            writer_db.client.table("mutation_events")
+            .select("event_type, target_id")
+            .eq("target_id", link.id)
+        )
+    )
+    assert events == []
+
+
+async def test_stage_run_restores_scope_question_id_on_deleted_link(writer_db, project_id):
+    """``stage_run``'s delete_link restore must repopulate ``scope_question_id``.
+
+    Without this, retroactively staging a run that deleted a scoped link
+    silently strips the scope on resurrection — a quiet visibility leak.
+    """
+    q1 = await _make_question(writer_db, "q1")
+    a = await _make_page(writer_db, "claim a")
+    b = await _make_page(writer_db, "claim b")
+    link = await _link(writer_db, a, b, scope_question_id=q1.id)
+
+    delete_run = await DB.create(run_id=str(uuid.uuid4()), scope_question_id=q1.id)
+    delete_run.project_id = project_id
+    try:
+        await delete_run.delete_link(link.id)
+    finally:
+        await delete_run.close()
+    assert await writer_db.get_link(link.id) is None
+
+    await writer_db.stage_run(delete_run.run_id)
+
+    restored = await writer_db.get_link(link.id)
+    assert restored is not None
+    assert restored.scope_question_id == q1.id

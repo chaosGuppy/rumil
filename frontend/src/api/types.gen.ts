@@ -1932,6 +1932,97 @@ export type EvaluationCompleteEventOut = {
 };
 
 /**
+ * ExchangePlaygroundContext
+ *
+ * Everything atlas needs to render a fork-the-prompt playground for
+ * an existing LLM exchange: the exchange itself, the call's
+ * composition spec, and any forks already on it.
+ */
+export type ExchangePlaygroundContext = {
+    /**
+     * Exchange Id
+     */
+    exchange_id: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Project Id
+     */
+    project_id?: string;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Model
+     */
+    model?: string;
+    /**
+     * Temperature
+     */
+    temperature?: number | null;
+    /**
+     * Max Tokens
+     */
+    max_tokens?: number | null;
+    /**
+     * Has Thinking
+     */
+    has_thinking?: boolean;
+    /**
+     * Thinking Off
+     */
+    thinking_off?: boolean;
+    /**
+     * System Prompt
+     */
+    system_prompt?: string;
+    /**
+     * User Messages
+     */
+    user_messages?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * User Message
+     */
+    user_message?: string;
+    /**
+     * Response Text
+     */
+    response_text?: string;
+    /**
+     * Tools
+     */
+    tools?: Array<{
+        [key: string]: unknown;
+    }>;
+    composition?: PromptComposition | null;
+    /**
+     * Forks
+     */
+    forks?: Array<ForkSummary>;
+    /**
+     * N Forks
+     */
+    n_forks?: number;
+    /**
+     * Anomalies
+     */
+    anomalies?: Array<string>;
+};
+
+/**
  * ExchangeSearchHit
  */
 export type ExchangeSearchHit = {
@@ -2218,6 +2309,58 @@ export type ForkOverrides = {
      * Thinking Off
      */
     thinking_off?: boolean | null;
+};
+
+/**
+ * ForkSummary
+ *
+ * Compact summary of a fork for atlas rendering.
+ */
+export type ForkSummary = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Overrides Hash
+     */
+    overrides_hash: string;
+    /**
+     * Sample Index
+     */
+    sample_index: number;
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Temperature
+     */
+    temperature?: number | null;
+    /**
+     * Response Text
+     */
+    response_text?: string | null;
+    /**
+     * Has Error
+     */
+    has_error?: boolean;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number | null;
+    /**
+     * Duration Ms
+     */
+    duration_ms?: number | null;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Created By
+     */
+    created_by?: string | null;
 };
 
 /**
@@ -7990,6 +8133,47 @@ export type GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetResponses
 };
 
 export type GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetResponse = GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetResponses[keyof GetSampleRenderApiAtlasRegistryCallsCallTypeSampleRenderGetResponses];
+
+export type GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Exchange Id
+         */
+        exchange_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/exchanges/{exchange_id}/playground';
+};
+
+export type GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetError = GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetErrors[keyof GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetErrors];
+
+export type GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ExchangePlaygroundContext;
+};
+
+export type GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetResponse = GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetResponses[keyof GetPlaygroundContextApiAtlasExchangesExchangeIdPlaygroundGetResponses];
 
 export type SearchExchangesEndpointApiAtlasExchangesSearchGetData = {
     body?: never;

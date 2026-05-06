@@ -1673,6 +1673,75 @@
         }
       }
     },
+    "/api/atlas/exchanges/{exchange_id}/playground": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Playground Context",
+        "description": "Bundle an exchange + composition + existing forks for the\nplayground UI. Firing forks goes through the existing\n``/api/exchange-forks`` endpoint.",
+        "operationId": "get_playground_context_api_atlas_exchanges__exchange_id__playground_get",
+        "parameters": [
+          {
+            "name": "exchange_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Exchange Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangePlaygroundContext"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/exchanges/search": {
       "get": {
         "tags": [
@@ -8693,6 +8762,146 @@
         ],
         "title": "EvaluationCompleteEventOut"
       },
+      "ExchangePlaygroundContext": {
+        "properties": {
+          "exchange_id": {
+            "type": "string",
+            "title": "Exchange Id"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id",
+            "default": ""
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "has_thinking": {
+            "type": "boolean",
+            "title": "Has Thinking",
+            "default": false
+          },
+          "thinking_off": {
+            "type": "boolean",
+            "title": "Thinking Off",
+            "default": false
+          },
+          "system_prompt": {
+            "type": "string",
+            "title": "System Prompt",
+            "default": ""
+          },
+          "user_messages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "User Messages",
+            "default": []
+          },
+          "user_message": {
+            "type": "string",
+            "title": "User Message",
+            "default": ""
+          },
+          "response_text": {
+            "type": "string",
+            "title": "Response Text",
+            "default": ""
+          },
+          "tools": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tools",
+            "default": []
+          },
+          "composition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptComposition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "forks": {
+            "items": {
+              "$ref": "#/components/schemas/ForkSummary"
+            },
+            "type": "array",
+            "title": "Forks",
+            "default": []
+          },
+          "n_forks": {
+            "type": "integer",
+            "title": "N Forks",
+            "default": 0
+          },
+          "anomalies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Anomalies",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "exchange_id",
+          "call_id",
+          "call_type"
+        ],
+        "title": "ExchangePlaygroundContext",
+        "description": "Everything atlas needs to render a fork-the-prompt playground for\nan existing LLM exchange: the exchange itself, the call's\ncomposition spec, and any forks already on it."
+      },
       "ExchangeSearchHit": {
         "properties": {
           "exchange_id": {
@@ -9190,6 +9399,106 @@
         "type": "object",
         "title": "ForkOverrides",
         "description": "Partial overrides for a base exchange.\n\nFields left as ``None`` inherit from the base. ``tools`` is a full\nreplacement \u2014 to remove a tool, omit it from the override; to add or\nedit one, include the desired full Anthropic tool dict\n(``{\"name\", \"description\", \"input_schema\"}``).\n\n``thinking_off`` toggles adaptive thinking off for models that have it\nenabled by default (Opus 4.7/4.6, Sonnet 4.6). Leaving as ``None``\ninherits the model's default behavior; ``True`` disables thinking even\non models where it's normally always-on."
+      },
+      "ForkSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "overrides_hash": {
+            "type": "string",
+            "title": "Overrides Hash"
+          },
+          "sample_index": {
+            "type": "integer",
+            "title": "Sample Index"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "response_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Text"
+          },
+          "has_error": {
+            "type": "boolean",
+            "title": "Has Error",
+            "default": false
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "overrides_hash",
+          "sample_index",
+          "model"
+        ],
+        "title": "ForkSummary",
+        "description": "Compact summary of a fork for atlas rendering."
       },
       "GapItem": {
         "properties": {

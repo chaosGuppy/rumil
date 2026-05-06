@@ -608,6 +608,50 @@ class TraceEventRecord(BaseModel):
     payload: dict
 
 
+class ForkSummary(BaseModel):
+    """Compact summary of a fork for atlas rendering."""
+
+    id: str
+    overrides_hash: str
+    sample_index: int
+    model: str
+    temperature: float | None = None
+    response_text: str | None = None
+    has_error: bool = False
+    cost_usd: float | None = None
+    duration_ms: int | None = None
+    created_at: str | None = None
+    created_by: str | None = None
+
+
+class ExchangePlaygroundContext(BaseModel):
+    """Everything atlas needs to render a fork-the-prompt playground for
+    an existing LLM exchange: the exchange itself, the call's
+    composition spec, and any forks already on it.
+    """
+
+    exchange_id: str
+    call_id: str
+    call_type: str
+    run_id: str = ""
+    project_id: str = ""
+    created_at: str = ""
+    model: str = ""
+    temperature: float | None = None
+    max_tokens: int | None = None
+    has_thinking: bool = False
+    thinking_off: bool = False
+    system_prompt: str = ""
+    user_messages: list[dict] = []
+    user_message: str = ""
+    response_text: str = ""
+    tools: list[dict] = []
+    composition: PromptComposition | None = None
+    forks: list[ForkSummary] = []
+    n_forks: int = 0
+    anomalies: list[str] = []
+
+
 class RenderedPromptSample(BaseModel):
     """A real LLM exchange surfaced as a rendered-prompt sample.
 

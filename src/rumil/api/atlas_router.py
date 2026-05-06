@@ -40,6 +40,7 @@ from rumil.atlas.impact import build_prompt_impact
 from rumil.atlas.live import build_live_snapshot
 from rumil.atlas.overlay import build_workflow_overlay
 from rumil.atlas.pages import build_page_calls, build_page_timeline
+from rumil.atlas.playground import build_playground_context
 from rumil.atlas.polish import build_in_flight_queue, build_variance_summary
 from rumil.atlas.prompt_parts import build_prompt_composition
 from rumil.atlas.registry import (
@@ -58,6 +59,7 @@ from rumil.atlas.schemas import (
     CallTypeSummary,
     CallTypeVarianceSummary,
     DispatchSummary,
+    ExchangePlaygroundContext,
     ExchangeSearchResults,
     GapsReport,
     InFlightQueue,
@@ -217,6 +219,21 @@ async def get_sample_render(
             detail=f"no recent rendered exchange found for call type {call_type!r}",
         )
     return sample
+
+
+@router.get("/exchanges/{exchange_id}/playground", response_model=ExchangePlaygroundContext)
+async def get_playground_context(
+    exchange_id: str,
+    db: DB = Depends(_get_db),
+) -> ExchangePlaygroundContext:
+    """Bundle an exchange + composition + existing forks for the
+    playground UI. Firing forks goes through the existing
+    ``/api/exchange-forks`` endpoint.
+    """
+    out = await build_playground_context(db, exchange_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"exchange not found: {exchange_id}")
+    return out
 
 
 @router.get("/exchanges/search", response_model=ExchangeSearchResults)

@@ -9312,7 +9312,14 @@
             "title": "Created At"
           },
           "exchange_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Exchange Id"
           },
           "call_id": {
@@ -9353,11 +9360,10 @@
         "type": "object",
         "required": [
           "created_at",
-          "exchange_id",
           "call_id"
         ],
         "title": "ErrorListItem",
-        "description": "One row in the chronological errors index.\n\nEach error came from a ``call_llm_exchanges`` row whose ``error``\ncolumn is non-empty. ``project_name`` is best-effort: if the project\njoin fails (deleted project, etc.) it stays empty."
+        "description": "One row in the chronological errors index.\n\nTwo sources are surfaced:\n- ``source=\"llm_exchange\"``: ``call_llm_exchanges.error`` is set \u2014\n  ``exchange_id`` is the failing exchange's id and the FE deep-links\n  to its playground.\n- ``source=\"error_event\"``: a standalone ``ErrorEvent`` was recorded\n  on the call's trace_json \u2014 there's no specific exchange,\n  ``exchange_id`` is None and the FE links to the call's exchanges\n  page or its run flow instead.\n\n``project_name`` is best-effort: if the project join fails (deleted\nproject, etc.) it stays empty."
       },
       "ErrorRef": {
         "properties": {

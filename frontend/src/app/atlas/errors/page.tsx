@@ -120,20 +120,32 @@ function ErrorRow({ e }: { e: ErrorListItem }) {
         {e.message || "(no message)"}
       </div>
       <div className="atlas-row-meta">
-        <Link
-          href={`/atlas/exchanges/${encodeURIComponent(e.exchange_id)}/playground`}
-          className="atlas-chip"
-          title="open this exchange in the playground"
-        >
-          ex {e.exchange_id.slice(0, 8)}
-        </Link>
-        <Link
-          href={`/atlas/calls/by_id/${encodeURIComponent(e.call_id)}/exchanges#exch-${encodeURIComponent(e.exchange_id)}`}
-          className="atlas-chip"
-          title="every exchange recorded against this call"
-        >
-          call {e.call_id.slice(0, 8)}
-        </Link>
+        {e.exchange_id ? (
+          <>
+            <Link
+              href={`/atlas/exchanges/${encodeURIComponent(e.exchange_id)}/playground`}
+              className="atlas-chip"
+              title="open this exchange in the playground"
+            >
+              ex {e.exchange_id.slice(0, 8)}
+            </Link>
+            <Link
+              href={`/atlas/calls/by_id/${encodeURIComponent(e.call_id)}/exchanges#exch-${encodeURIComponent(e.exchange_id)}`}
+              className="atlas-chip"
+              title="every exchange recorded against this call"
+            >
+              call {e.call_id.slice(0, 8)}
+            </Link>
+          </>
+        ) : (
+          <Link
+            href={`/atlas/calls/by_id/${encodeURIComponent(e.call_id)}/exchanges`}
+            className="atlas-chip"
+            title="trace-event error — links to the call's exchanges page"
+          >
+            call {e.call_id.slice(0, 8)}
+          </Link>
+        )}
         {e.run_id && (
           <Link
             href={`/atlas/runs/${encodeURIComponent(e.run_id)}/flow`}
@@ -143,6 +155,16 @@ function ErrorRow({ e }: { e: ErrorListItem }) {
             run {e.run_id.slice(0, 8)}
           </Link>
         )}
+        <span
+          className="atlas-chip is-muted"
+          title={
+            e.source === "error_event"
+              ? "trace-event error (no specific exchange)"
+              : "exchange-level error"
+          }
+        >
+          {e.source === "error_event" ? "trace" : "exch"}
+        </span>
       </div>
     </div>
   );

@@ -581,43 +581,33 @@ async def build_error_index(
     limit: int = 100,
     scan: int = 1000,
 ) -> ErrorIndex:
-    """Chronological list of recent errored exchanges.
+    """Chronological list of recent errors across calls and exchanges.
 
-    Scans up to ``scan`` most recent ``call_llm_exchanges`` rows whose
-    ``error`` is non-empty, joins each to its parent call (for
-    call_type / run_id / project_id) and project (for project name),
-    and returns the newest-first slice up to ``limit``.
+    Two sources fold together:
 
-    Trace-only ``ErrorEvent`` rows (events on a call without an
-    associated exchange) are not included here — they're surfaced on
-    the per-call-type stats panel as ``recent_errors`` instead.
+    - ``calls.trace_json`` events with ``event="error"`` — call-level
+      ``ErrorEvent`` rows that aren't attached to a specific exchange
+      (e.g. tool-input validation errors fired before any LLM call).
+      Timestamped against the call's ``completed_at`` (fallback
+      ``created_at``).
+    - ``calls.trace_json`` events with ``event="llm_exchange"`` whose
+      ``error`` field is non-empty — LLM-level errors with a working
+      ``exchange_id``. Timestamped against the matching
+      ``call_llm_exchanges`` row's ``created_at`` when we can join,
+      otherwise the call's timestamp.
+
+    ``scan`` caps the recent-calls scan window. Returns up to ``limit``
+    items newest first.
     """
-    query = (
-        db.client.table("call_llm_exchanges")
-        .select("id, call_id, error, created_at")
-        .not_.is_("error", "null")
-        .neq("error", "")
+    cres = await db._execute(
+        db.client.table("calls")
+        .select("id, call_type, run_id, project_id, trace_json, created_at, completed_at")
         .order("created_at", desc=True)
         .limit(scan)
     )
-    res = await db._execute(query)
-    rows = list(res.data or [])
-    n_scanned = len(rows)
-    if not rows:
-        return ErrorIndex(items=[], n_scanned=0, truncated=False)
+    call_rows = list(cres.data or [])
 
-    call_ids = list({str(r.get("call_id")) for r in rows if r.get("call_id")})
-    calls_by_id: dict[str, dict[str, Any]] = {}
-    if call_ids:
-        cres = await db._execute(
-            db.client.table("calls").select("id, call_type, run_id, project_id").in_("id", call_ids)
-        )
-        for c in cres.data or []:
-            calls_by_id[str(c.get("id") or "")] = c
-
-    project_ids = list(
-        {str(c.get("project_id")) for c in calls_by_id.values() if c.get("project_id")}
-    )
+    project_ids = list({str(c.get("project_id")) for c in call_rows if c.get("project_id")})
     projects_by_id: dict[str, str] = {}
     if project_ids:
         pres = await db._execute(
@@ -626,31 +616,88 @@ async def build_error_index(
         for p in pres.data or []:
             projects_by_id[str(p.get("id") or "")] = str(p.get("name") or "")
 
-    items: list[ErrorListItem] = []
-    for r in rows:
-        cid = str(r.get("call_id") or "")
-        call = calls_by_id.get(cid) or {}
-        if project_id and str(call.get("project_id") or "") != project_id:
+    exchange_ids_to_resolve: set[str] = set()
+    for c in call_rows:
+        events = c.get("trace_json") or []
+        if not isinstance(events, list):
             continue
-        ct = str(call.get("call_type") or "")
+        for e in events:
+            if not isinstance(e, dict):
+                continue
+            if e.get("event") == event_keys.LLM_EXCHANGE and e.get("error"):
+                ex = e.get("exchange_id")
+                if isinstance(ex, str) and ex:
+                    exchange_ids_to_resolve.add(ex)
+    exchange_ts: dict[str, str] = {}
+    if exchange_ids_to_resolve:
+        ids = list(exchange_ids_to_resolve)
+        for i in range(0, len(ids), 200):
+            batch = ids[i : i + 200]
+            xres = await db._execute(
+                db.client.table("call_llm_exchanges").select("id, created_at").in_("id", batch)
+            )
+            for x in xres.data or []:
+                xid = str(x.get("id") or "")
+                ts = str(x.get("created_at") or "")
+                if xid and ts:
+                    exchange_ts[xid] = ts
+
+    items: list[ErrorListItem] = []
+    for c in call_rows:
+        cid = str(c.get("id") or "")
+        ct = str(c.get("call_type") or "")
+        rid = str(c.get("run_id") or "")
+        pid = str(c.get("project_id") or "")
+        if project_id and pid != project_id:
+            continue
         if call_type and ct != call_type:
             continue
-        msg = str(r.get("error") or "").strip()
-        items.append(
-            ErrorListItem(
-                created_at=str(r.get("created_at") or ""),
-                exchange_id=str(r.get("id") or ""),
-                call_id=cid,
-                call_type=ct,
-                run_id=str(call.get("run_id") or ""),
-                project_id=str(call.get("project_id") or ""),
-                project_name=projects_by_id.get(str(call.get("project_id") or ""), ""),
-                message=msg[:500],
-                source="llm_exchange",
-            )
-        )
-        if len(items) >= limit:
-            break
+        call_ts = str(c.get("completed_at") or c.get("created_at") or "")
+        events = c.get("trace_json") or []
+        if not isinstance(events, list):
+            continue
+        for e in events:
+            if not isinstance(e, dict):
+                continue
+            et = e.get("event")
+            if et == event_keys.ERROR:
+                msg = str(e.get("message") or "").strip()
+                if not msg:
+                    continue
+                items.append(
+                    ErrorListItem(
+                        created_at=call_ts,
+                        exchange_id=None,
+                        call_id=cid,
+                        call_type=ct,
+                        run_id=rid,
+                        project_id=pid,
+                        project_name=projects_by_id.get(pid, ""),
+                        message=msg[:500],
+                        source="error_event",
+                    )
+                )
+            elif et == event_keys.LLM_EXCHANGE:
+                err_msg = str(e.get("error") or "").strip()
+                if not err_msg:
+                    continue
+                ex_id = e.get("exchange_id")
+                ex_str = str(ex_id) if isinstance(ex_id, str) and ex_id else None
+                ts = exchange_ts.get(ex_str, call_ts) if ex_str else call_ts
+                items.append(
+                    ErrorListItem(
+                        created_at=ts,
+                        exchange_id=ex_str,
+                        call_id=cid,
+                        call_type=ct,
+                        run_id=rid,
+                        project_id=pid,
+                        project_name=projects_by_id.get(pid, ""),
+                        message=err_msg[:500],
+                        source="llm_exchange",
+                    )
+                )
 
-    truncated = n_scanned >= scan and len(items) >= limit
-    return ErrorIndex(items=items, n_scanned=n_scanned, truncated=truncated)
+    items.sort(key=lambda it: it.created_at, reverse=True)
+    truncated = len(call_rows) >= scan and len(items) >= limit
+    return ErrorIndex(items=items[:limit], n_scanned=len(call_rows), truncated=truncated)

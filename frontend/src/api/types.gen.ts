@@ -1747,9 +1747,17 @@ export type ErrorIndex = {
  *
  * One row in the chronological errors index.
  *
- * Each error came from a ``call_llm_exchanges`` row whose ``error``
- * column is non-empty. ``project_name`` is best-effort: if the project
- * join fails (deleted project, etc.) it stays empty.
+ * Two sources are surfaced:
+ * - ``source="llm_exchange"``: ``call_llm_exchanges.error`` is set —
+ * ``exchange_id`` is the failing exchange's id and the FE deep-links
+ * to its playground.
+ * - ``source="error_event"``: a standalone ``ErrorEvent`` was recorded
+ * on the call's trace_json — there's no specific exchange,
+ * ``exchange_id`` is None and the FE links to the call's exchanges
+ * page or its run flow instead.
+ *
+ * ``project_name`` is best-effort: if the project join fails (deleted
+ * project, etc.) it stays empty.
  */
 export type ErrorListItem = {
     /**
@@ -1759,7 +1767,7 @@ export type ErrorListItem = {
     /**
      * Exchange Id
      */
-    exchange_id: string;
+    exchange_id?: string | null;
     /**
      * Call Id
      */

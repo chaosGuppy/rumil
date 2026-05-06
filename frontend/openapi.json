@@ -7307,6 +7307,11 @@
               "parse_fail_pct": 0.0,
               "truncated_pct": 0.0
             }
+          },
+          "low_n": {
+            "type": "boolean",
+            "title": "Low N",
+            "default": false
           }
         },
         "type": "object",
@@ -16195,6 +16200,22 @@
             },
             "type": "object",
             "title": "By Kind"
+          },
+          "corpus": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Corpus",
+            "default": []
+          },
+          "not_searched": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Not Searched",
+            "default": []
           }
         },
         "type": "object",

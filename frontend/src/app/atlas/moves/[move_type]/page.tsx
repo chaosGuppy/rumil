@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { MoveStats, MoveSummary } from "@/api";
+import type { InvocationIndex, MoveStats, MoveSummary } from "@/api";
 import { atlasFetch } from "../../_lib/fetch";
 import { Crumbs } from "../../_components/Crumbs";
 import { SchemaTable } from "../../_components/SchemaTable";
 import { MoveStatsPanel } from "../../_components/MoveStatsPanel";
+import { InvocationsList } from "../../_components/InvocationsList";
 
 export async function generateMetadata({
   params,
@@ -17,11 +18,20 @@ export async function generateMetadata({
 
 export default async function MoveDetail({
   params,
+  searchParams,
 }: {
   params: Promise<{ move_type: string }>;
+  searchParams: Promise<{ project_id?: string }>;
 }) {
   const { move_type } = await params;
-  const [m, stats] = await Promise.all([
+  const sp = await searchParams;
+  const projectId = sp.project_id;
+
+  const invQs = new URLSearchParams({ limit: "10" });
+  if (projectId) invQs.set("project_id", projectId);
+  const invocationsPath = `/api/atlas/moves/${encodeURIComponent(move_type)}/invocations?${invQs.toString()}`;
+
+  const [m, stats, invocations] = await Promise.all([
     atlasFetch<MoveSummary | null>(
       `/api/atlas/registry/moves/${encodeURIComponent(move_type)}`,
       null,
@@ -30,6 +40,7 @@ export default async function MoveDetail({
       `/api/atlas/moves/${encodeURIComponent(move_type)}/stats`,
       null,
     ),
+    atlasFetch<InvocationIndex | null>(invocationsPath, null),
   ]);
   if (!m) notFound();
 
@@ -72,6 +83,12 @@ export default async function MoveDetail({
           </section>
 
           {stats && <MoveStatsPanel stats={stats} />}
+
+          <InvocationsList
+            index={invocations}
+            kind="move"
+            showCallTypeChip
+          />
         </div>
 
         <aside className="atlas-aside">

@@ -242,16 +242,28 @@ def _runner_index() -> dict[CallType, type]:
     if _RUNNER_INDEX_CACHE is not None:
         return _RUNNER_INDEX_CACHE
     import importlib
+    import logging
     import pkgutil
 
     import rumil.calls as calls_pkg
     from rumil.calls.stages import CallRunner
 
+    log = logging.getLogger(__name__)
     for mod_info in pkgutil.iter_modules(calls_pkg.__path__):
         try:
             importlib.import_module(f"rumil.calls.{mod_info.name}")
-        except Exception:
-            continue
+        except Exception as exc:
+            # Don't swallow silently — a syntax/import error in any
+            # calls/*.py module would otherwise make that module's
+            # CallRunner subclass invisibly disappear from atlas while
+            # orchestrators still import it directly. Log loudly so the
+            # gap shows up.
+            log.warning(
+                "atlas registry: failed to import rumil.calls.%s: %s",
+                mod_info.name,
+                exc,
+                exc_info=True,
+            )
 
     index: dict[CallType, type] = {}
 

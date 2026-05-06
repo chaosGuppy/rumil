@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { DispatchSummary } from "@/api";
+import type { DispatchSummary, InvocationIndex } from "@/api";
 import { atlasFetch } from "../../_lib/fetch";
 import { Crumbs } from "../../_components/Crumbs";
 import { SchemaTable } from "../../_components/SchemaTable";
+import { InvocationsList } from "../../_components/InvocationsList";
 
 export async function generateMetadata({
   params,
@@ -16,14 +17,26 @@ export async function generateMetadata({
 
 export default async function DispatchDetail({
   params,
+  searchParams,
 }: {
   params: Promise<{ call_type: string }>;
+  searchParams: Promise<{ project_id?: string }>;
 }) {
   const { call_type } = await params;
-  const d = await atlasFetch<DispatchSummary | null>(
-    `/api/atlas/registry/dispatches/${encodeURIComponent(call_type)}`,
-    null,
-  );
+  const sp = await searchParams;
+  const projectId = sp.project_id;
+
+  const invQs = new URLSearchParams({ limit: "10" });
+  if (projectId) invQs.set("project_id", projectId);
+  const invocationsPath = `/api/atlas/dispatches/${encodeURIComponent(call_type)}/invocations?${invQs.toString()}`;
+
+  const [d, invocations] = await Promise.all([
+    atlasFetch<DispatchSummary | null>(
+      `/api/atlas/registry/dispatches/${encodeURIComponent(call_type)}`,
+      null,
+    ),
+    atlasFetch<InvocationIndex | null>(invocationsPath, null),
+  ]);
   if (!d) notFound();
 
   return (
@@ -64,6 +77,12 @@ export default async function DispatchDetail({
         </div>
         <SchemaTable fields={d.fields ?? []} />
       </section>
+
+      <InvocationsList
+        index={invocations}
+        kind="dispatch"
+        showCallTypeChip
+      />
     </div>
   );
 }

@@ -22,6 +22,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
+from rumil.atlas import event_keys
 from rumil.atlas.schemas import (
     CallTypeInvocationCount,
     CallTypeStats,
@@ -93,11 +94,11 @@ def _events(call_row: dict[str, Any]) -> list[dict[str, Any]]:
 def _pages_loaded(events: Iterable[dict[str, Any]]) -> int:
     seen: set[str] = set()
     for e in events:
-        if e.get("event") == "load_page":
+        if e.get("event") == event_keys.LOAD_PAGE:
             pid = e.get("page_id")
             if isinstance(pid, str):
                 seen.add(pid)
-        elif e.get("event") == "context_built":
+        elif e.get("event") == event_keys.CONTEXT_BUILT:
             for key in (
                 "working_context_page_ids",
                 "preloaded_page_ids",
@@ -119,7 +120,7 @@ def _rounds_for_call(events: Iterable[dict[str, Any]]) -> int:
     """Count distinct round indices on llm_exchange events; falls back to 1."""
     rounds: set[int] = set()
     for e in events:
-        if e.get("event") == "llm_exchange":
+        if e.get("event") == event_keys.LLM_EXCHANGE:
             r = e.get("round")
             if isinstance(r, int):
                 rounds.add(r)
@@ -136,7 +137,7 @@ def _move_invocations(events: Iterable[dict[str, Any]]) -> Counter[str]:
     """
     counts: Counter[str] = Counter()
     for e in events:
-        if e.get("event") == "moves_executed":
+        if e.get("event") == event_keys.MOVES_EXECUTED:
             for m in e.get("moves") or []:
                 if isinstance(m, dict):
                     mt = m.get("type") or m.get("move_type")
@@ -147,7 +148,7 @@ def _move_invocations(events: Iterable[dict[str, Any]]) -> Counter[str]:
 
 def _error_excerpt(events: Iterable[dict[str, Any]]) -> str | None:
     for e in events:
-        if e.get("event") == "error":
+        if e.get("event") == event_keys.ERROR:
             msg = e.get("message")
             if isinstance(msg, str) and msg.strip():
                 return msg[:240]
@@ -330,7 +331,7 @@ async def build_call_type_stats(
         had_rounds_capped = False
         for e in events:
             et = e.get("event")
-            if et == "error":
+            if et == event_keys.ERROR:
                 had_error = True
                 n_error_events_total += 1
                 msg = str(e.get("message") or "").lower()
@@ -342,15 +343,15 @@ async def build_call_type_stats(
                     had_truncation = True
                 if "json" in msg or "parse" in msg or "validation" in msg:
                     had_parse_fail = True
-            elif et == "warning":
+            elif et == event_keys.WARNING:
                 msg = str(e.get("message") or "").lower()
                 if "truncat" in msg or "max_tokens" in msg:
                     had_truncation = True
-            elif et == "review_complete":
+            elif et == event_keys.REVIEW_COMPLETE:
                 # surface "rounds at cap" via the trace's remaining_fruit
                 # signal? not directly available; skip for now.
                 pass
-            elif et == "llm_exchange" and e.get("error"):
+            elif et == event_keys.LLM_EXCHANGE and e.get("error"):
                 had_error = True
                 msg = str(e.get("error") or "").lower()
                 if "json" in msg or "parse" in msg:
@@ -383,6 +384,12 @@ async def build_call_type_stats(
     )
 
     series = _build_series(rows, bucket) if bucket else []
+    # Low-n threshold: percentiles + histograms with fewer than 5
+    # invocations read as confidently smooth or single-bar; the FE
+    # should treat the low_n flag as "render with a 'small sample'
+    # caveat" or omit. Numbers still populate so the row isn't empty,
+    # but the flag makes their reliability honest at the wire level.
+    low_n = n_invocations < 5
     return CallTypeStats(
         call_type=call_type.value,
         scanned_runs=len(run_ids),
@@ -403,6 +410,7 @@ async def build_call_type_stats(
         bucket=bucket,
         since=since,
         until=until,
+        low_n=low_n,
         top_moves=[MoveCount(move_type=k, count=v) for k, v in move_counts.most_common(20)],
         top_co_firings=[
             CoFiringCount(a=a, b=b, count=v) for (a, b), v in co_firing.most_common(20)
@@ -431,7 +439,7 @@ async def build_move_stats(
         n = sum(
             1
             for e in events
-            if e.get("event") == "moves_executed"
+            if e.get("event") == event_keys.MOVES_EXECUTED
             for m in (e.get("moves") or [])
             if isinstance(m, dict) and (m.get("type") or m.get("move_type")) == move_type
         )

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rumil.atlas import event_keys
 from rumil.atlas.schemas import CallEventDump, TraceEventRecord
 from rumil.database import DB
 
@@ -35,8 +36,10 @@ def closing_review_outcome(call_row: dict[str, Any]) -> str | None:
     events = call_row.get("trace_json") or []
     if not isinstance(events, list):
         events = []
-    n_errors = sum(1 for e in events if isinstance(e, dict) and e.get("event") == "error")
-    n_llm = sum(1 for e in events if isinstance(e, dict) and e.get("event") == "llm_exchange")
+    n_errors = sum(1 for e in events if isinstance(e, dict) and e.get("event") == event_keys.ERROR)
+    n_llm = sum(
+        1 for e in events if isinstance(e, dict) and e.get("event") == event_keys.LLM_EXCHANGE
+    )
     cost = float(call_row.get("cost_usd") or 0.0)
     if status == "complete":
         if n_errors:
@@ -71,9 +74,9 @@ async def build_call_event_dump(db: DB, call_id: str) -> CallEventDump | None:
         if not isinstance(e, dict):
             continue
         kind = str(e.get("event") or "")
-        if kind == "error":
+        if kind == event_keys.ERROR:
             n_errors += 1
-        elif kind == "llm_exchange":
+        elif kind == event_keys.LLM_EXCHANGE:
             n_llm += 1
         payload = {k: v for k, v in e.items() if k != "event"}
         events.append(TraceEventRecord(index=i, kind=kind, payload=payload))

@@ -9,6 +9,8 @@ noisy LLM behaviour and gappy docs.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from rumil.atlas.descriptions import (
     CALL_TYPE_DESCRIPTIONS,
     PAGE_LAYER_DESCRIPTIONS,
@@ -159,6 +161,117 @@ def test_every_call_type_summary_is_reachable():
         f"dispatch summaries={len(dispatches)} should include "
         f"{len(DISPATCH_DEFS)} + recurse + recurse_claim"
     )
+
+
+def test_every_atlas_event_string_matches_its_class_literal():
+    """Atlas reads trace events by string discriminator. Each constant
+    in ``atlas.event_keys.ATLAS_READS`` must equal the corresponding
+    Pydantic class's ``event`` Literal default — a rename in
+    ``trace_events.py`` should fail here, not silently zero a counter."""
+    from rumil.atlas import event_keys
+
+    bad: list[tuple[str, str, str]] = []
+    for literal, cls in event_keys.ATLAS_READS.items():
+        cls_default = cls.model_fields["event"].default
+        if cls_default != literal:
+            bad.append((cls.__name__, literal, str(cls_default)))
+    assert bad == [], f"event_keys constants out of sync with trace_event class Literals: {bad}"
+
+
+def test_every_workflow_has_stage_attribution_or_is_event_keyed():
+    """A WorkflowProfile that's expected to have call-row-attributable
+    stages should appear in atlas.aggregate's _EXECUTE_BY_WORKFLOW (or
+    _DELEGATE_WORKFLOW). DAE / reflective_judge are deliberately
+    event-keyed (their stages live as trace events on a single call,
+    not as separate calls); they go on an explicit allowlist below.
+    Anything else should fail loudly here rather than silently return
+    stages_taken=[] in production."""
+    from rumil.atlas.aggregate import (
+        _DELEGATE_WORKFLOW,
+        _EXECUTE_BY_WORKFLOW,
+    )
+
+    event_keyed_allowlist = {
+        "draft_and_edit",
+        "reflective_judge",
+        "global_prio",
+    }
+    bad: list[str] = []
+    for profile in all_profiles():
+        name = profile.name
+        if name in event_keyed_allowlist:
+            continue
+        if name in _EXECUTE_BY_WORKFLOW:
+            continue
+        if name in _DELEGATE_WORKFLOW:
+            continue
+        bad.append(name)
+    assert bad == [], (
+        f"WorkflowProfiles without stage attribution wiring: {bad}. "
+        "Either add an _EXECUTE_BY_WORKFLOW entry, a _DELEGATE_WORKFLOW "
+        "entry, or add the workflow to the event_keyed allowlist in this "
+        "test if its stages live in trace events on a single call."
+    )
+
+
+def test_every_workflow_loop_pair_resolves_to_real_stages():
+    """The hardcoded ``loop_pairs`` in aggregate._rollup_run links a
+    loop stage to the body stages whose firing means the loop fired.
+    Both the loop_id and every body stage_id must be a real stage in
+    the corresponding workflow's profile."""
+    profiles_by_name = {p.name: p for p in all_profiles()}
+    loop_pairs = {
+        "two_phase": ("main_phase_loop", {"main_phase_prioritization", "execute_dispatches"}),
+        "experimental": (
+            "experimental_prio_loop",
+            {"experimental_prioritization", "experimental_execute"},
+        ),
+        "claim_investigation": (
+            "claim_main_loop",
+            {"claim_phase2_prioritization", "claim_execute"},
+        ),
+        "draft_and_edit": (
+            "dae_round_loop",
+            {"dae_draft", "dae_critique"},
+        ),
+    }
+    bad: list[str] = []
+    for workflow_name, (loop_id, body) in loop_pairs.items():
+        profile = profiles_by_name.get(workflow_name)
+        if profile is None:
+            bad.append(f"{workflow_name}: profile not found")
+            continue
+        stage_ids = {s.id for s in profile.stages}
+        if loop_id not in stage_ids:
+            bad.append(f"{workflow_name}: loop_id {loop_id!r} not in profile stages")
+        for s in body:
+            if s not in stage_ids:
+                bad.append(f"{workflow_name}: body stage {s!r} not in profile stages")
+    assert bad == [], f"loop_pairs reference unknown stage ids: {bad}"
+
+
+def test_every_workflow_code_path_exists_on_disk():
+    repo_root = Path(__file__).resolve().parents[1]
+    bad: list[tuple[str, str]] = []
+    for profile in all_profiles():
+        for code_path in profile.code_paths:
+            if not (repo_root / code_path).exists():
+                bad.append((profile.name, code_path))
+    assert bad == [], f"WorkflowProfile code_paths missing on disk: {bad}"
+
+
+def test_every_workflow_relevant_setting_exists_on_settings():
+    """relevant_settings drives fingerprint dimensions. A renamed
+    Settings field silently drops the dimension if not caught."""
+    from rumil.settings import Settings
+
+    fields = set(Settings.model_fields.keys())
+    bad: list[tuple[str, str]] = []
+    for profile in all_profiles():
+        for s in profile.relevant_settings:
+            if s not in fields:
+                bad.append((profile.name, s))
+    assert bad == [], f"relevant_settings names not on Settings: {bad}"
 
 
 def test_every_workflow_recurse_target_resolves_to_a_known_workflow():

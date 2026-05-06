@@ -4,6 +4,7 @@ import type {
   CallTypeStats,
   CallTypeSummary,
   DispatchSummary,
+  InvocationIndex,
   WorkflowProfile,
   WorkflowSummary,
 } from "@/api";
@@ -12,6 +13,7 @@ import { Crumbs } from "../../_components/Crumbs";
 import { SchemaTable } from "../../_components/SchemaTable";
 import { CompositionViewer } from "../../_components/CompositionViewer";
 import { CallStatsPanel } from "../../_components/CallStatsPanel";
+import { InvocationsList } from "../../_components/InvocationsList";
 
 export async function generateMetadata({
   params,
@@ -27,12 +29,13 @@ export default async function CallDetail({
   searchParams,
 }: {
   params: Promise<{ call_type: string }>;
-  searchParams: Promise<{ bucket?: string; since?: string }>;
+  searchParams: Promise<{ bucket?: string; since?: string; project_id?: string }>;
 }) {
   const { call_type } = await params;
   const sp = await searchParams;
   const bucket = sp.bucket;
   const since = sp.since;
+  const projectId = sp.project_id;
 
   const ct = await atlasFetch<CallTypeSummary | null>(
     `/api/atlas/registry/calls/${encodeURIComponent(call_type)}`,
@@ -45,7 +48,11 @@ export default async function CallDetail({
   if (since) statsQs.set("since", since);
   const statsPath = `/api/atlas/calls/${encodeURIComponent(call_type)}/stats${statsQs.toString() ? `?${statsQs.toString()}` : ""}`;
 
-  const [dispatch, stats, workflows] = await Promise.all([
+  const invQs = new URLSearchParams({ limit: "10" });
+  if (projectId) invQs.set("project_id", projectId);
+  const invocationsPath = `/api/atlas/calls/${encodeURIComponent(call_type)}/invocations?${invQs.toString()}`;
+
+  const [dispatch, stats, workflows, invocations] = await Promise.all([
     ct.has_dispatch
       ? atlasFetch<DispatchSummary | null>(
           `/api/atlas/registry/dispatches/${encodeURIComponent(call_type)}`,
@@ -54,6 +61,7 @@ export default async function CallDetail({
       : Promise.resolve(null),
     atlasFetch<CallTypeStats | null>(statsPath, null),
     atlasFetch<WorkflowSummary[]>("/api/atlas/workflows", []),
+    atlasFetch<InvocationIndex | null>(invocationsPath, null),
   ]);
 
   const workflowProfiles = await Promise.all(
@@ -153,6 +161,8 @@ export default async function CallDetail({
               bucket={bucket}
             />
           )}
+
+          <InvocationsList index={invocations} kind="call_type" />
 
           {presetNames.length > 0 && (
             <section className="atlas-section">

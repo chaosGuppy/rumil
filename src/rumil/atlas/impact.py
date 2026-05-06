@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from rumil.atlas import event_keys
 from rumil.atlas.history import build_prompt_history
 from rumil.atlas.schemas import PromptImpact, PromptImpactRevisionStats
 from rumil.atlas.stats import (
@@ -99,7 +100,7 @@ async def build_prompt_impact(
         n_lying_complete = 0
         for r in sliced:
             events = _events(r)
-            had_error = any(ev.get("event") == "error" for ev in events) or bool(
+            had_error = any(ev.get("event") == event_keys.ERROR for ev in events) or bool(
                 _error_excerpt(events)
             )
             if had_error:

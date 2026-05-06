@@ -25,6 +25,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Any
 
+from rumil.atlas import event_keys
 from rumil.atlas.schemas import (
     DispatchFrequency,
     RunFlow,
@@ -153,11 +154,11 @@ def _count_pages_loaded(events: Iterable[dict[str, Any]]) -> int:
     seen: set[str] = set()
     for e in events:
         et = e.get("event")
-        if et == "load_page":
+        if et == event_keys.LOAD_PAGE:
             pid = e.get("page_id")
             if isinstance(pid, str):
                 seen.add(pid)
-        elif et == "context_built":
+        elif et == event_keys.CONTEXT_BUILT:
             for key in (
                 "working_context_page_ids",
                 "preloaded_page_ids",
@@ -178,7 +179,7 @@ def _count_pages_loaded(events: Iterable[dict[str, Any]]) -> int:
 def _count_dispatches(events: Iterable[dict[str, Any]]) -> tuple[int, dict[str, int]]:
     by_type: Counter[str] = Counter()
     for e in events:
-        if e.get("event") == "dispatch_executed":
+        if e.get("event") == event_keys.DISPATCH_EXECUTED:
             ct = e.get("child_call_type")
             if isinstance(ct, str):
                 by_type[ct] += 1
@@ -199,7 +200,7 @@ def _stages_for_call(workflow_name: str, call_row: dict[str, Any]) -> tuple[str 
     phase = params.get("phase") or "main_phase"
     key = f"prioritization:{phase}"
     stage = _STAGE_BY_CALL_TYPE_AND_PHASE.get(workflow_name, {}).get(key)
-    skipped = any(e.get("event") == "phase_skipped" for e in _events_of(call_row))
+    skipped = any(e.get("event") == event_keys.PHASE_SKIPPED for e in _events_of(call_row))
     return stage, skipped
 
 
@@ -318,9 +319,21 @@ def _rollup_run(
     attribution_workflow = delegate[0] if delegate else workflow_name
 
     for c in call_rows:
-        cost += float(c.get("cost_usd") or 0.0)
-        status_counts[str(c.get("status") or "unknown")] += 1
         events = _events_of(c)
+        # cost_usd is only persisted when mark_call_completed runs;
+        # crashed/in-flight calls leave it NULL while still incurring
+        # spend recorded in llm_exchange events. Fall back to summing
+        # event costs in that case so atlas doesn't undercount.
+        col_cost = c.get("cost_usd")
+        if col_cost is not None:
+            cost += float(col_cost)
+        else:
+            cost += sum(
+                float(e.get("cost_usd") or 0.0)
+                for e in events
+                if e.get("event") == event_keys.LLM_EXCHANGE
+            )
+        status_counts[str(c.get("status") or "unknown")] += 1
         n_pages_loaded += _count_pages_loaded(events)
         nd, by_type = _count_dispatches(events)
         n_dispatches += nd
@@ -330,7 +343,7 @@ def _rollup_run(
             dispatch_counts[k] += v
         for e in events:
             et = e.get("event")
-            if et == "moves_executed":
+            if et == event_keys.MOVES_EXECUTED:
                 for m in e.get("moves") or []:
                     if not isinstance(m, dict):
                         continue
@@ -339,9 +352,9 @@ def _rollup_run(
                         n_judgements_created += 1
                     elif mt == "CREATE_QUESTION":
                         n_questions_created += 1
-            elif et == "view_created":
+            elif et == event_keys.VIEW_CREATED:
                 n_views_created += 1
-            elif et == "error":
+            elif et == event_keys.ERROR:
                 saw_error = True
         stage, skipped = _stages_for_call(attribution_workflow, c)
         if stage:
@@ -355,7 +368,7 @@ def _rollup_run(
         if ct == CallType.RED_TEAM.value:
             saw_red_team_call = True
         for e in events:
-            if e.get("event") == "llm_exchange":
+            if e.get("event") == event_keys.LLM_EXCHANGE:
                 n_llm_exchanges += 1
 
     exec_stage = _EXECUTE_BY_WORKFLOW.get(attribution_workflow)
@@ -639,8 +652,8 @@ async def build_run_flow(db: DB, run_id: str) -> RunFlow:
             ct_desc = CALL_TYPE_DESCRIPTIONS.get(ct_enum, "")
         except ValueError:
             ct_desc = ""
-        has_error = any(e.get("event") == "error" for e in events)
-        n_llm = sum(1 for e in events if e.get("event") == "llm_exchange")
+        has_error = any(e.get("event") == event_keys.ERROR for e in events)
+        n_llm = sum(1 for e in events if e.get("event") == event_keys.LLM_EXCHANGE)
         depth, recurse_depth = _depth_and_recurse(str(c.get("id") or ""))
         nodes.append(
             RunFlowNode(

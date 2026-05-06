@@ -23,6 +23,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+from rumil.atlas import event_keys
 from rumil.atlas.aggregate import (
     _calls_for_run,
     _count_dispatches,
@@ -122,7 +123,7 @@ async def build_workflow_overlay(
             continue
         if skipped:
             for e in _events_of(c):
-                if e.get("event") == "phase_skipped":
+                if e.get("event") == event_keys.PHASE_SKIPPED:
                     reason = e.get("reason")
                     if isinstance(reason, str):
                         skipped_reasons.setdefault(stage_id, reason)

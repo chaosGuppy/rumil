@@ -760,6 +760,10 @@ export type CallTypeStats = {
      */
     until?: string | null;
     pathology?: PathologyCounts;
+    /**
+     * Low N
+     */
+    low_n?: boolean;
 };
 
 /**
@@ -6335,6 +6339,14 @@ export type SearchResults = {
     by_kind: {
         [key: string]: number;
     };
+    /**
+     * Corpus
+     */
+    corpus?: Array<string>;
+    /**
+     * Not Searched
+     */
+    not_searched?: Array<string>;
 };
 
 /**

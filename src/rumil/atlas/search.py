@@ -203,4 +203,19 @@ def search_atlas(query: str, limit: int = 50) -> SearchResults:
         hits=hits[:limit],
         total=len(hits),
         by_kind=by_kind,
+        corpus=[
+            "move descriptions + payload field descriptions",
+            "dispatch descriptions + payload field descriptions",
+            "call type descriptions + runner class names",
+            "page type descriptions",
+            "workflow names + summaries + stage labels/descriptions",
+            "prompt section titles + bodies (## sections)",
+        ],
+        not_searched=[
+            "rendered prompts (use /atlas/exchanges/search instead)",
+            "call output / tool_use inputs",
+            "trace events",
+            "workflow notes / fingerprint_keys / code_paths / relevant_settings",
+            "page content / claim text / judgements",
+        ],
     )

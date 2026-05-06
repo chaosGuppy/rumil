@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rumil.atlas import event_keys
 from rumil.atlas.schemas import (
     PageCallRef,
     PageInstanceCalls,
@@ -92,7 +93,9 @@ async def _calls_loaded_via_trace(db: DB, page_id: str) -> list[dict[str, Any]]:
         if not isinstance(events, list):
             continue
         if any(
-            isinstance(e, dict) and e.get("event") == "load_page" and e.get("page_id") == page_id
+            isinstance(e, dict)
+            and e.get("event") == event_keys.LOAD_PAGE
+            and e.get("page_id") == page_id
             for e in events
         ):
             out.append(row)

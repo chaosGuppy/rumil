@@ -293,6 +293,8 @@ class SearchResults(BaseModel):
     hits: list[SearchHit]
     total: int
     by_kind: dict[str, int]
+    corpus: list[str] = []
+    not_searched: list[str] = []
 
 
 class WorkflowGraphNode(BaseModel):
@@ -525,6 +527,7 @@ class CallTypeStats(BaseModel):
     since: str | None = None
     until: str | None = None
     pathology: PathologyCounts = PathologyCounts()
+    low_n: bool = False
 
 
 class MoveStats(BaseModel):

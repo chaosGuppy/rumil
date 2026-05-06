@@ -3,6 +3,7 @@ import type { MoveSummary } from "@/api";
 import { atlasFetch } from "../_lib/fetch";
 import { Crumbs } from "../_components/Crumbs";
 import { Filter } from "../_components/Filter";
+import { IntensityBar } from "../_components/IntensityBar";
 
 export const metadata = { title: "moves" };
 
@@ -11,11 +12,16 @@ export default async function MovesList() {
     "/api/atlas/registry/moves",
     [],
   );
-  const sorted = moves.slice().sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = moves.slice().sort(
+    (a, b) =>
+      (b.recent_invocations ?? 0) - (a.recent_invocations ?? 0) ||
+      a.move_type.localeCompare(b.move_type),
+  );
+  const maxRecent = Math.max(1, ...sorted.map((m) => m.recent_invocations ?? 0));
 
   const items = sorted.map((m) => ({
     searchKey: `${m.name} ${m.move_type} ${m.description ?? ""}`,
-    node: <MoveRow key={m.move_type} m={m} />,
+    node: <MoveRow key={m.move_type} m={m} maxRecent={maxRecent} />,
   }));
 
   return (
@@ -36,8 +42,9 @@ export default async function MovesList() {
   );
 }
 
-function MoveRow({ m }: { m: MoveSummary }) {
+function MoveRow({ m, maxRecent }: { m: MoveSummary; maxRecent: number }) {
   const usedCount = (m.used_in_call_types ?? []).length;
+  const recent = m.recent_invocations ?? 0;
   // move_type is the unique identifier (e.g. CREATE_QUESTION vs
   // CREATE_SCOUT_QUESTION). Multiple move_types can share the same
   // ``name`` (the LLM-facing tool name) — surface move_type as the
@@ -62,8 +69,21 @@ function MoveRow({ m }: { m: MoveSummary }) {
           </span>
         )}
       </div>
-      <div className="atlas-row-desc">{m.description}</div>
+      <div className="atlas-row-desc">
+        <div style={{ marginBottom: "0.4rem" }}>{m.description}</div>
+        <IntensityBar
+          recent={recent}
+          recentMax={maxRecent}
+          recentLabel="executions in recent calls' trace_json"
+        />
+      </div>
       <div className="atlas-row-meta">
+        <span
+          className={`atlas-chip ${recent > 0 ? "is-accent" : "is-muted"}`}
+          title="executions counted in recent calls' trace_json"
+        >
+          {recent}× recent
+        </span>
         <span className="atlas-chip is-muted">
           {usedCount} call{usedCount === 1 ? "" : "s"}
         </span>

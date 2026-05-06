@@ -1096,6 +1096,16 @@
         "operationId": "list_moves_api_atlas_registry_moves_get",
         "parameters": [
           {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -1206,6 +1216,16 @@
         "summary": "List Dispatches",
         "operationId": "list_dispatches_api_atlas_registry_dispatches_get",
         "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
           {
             "name": "authorization",
             "in": "header",
@@ -1318,6 +1338,16 @@
         "operationId": "list_call_types_api_atlas_registry_calls_get",
         "parameters": [
           {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -1428,6 +1458,16 @@
         "summary": "List Page Types",
         "operationId": "list_page_types_api_atlas_registry_pages_get",
         "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
           {
             "name": "authorization",
             "in": "header",
@@ -7987,6 +8027,16 @@
                 "type": "null"
               }
             ]
+          },
+          "recent_invocations": {
+            "type": "integer",
+            "title": "Recent Invocations",
+            "default": 0
+          },
+          "lifetime_invocations": {
+            "type": "integer",
+            "title": "Lifetime Invocations",
+            "default": 0
           }
         },
         "type": "object",
@@ -9015,6 +9065,16 @@
               }
             ],
             "title": "Raw Schema"
+          },
+          "recent_invocations": {
+            "type": "integer",
+            "title": "Recent Invocations",
+            "default": 0
+          },
+          "lifetime_invocations": {
+            "type": "integer",
+            "title": "Lifetime Invocations",
+            "default": 0
           }
         },
         "type": "object",
@@ -12987,6 +13047,11 @@
               }
             ],
             "title": "Raw Schema"
+          },
+          "recent_invocations": {
+            "type": "integer",
+            "title": "Recent Invocations",
+            "default": 0
           }
         },
         "type": "object",
@@ -14080,6 +14145,11 @@
               }
             ],
             "title": "Layer Hint"
+          },
+          "lifetime_count": {
+            "type": "integer",
+            "title": "Lifetime Count",
+            "default": 0
           }
         },
         "type": "object",

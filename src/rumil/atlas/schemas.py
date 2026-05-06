@@ -31,6 +31,7 @@ class MoveSummary(BaseModel):
     used_in_presets: list[str]
     code_path: str
     raw_schema: dict | None = None
+    recent_invocations: int = 0
 
 
 class DispatchSummary(BaseModel):
@@ -40,6 +41,8 @@ class DispatchSummary(BaseModel):
     fields: list[JsonSchemaField]
     is_recurse: bool = False
     raw_schema: dict | None = None
+    recent_invocations: int = 0
+    lifetime_invocations: int = 0
 
 
 class PromptSection(BaseModel):
@@ -87,12 +90,15 @@ class CallTypeSummary(BaseModel):
     workspace_updater: str | None = None
     closing_reviewer: str | None = None
     composition: PromptComposition | None = None
+    recent_invocations: int = 0
+    lifetime_invocations: int = 0
 
 
 class PageTypeSummary(BaseModel):
     page_type: str
     description: str
     layer_hint: str | None = None
+    lifetime_count: int = 0
 
 
 class EnumSummary(BaseModel):

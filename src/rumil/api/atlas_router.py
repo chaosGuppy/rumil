@@ -39,6 +39,12 @@ from rumil.atlas.gaps import build_gaps_report
 from rumil.atlas.graph import build_workflow_graph
 from rumil.atlas.history import build_prompt_history
 from rumil.atlas.impact import build_prompt_impact
+from rumil.atlas.intensity import (
+    call_type_lifetime_counts,
+    call_type_recent_counts,
+    move_recent_counts,
+    page_type_lifetime_counts,
+)
 from rumil.atlas.invocations import (
     build_call_exchanges,
     build_call_type_invocations,
@@ -140,10 +146,15 @@ def get_registry_rollup(
 
 
 @router.get("/registry/moves", response_model=list[MoveSummary])
-def list_moves(
+async def list_moves(
     _user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
 ) -> list[MoveSummary]:
-    return build_move_summaries()
+    summaries = build_move_summaries()
+    recent = await move_recent_counts(db)
+    for m in summaries:
+        m.recent_invocations = recent.get(m.move_type, 0)
+    return summaries
 
 
 @router.get("/registry/moves/{move_type}", response_model=MoveSummary)
@@ -158,10 +169,18 @@ def get_move(
 
 
 @router.get("/registry/dispatches", response_model=list[DispatchSummary])
-def list_dispatches(
+async def list_dispatches(
     _user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
 ) -> list[DispatchSummary]:
-    return build_dispatch_summaries()
+    summaries = build_dispatch_summaries()
+    recent, lifetime = await asyncio.gather(
+        call_type_recent_counts(db), call_type_lifetime_counts(db)
+    )
+    for d in summaries:
+        d.recent_invocations = recent.get(d.call_type, 0)
+        d.lifetime_invocations = lifetime.get(d.call_type, 0)
+    return summaries
 
 
 @router.get("/registry/dispatches/{call_type}", response_model=DispatchSummary)
@@ -176,10 +195,18 @@ def get_dispatch(
 
 
 @router.get("/registry/calls", response_model=list[CallTypeSummary])
-def list_call_types(
+async def list_call_types(
     _user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
 ) -> list[CallTypeSummary]:
-    return build_call_type_summaries()
+    summaries = build_call_type_summaries()
+    recent, lifetime = await asyncio.gather(
+        call_type_recent_counts(db), call_type_lifetime_counts(db)
+    )
+    for c in summaries:
+        c.recent_invocations = recent.get(c.call_type, 0)
+        c.lifetime_invocations = lifetime.get(c.call_type, 0)
+    return summaries
 
 
 @router.get("/registry/calls/{call_type}", response_model=CallTypeSummary)
@@ -194,10 +221,15 @@ def get_call_type(
 
 
 @router.get("/registry/pages", response_model=list[PageTypeSummary])
-def list_page_types(
+async def list_page_types(
     _user: AuthUser = Depends(get_current_user),
+    db: DB = Depends(_get_db),
 ) -> list[PageTypeSummary]:
-    return build_page_type_summaries()
+    summaries = build_page_type_summaries()
+    lifetime = await page_type_lifetime_counts(db)
+    for p in summaries:
+        p.lifetime_count = lifetime.get(p.page_type, 0)
+    return summaries
 
 
 @router.get("/registry/pages/{page_type}", response_model=PageTypeSummary)

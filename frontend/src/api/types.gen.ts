@@ -837,6 +837,14 @@ export type CallTypeSummary = {
      */
     closing_reviewer?: string | null;
     composition?: PromptComposition | null;
+    /**
+     * Recent Invocations
+     */
+    recent_invocations?: number;
+    /**
+     * Lifetime Invocations
+     */
+    lifetime_invocations?: number;
 };
 
 /**
@@ -1533,6 +1541,14 @@ export type DispatchSummary = {
     raw_schema?: {
         [key: string]: unknown;
     } | null;
+    /**
+     * Recent Invocations
+     */
+    recent_invocations?: number;
+    /**
+     * Lifetime Invocations
+     */
+    lifetime_invocations?: number;
 };
 
 /**
@@ -3958,6 +3974,10 @@ export type MoveSummary = {
     raw_schema?: {
         [key: string]: unknown;
     } | null;
+    /**
+     * Recent Invocations
+     */
+    recent_invocations?: number;
 };
 
 /**
@@ -4610,6 +4630,10 @@ export type PageTypeSummary = {
      * Layer Hint
      */
     layer_hint?: string | null;
+    /**
+     * Lifetime Count
+     */
+    lifetime_count?: number;
 };
 
 /**
@@ -8668,7 +8692,12 @@ export type ListMovesApiAtlasRegistryMovesGetData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/atlas/registry/moves';
 };
 
@@ -8737,7 +8766,12 @@ export type ListDispatchesApiAtlasRegistryDispatchesGetData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/atlas/registry/dispatches';
 };
 
@@ -8806,7 +8840,12 @@ export type ListCallTypesApiAtlasRegistryCallsGetData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/atlas/registry/calls';
 };
 
@@ -8875,7 +8914,12 @@ export type ListPageTypesApiAtlasRegistryPagesGetData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
     url: '/api/atlas/registry/pages';
 };
 

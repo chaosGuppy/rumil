@@ -256,3 +256,5 @@ deploy/chart/secrets.yaml
 
 data
 planning/
+
+.claude/.supermemory-claude/

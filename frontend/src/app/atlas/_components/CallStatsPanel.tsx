@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { CallTypeStats } from "@/api";
+import { Histogram } from "./Histogram";
+import { Sparkline } from "./Sparkline";
 
 function fmtCost(v: number | undefined | null): string {
   if (v == null) return "—";
@@ -13,7 +15,18 @@ function fmtNum(v: number | undefined | null, digits = 1): string {
   return v.toFixed(digits);
 }
 
-export function CallStatsPanel({ stats }: { stats: CallTypeStats }) {
+const BUCKETS = ["off", "day", "week", "month"] as const;
+type Bucket = (typeof BUCKETS)[number];
+
+export function CallStatsPanel({
+  stats,
+  callType,
+  bucket,
+}: {
+  stats: CallTypeStats;
+  callType?: string;
+  bucket?: string | null;
+}) {
   const total = stats.n_invocations ?? 0;
   const statuses = stats.status_counts ?? {};
   const statusEntries = Object.entries(statuses).sort((a, b) => b[1] - a[1]);
@@ -21,6 +34,19 @@ export function CallStatsPanel({ stats }: { stats: CallTypeStats }) {
   const topMoves = stats.top_moves ?? [];
   const topCo = stats.top_co_firings ?? [];
   const errors = stats.recent_errors ?? [];
+  const roundsHisto = stats.rounds_histogram ?? [];
+  const costHisto = stats.cost_histogram ?? [];
+  const pagesHisto = stats.pages_loaded_histogram ?? [];
+  const series = stats.series ?? [];
+  const activeBucket: Bucket = (BUCKETS as readonly string[]).includes(
+    bucket ?? "",
+  )
+    ? (bucket as Bucket)
+    : "off";
+  const hasPercentiles =
+    stats.p50_cost_usd != null ||
+    stats.p90_cost_usd != null ||
+    stats.p99_cost_usd != null;
 
   return (
     <section className="atlas-section">
@@ -99,6 +125,146 @@ export function CallStatsPanel({ stats }: { stats: CallTypeStats }) {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+
+          {hasPercentiles && (
+            <div className="atlas-percentile-row">
+              <div className="atlas-percentile">
+                <span className="atlas-percentile-label">p50 cost</span>
+                <span className="atlas-percentile-value">{fmtCost(stats.p50_cost_usd)}</span>
+              </div>
+              <div className="atlas-percentile">
+                <span className="atlas-percentile-label">p90 cost</span>
+                <span className="atlas-percentile-value">{fmtCost(stats.p90_cost_usd)}</span>
+              </div>
+              <div className="atlas-percentile">
+                <span className="atlas-percentile-label">p99 cost</span>
+                <span className="atlas-percentile-value">{fmtCost(stats.p99_cost_usd)}</span>
+              </div>
+            </div>
+          )}
+
+          {(roundsHisto.length > 0 || costHisto.length > 0 || pagesHisto.length > 0) && (
+            <div className="atlas-histo-grid">
+              {roundsHisto.length > 0 && (
+                <div className="atlas-histo">
+                  <div className="atlas-histo-head">
+                    <span className="atlas-histo-title">rounds</span>
+                    <span className="atlas-histo-meta">{roundsHisto.length} bins</span>
+                  </div>
+                  <Histogram bins={roundsHisto} color="var(--a-orchestrator)" />
+                </div>
+              )}
+              {costHisto.length > 0 && (
+                <div className="atlas-histo">
+                  <div className="atlas-histo-head">
+                    <span className="atlas-histo-title">cost (usd)</span>
+                    <span className="atlas-histo-meta">{costHisto.length} bins</span>
+                  </div>
+                  <Histogram bins={costHisto} color="var(--a-success)" />
+                </div>
+              )}
+              {pagesHisto.length > 0 && (
+                <div className="atlas-histo">
+                  <div className="atlas-histo-head">
+                    <span className="atlas-histo-title">pages loaded</span>
+                    <span className="atlas-histo-meta">{pagesHisto.length} bins</span>
+                  </div>
+                  <Histogram bins={pagesHisto} color="var(--a-accent)" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {callType && (
+            <div style={{ marginBottom: "1rem" }}>
+              <div
+                className="atlas-stat-panel-meta"
+                style={{ marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}
+              >
+                <span>time series</span>
+                <div className="atlas-bucket-tabs" role="tablist">
+                  {BUCKETS.map((bk) => (
+                    <Link
+                      key={bk}
+                      role="tab"
+                      aria-selected={activeBucket === bk}
+                      href={
+                        bk === "off"
+                          ? `/atlas/calls/${encodeURIComponent(callType)}`
+                          : `/atlas/calls/${encodeURIComponent(callType)}?bucket=${bk}`
+                      }
+                      className={`atlas-bucket-tab ${activeBucket === bk ? "is-active" : ""}`}
+                    >
+                      {bk}
+                    </Link>
+                  ))}
+                </div>
+                {series.length > 0 && (
+                  <span style={{ marginLeft: "auto" }}>
+                    {series.length} bucket{series.length === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+              {activeBucket !== "off" && series.length > 0 && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(14rem, 1fr))",
+                    gap: "1rem",
+                    marginTop: "0.4rem",
+                  }}
+                >
+                  <div className="atlas-spark">
+                    <div className="atlas-spark-label">invocations / {activeBucket}</div>
+                    <div className="atlas-spark-value">
+                      Σ {series.reduce((a, b) => a + (b.n_invocations ?? 0), 0)}
+                    </div>
+                    <div className="atlas-spark-chart">
+                      <Sparkline
+                        values={series.map((s) => s.n_invocations ?? 0)}
+                        labels={series.map((s) => s.bucket_start.slice(0, 10))}
+                        color="var(--a-accent)"
+                      />
+                    </div>
+                  </div>
+                  <div className="atlas-spark">
+                    <div className="atlas-spark-label">total cost / {activeBucket}</div>
+                    <div className="atlas-spark-value">
+                      {fmtCost(series.reduce((a, b) => a + (b.total_cost_usd ?? 0), 0))}
+                    </div>
+                    <div className="atlas-spark-chart">
+                      <Sparkline
+                        values={series.map((s) => s.total_cost_usd ?? 0)}
+                        labels={series.map((s) => s.bucket_start.slice(0, 10))}
+                        color="var(--a-success)"
+                      />
+                    </div>
+                  </div>
+                  <div className="atlas-spark">
+                    <div className="atlas-spark-label">mean cost / {activeBucket}</div>
+                    <div className="atlas-spark-value">
+                      {fmtCost(
+                        series.reduce((a, b) => a + (b.mean_cost_usd ?? 0), 0) /
+                          (series.length || 1),
+                      )}
+                    </div>
+                    <div className="atlas-spark-chart">
+                      <Sparkline
+                        values={series.map((s) => s.mean_cost_usd ?? 0)}
+                        labels={series.map((s) => s.bucket_start.slice(0, 10))}
+                        color="var(--a-warm)"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {activeBucket !== "off" && series.length === 0 && (
+                <div className="atlas-empty" style={{ padding: "1rem", marginTop: "0.4rem" }}>
+                  no series data yet for bucket = {activeBucket}
+                </div>
+              )}
             </div>
           )}
 

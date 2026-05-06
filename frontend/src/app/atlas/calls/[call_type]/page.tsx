@@ -24,15 +24,26 @@ export async function generateMetadata({
 
 export default async function CallDetail({
   params,
+  searchParams,
 }: {
   params: Promise<{ call_type: string }>;
+  searchParams: Promise<{ bucket?: string; since?: string }>;
 }) {
   const { call_type } = await params;
+  const sp = await searchParams;
+  const bucket = sp.bucket;
+  const since = sp.since;
+
   const ct = await atlasFetch<CallTypeSummary | null>(
     `/api/atlas/registry/calls/${encodeURIComponent(call_type)}`,
     null,
   );
   if (!ct) notFound();
+
+  const statsQs = new URLSearchParams();
+  if (bucket && bucket !== "off") statsQs.set("bucket", bucket);
+  if (since) statsQs.set("since", since);
+  const statsPath = `/api/atlas/calls/${encodeURIComponent(call_type)}/stats${statsQs.toString() ? `?${statsQs.toString()}` : ""}`;
 
   const [dispatch, stats, workflows] = await Promise.all([
     ct.has_dispatch
@@ -41,10 +52,7 @@ export default async function CallDetail({
           null,
         )
       : Promise.resolve(null),
-    atlasFetch<CallTypeStats | null>(
-      `/api/atlas/calls/${encodeURIComponent(call_type)}/stats`,
-      null,
-    ),
+    atlasFetch<CallTypeStats | null>(statsPath, null),
     atlasFetch<WorkflowSummary[]>("/api/atlas/workflows", []),
   ]);
 
@@ -133,7 +141,13 @@ export default async function CallDetail({
             </section>
           )}
 
-          {stats && <CallStatsPanel stats={stats} />}
+          {stats && (
+            <CallStatsPanel
+              stats={stats}
+              callType={ct.call_type}
+              bucket={bucket}
+            />
+          )}
 
           {presetNames.length > 0 && (
             <section className="atlas-section">

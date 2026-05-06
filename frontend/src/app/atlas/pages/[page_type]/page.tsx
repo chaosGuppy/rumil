@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import type { MoveSummary, PageTypeSummary } from "@/api";
 import { atlasFetch } from "../../_lib/fetch";
 import { Crumbs } from "../../_components/Crumbs";
+import { isUuidLike } from "../../_lib/format";
+import { PageInstanceDetail } from "./PageInstanceDetail";
 
 export async function generateMetadata({
   params,
@@ -19,6 +21,12 @@ export default async function PageTypeDetail({
   params: Promise<{ page_type: string }>;
 }) {
   const { page_type } = await params;
+
+  // The slug doubles as page_id when UUID-shaped — render an instance detail.
+  if (isUuidLike(page_type)) {
+    return <PageInstanceDetail pageId={page_type} />;
+  }
+
   const [t, allMoves] = await Promise.all([
     atlasFetch<PageTypeSummary | null>(
       `/api/atlas/registry/pages/${encodeURIComponent(page_type)}`,

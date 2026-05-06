@@ -201,15 +201,25 @@ function PartCard({ part }: { part: PromptPart }) {
 
 function SectionDisclosure({ section }: { section: PromptSection }) {
   const title = section.title || "(intro)";
+  const appliesTo = section.applies_to ?? [];
+  const note = section.applies_to_note;
+  const cls = `atlas-section-card ${appliesTo.length > 0 ? "has-applies-to" : ""}`;
   return (
-    <details className="atlas-section-card">
+    <details className={cls}>
       <summary>
         <span className="atlas-section-card-title">{title}</span>
+        {appliesTo.length > 0 && (
+          <span className="atlas-applies-chip" title={note ?? undefined}>
+            <span className="atlas-applies-chip-label">applies to</span>
+            {appliesTo.join(", ")}
+          </span>
+        )}
         <span className="atlas-section-card-meta">
           h{section.level} · {fmtChars(section.char_count)}c
         </span>
       </summary>
       <div className="atlas-section-card-body atlas-markdown">
+        {note && <div className="atlas-applies-note">{note}</div>}
         <Markdown remarkPlugins={[remarkGfm]}>{section.body || ""}</Markdown>
       </div>
     </details>

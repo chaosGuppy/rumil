@@ -20,24 +20,6 @@ function fmtCost(v: number): string {
   return `$${v.toFixed(4)}`;
 }
 
-function fmtDuration(s: number | null | undefined): string {
-  if (s == null) return "—";
-  if (s < 60) return `${s.toFixed(0)}s`;
-  if (s < 3600) return `${(s / 60).toFixed(1)}m`;
-  return `${(s / 3600).toFixed(1)}h`;
-}
-
-function fmtWhen(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
 export default async function WorkflowAggregatePage({
   params,
   searchParams,
@@ -327,73 +309,39 @@ export default async function WorkflowAggregatePage({
             <div className="atlas-section-head">
               <h2>runs</h2>
               <span className="atlas-section-meta">
-                {runs.length} rows · click any row → flow tree
+                {runs.length} most recent · sortable list with outcomes lives at{" "}
+                <Link
+                  href={`/atlas/workflows/${encodeURIComponent(name)}/runs${projectId ? `?project_id=${projectId}` : ""}`}
+                >
+                  /runs
+                </Link>
               </span>
             </div>
-            <div style={{ overflowX: "auto", border: "1px solid var(--a-line)", background: "var(--a-bg-paper)" }}>
-              <table className="atlas-table">
-                <thead>
-                  <tr>
-                    <th>when</th>
-                    <th>question / headline</th>
-                    <th>calls</th>
-                    <th>disp</th>
-                    <th>pages</th>
-                    <th>cost</th>
-                    <th>dur</th>
-                    <th>status</th>
-                    <th>dispatch counts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.map((r) => (
-                    <tr key={r.run_id}>
-                      <td className="is-mono">
-                        <Link href={`/atlas/runs/${r.run_id}/flow`}>
-                          {fmtWhen(r.created_at)}
-                        </Link>
-                      </td>
-                      <td className="is-desc">
-                        {r.question_headline ?? r.name ?? r.run_id.slice(0, 8)}
-                      </td>
-                      <td className="is-num">{r.n_calls}</td>
-                      <td className="is-num">{r.n_dispatches}</td>
-                      <td className="is-num">{r.n_pages_loaded}</td>
-                      <td className="is-num">{fmtCost(r.cost_usd ?? 0)}</td>
-                      <td className="is-num">{fmtDuration(r.duration_seconds)}</td>
-                      <td className="is-mono">
-                        <span
-                          className={`atlas-chip ${
-                            r.last_status === "complete"
-                              ? "is-success"
-                              : r.last_status === null
-                                ? "is-muted"
-                                : "is-warm"
-                          }`}
-                        >
-                          {r.last_status ?? "—"}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="atlas-chip-row">
-                          {Object.entries(r.dispatch_counts ?? {})
-                            .sort((a, b) => b[1] - a[1])
-                            .slice(0, 6)
-                            .map(([k, v]) => (
-                              <Link
-                                key={k}
-                                href={`/atlas/calls/${encodeURIComponent(k)}`}
-                                className="atlas-chip is-muted"
-                              >
-                                {k} · {v}
-                              </Link>
-                            ))}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+              <Link
+                href={`/atlas/workflows/${encodeURIComponent(name)}/runs${projectId ? `?project_id=${projectId}` : ""}`}
+                className="atlas-toggle-link is-active"
+              >
+                see all runs →
+              </Link>
+              <Link
+                href={`/atlas/workflows/${encodeURIComponent(name)}/runs?order_by=cost${projectId ? `&project_id=${projectId}` : ""}`}
+                className="atlas-toggle-link"
+              >
+                sort by cost
+              </Link>
+              <Link
+                href={`/atlas/workflows/${encodeURIComponent(name)}/runs?order_by=duration${projectId ? `&project_id=${projectId}` : ""}`}
+                className="atlas-toggle-link"
+              >
+                sort by duration
+              </Link>
+              <Link
+                href={`/atlas/workflows/${encodeURIComponent(name)}/runs?include_noop=false${projectId ? `&project_id=${projectId}` : ""}`}
+                className="atlas-toggle-link"
+              >
+                hide noops
+              </Link>
             </div>
           </section>
         </>

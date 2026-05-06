@@ -394,15 +394,23 @@ def list_prompt_files() -> list[str]:
     return sorted(p.name for p in PROMPTS_DIR.glob("*.md"))
 
 
-def build_prompt_index(*, exchange_counts: dict[str, int] | None = None):
+def build_prompt_index(
+    *,
+    exchange_counts: dict[str, int] | None = None,
+    lifetime_call_counts: dict[str, int] | None = None,
+):
     """Per-prompt-file rows for the /atlas/registry/prompts index, with
     use-intensity counts.
 
     ``exchange_counts`` maps a call_type or pseudo_call_type to the
     number of recent exchanges for it; when provided, each prompt's
     ``recent_invocations`` is the sum across compositions that
-    reference it. When None, dynamic counts are zero (the FE renders
-    the static counts only).
+    reference it. ``lifetime_call_counts`` is the same shape but
+    counts all-time calls (not exchanges) — used so prompts like
+    versus-judge-shell that were heavily used historically still rank
+    fairly when the recent window is dominated by a different
+    workload. When None, the corresponding count is zero (the FE
+    renders the static counts only).
     """
     from rumil.atlas.prompt_parts import (
         get_prompt_sections,
@@ -421,9 +429,13 @@ def build_prompt_index(*, exchange_counts: dict[str, int] | None = None):
         n_sections = len(get_prompt_sections(fname))
         compositions = refs_by_file[fname]
         recent = 0
+        lifetime = 0
         if exchange_counts is not None:
             for key in compositions:
                 recent += exchange_counts.get(key, 0)
+        if lifetime_call_counts is not None:
+            for key in compositions:
+                lifetime += lifetime_call_counts.get(key, 0)
         items.append(
             PromptListItem(
                 name=fname,
@@ -431,6 +443,7 @@ def build_prompt_index(*, exchange_counts: dict[str, int] | None = None):
                 n_sections=n_sections,
                 n_compositions=len(compositions),
                 recent_invocations=recent,
+                lifetime_invocations=lifetime,
             )
         )
     return PromptIndex(

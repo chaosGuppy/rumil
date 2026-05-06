@@ -578,6 +578,7 @@ async def build_error_index(
     *,
     project_id: str | None = None,
     call_type: str | None = None,
+    before: str | None = None,
     limit: int = 100,
     scan: int = 1000,
 ) -> ErrorIndex:
@@ -599,12 +600,15 @@ async def build_error_index(
     ``scan`` caps the recent-calls scan window. Returns up to ``limit``
     items newest first.
     """
-    cres = await db._execute(
+    call_query = (
         db.client.table("calls")
         .select("id, call_type, run_id, project_id, trace_json, created_at, completed_at")
         .order("created_at", desc=True)
         .limit(scan)
     )
+    if before:
+        call_query = call_query.lt("created_at", before)
+    cres = await db._execute(call_query)
     call_rows = list(cres.data or [])
 
     project_ids = list({str(c.get("project_id")) for c in call_rows if c.get("project_id")})
@@ -699,5 +703,15 @@ async def build_error_index(
                 )
 
     items.sort(key=lambda it: it.created_at, reverse=True)
-    truncated = len(call_rows) >= scan and len(items) >= limit
-    return ErrorIndex(items=items[:limit], n_scanned=len(call_rows), truncated=truncated)
+    if before:
+        items = [it for it in items if it.created_at < before]
+    page = items[:limit]
+    has_more = len(items) > limit or (len(call_rows) >= scan and len(page) >= limit)
+    next_before = page[-1].created_at if page and has_more else None
+    truncated = len(call_rows) >= scan and len(page) >= limit
+    return ErrorIndex(
+        items=page,
+        n_scanned=len(call_rows),
+        truncated=truncated,
+        next_before=next_before,
+    )

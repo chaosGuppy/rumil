@@ -1905,7 +1905,7 @@
           "atlas"
         ],
         "summary": "Get Prompts Index",
-        "description": "Per-prompt rows with use-intensity counts.\n\nFor each file: char_count, n_sections, n_compositions (static \u2014\nhow many call types reference it), recent_invocations (dynamic \u2014\nsummed across the recent ``scan`` exchanges of those call types).",
+        "description": "Per-prompt rows with use-intensity counts.\n\nFor each file: char_count, n_sections, n_compositions (static \u2014\nhow many call types reference it), recent_invocations (dynamic \u2014\nsummed across the recent ``scan`` exchanges of those call types),\nand lifetime_invocations (all-time call count summed across the\nsame compositions).",
         "operationId": "get_prompts_index_api_atlas_registry_prompts_index_get",
         "parameters": [
           {
@@ -1924,7 +1924,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "default": 500,
+              "default": 2000,
               "title": "Scan"
             }
           },
@@ -3567,7 +3567,7 @@
           "atlas"
         ],
         "summary": "Get Errors",
-        "description": "Chronological list of recent errored exchanges across all\ncalls/runs. Newest first.",
+        "description": "Chronological list of recent errored exchanges across all\ncalls/runs. Newest first.\n\nCursor-based pagination: pass ``before`` (an ISO timestamp from a\nprior response's ``next_before``) to fetch the next page.",
         "operationId": "get_errors_api_atlas_errors_get",
         "parameters": [
           {
@@ -3594,6 +3594,22 @@
                 }
               ],
               "title": "Call Type"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
             }
           },
           {
@@ -9296,6 +9312,17 @@
             "type": "boolean",
             "title": "Truncated",
             "default": false
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before"
           }
         },
         "type": "object",
@@ -9303,7 +9330,7 @@
           "items"
         ],
         "title": "ErrorIndex",
-        "description": "Chronological list of recent errors across all calls/runs."
+        "description": "Chronological list of recent errors across all calls/runs.\n\n``next_before`` is set when there might be more errors older than\nthe last item returned \u2014 pass it as the ``before`` query param to\nfetch the next page. None means no more pages."
       },
       "ErrorListItem": {
         "properties": {
@@ -14753,6 +14780,11 @@
             "type": "integer",
             "title": "Recent Invocations",
             "default": 0
+          },
+          "lifetime_invocations": {
+            "type": "integer",
+            "title": "Lifetime Invocations",
+            "default": 0
           }
         },
         "type": "object",
@@ -14761,7 +14793,7 @@
           "char_count"
         ],
         "title": "PromptListItem",
-        "description": "One row in the /atlas/registry/prompts index, with a use-intensity\nsignal so operators can sort by \"what actually matters.\"\n\n``n_compositions`` is static (count of call types whose prompt\ncomposition includes this file). ``recent_invocations`` is dynamic\n\u2014 exchanges in the recent scan window whose call_type's\ncomposition references this prompt."
+        "description": "One row in the /atlas/registry/prompts index, with a use-intensity\nsignal so operators can sort by \"what actually matters.\"\n\n``n_compositions`` is static (count of call types whose prompt\ncomposition includes this file). ``recent_invocations`` is dynamic\n\u2014 exchanges in the recent scan window whose call_type's\ncomposition references this prompt. ``lifetime_invocations`` is\nthe all-time count of calls (not exchanges) whose call_type's\ncomposition references this prompt \u2014 surfaced because heavily-used\nhistorical prompts (e.g. versus-judge) otherwise read as cold when\nrecent activity is dominated by a different workload."
       },
       "PromptPart": {
         "properties": {

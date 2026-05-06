@@ -177,7 +177,11 @@ class PromptListItem(BaseModel):
     ``n_compositions`` is static (count of call types whose prompt
     composition includes this file). ``recent_invocations`` is dynamic
     — exchanges in the recent scan window whose call_type's
-    composition references this prompt.
+    composition references this prompt. ``lifetime_invocations`` is
+    the all-time count of calls (not exchanges) whose call_type's
+    composition references this prompt — surfaced because heavily-used
+    historical prompts (e.g. versus-judge) otherwise read as cold when
+    recent activity is dominated by a different workload.
     """
 
     name: str
@@ -185,6 +189,7 @@ class PromptListItem(BaseModel):
     n_sections: int = 0
     n_compositions: int = 0
     recent_invocations: int = 0
+    lifetime_invocations: int = 0
 
 
 class PromptIndex(BaseModel):
@@ -694,11 +699,17 @@ class ErrorListItem(BaseModel):
 
 
 class ErrorIndex(BaseModel):
-    """Chronological list of recent errors across all calls/runs."""
+    """Chronological list of recent errors across all calls/runs.
+
+    ``next_before`` is set when there might be more errors older than
+    the last item returned — pass it as the ``before`` query param to
+    fetch the next page. None means no more pages.
+    """
 
     items: list[ErrorListItem]
     n_scanned: int = 0
     truncated: bool = False
+    next_before: str | None = None
 
 
 class PathologyCounts(BaseModel):

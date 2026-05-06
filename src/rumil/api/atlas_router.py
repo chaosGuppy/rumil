@@ -24,10 +24,12 @@ Routes:
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException
+from postgrest.types import CountMethod
 
 from rumil.api.auth import AuthUser, get_current_user, require_admin
 from rumil.atlas.aggregate import build_run_flow, build_workflow_aggregate, list_workflow_runs
@@ -49,7 +51,7 @@ from rumil.atlas.overlay import build_workflow_overlay
 from rumil.atlas.pages import build_page_calls, build_page_timeline
 from rumil.atlas.playground import build_playground_context
 from rumil.atlas.polish import build_in_flight_queue, build_variance_summary
-from rumil.atlas.prompt_parts import build_prompt_composition
+from rumil.atlas.prompt_parts import build_prompt_composition, references_for_prompt_file
 from rumil.atlas.registry import (
     build_call_type_summaries,
     build_dispatch_summaries,
@@ -275,14 +277,16 @@ def list_prompts(
 @router.get("/registry/prompts_index", response_model=PromptIndex)
 async def get_prompts_index(
     project_id: str | None = None,
-    scan: int = 500,
+    scan: int = 2000,
     db: DB = Depends(_get_db),
 ) -> PromptIndex:
     """Per-prompt rows with use-intensity counts.
 
     For each file: char_count, n_sections, n_compositions (static —
     how many call types reference it), recent_invocations (dynamic —
-    summed across the recent ``scan`` exchanges of those call types).
+    summed across the recent ``scan`` exchanges of those call types),
+    and lifetime_invocations (all-time call count summed across the
+    same compositions).
     """
     cols = "id, call_type, project_id"
     res = await db._execute(
@@ -306,7 +310,31 @@ async def get_prompts_index(
             if not ct:
                 continue
             exchange_counts[ct] = exchange_counts.get(ct, 0) + 1
-    return build_prompt_index(exchange_counts=exchange_counts)
+
+    referenced_keys: set[str] = set()
+    for fname in list_prompt_files():
+        for key in references_for_prompt_file(fname):
+            referenced_keys.add(key)
+
+    async def _count_for(ct: str) -> tuple[str, int]:
+        q = (
+            db.client.table("calls")
+            .select("id", count=CountMethod.exact)
+            .eq("call_type", ct)
+            .limit(1)
+        )
+        if project_id:
+            q = q.eq("project_id", project_id)
+        r = await db._execute(q)
+        return ct, int(r.count or 0)
+
+    lifetime_pairs = await asyncio.gather(*(_count_for(ct) for ct in referenced_keys))
+    lifetime_call_counts: dict[str, int] = {ct: n for ct, n in lifetime_pairs}
+
+    return build_prompt_index(
+        exchange_counts=exchange_counts,
+        lifetime_call_counts=lifetime_call_counts,
+    )
 
 
 @router.get("/registry/prompts/{name}", response_model=PromptDoc)
@@ -611,14 +639,24 @@ def get_gaps(
 async def get_errors(
     project_id: str | None = None,
     call_type: str | None = None,
+    before: str | None = None,
     limit: int = 100,
     scan: int = 1000,
     db: DB = Depends(_get_db),
 ) -> ErrorIndex:
     """Chronological list of recent errored exchanges across all
-    calls/runs. Newest first."""
+    calls/runs. Newest first.
+
+    Cursor-based pagination: pass ``before`` (an ISO timestamp from a
+    prior response's ``next_before``) to fetch the next page.
+    """
     return await build_error_index(
-        db, project_id=project_id, call_type=call_type, limit=limit, scan=scan
+        db,
+        project_id=project_id,
+        call_type=call_type,
+        before=before,
+        limit=limit,
+        scan=scan,
     )
 
 

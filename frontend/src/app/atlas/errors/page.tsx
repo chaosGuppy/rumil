@@ -9,12 +9,17 @@ export const metadata = { title: "errors" };
 export default async function ErrorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project_id?: string; call_type?: string }>;
+  searchParams: Promise<{
+    project_id?: string;
+    call_type?: string;
+    before?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const qs = new URLSearchParams();
   if (sp.project_id) qs.set("project_id", sp.project_id);
   if (sp.call_type) qs.set("call_type", sp.call_type);
+  if (sp.before) qs.set("before", sp.before);
   qs.set("limit", "100");
   qs.set("scan", "1000");
   const idx = await atlasFetch<ErrorIndex>(
@@ -23,6 +28,21 @@ export default async function ErrorsPage({
   );
   const items = idx.items ?? [];
   const nScanned = idx.n_scanned ?? 0;
+  const nextBefore = idx.next_before ?? null;
+
+  function pageHref(extra: Record<string, string | null | undefined>): string {
+    const base: Record<string, string | undefined> = {
+      project_id: sp.project_id,
+      call_type: sp.call_type,
+    };
+    const merged = { ...base, ...extra };
+    const out = new URLSearchParams();
+    for (const [k, v] of Object.entries(merged)) {
+      if (v) out.set(k, v);
+    }
+    const qsStr = out.toString();
+    return qsStr ? `/atlas/errors?${qsStr}` : "/atlas/errors";
+  }
 
   return (
     <div>
@@ -32,15 +52,20 @@ export default async function ErrorsPage({
           <h1 className="is-sans">errors</h1>
           <div className="atlas-chip-row" style={{ marginBottom: "0.85rem" }}>
             <span className="atlas-chip is-muted">
-              {items.length} surfaced · {nScanned} scanned
+              {items.length} on this page · {nScanned} calls scanned
             </span>
+            {sp.before && (
+              <Link href={pageHref({})} className="atlas-chip is-accent">
+                ← back to newest
+              </Link>
+            )}
             {sp.call_type && (
-              <Link href="/atlas/errors" className="atlas-chip is-accent">
+              <Link href={pageHref({ call_type: null })} className="atlas-chip is-accent">
                 clear call_type filter
               </Link>
             )}
             {sp.project_id && (
-              <Link href="/atlas/errors" className="atlas-chip is-accent">
+              <Link href={pageHref({ project_id: null })} className="atlas-chip is-accent">
                 clear project_id filter
               </Link>
             )}
@@ -56,11 +81,26 @@ export default async function ErrorsPage({
             : "no exchanges in scan window."}
         </div>
       ) : (
-        <div className="atlas-rows">
-          {items.map((e) => (
-            <ErrorRow key={e.exchange_id} e={e} />
-          ))}
-        </div>
+        <>
+          <div className="atlas-rows">
+            {items.map((e, i) => (
+              <ErrorRow
+                key={`${e.exchange_id ?? "ev"}-${e.call_id}-${i}`}
+                e={e}
+              />
+            ))}
+          </div>
+          {nextBefore && (
+            <div style={{ marginTop: "1rem", textAlign: "center" }}>
+              <Link
+                href={pageHref({ before: nextBefore })}
+                className="atlas-chip is-accent"
+              >
+                load older →
+              </Link>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -6,13 +6,18 @@ import { Filter } from "../_components/Filter";
 
 export const metadata = { title: "prompts" };
 
-type SortKey = "intensity" | "compositions" | "size" | "name";
+type SortKey = "intensity" | "lifetime" | "compositions" | "size" | "name";
 
 const SORTS: { key: SortKey; label: string; title: string }[] = [
   {
     key: "intensity",
-    label: "use intensity",
+    label: "recent intensity",
     title: "recent_invocations · n_compositions · name",
+  },
+  {
+    key: "lifetime",
+    label: "lifetime",
+    title: "all-time call count summed across this prompt's compositions",
   },
   {
     key: "compositions",
@@ -33,7 +38,7 @@ export default async function PromptsList({
     (SORTS.find((s) => s.key === sp.sort)?.key ?? "intensity") as SortKey;
 
   const idx = await atlasFetch<PromptIndex>(
-    "/api/atlas/registry/prompts_index?scan=500",
+    "/api/atlas/registry/prompts_index",
     { items: [], n_scanned_exchanges: 0 },
   );
 
@@ -44,6 +49,13 @@ export default async function PromptsList({
       (a, b) =>
         (b.recent_invocations ?? 0) - (a.recent_invocations ?? 0) ||
         (b.n_compositions ?? 0) - (a.n_compositions ?? 0) ||
+        a.name.localeCompare(b.name),
+    );
+  } else if (sort === "lifetime") {
+    sorted.sort(
+      (a, b) =>
+        (b.lifetime_invocations ?? 0) - (a.lifetime_invocations ?? 0) ||
+        (b.recent_invocations ?? 0) - (a.recent_invocations ?? 0) ||
         a.name.localeCompare(b.name),
     );
   } else if (sort === "compositions") {
@@ -62,10 +74,18 @@ export default async function PromptsList({
   }
 
   const maxRecent = Math.max(1, ...sorted.map((p) => p.recent_invocations ?? 0));
+  const maxLifetime = Math.max(1, ...sorted.map((p) => p.lifetime_invocations ?? 0));
 
   const items = sorted.map((p) => ({
     searchKey: p.name,
-    node: <PromptRow key={p.name} p={p} maxRecent={maxRecent} />,
+    node: (
+      <PromptRow
+        key={p.name}
+        p={p}
+        maxRecent={maxRecent}
+        maxLifetime={maxLifetime}
+      />
+    ),
   }));
 
   return (
@@ -104,11 +124,22 @@ export default async function PromptsList({
   );
 }
 
-function PromptRow({ p, maxRecent }: { p: PromptListItem; maxRecent: number }) {
+function PromptRow({
+  p,
+  maxRecent,
+  maxLifetime,
+}: {
+  p: PromptListItem;
+  maxRecent: number;
+  maxLifetime: number;
+}) {
   const recent = p.recent_invocations ?? 0;
+  const lifetime = p.lifetime_invocations ?? 0;
   const comps = p.n_compositions ?? 0;
   const sections = p.n_sections ?? 0;
   const widthPct = recent > 0 ? Math.max(2, Math.round((100 * recent) / maxRecent)) : 0;
+  const lifetimePct =
+    lifetime > 0 ? Math.max(2, Math.round((100 * lifetime) / maxLifetime)) : 0;
 
   return (
     <Link
@@ -116,12 +147,15 @@ function PromptRow({ p, maxRecent }: { p: PromptListItem; maxRecent: number }) {
       className="atlas-row"
     >
       <div className="atlas-row-name">{p.name}</div>
-      <div className="atlas-row-desc">
+      <div
+        className="atlas-row-desc"
+        style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}
+      >
         {recent > 0 ? (
           <div
             style={{
               position: "relative",
-              height: "0.55rem",
+              height: "0.45rem",
               width: "100%",
               maxWidth: "16rem",
               background: "var(--a-line)",
@@ -151,6 +185,30 @@ function PromptRow({ p, maxRecent }: { p: PromptListItem; maxRecent: number }) {
             no recent invocations
           </span>
         )}
+        {lifetime > 0 && (
+          <div
+            style={{
+              position: "relative",
+              height: "0.3rem",
+              width: "100%",
+              maxWidth: "16rem",
+              background: "var(--a-line)",
+              borderRadius: "2px",
+              overflow: "hidden",
+            }}
+            title={`${lifetime} lifetime calls across this prompt's compositions`}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: `${lifetimePct}%`,
+                background: "var(--a-rule)",
+                opacity: 0.5,
+              }}
+            />
+          </div>
+        )}
       </div>
       <div className="atlas-row-meta">
         <span
@@ -158,6 +216,12 @@ function PromptRow({ p, maxRecent }: { p: PromptListItem; maxRecent: number }) {
           title="recent_invocations: count of recent exchanges whose call type's composition references this file"
         >
           {recent}× recent
+        </span>
+        <span
+          className="atlas-chip is-muted"
+          title="lifetime_invocations: all-time call count summed across this prompt's compositions"
+        >
+          {lifetime}× lifetime
         </span>
         <span
           className="atlas-chip is-muted"

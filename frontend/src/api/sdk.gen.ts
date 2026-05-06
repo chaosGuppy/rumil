@@ -219,7 +219,9 @@ export const listPromptsApiAtlasRegistryPromptsGet = <ThrowOnError extends boole
  *
  * For each file: char_count, n_sections, n_compositions (static —
  * how many call types reference it), recent_invocations (dynamic —
- * summed across the recent ``scan`` exchanges of those call types).
+ * summed across the recent ``scan`` exchanges of those call types),
+ * and lifetime_invocations (all-time call count summed across the
+ * same compositions).
  */
 export const getPromptsIndexApiAtlasRegistryPromptsIndexGet = <ThrowOnError extends boolean = false>(options?: Options<GetPromptsIndexApiAtlasRegistryPromptsIndexGetData, ThrowOnError>) => (options?.client ?? client).get<GetPromptsIndexApiAtlasRegistryPromptsIndexGetResponses, GetPromptsIndexApiAtlasRegistryPromptsIndexGetErrors, ThrowOnError>({ url: '/api/atlas/registry/prompts_index', ...options });
 
@@ -340,6 +342,9 @@ export const getGapsApiAtlasGapsGet = <ThrowOnError extends boolean = false>(opt
  *
  * Chronological list of recent errored exchanges across all
  * calls/runs. Newest first.
+ *
+ * Cursor-based pagination: pass ``before`` (an ISO timestamp from a
+ * prior response's ``next_before``) to fetch the next page.
  */
 export const getErrorsApiAtlasErrorsGet = <ThrowOnError extends boolean = false>(options?: Options<GetErrorsApiAtlasErrorsGetData, ThrowOnError>) => (options?.client ?? client).get<GetErrorsApiAtlasErrorsGetResponses, GetErrorsApiAtlasErrorsGetErrors, ThrowOnError>({ url: '/api/atlas/errors', ...options });
 

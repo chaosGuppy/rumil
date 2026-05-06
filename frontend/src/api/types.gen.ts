@@ -1726,6 +1726,10 @@ export type ErrorEventOut = {
  * ErrorIndex
  *
  * Chronological list of recent errors across all calls/runs.
+ *
+ * ``next_before`` is set when there might be more errors older than
+ * the last item returned — pass it as the ``before`` query param to
+ * fetch the next page. None means no more pages.
  */
 export type ErrorIndex = {
     /**
@@ -1740,6 +1744,10 @@ export type ErrorIndex = {
      * Truncated
      */
     truncated?: boolean;
+    /**
+     * Next Before
+     */
+    next_before?: string | null;
 };
 
 /**
@@ -5122,7 +5130,11 @@ export type PromptIndex = {
  * ``n_compositions`` is static (count of call types whose prompt
  * composition includes this file). ``recent_invocations`` is dynamic
  * — exchanges in the recent scan window whose call_type's
- * composition references this prompt.
+ * composition references this prompt. ``lifetime_invocations`` is
+ * the all-time count of calls (not exchanges) whose call_type's
+ * composition references this prompt — surfaced because heavily-used
+ * historical prompts (e.g. versus-judge) otherwise read as cold when
+ * recent activity is dominated by a different workload.
  */
 export type PromptListItem = {
     /**
@@ -5145,6 +5157,10 @@ export type PromptListItem = {
      * Recent Invocations
      */
     recent_invocations?: number;
+    /**
+     * Lifetime Invocations
+     */
+    lifetime_invocations?: number;
 };
 
 /**
@@ -10093,6 +10109,10 @@ export type GetErrorsApiAtlasErrorsGetData = {
          * Call Type
          */
         call_type?: string | null;
+        /**
+         * Before
+         */
+        before?: string | null;
         /**
          * Limit
          */

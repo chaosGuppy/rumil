@@ -65,8 +65,13 @@ def build_gaps_report() -> GapsReport:
         if ct in runner_idx:
             continue
         # PRIORITIZATION variants and a few envelope types intentionally
-        # don't have CallRunner classes.
-        whitelisted = {
+        # don't have CallRunner classes. Other call types either have a
+        # runner (caught by ``ct in runner_idx`` above) or should be
+        # flagged. The whitelist below is for genuinely runner-less
+        # CallTypes only — view/link/etc. that DO have runners are
+        # already handled by the runner-index short-circuit and should
+        # not be listed here.
+        runner_less_envelope = {
             CallType.PRIORITIZATION,
             CallType.GLOBAL_PRIORITIZATION,
             CallType.CLAUDE_CODE_DIRECT,
@@ -82,14 +87,9 @@ def build_gaps_report() -> GapsReport:
             CallType.SUMMARIZE,
             CallType.VERSUS_JUDGE,
             CallType.VERSUS_COMPLETE,
-            CallType.UPDATE_VIEW,
-            CallType.UPDATE_VIEW_MAX_EFFORT,
-            CallType.UPDATE_FREEFORM_VIEW,
-            CallType.CREATE_VIEW_MAX_EFFORT,
             CallType.EVALUATE,
-            CallType.LINK_SUBQUESTIONS,
         }
-        if ct in whitelisted:
+        if ct in runner_less_envelope:
             continue
         items.append(
             GapItem(

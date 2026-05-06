@@ -59,11 +59,18 @@ def _run_matches_workflow(workflow_name: str, config: dict[str, Any]) -> bool:
       ``versus/rumil_judge.py``) tag ``config.origin == "versus"`` and
       either ``config.workflow == workflow_name`` (completion) or a
       ``config.task_name`` carrying the judge variant.
+
+    Versus runs whose underlying orchestrator is two_phase used to
+    double-match — both ``two_phase`` (via ``config.workflow``) and
+    ``two_phase_versus``. We exclude the bare orchestrator name when
+    ``origin == "versus"``: those runs belong to the wrapper workflow,
+    not the underlying orchestrator's aggregate.
     """
+    is_versus = config.get("origin") == "versus"
     variant = _WORKFLOW_TO_PRIORITIZER_VARIANT.get(workflow_name)
-    if variant is not None and config.get("prioritizer_variant") == variant:
+    if variant is not None and config.get("prioritizer_variant") == variant and not is_versus:
         return True
-    if config.get("origin") == "versus":
+    if is_versus:
         if config.get("workflow") == workflow_name:
             return True
         if workflow_name == "reflective_judge" and config.get("task_name") == "reflective":
@@ -221,6 +228,19 @@ _EXECUTE_BY_WORKFLOW: dict[str, str] = {
     "experimental": "experimental_execute",
     "claim_investigation": "claim_execute",
 }
+
+
+# Workflows that wrap an underlying orchestrator (e.g. two_phase_versus
+# wraps two_phase). Atlas attributes stages via the underlying
+# orchestrator's mappings, then translates "any inner stage fired" into
+# the wrapper's stage ID. For two_phase_versus the wrapper stages are
+# tpv_setup / tpv_two_phase / tpv_closer; we map any inner two_phase
+# stage firing to tpv_two_phase. Setup is marked fired whenever the run
+# has at least one call.
+_DELEGATE_WORKFLOW: dict[str, tuple[str, str, str | None]] = {
+    # wrapper -> (underlying_orchestrator, inner_fire_stage, setup_stage)
+    "two_phase_versus": ("two_phase", "tpv_two_phase", "tpv_setup"),
+}
 _VIEW_CALL_TYPES = {
     CallType.CREATE_VIEW.value,
     CallType.UPDATE_VIEW.value,
@@ -291,6 +311,12 @@ def _rollup_run(
     n_questions_created = 0
     saw_error = False
 
+    # Wrappers (e.g. two_phase_versus) attribute via the underlying
+    # orchestrator's stage mappings, then translate the result into the
+    # wrapper's stage IDs below.
+    delegate = _DELEGATE_WORKFLOW.get(workflow_name)
+    attribution_workflow = delegate[0] if delegate else workflow_name
+
     for c in call_rows:
         cost += float(c.get("cost_usd") or 0.0)
         status_counts[str(c.get("status") or "unknown")] += 1
@@ -317,7 +343,7 @@ def _rollup_run(
                 n_views_created += 1
             elif et == "error":
                 saw_error = True
-        stage, skipped = _stages_for_call(workflow_name, c)
+        stage, skipped = _stages_for_call(attribution_workflow, c)
         if stage:
             if skipped:
                 stages_skipped.add(stage)
@@ -332,15 +358,27 @@ def _rollup_run(
             if e.get("event") == "llm_exchange":
                 n_llm_exchanges += 1
 
-    exec_stage = _EXECUTE_BY_WORKFLOW.get(workflow_name)
+    exec_stage = _EXECUTE_BY_WORKFLOW.get(attribution_workflow)
     if exec_stage and saw_dispatch_executed:
         stages_taken.add(exec_stage)
-    view_stage = _VIEW_REFRESH_BY_WORKFLOW.get(workflow_name)
+    view_stage = _VIEW_REFRESH_BY_WORKFLOW.get(attribution_workflow)
     if view_stage and saw_view_call:
         stages_taken.add(view_stage)
-    red_stage = _RED_TEAM_BY_WORKFLOW.get(workflow_name)
+    red_stage = _RED_TEAM_BY_WORKFLOW.get(attribution_workflow)
     if red_stage and saw_red_team_call:
         stages_taken.add(red_stage)
+
+    # Translate inner-orch stages into the wrapper's stage IDs.
+    if delegate:
+        _, inner_fire_stage, setup_stage = delegate
+        inner_taken = stages_taken
+        stages_taken = set()
+        if inner_taken:
+            stages_taken.add(inner_fire_stage)
+        if setup_stage and call_rows:
+            stages_taken.add(setup_stage)
+        # Skipped tracking doesn't translate cleanly; clear it for wrappers.
+        stages_skipped = set()
     # Loop stages: marked as fired when any of their body stages fired.
     loop_pairs = {
         "two_phase": ("main_phase_loop", {"main_phase_prioritization", "execute_dispatches"}),

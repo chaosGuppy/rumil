@@ -46,7 +46,7 @@ def _side_from_overlay(overlay: WorkflowOverlay | None, run_row: dict | None) ->
             pages_loaded=0,
         )
     pages = sum(s.pages_loaded for s in overlay.stages)
-    n_dispatches = sum(s.n_dispatches if hasattr(s, "n_dispatches") else 0 for s in [])
+    n_dispatches = sum(c.n_dispatches for s in overlay.stages for c in s.calls)
     return RunDiffSide(
         run_id=overlay.run_id,
         name=str(name),
@@ -118,10 +118,7 @@ async def build_run_diff(db: DB, run_a_id: str, run_b_id: str) -> RunDiff:
                     b_n_calls=len(sb.calls) if sb else 0,
                 )
             )
-        a_dispatch_total = sum(c.n_dispatches for s in overlay_a.stages for c in s.calls)
-        b_dispatch_total = sum(c.n_dispatches for s in overlay_b.stages for c in s.calls)
-        side_a.n_dispatches = a_dispatch_total
-        side_b.n_dispatches = b_dispatch_total
+        # n_dispatches already populated by _side_from_overlay; no-op here.
 
     if not same_workflow:
         if workflow_a is None:

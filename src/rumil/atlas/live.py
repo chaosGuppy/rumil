@@ -55,19 +55,27 @@ def _last_event_ts(call_rows: list[dict[str, Any]]) -> str | None:
 
 
 def _current_stage_id(
-    overlay: WorkflowOverlay | None, call_rows: list[dict[str, Any]]
+    overlay: WorkflowOverlay | None,
+    call_rows: list[dict[str, Any]],
+    *,
+    is_in_flight: bool,
 ) -> str | None:
     """Best-guess "we are currently in stage X" for highlighting.
 
-    Picks the latest-activity stage that has at least one in-flight call
-    (PENDING/RUNNING); falls back to the latest stage with any activity.
+    Returns None when the run is not in-flight — "current" implies live;
+    using the latest-activity stage as "current" on a finished run is
+    misleading. Use ``latest_stage_id`` (a separate concept the FE can
+    derive from the overlay) when you want the most-recent stage of a
+    completed run.
     """
-    if overlay is None:
+    if overlay is None or not is_in_flight:
         return None
 
     in_flight_call_ids = {
         str(c.get("id")) for c in call_rows if c.get("status") in ("pending", "running")
     }
+    if not in_flight_call_ids:
+        return None
 
     best: tuple[str, str] | None = None
     for stage in overlay.stages:
@@ -107,7 +115,7 @@ async def build_live_snapshot(db: DB, run_id: str) -> LiveRunSnapshot:
         workflow_name=workflow_name,
         is_in_flight=is_in_flight,
         last_event_ts=_last_event_ts(call_rows),
-        current_stage_id=_current_stage_id(overlay, call_rows),
+        current_stage_id=_current_stage_id(overlay, call_rows, is_in_flight=is_in_flight),
         overlay=overlay,
         n_pending_calls=n_pending,
         n_running_calls=n_running,

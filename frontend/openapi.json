@@ -2743,6 +2743,85 @@
         }
       }
     },
+    "/api/atlas/calls/by_id/{call_id}/exchanges": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Call Exchanges",
+        "description": "Every LLM exchange recorded against a single call_id.\n\nRouted under ``/calls/by_id/`` to avoid colliding with the\ncall-type routes (``/calls/{ct}/...``); call_ids are UUIDs and\ncall_types are enum values, but the prefix makes the intent\nobvious from the URL.",
+        "operationId": "get_call_exchanges_api_atlas_calls_by_id__call_id__exchanges_get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvocationIndex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/calls/{call_id}/events": {
       "get": {
         "tags": [
@@ -13772,6 +13851,17 @@
             "type": "integer",
             "title": "Char Count",
             "default": 0
+          },
+          "rename_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rename From"
           }
         },
         "type": "object",
@@ -13782,7 +13872,7 @@
           "content_hash"
         ],
         "title": "PromptHistoryEntry",
-        "description": "One git commit that touched a prompt file.\n\n``content_hash`` is sha-256 of the file as it stood at this commit\n(not the git blob hash) \u2014 same shape as the live file's\n``PromptDoc.content_hash`` so an iterator can spot-check whether a\nparticular run's prompt matched any of the historical revisions."
+        "description": "One git commit that touched a prompt file.\n\n``content_hash`` is sha-256 of the file as it stood at this commit\n(not the git blob hash) \u2014 same shape as the live file's\n``PromptDoc.content_hash`` so an iterator can spot-check whether a\nparticular run's prompt matched any of the historical revisions.\n\n``rename_from``: when this commit RENAMED the file (git\n--name-status R), the previous path. Lets the FE annotate \"moved\nfrom X\" so an operator interpreting \"this revision had n=4\ninvocations with 25% errors\" knows whether content actually\nchanged or the file just relocated."
       },
       "PromptImpact": {
         "properties": {
@@ -14829,6 +14919,16 @@
             },
             "type": "array",
             "title": "Available Calls Presets"
+          },
+          "active_moves_preset": {
+            "type": "string",
+            "title": "Active Moves Preset",
+            "default": ""
+          },
+          "active_calls_preset": {
+            "type": "string",
+            "title": "Active Calls Preset",
+            "default": ""
           }
         },
         "type": "object",

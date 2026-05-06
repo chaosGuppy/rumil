@@ -72,6 +72,44 @@ def build_prompt_history(name: str, *, max_entries: int = 50) -> PromptHistory |
             entries=[],
         )
 
+    # Detect renames per-commit. `git log --follow --name-status`
+    # marks rename commits with `R<score>\told\tnew`; we capture the
+    # ``old`` path so the entry can tell the operator "moved from X".
+    rename_by_sha: dict[str, str] = {}
+    try:
+        rename_log = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(_REPO_ROOT),
+                "log",
+                "--follow",
+                "--no-merges",
+                "--name-status",
+                f"-n{max_entries + 1}",
+                "--pretty=format:__COMMIT__%H",
+                "--",
+                str(rel_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        current_sha: str | None = None
+        for line in rename_log.stdout.split("\n"):
+            if line.startswith("__COMMIT__"):
+                current_sha = line[len("__COMMIT__") :]
+                continue
+            if not line.strip() or current_sha is None:
+                continue
+            if line.startswith("R"):
+                # R100\told\tnew  — tabs separate; capture old.
+                cols = line.split("\t")
+                if len(cols) >= 3:
+                    rename_by_sha[current_sha] = cols[1]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
     entries: list[PromptHistoryEntry] = []
     for raw in log_result.stdout.strip().split("\n"):
         if not raw.strip():
@@ -99,6 +137,7 @@ def build_prompt_history(name: str, *, max_entries: int = 50) -> PromptHistory |
                 subject=subject,
                 content_hash=_sha256(body) if body else "",
                 char_count=len(body),
+                rename_from=rename_by_sha.get(sha),
             )
         )
 

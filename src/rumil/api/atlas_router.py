@@ -38,6 +38,7 @@ from rumil.atlas.graph import build_workflow_graph
 from rumil.atlas.history import build_prompt_history
 from rumil.atlas.impact import build_prompt_impact
 from rumil.atlas.invocations import (
+    build_call_exchanges,
     build_call_type_invocations,
     build_dispatch_invocations,
     build_move_invocations,
@@ -411,6 +412,25 @@ async def get_run_diff(
     if not a or not b:
         raise HTTPException(status_code=400, detail="a and b run_ids are required")
     return await build_run_diff(db, a, b)
+
+
+@router.get("/calls/by_id/{call_id}/exchanges", response_model=InvocationIndex)
+async def get_call_exchanges(
+    call_id: str,
+    limit: int = 50,
+    db: DB = Depends(_get_db),
+) -> InvocationIndex:
+    """Every LLM exchange recorded against a single call_id.
+
+    Routed under ``/calls/by_id/`` to avoid colliding with the
+    call-type routes (``/calls/{ct}/...``); call_ids are UUIDs and
+    call_types are enum values, but the prefix makes the intent
+    obvious from the URL.
+    """
+    out = await build_call_exchanges(db, call_id, limit=limit)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"call not found: {call_id}")
+    return out
 
 
 @router.get("/calls/{call_id}/events", response_model=CallEventDump)

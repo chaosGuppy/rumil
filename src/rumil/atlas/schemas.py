@@ -152,6 +152,8 @@ class RegistryRollup(BaseModel):
     workflow_summaries: list[WorkflowSummary]
     presets: dict[str, list[str]]
     available_calls_presets: list[str]
+    active_moves_preset: str = ""
+    active_calls_preset: str = ""
 
 
 class PromptDoc(BaseModel):
@@ -174,6 +176,12 @@ class PromptHistoryEntry(BaseModel):
     (not the git blob hash) — same shape as the live file's
     ``PromptDoc.content_hash`` so an iterator can spot-check whether a
     particular run's prompt matched any of the historical revisions.
+
+    ``rename_from``: when this commit RENAMED the file (git
+    --name-status R), the previous path. Lets the FE annotate "moved
+    from X" so an operator interpreting "this revision had n=4
+    invocations with 25% errors" knows whether content actually
+    changed or the file just relocated.
     """
 
     commit_sha: str
@@ -183,6 +191,7 @@ class PromptHistoryEntry(BaseModel):
     subject: str = ""
     content_hash: str
     char_count: int = 0
+    rename_from: str | None = None
 
 
 class PromptHistory(BaseModel):

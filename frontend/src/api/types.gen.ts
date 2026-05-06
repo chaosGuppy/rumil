@@ -4738,6 +4738,12 @@ export type PromptHistory = {
  * (not the git blob hash) — same shape as the live file's
  * ``PromptDoc.content_hash`` so an iterator can spot-check whether a
  * particular run's prompt matched any of the historical revisions.
+ *
+ * ``rename_from``: when this commit RENAMED the file (git
+ * --name-status R), the previous path. Lets the FE annotate "moved
+ * from X" so an operator interpreting "this revision had n=4
+ * invocations with 25% errors" knows whether content actually
+ * changed or the file just relocated.
  */
 export type PromptHistoryEntry = {
     /**
@@ -4768,6 +4774,10 @@ export type PromptHistoryEntry = {
      * Char Count
      */
     char_count?: number;
+    /**
+     * Rename From
+     */
+    rename_from?: string | null;
 };
 
 /**
@@ -5475,6 +5485,14 @@ export type RegistryRollup = {
      * Available Calls Presets
      */
     available_calls_presets: Array<string>;
+    /**
+     * Active Moves Preset
+     */
+    active_moves_preset?: string;
+    /**
+     * Active Calls Preset
+     */
+    active_calls_preset?: string;
 };
 
 /**
@@ -8970,6 +8988,51 @@ export type GetRunDiffApiAtlasRunsDiffGetResponses = {
 };
 
 export type GetRunDiffApiAtlasRunsDiffGetResponse = GetRunDiffApiAtlasRunsDiffGetResponses[keyof GetRunDiffApiAtlasRunsDiffGetResponses];
+
+export type GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/calls/by_id/{call_id}/exchanges';
+};
+
+export type GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetError = GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetErrors[keyof GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetErrors];
+
+export type GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: InvocationIndex;
+};
+
+export type GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetResponse = GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetResponses[keyof GetCallExchangesApiAtlasCallsByIdCallIdExchangesGetResponses];
 
 export type GetCallEventsApiAtlasCallsCallIdEventsGetData = {
     body?: never;

@@ -10,6 +10,7 @@ which is the type-level taxonomy). Used to answer questions like:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from rumil.atlas import event_keys
@@ -20,6 +21,8 @@ from rumil.atlas.schemas import (
     PageTimelineEvent,
 )
 from rumil.database import DB
+
+log = logging.getLogger(__name__)
 
 
 def _call_to_ref(call_row: dict[str, Any], role: str) -> PageCallRef:
@@ -200,15 +203,61 @@ async def build_page_timeline(db: DB, page_id: str) -> PageTimeline | None:
             )
         )
 
-    superseded_by = getattr(page, "superseded_by", None) or None
-    if superseded_by:
-        events.append(
-            PageTimelineEvent(
-                ts=str(page.created_at),
-                kind="superseded",
-                detail=f"superseded by {superseded_by[:8]}",
+    # Incoming page_links (CITES, CONSIDERATION, CHILD_QUESTION, etc.)
+    # surface every other page that referenced this one. Each link's
+    # created_at gives us the actual reference timestamp.
+    try:
+        incoming = await db.get_links_to(page_id)
+        for link in incoming:
+            link_ts = getattr(link, "created_at", None)
+            ts_str = str(link_ts) if link_ts is not None else ""
+            link_type = getattr(link, "link_type", None)
+            link_type_str = link_type.value if link_type is not None else "link"
+            from_id = getattr(link, "from_page_id", "") or ""
+            events.append(
+                PageTimelineEvent(
+                    ts=ts_str,
+                    kind=f"linked_{link_type_str}",
+                    detail=(
+                        f"linked from {from_id[:8] if isinstance(from_id, str) else ''} "
+                        f"({link_type_str})"
+                    ),
+                )
             )
+    except Exception as exc:
+        log.debug("get_links_to failed for %s: %s", page_id, exc)
+
+    # Mutation events targeting this page (supersession, hidden flips,
+    # role changes). Read straight from the mutation_events table; if
+    # the column shape ever changes, atlas will degrade to skipping
+    # them rather than crashing.
+    try:
+        mres = await db._execute(
+            db.client.table("mutation_events")
+            .select("event_type, payload, created_at")
+            .eq("page_id", page_id)
+            .order("created_at")
         )
+        for row in mres.data or []:
+            etype = str(row.get("event_type") or "")
+            payload = row.get("payload") or {}
+            detail = ""
+            if etype == "page_superseded":
+                by = (payload.get("superseded_by_page_id") or "")[:8]
+                detail = f"superseded by {by}" if by else "superseded"
+            elif etype == "page_hidden_set":
+                detail = f"hidden={payload.get('hidden')}"
+            else:
+                detail = etype
+            events.append(
+                PageTimelineEvent(
+                    ts=str(row.get("created_at") or ""),
+                    kind=f"mutation_{etype}",
+                    detail=detail,
+                )
+            )
+    except Exception as exc:
+        log.debug("mutation_events read failed for %s: %s", page_id, exc)
 
     events.sort(key=lambda e: e.ts)
 

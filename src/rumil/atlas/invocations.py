@@ -233,6 +233,58 @@ def _record_from_exchange(
     )
 
 
+async def build_call_exchanges(
+    db: DB,
+    call_id: str,
+    *,
+    limit: int = 50,
+) -> InvocationIndex | None:
+    """Every LLM exchange recorded against a single call.
+
+    Distinct from ``build_call_type_invocations`` (which is keyed on
+    the CallType across recent runs); this is keyed on a single
+    call_id and is the natural drilldown when the run-flow page shows
+    a node with ``n_llm_exchanges > 0``.
+    """
+    res = await db._execute(
+        db.client.table("calls")
+        .select("id, call_type, run_id, project_id, status, cost_usd")
+        .eq("id", call_id)
+        .limit(1)
+    )
+    crows = list(res.data or [])
+    if not crows:
+        return None
+    call_meta = crows[0]
+
+    cols = (
+        "id, call_id, run_id, phase, round, model, error, duration_ms, "
+        "input_tokens, output_tokens, cache_creation_input_tokens, "
+        "cache_read_input_tokens, created_at, system_prompt, user_message, "
+        "user_messages, response_text, tool_calls, request_kwargs, "
+        "thinking_blocks"
+    )
+    res2 = await db._execute(
+        db.client.table("call_llm_exchanges")
+        .select(cols)
+        .eq("call_id", call_id)
+        .order("created_at")
+        .limit(limit)
+    )
+    rows = list(res2.data or [])
+    for r in rows:
+        r["_call_meta"] = call_meta
+
+    items = [_record_from_exchange(r) for r in rows]
+    return InvocationIndex(
+        kind="call",
+        target=call_id,
+        items=items,
+        n_scanned=len(rows),
+        truncated=False,
+    )
+
+
 async def build_call_type_invocations(
     db: DB,
     call_type: CallType,

@@ -265,16 +265,58 @@ def _runner_index() -> dict[CallType, type]:
                 exc_info=True,
             )
 
-    index: dict[CallType, type] = {}
+    # Collect ALL classes per call_type first, then resolve. Multiple
+    # classes can share a CallType (e.g. AssessCall + BigAssessCall both
+    # claim ASSESS) and "first wins" in subclass-walk order is
+    # nondeterministic. Resolve via the same ASSESS_CALL_CLASSES
+    # registry the orchestrator uses, with the active settings variant.
+    candidates: dict[CallType, list[type]] = {}
 
     def _walk(cls: type) -> None:
         for sub in cls.__subclasses__():
             ct = getattr(sub, "call_type", None)
-            if isinstance(ct, CallType) and ct not in index:
-                index[ct] = sub
+            if isinstance(ct, CallType):
+                candidates.setdefault(ct, []).append(sub)
             _walk(sub)
 
     _walk(CallRunner)
+
+    index: dict[CallType, type] = {}
+    active_assess: type | None = None
+    active_variant: str = "?"
+    try:
+        from rumil.calls.call_registry import ASSESS_CALL_CLASSES
+        from rumil.settings import get_settings
+
+        active_variant = str(getattr(get_settings(), "assess_call_variant", "default"))
+        active_assess = ASSESS_CALL_CLASSES.get(active_variant, None)
+    except Exception:
+        active_assess = None
+
+    for ct, classes in candidates.items():
+        if len(classes) == 1:
+            index[ct] = classes[0]
+            continue
+        # Multi-claimant. Prefer the active assess variant when it's
+        # one of the candidates; else fall back to the first one.
+        if ct is CallType.ASSESS and active_assess is not None and active_assess in classes:
+            index[ct] = active_assess
+            log.debug(
+                "atlas registry: ASSESS resolved to %s (variant=%s); other claimants: %s",
+                active_assess.__name__,
+                active_variant,
+                [c.__name__ for c in classes if c is not active_assess],
+            )
+        else:
+            index[ct] = classes[0]
+            log.warning(
+                "atlas registry: %s has multiple CallRunner claimants %s; "
+                "picked %s; surface this as a runtime gap",
+                ct.value,
+                [c.__name__ for c in classes],
+                classes[0].__name__,
+            )
+
     _RUNNER_INDEX_CACHE = index
     return index
 
@@ -388,6 +430,9 @@ def _prompt_referenced_by(name: str) -> list[str]:
 
 
 def build_registry_rollup(workflow_summaries: Sequence[WorkflowSummary]) -> RegistryRollup:
+    from rumil.settings import get_settings
+
+    settings = get_settings()
     moves = build_move_summaries()
     dispatches = build_dispatch_summaries()
     call_types = build_call_type_summaries()
@@ -411,4 +456,6 @@ def build_registry_rollup(workflow_summaries: Sequence[WorkflowSummary]) -> Regi
         workflow_summaries=list(workflow_summaries),
         presets=presets,
         available_calls_presets=sorted(AVAILABLE_CALLS_PRESETS.keys()),
+        active_moves_preset=str(getattr(settings, "available_moves", "") or ""),
+        active_calls_preset=str(getattr(settings, "available_calls", "") or ""),
     )

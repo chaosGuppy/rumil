@@ -8296,6 +8296,17 @@
             "type": "boolean",
             "title": "Hidden",
             "default": false
+          },
+          "scope_question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Question Id"
           }
         },
         "type": "object",
@@ -8325,7 +8336,8 @@
           "sections",
           "meta_type",
           "run_id",
-          "hidden"
+          "hidden",
+          "scope_question_id"
         ],
         "title": "Page"
       },
@@ -8477,6 +8489,17 @@
             "type": "string",
             "title": "Run Id",
             "default": ""
+          },
+          "scope_question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Question Id"
           }
         },
         "type": "object",
@@ -8494,7 +8517,8 @@
           "position",
           "impact_on_parent_question",
           "created_at",
-          "run_id"
+          "run_id",
+          "scope_question_id"
         ],
         "title": "PageLink"
       },

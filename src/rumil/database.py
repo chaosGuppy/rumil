@@ -208,14 +208,14 @@ _db_retry = retry(
 _LINK_COLUMNS = (
     "id,from_page_id,to_page_id,link_type,direction,"
     "strength,reasoning,role,importance,section,position,"
-    "impact_on_parent_question,created_at,run_id"
+    "impact_on_parent_question,created_at,run_id,scope_question_id"
 )
 
 _SLIM_PAGE_COLUMNS = (
     "id,page_type,layer,workspace,headline,abstract,"
     "epistemic_status,epistemic_type,credence,credence_reasoning,"
     "robustness,robustness_reasoning,extra,is_superseded,"
-    "project_id,created_at,superseded_by,run_id,hidden"
+    "project_id,created_at,superseded_by,run_id,hidden,scope_question_id"
 )
 
 
@@ -247,6 +247,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         meta_type=row.get("meta_type"),
         run_id=row.get("run_id") or "",
         hidden=bool(row.get("hidden", False)),
+        scope_question_id=row.get("scope_question_id"),
     )
 
 
@@ -266,6 +267,7 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
         impact_on_parent_question=row.get("impact_on_parent_question"),
         created_at=datetime.fromisoformat(row["created_at"]),
         run_id=row.get("run_id") or "",
+        scope_question_id=row.get("scope_question_id"),
     )
 
 
@@ -356,6 +358,15 @@ def clear_mutation_caches() -> None:
     _MUTATION_CACHES.clear()
 
 
+class _Unset:
+    """Sentinel type so callers can pass ``None`` explicitly without it being
+    confused with 'argument omitted'. Used by ``DB.fork`` to distinguish
+    'inherit the parent's scope' from 'clear the scope'."""
+
+
+_UNSET = _Unset()
+
+
 class DB:
     def __init__(
         self,
@@ -363,11 +374,13 @@ class DB:
         client: AsyncClient,
         project_id: str = "",
         staged: bool = False,
+        scope_question_id: str | None = None,
     ):
         self.run_id = run_id
         self.client = client
         self.project_id = project_id
         self.staged = staged
+        self.scope_question_id = scope_question_id
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
 
@@ -379,6 +392,7 @@ class DB:
         project_id: str = "",
         client: AsyncClient | None = None,
         staged: bool = False,
+        scope_question_id: str | None = None,
     ) -> "DB":
         if client is None:
             url, key = get_settings().get_supabase_credentials(prod)
@@ -388,24 +402,34 @@ class DB:
             client=client,
             project_id=project_id,
             staged=staged,
+            scope_question_id=scope_question_id,
         )
         db._prod = prod
         return db
 
-    async def fork(self) -> "DB":
+    async def fork(self, scope_question_id: str | None | _Unset = _UNSET) -> "DB":
         """Create a new DB instance with a fresh Supabase client.
 
         Shares run_id, project_id, and staged flag with the parent but gets
         its own HTTP connection. Use this to scope connections to a single
         call, avoiding HTTP/2 stream exhaustion on long-running jobs.
+
+        Pass ``scope_question_id`` to enter a scoped view: reads will be
+        filtered to rows where ``scope_question_id IS NULL`` or matches the
+        passed value. Pass ``None`` explicitly to clear an inherited scope.
+        Omit the argument to inherit the parent's scope unchanged.
         """
         url, key = get_settings().get_supabase_credentials(self._prod)
         client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
+        resolved_scope = (
+            self.scope_question_id if isinstance(scope_question_id, _Unset) else scope_question_id
+        )
         db = DB(
             run_id=self.run_id,
             client=client,
             project_id=self.project_id,
             staged=self.staged,
+            scope_question_id=resolved_scope,
         )
         db._prod = self._prod
         return db
@@ -423,6 +447,26 @@ class DB:
             client=self.client,
             project_id=self.project_id,
             staged=True,
+            scope_question_id=self.scope_question_id,
+        )
+        db._prod = self._prod
+        return db
+
+    def with_scope(self, scope_question_id: str | None) -> "DB":
+        """Return a sibling DB with a different page-scope visibility.
+
+        Reuses the same Supabase client (no new HTTP connection, no close
+        needed) and only swaps the scope filter. Use this when a call entry
+        point already runs on a parent's HTTP client and just needs to
+        narrow its read visibility — e.g. ``run_prioritization_call``
+        scoping reads to its target question.
+        """
+        db = DB(
+            run_id=self.run_id,
+            client=self.client,
+            project_id=self.project_id,
+            staged=self.staged,
+            scope_question_id=scope_question_id,
         )
         db._prod = self._prod
         return db
@@ -449,6 +493,19 @@ class DB:
         if self.staged:
             return query.or_(f"staged.eq.false,run_id.eq.{self.run_id}")
         return query.eq("staged", False)
+
+    def _scope_filter(self, query: Any) -> Any:
+        """Apply page-scope visibility filter to a query.
+
+        Unscoped DBs (``scope_question_id is None``) see every row — no
+        filter is applied. Scoped DBs see rows where ``scope_question_id``
+        is NULL (unscoped row) or matches the DB's scope. Mirrors the SQL
+        predicate used by the discovery RPCs (match_pages,
+        get_root_questions).
+        """
+        if self.scope_question_id is None:
+            return query
+        return query.or_(f"scope_question_id.is.null,scope_question_id.eq.{self.scope_question_id}")
 
     async def _load_mutation_state(self) -> MutationState:
         """Fetch and cache mutation events for this staged run."""
@@ -726,6 +783,7 @@ class DB:
                     "staged": self.staged,
                     "abstract": page.abstract,
                     "hidden": page.hidden,
+                    "scope_question_id": page.scope_question_id,
                 }
             )
         )
@@ -804,7 +862,7 @@ class DB:
 
     async def get_page(self, page_id: str) -> Page | None:
         query = self.client.table("pages").select("*").eq("id", page_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         if not rows:
             return None
@@ -845,7 +903,9 @@ class DB:
             batch = id_list[start : start + batch_size]
             rows = _rows(
                 await self._execute(
-                    self._staged_filter(self.client.table("pages").select("*").in_("id", batch))
+                    self._scope_filter(
+                        self._staged_filter(self.client.table("pages").select("*").in_("id", batch))
+                    )
                 )
             )
             for r in rows:
@@ -1047,7 +1107,7 @@ class DB:
             query = query.eq("is_superseded", False)
         if not include_hidden:
             query = query.eq("hidden", False)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         pages = [
             _row_to_page(r)
             for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
@@ -1075,7 +1135,7 @@ class DB:
             query = query.eq("is_superseded", False)
         if not include_hidden:
             query = query.eq("hidden", False)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         pages = [
             _row_to_page(r)
             for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
@@ -1153,7 +1213,7 @@ class DB:
             query = query.eq("hidden", False)
         if search:
             query = query.or_(f"headline.ilike.%{search}%,content.ilike.%{search}%")
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         query = query.order(
             "is_human_created",
             desc=True,
@@ -1281,6 +1341,7 @@ class DB:
                     "created_at": link.created_at.isoformat(),
                     "run_id": self.run_id,
                     "staged": self.staged,
+                    "scope_question_id": link.scope_question_id,
                 }
             )
         )
@@ -1312,7 +1373,7 @@ class DB:
 
     async def get_link(self, link_id: str) -> PageLink | None:
         query = self.client.table("page_links").select("*").eq("id", link_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         if not rows:
             return None
@@ -1321,7 +1382,7 @@ class DB:
 
     async def get_links_to(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("to_page_id", page_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
@@ -1333,7 +1394,7 @@ class DB:
             .eq("to_page_id", question_id)
             .eq("link_type", LinkType.VIEW_OF.value)
         )
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         links = await self._apply_link_events([_row_to_link(r) for r in rows])
         if not links:
@@ -1423,7 +1484,7 @@ class DB:
 
     async def get_links_from(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("from_page_id", page_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
@@ -1446,7 +1507,7 @@ class DB:
                 query = (
                     self.client.table("page_links").select(_LINK_COLUMNS).in_("from_page_id", batch)
                 )
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
@@ -1476,7 +1537,7 @@ class DB:
                 query = (
                     self.client.table("page_links").select(_LINK_COLUMNS).in_("to_page_id", batch)
                 )
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
@@ -1683,7 +1744,7 @@ class DB:
                     .in_("to_page_id", batch)
                     .eq("link_type", LinkType.ANSWERS.value)
                 )
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
@@ -1751,7 +1812,7 @@ class DB:
         page_size = 1000
         while True:
             query = self.client.table("pages").select("id").eq("project_id", self.project_id)
-            query = self._staged_filter(query)
+            query = self._scope_filter(self._staged_filter(query))
             rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
             page_ids.update(r["id"] for r in rows)
             if len(rows) < page_size:
@@ -1784,7 +1845,7 @@ class DB:
                         .eq("link_type", "depends_on")
                         .in_("from_page_id", batch)
                     )
-                    query = self._staged_filter(query)
+                    query = self._scope_filter(self._staged_filter(query))
                     rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                     all_links.extend(_row_to_link(r) for r in rows)
                     if len(rows) < page_size:
@@ -1795,7 +1856,7 @@ class DB:
             page_size = 1000
             while True:
                 query = self.client.table("page_links").select("*").eq("link_type", "depends_on")
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
@@ -2232,7 +2293,7 @@ class DB:
             .eq("from_page_id", from_page_id)
             .eq("to_page_id", to_page_id)
         )
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
@@ -2250,8 +2311,10 @@ class DB:
             return await self._get_links_for_pages(page_ids)
         page_size = 2000
         if self.project_id:
-            page_ids_query = self._staged_filter(
-                self.client.table("pages").select("id").eq("project_id", self.project_id)
+            page_ids_query = self._scope_filter(
+                self._staged_filter(
+                    self.client.table("pages").select("id").eq("project_id", self.project_id)
+                )
             )
             page_ids_rows = _rows(await self._execute(page_ids_query.limit(50000)))
             proj_page_ids = {r["id"] for r in page_ids_rows}
@@ -2259,7 +2322,7 @@ class DB:
             offset = 0
             while True:
                 query = self.client.table("page_links").select(_LINK_COLUMNS)
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_rows.extend(rows)
                 if len(rows) < page_size:
@@ -2275,7 +2338,7 @@ class DB:
             offset = 0
             while True:
                 query = self.client.table("page_links").select(_LINK_COLUMNS)
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_rows.extend(rows)
                 if len(rows) < page_size:
@@ -2303,7 +2366,7 @@ class DB:
                 offset = 0
                 while True:
                     query = self.client.table("page_links").select(_LINK_COLUMNS).in_(col, batch)
-                    query = self._staged_filter(query)
+                    query = self._scope_filter(self._staged_filter(query))
                     rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                     for r in rows:
                         link = _row_to_link(r)
@@ -2317,7 +2380,11 @@ class DB:
         """Delete a page link by ID."""
         rows = _rows(
             await self._execute(
-                self._staged_filter(self.client.table("page_links").select("*").eq("id", link_id))
+                self._scope_filter(
+                    self._staged_filter(
+                        self.client.table("page_links").select("*").eq("id", link_id)
+                    )
+                )
             )
         )
         link_snapshot = rows[0] if rows else {}
@@ -2715,6 +2782,8 @@ class DB:
             params["p_staged_run_id"] = self.run_id
         if include_hidden:
             params["p_include_hidden"] = True
+        if self.scope_question_id is not None:
+            params["p_scope_question_id"] = self.scope_question_id
         rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
         pages = [_row_to_page(r) for r in rows]
         pages = await self._apply_page_events(pages)
@@ -2744,7 +2813,7 @@ class DB:
             query = query.eq("project_id", self.project_id)
         if not include_hidden:
             query = query.eq("hidden", False)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         pages = [_row_to_page(r) for r in rows]
         pages = await self._apply_page_events(pages)
@@ -2830,7 +2899,7 @@ class DB:
             .select(_LINK_COLUMNS)
             .in_("to_page_id", list(question_ids))
         )
-        links_query = self._staged_filter(links_query)
+        links_query = self._scope_filter(self._staged_filter(links_query))
         links_result = await self._execute(links_query)
         links = [_row_to_link(r) for r in _rows(links_result)]
         links = await self._apply_link_events(links)
@@ -2861,7 +2930,7 @@ class DB:
         )
         if self.project_id:
             query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         result = await self._execute(query)
         return result.count or 0
 
@@ -3149,7 +3218,7 @@ class DB:
         )
         if self.project_id:
             query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         result = await self._execute(query)
         return result.count or 0
 
@@ -3168,7 +3237,7 @@ class DB:
         )
         if self.project_id:
             query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         result = await self._execute(query)
         pages = [_row_to_page(r) for r in _rows(result)]
         return await self._apply_page_events(pages)

@@ -186,6 +186,8 @@ async def search_pages_by_vector(
         params["filter_staged_run_id"] = db.run_id
     if include_hidden:
         params["filter_include_hidden"] = True
+    if db.scope_question_id is not None:
+        params["filter_scope_question_id"] = db.scope_question_id
     rows: _Rows = _rows(await db.client.rpc("match_pages", params).execute())
     results: list[tuple[Page, float]] = []
     for row in rows:

@@ -50,6 +50,8 @@ class PromptSection(BaseModel):
     anchor: str
     body: str
     char_count: int
+    applies_to: list[str] = []
+    applies_to_note: str | None = None
 
 
 class PromptPart(BaseModel):
@@ -159,9 +161,51 @@ class PromptDoc(BaseModel):
     path: str
     content: str
     char_count: int
+    content_hash: str = ""
     referenced_by: list[str] = []
     sections: list[PromptSection] = []
     used_in_compositions: list[str] = []
+
+
+class PromptHistoryEntry(BaseModel):
+    """One git commit that touched a prompt file.
+
+    ``content_hash`` is sha-256 of the file as it stood at this commit
+    (not the git blob hash) — same shape as the live file's
+    ``PromptDoc.content_hash`` so an iterator can spot-check whether a
+    particular run's prompt matched any of the historical revisions.
+    """
+
+    commit_sha: str
+    commit_short: str
+    commit_ts: str
+    author: str = ""
+    subject: str = ""
+    content_hash: str
+    char_count: int = 0
+
+
+class PromptHistory(BaseModel):
+    name: str
+    path: str
+    current_content_hash: str
+    entries: list[PromptHistoryEntry]
+    truncated: bool = False
+
+
+class RunOutcome(BaseModel):
+    """Coarse "did this run succeed at its job" signal.
+
+    Pulled from runs.config.outcome when present (e.g. eval workflows
+    write a verdict there); else derived heuristically from run state —
+    completed-without-error vs aborted vs noop. UI can show as a small
+    badge per run.
+    """
+
+    label: str
+    score: float | None = None
+    source: str = "heuristic"
+    detail: str = ""
 
 
 class RunRollup(BaseModel):
@@ -178,10 +222,16 @@ class RunRollup(BaseModel):
     cost_usd: float = 0.0
     duration_seconds: float | None = None
     last_status: str | None = None
+    is_noop: bool = False
+    n_llm_exchanges: int = 0
     stages_taken: list[str] = []
     stages_skipped: list[str] = []
     dispatch_counts: dict[str, int] = {}
     call_status_counts: dict[str, int] = {}
+    outcome: RunOutcome | None = None
+    n_judgements_created: int = 0
+    n_views_created: int = 0
+    n_questions_created: int = 0
 
 
 class GapItem(BaseModel):
@@ -218,6 +268,7 @@ class WorkflowGraphNode(BaseModel):
     id: str
     label: str
     kind: str
+    standalone: bool = False
 
 
 class WorkflowGraphEdge(BaseModel):
@@ -254,6 +305,87 @@ class WorkflowOverlayStage(BaseModel):
     pages_loaded: int = 0
 
 
+class PageCallRef(BaseModel):
+    call_id: str
+    call_type: str
+    run_id: str = ""
+    role: str
+    created_at: str = ""
+    cost_usd: float = 0.0
+    status: str = ""
+
+
+class PageInstanceCalls(BaseModel):
+    page_id: str
+    page_type: str
+    headline: str = ""
+    created_by_call: PageCallRef | None = None
+    in_context_of: list[PageCallRef] = []
+    loaded_by: list[PageCallRef] = []
+    superseded_by_page_id: str | None = None
+
+
+class PageTimelineEvent(BaseModel):
+    ts: str
+    kind: str
+    call_id: str | None = None
+    call_type: str | None = None
+    run_id: str | None = None
+    detail: str = ""
+
+
+class PageTimeline(BaseModel):
+    page_id: str
+    page_type: str
+    headline: str = ""
+    events: list[PageTimelineEvent] = []
+
+
+class StageDiffRow(BaseModel):
+    stage_id: str
+    label: str
+    a_fired: bool = False
+    b_fired: bool = False
+    a_skipped: bool = False
+    b_skipped: bool = False
+    a_iterations: int = 0
+    b_iterations: int = 0
+    a_cost_usd: float = 0.0
+    b_cost_usd: float = 0.0
+    a_pages_loaded: int = 0
+    b_pages_loaded: int = 0
+    a_n_calls: int = 0
+    b_n_calls: int = 0
+
+
+class DispatchCountDiff(BaseModel):
+    call_type: str
+    a_count: int = 0
+    b_count: int = 0
+
+
+class RunDiffSide(BaseModel):
+    run_id: str
+    name: str = ""
+    workflow_name: str | None = None
+    cost_usd: float = 0.0
+    n_calls: int = 0
+    n_dispatches: int = 0
+    pages_loaded: int = 0
+    duration_seconds: float | None = None
+    started_at: str | None = None
+
+
+class RunDiff(BaseModel):
+    a: RunDiffSide
+    b: RunDiffSide
+    same_workflow: bool
+    aligned_workflow: str | None = None
+    stages: list[StageDiffRow]
+    dispatch_diffs: list[DispatchCountDiff]
+    notes: list[str] = []
+
+
 class WorkflowOverlay(BaseModel):
     workflow_name: str
     run_id: str
@@ -264,6 +396,25 @@ class WorkflowOverlay(BaseModel):
     duration_seconds: float | None = None
     started_at: str | None = None
     finished_at: str | None = None
+
+
+class LiveRunSnapshot(BaseModel):
+    """Snapshot of an in-flight (or recent) run for the live overlay UI.
+
+    A subset of WorkflowOverlay plus a few in-flight signals: the most
+    recent trace event timestamp, whether any call is still pending or
+    running, and a guessed "current stage" for highlighting.
+    """
+
+    run_id: str
+    workflow_name: str | None = None
+    is_in_flight: bool = False
+    last_event_ts: str | None = None
+    current_stage_id: str | None = None
+    overlay: WorkflowOverlay | None = None
+    n_pending_calls: int = 0
+    n_running_calls: int = 0
+    snapshot_ts: str
 
 
 class MoveCount(BaseModel):
@@ -282,6 +433,22 @@ class CallTypeInvocationCount(BaseModel):
     count: int
 
 
+class HistogramBin(BaseModel):
+    label: str
+    lo: float
+    hi: float
+    count: int
+
+
+class StatsBucket(BaseModel):
+    bucket_start: str
+    bucket_end: str
+    n_invocations: int
+    mean_cost_usd: float = 0.0
+    total_cost_usd: float = 0.0
+    mean_rounds: float = 0.0
+
+
 class CallTypeStats(BaseModel):
     """Empirical stats for one CallType across recent runs."""
 
@@ -297,6 +464,15 @@ class CallTypeStats(BaseModel):
     top_moves: list[MoveCount] = []
     top_co_firings: list[CoFiringCount] = []
     recent_errors: list[str] = []
+    p50_cost_usd: float = 0.0
+    p90_cost_usd: float = 0.0
+    p99_cost_usd: float = 0.0
+    rounds_histogram: list[HistogramBin] = []
+    cost_histogram: list[HistogramBin] = []
+    pages_loaded_histogram: list[HistogramBin] = []
+    series: list[StatsBucket] = []
+    bucket: str | None = None
+    since: str | None = None
 
 
 class MoveStats(BaseModel):

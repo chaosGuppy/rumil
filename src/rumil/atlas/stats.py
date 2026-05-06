@@ -19,14 +19,17 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from collections.abc import Iterable, Sequence
+from datetime import datetime, timedelta
 from typing import Any
 
 from rumil.atlas.schemas import (
     CallTypeInvocationCount,
     CallTypeStats,
     CoFiringCount,
+    HistogramBin,
     MoveCount,
     MoveStats,
+    StatsBucket,
 )
 from rumil.database import DB
 from rumil.models import CallType
@@ -145,14 +148,140 @@ def _mean(values: Sequence[float]) -> float:
     return round(sum(values) / len(values), 4) if values else 0.0
 
 
+def _percentile(values: Sequence[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return round(s[0], 4)
+    k = (len(s) - 1) * (pct / 100.0)
+    lo = int(k)
+    hi = min(lo + 1, len(s) - 1)
+    frac = k - lo
+    return round(s[lo] * (1 - frac) + s[hi] * frac, 4)
+
+
+def _histogram_bins(
+    values: Sequence[float],
+    *,
+    edges: Sequence[float] | None = None,
+    integer: bool = False,
+) -> list[HistogramBin]:
+    if not values:
+        return []
+    if edges is None:
+        v_max = max(values)
+        if integer:
+            top = max(int(v_max) + 1, 5)
+            n_bins = min(top, 10)
+            step = max(1, top // n_bins)
+            edges = [float(i * step) for i in range(n_bins + 1)]
+            if edges[-1] < v_max:
+                edges = [*edges, float(int(v_max) + 1)]
+        else:
+            v_max = max(v_max, 0.001)
+            edges = [v_max * (i / 8) for i in range(9)]
+    out: list[HistogramBin] = []
+    for i in range(len(edges) - 1):
+        lo = edges[i]
+        hi = edges[i + 1]
+        last = i == len(edges) - 2
+        count = sum(1 for v in values if lo <= v < hi or (last and v == hi))
+        if integer:
+            label = f"{int(lo)}–{int(hi)}"
+        elif lo == 0:
+            label = f"≤{hi:.2f}"
+        else:
+            label = f"{lo:.2f}–{hi:.2f}"
+        out.append(HistogramBin(label=label, lo=lo, hi=hi, count=count))
+    return out
+
+
+def _bucket_label(bucket: str) -> tuple[str, int]:
+    """Return (truncation format, days-per-bucket) for a bucket name."""
+    if bucket == "week":
+        return "%Y-%m-%d", 7
+    if bucket == "month":
+        return "%Y-%m", 30
+    return "%Y-%m-%d", 1
+
+
+def _floor_bucket(ts: datetime, bucket: str) -> datetime:
+    if bucket == "week":
+        # ISO week start (Monday)
+        monday = ts - timedelta(days=ts.weekday())
+        return monday.replace(hour=0, minute=0, second=0, microsecond=0)
+    if bucket == "month":
+        return ts.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return ts.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _next_bucket(ts: datetime, bucket: str) -> datetime:
+    if bucket == "week":
+        return ts + timedelta(days=7)
+    if bucket == "month":
+        # crude: 32 days then floor
+        nxt = ts + timedelta(days=32)
+        return _floor_bucket(nxt, "month")
+    return ts + timedelta(days=1)
+
+
+def _build_series(
+    rows: Sequence[dict[str, Any]],
+    bucket: str,
+) -> list[StatsBucket]:
+    if not rows:
+        return []
+    buckets: dict[datetime, list[dict[str, Any]]] = {}
+    for r in rows:
+        ts_str = r.get("created_at")
+        if not isinstance(ts_str, str):
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        b = _floor_bucket(ts, bucket)
+        buckets.setdefault(b, []).append(r)
+    if not buckets:
+        return []
+    start = min(buckets.keys())
+    end = _floor_bucket(datetime.now(start.tzinfo), bucket)
+    out: list[StatsBucket] = []
+    cursor = start
+    while cursor <= end:
+        bucket_rows = buckets.get(cursor, [])
+        nxt = _next_bucket(cursor, bucket)
+        costs = [float(r.get("cost_usd") or 0.0) for r in bucket_rows]
+        rounds = [_rounds_for_call(_events(r)) for r in bucket_rows]
+        out.append(
+            StatsBucket(
+                bucket_start=cursor.isoformat(),
+                bucket_end=nxt.isoformat(),
+                n_invocations=len(bucket_rows),
+                mean_cost_usd=_mean(costs),
+                total_cost_usd=round(sum(costs), 4),
+                mean_rounds=_mean(rounds),
+            )
+        )
+        cursor = nxt
+        if len(out) >= 60:
+            break
+    return out
+
+
 async def build_call_type_stats(
     db: DB,
     call_type: CallType,
     project_id: str | None = None,
     n_runs: int = 50,
+    since: str | None = None,
+    bucket: str | None = None,
 ) -> CallTypeStats:
     run_ids = await _recent_run_ids(db, project_id, n_runs)
     rows = await _calls_in_runs(db, run_ids, call_type=call_type.value)
+    if since:
+        rows = [r for r in rows if (r.get("created_at") or "") >= since]
 
     n_invocations = len(rows)
     runs_seen = {str(r.get("run_id")) for r in rows if r.get("run_id")}
@@ -176,6 +305,7 @@ async def build_call_type_stats(
         if err:
             error_excerpts.append(err)
 
+    series = _build_series(rows, bucket) if bucket else []
     return CallTypeStats(
         call_type=call_type.value,
         scanned_runs=len(run_ids),
@@ -186,6 +316,15 @@ async def build_call_type_stats(
         mean_pages_loaded=_mean(pages),
         mean_rounds=_mean(rounds),
         status_counts=dict(statuses),
+        p50_cost_usd=_percentile(costs, 50),
+        p90_cost_usd=_percentile(costs, 90),
+        p99_cost_usd=_percentile(costs, 99),
+        rounds_histogram=_histogram_bins([float(r) for r in rounds], integer=True),
+        cost_histogram=_histogram_bins(costs),
+        pages_loaded_histogram=_histogram_bins([float(p) for p in pages], integer=True),
+        series=series,
+        bucket=bucket,
+        since=since,
         top_moves=[MoveCount(move_type=k, count=v) for k, v in move_counts.most_common(20)],
         top_co_firings=[
             CoFiringCount(a=a, b=b, count=v) for (a, b), v in co_firing.most_common(20)

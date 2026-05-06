@@ -29,6 +29,7 @@ from rumil.atlas.schemas import (
     DispatchFrequency,
     RunFlow,
     RunFlowNode,
+    RunOutcome,
     RunRollup,
     StageInvocation,
     WorkflowAggregate,
@@ -230,6 +231,43 @@ _VIEW_CALL_TYPES = {
 }
 
 
+def _outcome_from_run(
+    run_row: dict[str, Any],
+    *,
+    is_noop: bool,
+    n_calls: int,
+    last_status: str | None,
+    saw_error: bool,
+) -> RunOutcome:
+    """Derive an outcome label.
+
+    Priority:
+    1. Explicit ``runs.config.outcome`` if present (set by eval workflows).
+    2. Heuristic: noop → "noop", any error → "error", complete → "complete",
+       otherwise → ``last_status``.
+    """
+    cfg = run_row.get("config") or {}
+    explicit = cfg.get("outcome") if isinstance(cfg, dict) else None
+    if isinstance(explicit, dict):
+        return RunOutcome(
+            label=str(explicit.get("label") or "external"),
+            score=explicit.get("score")
+            if isinstance(explicit.get("score"), (int, float))
+            else None,
+            source=str(explicit.get("source") or "config"),
+            detail=str(explicit.get("detail") or ""),
+        )
+    if isinstance(explicit, str):
+        return RunOutcome(label=explicit, source="config")
+    if is_noop:
+        return RunOutcome(label="noop", source="heuristic", detail="no LLM activity")
+    if saw_error:
+        return RunOutcome(label="error", source="heuristic", detail="error event in trace")
+    if n_calls == 0:
+        return RunOutcome(label="empty", source="heuristic")
+    return RunOutcome(label=str(last_status or "unknown"), source="heuristic")
+
+
 def _rollup_run(
     workflow_name: str,
     run_row: dict[str, Any],
@@ -247,6 +285,11 @@ def _rollup_run(
     saw_dispatch_executed = False
     saw_view_call = False
     saw_red_team_call = False
+    n_llm_exchanges = 0
+    n_judgements_created = 0
+    n_views_created = 0
+    n_questions_created = 0
+    saw_error = False
 
     for c in call_rows:
         cost += float(c.get("cost_usd") or 0.0)
@@ -259,6 +302,21 @@ def _rollup_run(
             saw_dispatch_executed = True
         for k, v in by_type.items():
             dispatch_counts[k] += v
+        for e in events:
+            et = e.get("event")
+            if et == "moves_executed":
+                for m in e.get("moves") or []:
+                    if not isinstance(m, dict):
+                        continue
+                    mt = m.get("type") or m.get("move_type") or ""
+                    if mt == "CREATE_JUDGEMENT":
+                        n_judgements_created += 1
+                    elif mt == "CREATE_QUESTION":
+                        n_questions_created += 1
+            elif et == "view_created":
+                n_views_created += 1
+            elif et == "error":
+                saw_error = True
         stage, skipped = _stages_for_call(workflow_name, c)
         if stage:
             if skipped:
@@ -270,6 +328,9 @@ def _rollup_run(
             saw_view_call = True
         if ct == CallType.RED_TEAM.value:
             saw_red_team_call = True
+        for e in events:
+            if e.get("event") == "llm_exchange":
+                n_llm_exchanges += 1
 
     exec_stage = _EXECUTE_BY_WORKFLOW.get(workflow_name)
     if exec_stage and saw_dispatch_executed:
@@ -319,6 +380,15 @@ def _rollup_run(
             or None
         )
 
+    is_noop = n_llm_exchanges == 0 and round(cost, 4) == 0.0
+    outcome = _outcome_from_run(
+        run_row,
+        is_noop=is_noop,
+        n_calls=len(call_rows),
+        last_status=last_status,
+        saw_error=saw_error,
+    )
+
     return RunRollup(
         run_id=str(run_row.get("id") or ""),
         created_at=str(run_row.get("created_at") or ""),
@@ -331,11 +401,65 @@ def _rollup_run(
         cost_usd=round(cost, 4),
         duration_seconds=duration,
         last_status=last_status,
+        is_noop=is_noop,
+        n_llm_exchanges=n_llm_exchanges,
         stages_taken=sorted(stages_taken),
         stages_skipped=sorted(stages_skipped),
         dispatch_counts=dict(dispatch_counts),
         call_status_counts=dict(status_counts),
+        outcome=outcome,
+        n_judgements_created=n_judgements_created,
+        n_views_created=n_views_created,
+        n_questions_created=n_questions_created,
     )
+
+
+async def list_workflow_runs(
+    db: DB,
+    workflow_name: str,
+    project_id: str | None = None,
+    limit: int = 50,
+    order_by: str = "recent",
+    include_noop: bool = True,
+) -> list[RunRollup]:
+    """Return per-run rollups for a workflow, sorted by recent or cost.
+
+    Lighter than ``build_workflow_aggregate`` — same per-run rollup shape,
+    but no stage_invocations / dispatch_frequencies / sparkline series.
+    Suitable for "list runs ordered by cost" / "show recent runs" without
+    the extra aggregation work.
+    """
+    fetch_limit = max(limit * 2, limit) if order_by == "cost" else limit
+    run_rows = await _runs_for_workflow(db, workflow_name, project_id, limit=fetch_limit)
+
+    question_ids = [r.get("question_id") for r in run_rows if r.get("question_id")]
+    pages_by_id = (
+        await db.get_pages_by_ids(list({q for q in question_ids if q})) if question_ids else {}
+    )
+
+    rollups: list[RunRollup] = []
+    for run in run_rows:
+        rid = run.get("id")
+        if not rid:
+            continue
+        call_rows = await _calls_for_run(db, str(rid))
+        qid = run.get("question_id")
+        page = pages_by_id.get(qid) if qid else None
+        headline = page.headline if page is not None else None
+        rollups.append(_rollup_run(workflow_name, run, call_rows, headline))
+
+    if not include_noop:
+        rollups = [r for r in rollups if not r.is_noop]
+
+    if order_by == "cost":
+        rollups.sort(key=lambda r: r.cost_usd, reverse=True)
+    elif order_by == "duration":
+        rollups.sort(key=lambda r: r.duration_seconds or 0.0, reverse=True)
+    elif order_by == "calls":
+        rollups.sort(key=lambda r: r.n_calls, reverse=True)
+    else:
+        rollups.sort(key=lambda r: r.created_at, reverse=True)
+    return rollups[:limit]
 
 
 async def build_workflow_aggregate(

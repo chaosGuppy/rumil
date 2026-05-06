@@ -681,6 +681,42 @@ export type CallTypeStats = {
      * Recent Errors
      */
     recent_errors?: Array<string>;
+    /**
+     * P50 Cost Usd
+     */
+    p50_cost_usd?: number;
+    /**
+     * P90 Cost Usd
+     */
+    p90_cost_usd?: number;
+    /**
+     * P99 Cost Usd
+     */
+    p99_cost_usd?: number;
+    /**
+     * Rounds Histogram
+     */
+    rounds_histogram?: Array<HistogramBin>;
+    /**
+     * Cost Histogram
+     */
+    cost_histogram?: Array<HistogramBin>;
+    /**
+     * Pages Loaded Histogram
+     */
+    pages_loaded_histogram?: Array<HistogramBin>;
+    /**
+     * Series
+     */
+    series?: Array<StatsBucket>;
+    /**
+     * Bucket
+     */
+    bucket?: string | null;
+    /**
+     * Since
+     */
+    since?: string | null;
 };
 
 /**
@@ -1263,6 +1299,24 @@ export type DiagnosticsBundle = {
      * Essay Flags
      */
     essay_flags: Array<EssayFlagOut>;
+};
+
+/**
+ * DispatchCountDiff
+ */
+export type DispatchCountDiff = {
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * A Count
+     */
+    a_count?: number;
+    /**
+     * B Count
+     */
+    b_count?: number;
 };
 
 /**
@@ -2128,6 +2182,28 @@ export type HttpValidationError = {
 };
 
 /**
+ * HistogramBin
+ */
+export type HistogramBin = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Lo
+     */
+    lo: number;
+    /**
+     * Hi
+     */
+    hi: number;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
  * ImpactFilterEventOut
  */
 export type ImpactFilterEventOut = {
@@ -2945,6 +3021,51 @@ export type LinkedPageOut = {
 };
 
 /**
+ * LiveRunSnapshot
+ *
+ * Snapshot of an in-flight (or recent) run for the live overlay UI.
+ *
+ * A subset of WorkflowOverlay plus a few in-flight signals: the most
+ * recent trace event timestamp, whether any call is still pending or
+ * running, and a guessed "current stage" for highlighting.
+ */
+export type LiveRunSnapshot = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Workflow Name
+     */
+    workflow_name?: string | null;
+    /**
+     * Is In Flight
+     */
+    is_in_flight?: boolean;
+    /**
+     * Last Event Ts
+     */
+    last_event_ts?: string | null;
+    /**
+     * Current Stage Id
+     */
+    current_stage_id?: string | null;
+    overlay?: WorkflowOverlay | null;
+    /**
+     * N Pending Calls
+     */
+    n_pending_calls?: number;
+    /**
+     * N Running Calls
+     */
+    n_running_calls?: number;
+    /**
+     * Snapshot Ts
+     */
+    snapshot_ts: string;
+};
+
+/**
  * LoadPageEventOut
  */
 export type LoadPageEventOut = {
@@ -3379,6 +3500,40 @@ export type Page = {
 };
 
 /**
+ * PageCallRef
+ */
+export type PageCallRef = {
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Run Id
+     */
+    run_id?: string;
+    /**
+     * Role
+     */
+    role: string;
+    /**
+     * Created At
+     */
+    created_at?: string;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number;
+    /**
+     * Status
+     */
+    status?: string;
+};
+
+/**
  * PageCountsOut
  */
 export type PageCountsOut = {
@@ -3405,6 +3560,37 @@ export type PageDetailOut = {
      * Links To
      */
     links_to: Array<LinkedPageOut>;
+};
+
+/**
+ * PageInstanceCalls
+ */
+export type PageInstanceCalls = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Type
+     */
+    page_type: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    created_by_call?: PageCallRef | null;
+    /**
+     * In Context Of
+     */
+    in_context_of?: Array<PageCallRef>;
+    /**
+     * Loaded By
+     */
+    loaded_by?: Array<PageCallRef>;
+    /**
+     * Superseded By Page Id
+     */
+    superseded_by_page_id?: string | null;
 };
 
 /**
@@ -3521,6 +3707,58 @@ export type PageRef = {
      * Headline
      */
     headline?: string;
+};
+
+/**
+ * PageTimeline
+ */
+export type PageTimeline = {
+    /**
+     * Page Id
+     */
+    page_id: string;
+    /**
+     * Page Type
+     */
+    page_type: string;
+    /**
+     * Headline
+     */
+    headline?: string;
+    /**
+     * Events
+     */
+    events?: Array<PageTimelineEvent>;
+};
+
+/**
+ * PageTimelineEvent
+ */
+export type PageTimelineEvent = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Call Id
+     */
+    call_id?: string | null;
+    /**
+     * Call Type
+     */
+    call_type?: string | null;
+    /**
+     * Run Id
+     */
+    run_id?: string | null;
+    /**
+     * Detail
+     */
+    detail?: string;
 };
 
 /**
@@ -3824,6 +4062,10 @@ export type PromptDoc = {
      */
     char_count: number;
     /**
+     * Content Hash
+     */
+    content_hash?: string;
+    /**
      * Referenced By
      */
     referenced_by?: Array<string>;
@@ -3835,6 +4077,73 @@ export type PromptDoc = {
      * Used In Compositions
      */
     used_in_compositions?: Array<string>;
+};
+
+/**
+ * PromptHistory
+ */
+export type PromptHistory = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Current Content Hash
+     */
+    current_content_hash: string;
+    /**
+     * Entries
+     */
+    entries: Array<PromptHistoryEntry>;
+    /**
+     * Truncated
+     */
+    truncated?: boolean;
+};
+
+/**
+ * PromptHistoryEntry
+ *
+ * One git commit that touched a prompt file.
+ *
+ * ``content_hash`` is sha-256 of the file as it stood at this commit
+ * (not the git blob hash) — same shape as the live file's
+ * ``PromptDoc.content_hash`` so an iterator can spot-check whether a
+ * particular run's prompt matched any of the historical revisions.
+ */
+export type PromptHistoryEntry = {
+    /**
+     * Commit Sha
+     */
+    commit_sha: string;
+    /**
+     * Commit Short
+     */
+    commit_short: string;
+    /**
+     * Commit Ts
+     */
+    commit_ts: string;
+    /**
+     * Author
+     */
+    author?: string;
+    /**
+     * Subject
+     */
+    subject?: string;
+    /**
+     * Content Hash
+     */
+    content_hash: string;
+    /**
+     * Char Count
+     */
+    char_count?: number;
 };
 
 /**
@@ -3903,6 +4212,14 @@ export type PromptSection = {
      * Char Count
      */
     char_count: number;
+    /**
+     * Applies To
+     */
+    applies_to?: Array<string>;
+    /**
+     * Applies To Note
+     */
+    applies_to_note?: string | null;
 };
 
 /**
@@ -4693,6 +5010,76 @@ export type RunCallExperimentOut = {
 };
 
 /**
+ * RunDiff
+ */
+export type RunDiff = {
+    a: RunDiffSide;
+    b: RunDiffSide;
+    /**
+     * Same Workflow
+     */
+    same_workflow: boolean;
+    /**
+     * Aligned Workflow
+     */
+    aligned_workflow?: string | null;
+    /**
+     * Stages
+     */
+    stages: Array<StageDiffRow>;
+    /**
+     * Dispatch Diffs
+     */
+    dispatch_diffs: Array<DispatchCountDiff>;
+    /**
+     * Notes
+     */
+    notes?: Array<string>;
+};
+
+/**
+ * RunDiffSide
+ */
+export type RunDiffSide = {
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Name
+     */
+    name?: string;
+    /**
+     * Workflow Name
+     */
+    workflow_name?: string | null;
+    /**
+     * Cost Usd
+     */
+    cost_usd?: number;
+    /**
+     * N Calls
+     */
+    n_calls?: number;
+    /**
+     * N Dispatches
+     */
+    n_dispatches?: number;
+    /**
+     * Pages Loaded
+     */
+    pages_loaded?: number;
+    /**
+     * Duration Seconds
+     */
+    duration_seconds?: number | null;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+};
+
+/**
  * RunFlow
  *
  * Single run's flow — calls in order with which workflow stage they
@@ -4800,6 +5187,35 @@ export type RunListItemOut = {
 };
 
 /**
+ * RunOutcome
+ *
+ * Coarse "did this run succeed at its job" signal.
+ *
+ * Pulled from runs.config.outcome when present (e.g. eval workflows
+ * write a verdict there); else derived heuristically from run state —
+ * completed-without-error vs aborted vs noop. UI can show as a small
+ * badge per run.
+ */
+export type RunOutcome = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Score
+     */
+    score?: number | null;
+    /**
+     * Source
+     */
+    source?: string;
+    /**
+     * Detail
+     */
+    detail?: string;
+};
+
+/**
  * RunPrioExperimentOut
  */
 export type RunPrioExperimentOut = {
@@ -4890,6 +5306,14 @@ export type RunRollup = {
      */
     last_status?: string | null;
     /**
+     * Is Noop
+     */
+    is_noop?: boolean;
+    /**
+     * N Llm Exchanges
+     */
+    n_llm_exchanges?: number;
+    /**
      * Stages Taken
      */
     stages_taken?: Array<string>;
@@ -4909,6 +5333,19 @@ export type RunRollup = {
     call_status_counts?: {
         [key: string]: number;
     };
+    outcome?: RunOutcome | null;
+    /**
+     * N Judgements Created
+     */
+    n_judgements_created?: number;
+    /**
+     * N Views Created
+     */
+    n_views_created?: number;
+    /**
+     * N Questions Created
+     */
+    n_questions_created?: number;
 };
 
 /**
@@ -5233,6 +5670,68 @@ export type SourceSummary = {
 };
 
 /**
+ * StageDiffRow
+ */
+export type StageDiffRow = {
+    /**
+     * Stage Id
+     */
+    stage_id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * A Fired
+     */
+    a_fired?: boolean;
+    /**
+     * B Fired
+     */
+    b_fired?: boolean;
+    /**
+     * A Skipped
+     */
+    a_skipped?: boolean;
+    /**
+     * B Skipped
+     */
+    b_skipped?: boolean;
+    /**
+     * A Iterations
+     */
+    a_iterations?: number;
+    /**
+     * B Iterations
+     */
+    b_iterations?: number;
+    /**
+     * A Cost Usd
+     */
+    a_cost_usd?: number;
+    /**
+     * B Cost Usd
+     */
+    b_cost_usd?: number;
+    /**
+     * A Pages Loaded
+     */
+    a_pages_loaded?: number;
+    /**
+     * B Pages Loaded
+     */
+    b_pages_loaded?: number;
+    /**
+     * A N Calls
+     */
+    a_n_calls?: number;
+    /**
+     * B N Calls
+     */
+    b_n_calls?: number;
+};
+
+/**
  * StageInvocation
  */
 export type StageInvocation = {
@@ -5256,6 +5755,36 @@ export type StageInvocation = {
      * Total Runs
      */
     total_runs: number;
+};
+
+/**
+ * StatsBucket
+ */
+export type StatsBucket = {
+    /**
+     * Bucket Start
+     */
+    bucket_start: string;
+    /**
+     * Bucket End
+     */
+    bucket_end: string;
+    /**
+     * N Invocations
+     */
+    n_invocations: number;
+    /**
+     * Mean Cost Usd
+     */
+    mean_cost_usd?: number;
+    /**
+     * Total Cost Usd
+     */
+    total_cost_usd?: number;
+    /**
+     * Mean Rounds
+     */
+    mean_rounds?: number;
 };
 
 /**
@@ -5833,6 +6362,10 @@ export type WorkflowGraphNode = {
      * Kind
      */
     kind: string;
+    /**
+     * Standalone
+     */
+    standalone?: boolean;
 };
 
 /**
@@ -7007,6 +7540,47 @@ export type GetPromptApiAtlasRegistryPromptsNameGetResponses = {
 
 export type GetPromptApiAtlasRegistryPromptsNameGetResponse = GetPromptApiAtlasRegistryPromptsNameGetResponses[keyof GetPromptApiAtlasRegistryPromptsNameGetResponses];
 
+export type GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Max Entries
+         */
+        max_entries?: number;
+    };
+    url: '/api/atlas/registry/prompts/{name}/history';
+};
+
+export type GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetError = GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetErrors[keyof GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetErrors];
+
+export type GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PromptHistory;
+};
+
+export type GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetResponse = GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetResponses[keyof GetPromptHistoryApiAtlasRegistryPromptsNameHistoryGetResponses];
+
 export type ListWorkflowsApiAtlasWorkflowsGetData = {
     body?: never;
     headers?: {
@@ -7152,6 +7726,61 @@ export type GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponses = {
 
 export type GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponse = GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponses[keyof GetWorkflowAggregateApiAtlasWorkflowsNameAggregateGetResponses];
 
+export type ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+        /**
+         * Order By
+         */
+        order_by?: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Include Noop
+         */
+        include_noop?: boolean;
+    };
+    url: '/api/atlas/workflows/{name}/runs';
+};
+
+export type ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetError = ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetErrors[keyof ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetErrors];
+
+export type ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetResponses = {
+    /**
+     * Response List Workflow Runs Endpoint Api Atlas Workflows  Name  Runs Get
+     *
+     * Successful Response
+     */
+    200: Array<RunRollup>;
+};
+
+export type ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetResponse = ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetResponses[keyof ListWorkflowRunsEndpointApiAtlasWorkflowsNameRunsGetResponses];
+
 export type GetRunFlowEndpointApiAtlasRunsRunIdFlowGetData = {
     body?: never;
     headers?: {
@@ -7193,6 +7822,173 @@ export type GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponses = {
 
 export type GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponse = GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponses[keyof GetRunFlowEndpointApiAtlasRunsRunIdFlowGetResponses];
 
+export type GetPageInstanceCallsApiAtlasPagesPageIdCallsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/pages/{page_id}/calls';
+};
+
+export type GetPageInstanceCallsApiAtlasPagesPageIdCallsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageInstanceCallsApiAtlasPagesPageIdCallsGetError = GetPageInstanceCallsApiAtlasPagesPageIdCallsGetErrors[keyof GetPageInstanceCallsApiAtlasPagesPageIdCallsGetErrors];
+
+export type GetPageInstanceCallsApiAtlasPagesPageIdCallsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PageInstanceCalls;
+};
+
+export type GetPageInstanceCallsApiAtlasPagesPageIdCallsGetResponse = GetPageInstanceCallsApiAtlasPagesPageIdCallsGetResponses[keyof GetPageInstanceCallsApiAtlasPagesPageIdCallsGetResponses];
+
+export type GetPageTimelineApiAtlasPagesPageIdTimelineGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Page Id
+         */
+        page_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/pages/{page_id}/timeline';
+};
+
+export type GetPageTimelineApiAtlasPagesPageIdTimelineGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPageTimelineApiAtlasPagesPageIdTimelineGetError = GetPageTimelineApiAtlasPagesPageIdTimelineGetErrors[keyof GetPageTimelineApiAtlasPagesPageIdTimelineGetErrors];
+
+export type GetPageTimelineApiAtlasPagesPageIdTimelineGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PageTimeline;
+};
+
+export type GetPageTimelineApiAtlasPagesPageIdTimelineGetResponse = GetPageTimelineApiAtlasPagesPageIdTimelineGetResponses[keyof GetPageTimelineApiAtlasPagesPageIdTimelineGetResponses];
+
+export type GetRunDiffApiAtlasRunsDiffGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * A
+         */
+        a: string;
+        /**
+         * B
+         */
+        b: string;
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/runs/diff';
+};
+
+export type GetRunDiffApiAtlasRunsDiffGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetRunDiffApiAtlasRunsDiffGetError = GetRunDiffApiAtlasRunsDiffGetErrors[keyof GetRunDiffApiAtlasRunsDiffGetErrors];
+
+export type GetRunDiffApiAtlasRunsDiffGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RunDiff;
+};
+
+export type GetRunDiffApiAtlasRunsDiffGetResponse = GetRunDiffApiAtlasRunsDiffGetResponses[keyof GetRunDiffApiAtlasRunsDiffGetResponses];
+
+export type GetLiveSnapshotApiAtlasRunsRunIdLiveGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/runs/{run_id}/live';
+};
+
+export type GetLiveSnapshotApiAtlasRunsRunIdLiveGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLiveSnapshotApiAtlasRunsRunIdLiveGetError = GetLiveSnapshotApiAtlasRunsRunIdLiveGetErrors[keyof GetLiveSnapshotApiAtlasRunsRunIdLiveGetErrors];
+
+export type GetLiveSnapshotApiAtlasRunsRunIdLiveGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LiveRunSnapshot;
+};
+
+export type GetLiveSnapshotApiAtlasRunsRunIdLiveGetResponse = GetLiveSnapshotApiAtlasRunsRunIdLiveGetResponses[keyof GetLiveSnapshotApiAtlasRunsRunIdLiveGetResponses];
+
 export type GetCallTypeStatsApiAtlasCallsCallTypeStatsGetData = {
     body?: never;
     headers?: {
@@ -7216,6 +8012,14 @@ export type GetCallTypeStatsApiAtlasCallsCallTypeStatsGetData = {
          * N Runs
          */
         n_runs?: number;
+        /**
+         * Since
+         */
+        since?: string | null;
+        /**
+         * Bucket
+         */
+        bucket?: string | null;
     };
     url: '/api/atlas/calls/{call_type}/stats';
 };

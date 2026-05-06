@@ -36,6 +36,39 @@ from rumil.prompts import PROMPTS_DIR
 
 _HEADER_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 
+# Optional inline annotation on the first line of a section's body.
+# Authors mark a section as applying only to specific call families with:
+#
+#     <!-- atlas: applies_to=scout_*, find_considerations -->
+#
+# or as a free-form note:
+#
+#     <!-- atlas: scope: only when ingesting -->
+#
+# Atlas surfaces these so readers can tell which sections are load-
+# bearing for which call types without having to grep callers.
+_APPLIES_TO_RE = re.compile(r"<!--\s*atlas:\s*applies_to\s*=\s*([^\-]+?)\s*-->", re.IGNORECASE)
+_SCOPE_NOTE_RE = re.compile(r"<!--\s*atlas:\s*scope:\s*([^\-]+?)\s*-->", re.IGNORECASE)
+
+
+def _parse_applies_to(body: str) -> tuple[list[str], str | None, str]:
+    """Pull atlas annotations from the start of a section body.
+
+    Returns (applies_to_globs, note, body_without_annotation).
+    """
+    applies_to: list[str] = []
+    note: str | None = None
+    cleaned = body
+    m = _APPLIES_TO_RE.search(body[:512])
+    if m:
+        applies_to = [t.strip() for t in m.group(1).split(",") if t.strip()]
+        cleaned = (cleaned[: m.start()] + cleaned[m.end() :]).lstrip()
+    n = _SCOPE_NOTE_RE.search(cleaned[:512])
+    if n:
+        note = n.group(1).strip()
+        cleaned = (cleaned[: n.start()] + cleaned[n.end() :]).lstrip()
+    return applies_to, note, cleaned
+
 
 def _slugify(title: str) -> str:
     """Match the slug a markdown renderer would generate for this header."""
@@ -70,6 +103,7 @@ def parse_prompt_sections(content: str) -> list[PromptSection]:
         body = content.strip()
         if not body:
             return []
+        applies_to, note, body = _parse_applies_to(body)
         return [
             PromptSection(
                 title="(intro)",
@@ -77,11 +111,14 @@ def parse_prompt_sections(content: str) -> list[PromptSection]:
                 anchor="intro",
                 body=body,
                 char_count=len(body),
+                applies_to=applies_to,
+                applies_to_note=note,
             )
         ]
 
     intro = content[: matches[0][0]].strip()
     if intro:
+        applies_to, note, intro = _parse_applies_to(intro)
         sections.append(
             PromptSection(
                 title="(intro)",
@@ -89,12 +126,15 @@ def parse_prompt_sections(content: str) -> list[PromptSection]:
                 anchor="intro",
                 body=intro,
                 char_count=len(intro),
+                applies_to=applies_to,
+                applies_to_note=note,
             )
         )
 
     for i, (_start, title, body_start) in enumerate(matches):
         end = matches[i + 1][0] if i + 1 < len(matches) else len(content)
         body = content[body_start:end].strip()
+        applies_to, note, body = _parse_applies_to(body)
         sections.append(
             PromptSection(
                 title=title.strip(),
@@ -102,6 +142,8 @@ def parse_prompt_sections(content: str) -> list[PromptSection]:
                 anchor=_slugify(title),
                 body=body,
                 char_count=len(body),
+                applies_to=applies_to,
+                applies_to_note=note,
             )
         )
 
@@ -217,6 +259,36 @@ _OVERRIDES: dict[str, list[_PartSpec]] = {
         _PartSpec(file="score_subquestions.md", role="per_call"),
         _PartSpec(file="grounding.md", role="grounding"),
     ],
+    # Versus judge: assembled by versus_prompts.assemble_versus_judge_prompt
+    # rather than build_system_prompt — shell template + per-dimension body
+    # + per-variant grounding. Atlas surfaces all candidates so the iterator
+    # can see the full surface; the actual rendered prompt picks one
+    # dimension body and one grounding file per call.
+    CallType.VERSUS_JUDGE.value: [
+        _PartSpec(file="versus-judge-shell.md", role="preamble"),
+        _PartSpec(
+            file="versus-general-quality.md",
+            role="per_call",
+            optional=True,
+            condition="dimension=general_quality",
+        ),
+        _PartSpec(
+            file="versus-would-recommend.md",
+            role="per_call",
+            optional=True,
+            condition="dimension=would_recommend",
+        ),
+        _PartSpec(
+            file="versus-grounding.md",
+            role="grounding",
+            optional=True,
+            condition="orch / ws variants",
+        ),
+    ],
+    # Versus completion: domain-neutral writer; the workflow assembles its
+    # own per-stage prompts (DraftAndEditWorkflow, etc.) without
+    # build_system_prompt. Atlas notes there's no rumil composition.
+    CallType.VERSUS_COMPLETE.value: [],
     "score_claim_items": [
         _PartSpec(file="preamble.md", role="preamble"),
         _PartSpec(file="score_claim_items.md", role="per_call"),
@@ -238,6 +310,13 @@ _OVERRIDES: dict[str, list[_PartSpec]] = {
 
 
 def _resolve_specs(call_type_value: str) -> list[_PartSpec]:
+    """Return the list of part-specs for ``call_type_value``.
+
+    Overrides are checked even when the override list is empty — that lets
+    a CallType opt out of the default composition entirely (e.g. versus
+    completion calls, where the workflow assembles its own per-stage
+    prompts and there's no rumil composition to surface).
+    """
     if call_type_value in _OVERRIDES:
         return list(_OVERRIDES[call_type_value])
     return list(_DEFAULT_PARTS)

@@ -30,10 +30,14 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, HTTPException
 
 from rumil.api.auth import AuthUser, get_current_user, require_admin
-from rumil.atlas.aggregate import build_run_flow, build_workflow_aggregate
+from rumil.atlas.aggregate import build_run_flow, build_workflow_aggregate, list_workflow_runs
+from rumil.atlas.diff import build_run_diff
 from rumil.atlas.gaps import build_gaps_report
 from rumil.atlas.graph import build_workflow_graph
+from rumil.atlas.history import build_prompt_history
+from rumil.atlas.live import build_live_snapshot
 from rumil.atlas.overlay import build_workflow_overlay
+from rumil.atlas.pages import build_page_calls, build_page_timeline
 from rumil.atlas.prompt_parts import build_prompt_composition
 from rumil.atlas.registry import (
     build_call_type_summaries,
@@ -49,13 +53,19 @@ from rumil.atlas.schemas import (
     CallTypeSummary,
     DispatchSummary,
     GapsReport,
+    LiveRunSnapshot,
     MoveStats,
     MoveSummary,
+    PageInstanceCalls,
+    PageTimeline,
     PageTypeSummary,
     PromptComposition,
     PromptDoc,
+    PromptHistory,
     RegistryRollup,
+    RunDiff,
     RunFlow,
+    RunRollup,
     SearchResults,
     WorkflowAggregate,
     WorkflowGraph,
@@ -201,6 +211,18 @@ def get_prompt(
     return doc
 
 
+@router.get("/registry/prompts/{name}/history", response_model=PromptHistory)
+def get_prompt_history(
+    name: str,
+    max_entries: int = 50,
+    _user: AuthUser = Depends(get_current_user),
+) -> PromptHistory:
+    hist = build_prompt_history(name, max_entries=max_entries)
+    if hist is None:
+        raise HTTPException(status_code=404, detail=f"prompt not found: {name}")
+    return hist
+
+
 @router.get("/workflows", response_model=list[WorkflowSummary])
 def list_workflows(
     _user: AuthUser = Depends(get_current_user),
@@ -238,6 +260,27 @@ async def get_workflow_aggregate(
     return await build_workflow_aggregate(db, name, project_id=project_id, limit=limit)
 
 
+@router.get("/workflows/{name}/runs", response_model=list[RunRollup])
+async def list_workflow_runs_endpoint(
+    name: str,
+    project_id: str | None = None,
+    order_by: str = "recent",
+    limit: int = 50,
+    include_noop: bool = True,
+    db: DB = Depends(_get_db),
+) -> list[RunRollup]:
+    if get_workflow_profile(name) is None:
+        raise HTTPException(status_code=404, detail=f"workflow not found: {name}")
+    return await list_workflow_runs(
+        db,
+        name,
+        project_id=project_id,
+        limit=limit,
+        order_by=order_by,
+        include_noop=include_noop,
+    )
+
+
 @router.get("/runs/{run_id}/flow", response_model=RunFlow)
 async def get_run_flow_endpoint(
     run_id: str,
@@ -246,20 +289,80 @@ async def get_run_flow_endpoint(
     return await build_run_flow(db, run_id)
 
 
+@router.get("/pages/{page_id}/calls", response_model=PageInstanceCalls)
+async def get_page_instance_calls(
+    page_id: str,
+    db: DB = Depends(_get_db),
+) -> PageInstanceCalls:
+    out = await build_page_calls(db, page_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"page not found: {page_id}")
+    return out
+
+
+@router.get("/pages/{page_id}/timeline", response_model=PageTimeline)
+async def get_page_timeline(
+    page_id: str,
+    db: DB = Depends(_get_db),
+) -> PageTimeline:
+    out = await build_page_timeline(db, page_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"page not found: {page_id}")
+    return out
+
+
+@router.get("/runs/diff", response_model=RunDiff)
+async def get_run_diff(
+    a: str,
+    b: str,
+    db: DB = Depends(_get_db),
+) -> RunDiff:
+    if not a or not b:
+        raise HTTPException(status_code=400, detail="a and b run_ids are required")
+    return await build_run_diff(db, a, b)
+
+
+@router.get("/runs/{run_id}/live", response_model=LiveRunSnapshot)
+async def get_live_snapshot(
+    run_id: str,
+    db: DB = Depends(_get_db),
+) -> LiveRunSnapshot:
+    return await build_live_snapshot(db, run_id)
+
+
 @router.get("/calls/{call_type}/stats", response_model=CallTypeStats)
 async def get_call_type_stats(
     call_type: str,
     project_id: str | None = None,
     n_runs: int = 50,
+    since: str | None = None,
+    bucket: str | None = None,
     db: DB = Depends(_get_db),
 ) -> CallTypeStats:
     from rumil.models import CallType
 
+    if call_type in {"recurse", "recurse_claim"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{call_type!r} is a dispatch, not a CallType. "
+                f"See /api/atlas/registry/dispatches/{call_type} for the dispatch "
+                f"tool, or look at /api/atlas/workflows/{{name}}/aggregate "
+                f"dispatch_frequencies for empirical recurse counts."
+            ),
+        )
     try:
         ct = CallType(call_type)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=f"call type not found: {call_type}") from exc
-    return await build_call_type_stats(db, ct, project_id=project_id, n_runs=n_runs)
+    return await build_call_type_stats(
+        db,
+        ct,
+        project_id=project_id,
+        n_runs=n_runs,
+        since=since,
+        bucket=bucket,
+    )
 
 
 @router.get("/moves/{move_type}/stats", response_model=MoveStats)

@@ -347,11 +347,14 @@ def get_prompt_doc(name: str) -> PromptDoc | None:
     if not path.exists():
         return None
     content = path.read_text(encoding="utf-8")
+    from rumil.atlas.history import content_hash_for_file
+
     return PromptDoc(
         name=name,
         path=str(path.relative_to(Path(__file__).resolve().parents[3])),
         content=content,
         char_count=len(content),
+        content_hash=content_hash_for_file(path),
         referenced_by=_prompt_referenced_by(name),
         sections=get_prompt_sections(name),
         used_in_compositions=references_for_prompt_file(name),

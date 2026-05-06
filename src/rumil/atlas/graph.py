@@ -19,9 +19,6 @@ from rumil.atlas.workflows import all_profiles
 
 def build_workflow_graph() -> WorkflowGraph:
     profiles = all_profiles()
-    nodes: list[WorkflowGraphNode] = [
-        WorkflowGraphNode(id=p.name, label=p.name, kind=p.kind) for p in profiles
-    ]
     seen: set[tuple[str, str, str | None]] = set()
     edges: list[WorkflowGraphEdge] = []
     for p in profiles:
@@ -38,4 +35,19 @@ def build_workflow_graph() -> WorkflowGraph:
                     continue
                 seen.add(key)
                 edges.append(WorkflowGraphEdge(from_id=p.name, to_id=target, via_stage=stage.id))
+
+    has_edge: set[str] = set()
+    for e in edges:
+        has_edge.add(e.from_id)
+        has_edge.add(e.to_id)
+
+    nodes: list[WorkflowGraphNode] = [
+        WorkflowGraphNode(
+            id=p.name,
+            label=p.name,
+            kind=p.kind,
+            standalone=p.name not in has_edge,
+        )
+        for p in profiles
+    ]
     return WorkflowGraph(nodes=nodes, edges=edges)

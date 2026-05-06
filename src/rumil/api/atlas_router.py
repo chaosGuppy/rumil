@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from rumil.api.auth import AuthUser, get_current_user, require_admin
 from rumil.atlas.aggregate import build_run_flow, build_workflow_aggregate, list_workflow_runs
 from rumil.atlas.diff import build_run_diff
+from rumil.atlas.events import build_call_event_dump
 from rumil.atlas.gaps import build_gaps_report
 from rumil.atlas.graph import build_workflow_graph
 from rumil.atlas.history import build_prompt_history
@@ -49,6 +50,7 @@ from rumil.atlas.registry import (
     list_prompt_files,
 )
 from rumil.atlas.schemas import (
+    CallEventDump,
     CallTypeStats,
     CallTypeSummary,
     DispatchSummary,
@@ -320,6 +322,17 @@ async def get_run_diff(
     if not a or not b:
         raise HTTPException(status_code=400, detail="a and b run_ids are required")
     return await build_run_diff(db, a, b)
+
+
+@router.get("/calls/{call_id}/events", response_model=CallEventDump)
+async def get_call_events(
+    call_id: str,
+    db: DB = Depends(_get_db),
+) -> CallEventDump:
+    out = await build_call_event_dump(db, call_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail=f"call not found: {call_id}")
+    return out
 
 
 @router.get("/runs/{run_id}/live", response_model=LiveRunSnapshot)

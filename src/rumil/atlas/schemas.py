@@ -449,6 +449,25 @@ class StatsBucket(BaseModel):
     mean_rounds: float = 0.0
 
 
+class PathologyCounts(BaseModel):
+    """Frequency of failure / instability patterns across a call type's
+    recent invocations. Each `*_pct` is a 0-100 fraction of the call
+    type's invocations exhibiting the pattern; `n_error_events` is a
+    count of trace ErrorEvents across all invocations.
+
+    A "lying COMPLETE" call is one with status=complete that nonetheless
+    emitted an ErrorEvent in its trace — the canonical silent-failure
+    pattern flagged by the open-issues mining pass.
+    """
+
+    n_error_events: int = 0
+    error_pct: float = 0.0
+    lying_complete_pct: float = 0.0
+    rounds_capped_pct: float = 0.0
+    parse_fail_pct: float = 0.0
+    truncated_pct: float = 0.0
+
+
 class CallTypeStats(BaseModel):
     """Empirical stats for one CallType across recent runs."""
 
@@ -473,6 +492,7 @@ class CallTypeStats(BaseModel):
     series: list[StatsBucket] = []
     bucket: str | None = None
     since: str | None = None
+    pathology: PathologyCounts = PathologyCounts()
 
 
 class MoveStats(BaseModel):
@@ -536,6 +556,33 @@ class RunFlowNode(BaseModel):
     duration_seconds: float | None = None
     stage_id: str | None = None
     summary: str = ""
+    closing_review_outcome: str | None = None
+    has_error_event: bool = False
+    n_llm_exchanges: int = 0
+
+
+class TraceEventRecord(BaseModel):
+    """One trace event lifted from a call's ``trace_json``.
+
+    The ``payload`` dict holds the event's full body except the
+    discriminator ``event`` field (which lives on ``kind``); shape is
+    arbitrary so the FE can render typed events richly.
+    """
+
+    index: int
+    kind: str
+    payload: dict
+
+
+class CallEventDump(BaseModel):
+    call_id: str
+    call_type: str
+    status: str
+    n_events: int
+    events: list[TraceEventRecord]
+    n_error_events: int
+    n_llm_exchanges: int
+    closing_review_outcome: str | None = None
 
 
 RunFlow.model_rebuild()

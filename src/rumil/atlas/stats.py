@@ -29,6 +29,7 @@ from rumil.atlas.schemas import (
     HistogramBin,
     MoveCount,
     MoveStats,
+    PathologyCounts,
     StatsBucket,
 )
 from rumil.database import DB
@@ -293,6 +294,12 @@ async def build_call_type_stats(
     move_counts: Counter[str] = Counter()
     co_firing: Counter[tuple[str, str]] = Counter()
     error_excerpts: list[str] = []
+    n_with_error = 0
+    n_lying_complete = 0
+    n_with_truncation = 0
+    n_with_parse_fail = 0
+    n_rounds_capped = 0
+    n_error_events_total = 0
     for r in rows:
         events = _events(r)
         invs = _move_invocations(events)
@@ -304,6 +311,64 @@ async def build_call_type_stats(
         err = _error_excerpt(events)
         if err:
             error_excerpts.append(err)
+        # Pathology dims.
+        had_error = False
+        had_truncation = False
+        had_parse_fail = False
+        had_rounds_capped = False
+        for e in events:
+            et = e.get("event")
+            if et == "error":
+                had_error = True
+                n_error_events_total += 1
+                msg = str(e.get("message") or "").lower()
+                if (
+                    "max_tokens" in msg
+                    or "truncat" in msg
+                    or ("context" in msg and "exceed" in msg)
+                ):
+                    had_truncation = True
+                if "json" in msg or "parse" in msg or "validation" in msg:
+                    had_parse_fail = True
+            elif et == "warning":
+                msg = str(e.get("message") or "").lower()
+                if "truncat" in msg or "max_tokens" in msg:
+                    had_truncation = True
+            elif et == "review_complete":
+                # surface "rounds at cap" via the trace's remaining_fruit
+                # signal? not directly available; skip for now.
+                pass
+            elif et == "llm_exchange" and e.get("error"):
+                had_error = True
+                msg = str(e.get("error") or "").lower()
+                if "json" in msg or "parse" in msg:
+                    had_parse_fail = True
+                if "max_tokens" in msg or "truncat" in msg:
+                    had_truncation = True
+        if had_error:
+            n_with_error += 1
+            if str(r.get("status") or "").lower() == "complete":
+                n_lying_complete += 1
+        if had_truncation:
+            n_with_truncation += 1
+        if had_parse_fail:
+            n_with_parse_fail += 1
+        # rounds == max_rounds heuristic: rounds count from this trace
+        # equals or exceeds 5 (the typical default cap) — best-effort.
+        if _rounds_for_call(events) >= 5:
+            had_rounds_capped = True
+        if had_rounds_capped:
+            n_rounds_capped += 1
+
+    n = max(n_invocations, 1)
+    pathology = PathologyCounts(
+        n_error_events=n_error_events_total,
+        error_pct=round(100.0 * n_with_error / n, 2),
+        lying_complete_pct=round(100.0 * n_lying_complete / n, 2),
+        rounds_capped_pct=round(100.0 * n_rounds_capped / n, 2),
+        parse_fail_pct=round(100.0 * n_with_parse_fail / n, 2),
+        truncated_pct=round(100.0 * n_with_truncation / n, 2),
+    )
 
     series = _build_series(rows, bucket) if bucket else []
     return CallTypeStats(
@@ -330,6 +395,7 @@ async def build_call_type_stats(
             CoFiringCount(a=a, b=b, count=v) for (a, b), v in co_firing.most_common(20)
         ],
         recent_errors=error_excerpts[:5],
+        pathology=pathology,
     )
 
 

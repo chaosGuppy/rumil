@@ -510,6 +510,44 @@ export type Call = {
 };
 
 /**
+ * CallEventDump
+ */
+export type CallEventDump = {
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Call Type
+     */
+    call_type: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * N Events
+     */
+    n_events: number;
+    /**
+     * Events
+     */
+    events: Array<TraceEventRecord>;
+    /**
+     * N Error Events
+     */
+    n_error_events: number;
+    /**
+     * N Llm Exchanges
+     */
+    n_llm_exchanges: number;
+    /**
+     * Closing Review Outcome
+     */
+    closing_review_outcome?: string | null;
+};
+
+/**
  * CallNodeOut
  */
 export type CallNodeOut = {
@@ -717,6 +755,7 @@ export type CallTypeStats = {
      * Since
      */
     since?: string | null;
+    pathology?: PathologyCounts;
 };
 
 /**
@@ -3807,6 +3846,45 @@ export type PaginatedPagesOut = {
 };
 
 /**
+ * PathologyCounts
+ *
+ * Frequency of failure / instability patterns across a call type's
+ * recent invocations. Each `*_pct` is a 0-100 fraction of the call
+ * type's invocations exhibiting the pattern; `n_error_events` is a
+ * count of trace ErrorEvents across all invocations.
+ *
+ * A "lying COMPLETE" call is one with status=complete that nonetheless
+ * emitted an ErrorEvent in its trace — the canonical silent-failure
+ * pattern flagged by the open-issues mining pass.
+ */
+export type PathologyCounts = {
+    /**
+     * N Error Events
+     */
+    n_error_events?: number;
+    /**
+     * Error Pct
+     */
+    error_pct?: number;
+    /**
+     * Lying Complete Pct
+     */
+    lying_complete_pct?: number;
+    /**
+     * Rounds Capped Pct
+     */
+    rounds_capped_pct?: number;
+    /**
+     * Parse Fail Pct
+     */
+    parse_fail_pct?: number;
+    /**
+     * Truncated Pct
+     */
+    truncated_pct?: number;
+};
+
+/**
  * PhaseSkippedEventOut
  */
 export type PhaseSkippedEventOut = {
@@ -5152,6 +5230,18 @@ export type RunFlowNode = {
      * Summary
      */
     summary?: string;
+    /**
+     * Closing Review Outcome
+     */
+    closing_review_outcome?: string | null;
+    /**
+     * Has Error Event
+     */
+    has_error_event?: boolean;
+    /**
+     * N Llm Exchanges
+     */
+    n_llm_exchanges?: number;
 };
 
 /**
@@ -6026,6 +6116,32 @@ export type ToolCallEventOut = {
      * Response
      */
     response: string;
+};
+
+/**
+ * TraceEventRecord
+ *
+ * One trace event lifted from a call's ``trace_json``.
+ *
+ * The ``payload`` dict holds the event's full body except the
+ * discriminator ``event`` field (which lives on ``kind``); shape is
+ * arbitrary so the FE can render typed events richly.
+ */
+export type TraceEventRecord = {
+    /**
+     * Index
+     */
+    index: number;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Payload
+     */
+    payload: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -7947,6 +8063,47 @@ export type GetRunDiffApiAtlasRunsDiffGetResponses = {
 };
 
 export type GetRunDiffApiAtlasRunsDiffGetResponse = GetRunDiffApiAtlasRunsDiffGetResponses[keyof GetRunDiffApiAtlasRunsDiffGetResponses];
+
+export type GetCallEventsApiAtlasCallsCallIdEventsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Call Id
+         */
+        call_id: string;
+    };
+    query?: {
+        /**
+         * Project Id
+         */
+        project_id?: string;
+    };
+    url: '/api/atlas/calls/{call_id}/events';
+};
+
+export type GetCallEventsApiAtlasCallsCallIdEventsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetCallEventsApiAtlasCallsCallIdEventsGetError = GetCallEventsApiAtlasCallsCallIdEventsGetErrors[keyof GetCallEventsApiAtlasCallsCallIdEventsGetErrors];
+
+export type GetCallEventsApiAtlasCallsCallIdEventsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CallEventDump;
+};
+
+export type GetCallEventsApiAtlasCallsCallIdEventsGetResponse = GetCallEventsApiAtlasCallsCallIdEventsGetResponses[keyof GetCallEventsApiAtlasCallsCallIdEventsGetResponses];
 
 export type GetLiveSnapshotApiAtlasRunsRunIdLiveGetData = {
     body?: never;

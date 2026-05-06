@@ -604,6 +604,7 @@ async def build_run_flow(db: DB, run_id: str) -> RunFlow:
     call_rows = await _calls_for_run(db, run_id)
     nodes: list[RunFlowNode] = []
     from rumil.atlas.descriptions import CALL_TYPE_DESCRIPTIONS
+    from rumil.atlas.events import closing_review_outcome
 
     for c in call_rows:
         events = _events_of(c)
@@ -615,6 +616,8 @@ async def build_run_flow(db: DB, run_id: str) -> RunFlow:
             ct_desc = CALL_TYPE_DESCRIPTIONS.get(ct_enum, "")
         except ValueError:
             ct_desc = ""
+        has_error = any(e.get("event") == "error" for e in events)
+        n_llm = sum(1 for e in events if e.get("event") == "llm_exchange")
         nodes.append(
             RunFlowNode(
                 call_id=str(c.get("id") or ""),
@@ -629,6 +632,9 @@ async def build_run_flow(db: DB, run_id: str) -> RunFlow:
                 duration_seconds=_duration_seconds(c),
                 stage_id=stage_id,
                 summary="",
+                closing_review_outcome=closing_review_outcome(c),
+                has_error_event=has_error,
+                n_llm_exchanges=n_llm,
             )
         )
     return RunFlow(run_id=run_id, workflow_name=workflow_name, nodes=nodes)

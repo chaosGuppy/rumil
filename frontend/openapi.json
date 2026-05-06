@@ -2389,6 +2389,74 @@
         }
       }
     },
+    "/api/atlas/calls/{call_id}/events": {
+      "get": {
+        "tags": [
+          "atlas"
+        ],
+        "summary": "Get Call Events",
+        "operationId": "get_call_events_api_atlas_calls__call_id__events_get",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Call Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallEventDump"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/atlas/runs/{run_id}/live": {
       "get": {
         "tags": [
@@ -5960,6 +6028,63 @@
         ],
         "title": "Call"
       },
+      "CallEventDump": {
+        "properties": {
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "call_type": {
+            "type": "string",
+            "title": "Call Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "n_events": {
+            "type": "integer",
+            "title": "N Events"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TraceEventRecord"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "n_error_events": {
+            "type": "integer",
+            "title": "N Error Events"
+          },
+          "n_llm_exchanges": {
+            "type": "integer",
+            "title": "N Llm Exchanges"
+          },
+          "closing_review_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Review Outcome"
+          }
+        },
+        "type": "object",
+        "required": [
+          "call_id",
+          "call_type",
+          "status",
+          "n_events",
+          "events",
+          "n_error_events",
+          "n_llm_exchanges"
+        ],
+        "title": "CallEventDump"
+      },
       "CallNodeOut": {
         "properties": {
           "call": {
@@ -6352,6 +6477,17 @@
               }
             ],
             "title": "Since"
+          },
+          "pathology": {
+            "$ref": "#/components/schemas/PathologyCounts",
+            "default": {
+              "n_error_events": 0,
+              "error_pct": 0.0,
+              "lying_complete_pct": 0.0,
+              "rounds_capped_pct": 0.0,
+              "parse_fail_pct": 0.0,
+              "truncated_pct": 0.0
+            }
           }
         },
         "type": "object",
@@ -11492,6 +11628,43 @@
         ],
         "title": "PaginatedPagesOut"
       },
+      "PathologyCounts": {
+        "properties": {
+          "n_error_events": {
+            "type": "integer",
+            "title": "N Error Events",
+            "default": 0
+          },
+          "error_pct": {
+            "type": "number",
+            "title": "Error Pct",
+            "default": 0.0
+          },
+          "lying_complete_pct": {
+            "type": "number",
+            "title": "Lying Complete Pct",
+            "default": 0.0
+          },
+          "rounds_capped_pct": {
+            "type": "number",
+            "title": "Rounds Capped Pct",
+            "default": 0.0
+          },
+          "parse_fail_pct": {
+            "type": "number",
+            "title": "Parse Fail Pct",
+            "default": 0.0
+          },
+          "truncated_pct": {
+            "type": "number",
+            "title": "Truncated Pct",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "PathologyCounts",
+        "description": "Frequency of failure / instability patterns across a call type's\nrecent invocations. Each `*_pct` is a 0-100 fraction of the call\ntype's invocations exhibiting the pattern; `n_error_events` is a\ncount of trace ErrorEvents across all invocations.\n\nA \"lying COMPLETE\" call is one with status=complete that nonetheless\nemitted an ErrorEvent in its trace \u2014 the canonical silent-failure\npattern flagged by the open-issues mining pass."
+      },
       "PhaseSkippedEventOut": {
         "properties": {
           "ts": {
@@ -13536,6 +13709,27 @@
             "type": "string",
             "title": "Summary",
             "default": ""
+          },
+          "closing_review_outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Review Outcome"
+          },
+          "has_error_event": {
+            "type": "boolean",
+            "title": "Has Error Event",
+            "default": false
+          },
+          "n_llm_exchanges": {
+            "type": "integer",
+            "title": "N Llm Exchanges",
+            "default": 0
           }
         },
         "type": "object",
@@ -14840,6 +15034,31 @@
           "response"
         ],
         "title": "ToolCallEventOut"
+      },
+      "TraceEventRecord": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "kind",
+          "payload"
+        ],
+        "title": "TraceEventRecord",
+        "description": "One trace event lifted from a call's ``trace_json``.\n\nThe ``payload`` dict holds the event's full body except the\ndiscriminator ``event`` field (which lives on ``kind``); shape is\narbitrary so the FE can render typed events richly."
       },
       "UpdatePlanCreatedEventOut": {
         "properties": {

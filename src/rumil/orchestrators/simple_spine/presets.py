@@ -25,7 +25,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from rumil.orchestrators.simple_spine.config import SimpleSpineConfig
+from rumil.orchestrators.simple_spine.config import (
+    _DEFAULT_MAIN_SYSTEM_PROMPT,
+    SimpleSpineConfig,
+)
 from rumil.orchestrators.simple_spine.subroutines import (
     FreeformAgentSubroutine,
     SampleNSubroutine,
@@ -182,12 +185,41 @@ def _build_essay_continuation() -> SimpleSpineConfig:
     )
 
 
+_JUDGE_PAIR_MAIN_SYSTEM_PROMPT = (
+    _DEFAULT_MAIN_SYSTEM_PROMPT + "\n\n"
+    "## Wire-format constraint for pairwise judging\n\n"
+    "The harness extracts the pair's preference from your `finalize` "
+    "answer by exact-string match against these seven labels:\n"
+    "  - A strongly preferred\n"
+    "  - A somewhat preferred\n"
+    "  - A slightly preferred\n"
+    "  - Approximately indifferent between A and B\n"
+    "  - B slightly preferred\n"
+    "  - B somewhat preferred\n"
+    "  - B strongly preferred\n\n"
+    "Your `finalize.answer` MUST end with one of these seven labels, "
+    "verbatim, on its own line, with nothing after it. The verdict "
+    "subroutine will produce a label that satisfies this constraint; "
+    "preserve it unchanged in the final answer. Do NOT substitute a "
+    "different phrasing (`A clearly better`, `Preference: -2`, "
+    "`A is the winner`, etc.) — those will not parse and the judgment "
+    "will be discarded. If you genuinely disagree with the verdict's "
+    "strength, your only acceptable move is to spawn the verdict "
+    "subroutine again with a tightening intent and use its new label."
+)
+
+
 def _build_judge_pair() -> SimpleSpineConfig:
     """Default pair-judging preset.
 
     Library: reader (FreeformAgent), steelman (SampleN n=2 — one each
     side), verdict (FreeformAgent). The mainline agent stages the
     pipeline and calls finalize once verdict has emitted a label.
+
+    The mainline system prompt extends the default with an explicit
+    wire-format constraint listing the seven canonical labels — without
+    this, mainline opus rewrites the verdict's correct label into
+    non-canonical phrasing on borderline pairs, breaking parse.
     """
     reader = FreeformAgentSubroutine(
         name="read",
@@ -215,6 +247,28 @@ def _build_judge_pair() -> SimpleSpineConfig:
         temperature=1.0,
         max_tokens=2048,
     )
+    from rumil.versus_prompts import extract_preference
+
+    def _has_canonical_label(text: str) -> bool:
+        return extract_preference(text) is not None
+
+    verdict_retry_message = (
+        "Your prior response did not end with one of the seven canonical "
+        "preference labels. The downstream harness extracts the verdict by "
+        "exact-string match against:\n"
+        "  - A strongly preferred\n"
+        "  - A somewhat preferred\n"
+        "  - A slightly preferred\n"
+        "  - Approximately indifferent between A and B\n"
+        "  - B slightly preferred\n"
+        "  - B somewhat preferred\n"
+        "  - B strongly preferred\n\n"
+        "Do not use numeric scales (`Preference: -2`), do not invent new "
+        "phrasing (`A clearly better`, `A is the winner`), do not wrap the "
+        "label in quotes or punctuation. Re-emit your verdict reasoning "
+        "and end with the single closest label from the list above on its "
+        "own line, with nothing after it."
+    )
     verdict = FreeformAgentSubroutine(
         name="verdict",
         description=(
@@ -227,10 +281,18 @@ def _build_judge_pair() -> SimpleSpineConfig:
         model="claude-opus-4-7",
         max_rounds=1,
         max_tokens=4096,
+        # Retry if the verdict response doesn't end with a canonical label.
+        # Defends against the angels b=4 failure mode where opus emitted
+        # `Preference: -2` despite the 7-pt block being in its sys prompt.
+        response_validator=_has_canonical_label,
+        response_validator_name="extract_preference_not_none",
+        retry_message=verdict_retry_message,
+        response_max_retries=2,
     )
     library: tuple[SubroutineDef, ...] = (reader, steelman, verdict)  # type: ignore[assignment]
     return SimpleSpineConfig(
         main_model="claude-opus-4-7",
+        main_system_prompt=_JUDGE_PAIR_MAIN_SYSTEM_PROMPT,
         process_library=library,
         max_parallel_spawns_per_turn=3,
     )

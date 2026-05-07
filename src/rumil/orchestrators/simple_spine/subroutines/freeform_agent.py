@@ -12,7 +12,8 @@ schema and a hidden config-prep call elaborates the full agent config.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
+import logging
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,8 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SpawnCtx,
     SubroutineResult,
 )
+
+log = logging.getLogger(__name__)
 
 
 def _sha8(text: str) -> str:
@@ -79,6 +82,21 @@ class FreeformAgentSubroutine:
         default_factory=lambda: frozenset({"intent", "additional_context"})
     )
     config_prep: ConfigPrepDef | None = None
+    # Optional post-hoc validation on the final response text. When the
+    # validator returns False, the subroutine appends ``retry_message``
+    # to the conversation and re-runs the inner agent loop, up to
+    # ``response_max_retries`` extra attempts. Used for wire-format
+    # constraints like the 7-point preference label on the verdict
+    # subroutine — without retry, a single off-script response from the
+    # model becomes a NULL judgment row.
+    response_validator: Callable[[str], bool] | None = None
+    retry_message: str = ""
+    response_max_retries: int = 1
+    # Stable name folded into the fingerprint in lieu of the validator
+    # callable itself (callables don't hash). Required when
+    # ``response_validator`` is set so that two subroutines using
+    # different validators don't fingerprint identically.
+    response_validator_name: str | None = None
 
     def __post_init__(self) -> None:
         if self.max_rounds < 1:
@@ -88,6 +106,18 @@ class FreeformAgentSubroutine:
                 self,
                 "sys_prompt",
                 _load_prompt(self.sys_prompt_path, self.sys_prompt),
+            )
+        if self.response_validator is not None and self.response_validator_name is None:
+            raise ValueError(
+                f"freeform_agent {self.name!r}: response_validator is set but "
+                "response_validator_name is None — name is required so the "
+                "fingerprint distinguishes which validator was applied"
+            )
+        if self.response_validator is not None and not self.retry_message.strip():
+            raise ValueError(
+                f"freeform_agent {self.name!r}: response_validator is set but "
+                "retry_message is empty — the retry needs a tightening message "
+                "or the model gets the same prompt and likely the same output"
             )
 
     def fingerprint(self) -> Mapping[str, Any]:
@@ -104,6 +134,10 @@ class FreeformAgentSubroutine:
         }
         if self.config_prep is not None:
             out["config_prep"] = self.config_prep.fingerprint()
+        if self.response_validator is not None:
+            out["response_validator_name"] = self.response_validator_name
+            out["retry_message_hash"] = _sha8(self.retry_message)
+            out["response_max_retries"] = self.response_max_retries
         return out
 
     def spawn_tool_schema(self) -> dict[str, Any]:
@@ -200,9 +234,45 @@ class FreeformAgentSubroutine:
             max_rounds=max_rounds,
             cache=True,
         )
+
+        retries_used = 0
+        if self.response_validator is not None:
+            for attempt in range(1, self.response_max_retries + 1):
+                if self.response_validator(result.final_text):
+                    break
+                if ctx.budget_clock.tokens_exhausted:
+                    log.warning(
+                        "freeform_agent %s: validator failed but token budget "
+                        "exhausted; returning last response unvalidated",
+                        self.name,
+                    )
+                    break
+                log.info(
+                    "freeform_agent %s: response_validator failed, retry %d/%d",
+                    self.name,
+                    attempt,
+                    self.response_max_retries,
+                )
+                messages.append({"role": "user", "content": self.retry_message})
+                result = await thin_agent_loop(
+                    system_prompt=sys_prompt,
+                    messages=messages,
+                    tools=tools,
+                    model=self.model,
+                    model_config=cfg,
+                    db=ctx.db,
+                    call_id=ctx.parent_call_id,
+                    phase=f"spawn:{self.name}:retry{attempt}",
+                    budget_clock=ctx.budget_clock,
+                    max_rounds=max_rounds,
+                    cache=True,
+                )
+                retries_used = attempt
+
         text_summary = (
             f"# {self.name}\n"
-            f"_(rounds={result.rounds}, stopped_because={result.stopped_because})_\n\n"
+            f"_(rounds={result.rounds}, stopped_because={result.stopped_because}"
+            f"{f', validator_retries={retries_used}' if retries_used else ''})_\n\n"
             f"{result.final_text}"
         )
         return SubroutineResult(
@@ -211,5 +281,6 @@ class FreeformAgentSubroutine:
                 "rounds": result.rounds,
                 "stopped_because": result.stopped_because,
                 "tool_call_count": len(result.tool_calls),
+                "validator_retries": retries_used,
             },
         )

@@ -16,8 +16,6 @@ shim over ``run_versus``, plus re-exports of names that out-of-tree
 callers still import from this module.
 """
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass

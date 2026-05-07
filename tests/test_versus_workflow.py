@@ -6,8 +6,6 @@ exercised via the LLM-backed integration tests / the manual versus
 script paths; here we only check that the wrapper's plumbing is right.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 
 import pytest

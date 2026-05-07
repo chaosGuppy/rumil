@@ -18,8 +18,6 @@ dollars per pair. Tests focus on:
   ``db.update_page_content`` (mutation-event-aware path).
 """
 
-from __future__ import annotations
-
 import sys
 from collections.abc import Mapping
 from pathlib import Path

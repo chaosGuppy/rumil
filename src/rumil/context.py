@@ -2,8 +2,6 @@
 Build context text from workspace pages for injection into LLM prompts.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import re

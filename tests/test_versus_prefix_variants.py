@@ -5,8 +5,6 @@ configs alongside the canonical `prefix:` block. Run scripts and the
 API select among them via `--prefix-label` / `?prefix_label=<id>`.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

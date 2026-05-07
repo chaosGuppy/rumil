@@ -12,8 +12,6 @@ email and writes via the service-role-keyed DB client.
     uv run python scripts/grant_admin.py --sync-gcp --gcp-project my-proj --prod
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import json

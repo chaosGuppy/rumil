@@ -12,8 +12,6 @@ link). Endpoints are guarded by `Depends(get_current_user)` so any holder
 of a valid Supabase JWT (FE-issued or CLI-minted) can submit and view.
 """
 
-from __future__ import annotations
-
 import logging
 import uuid
 from collections.abc import Sequence

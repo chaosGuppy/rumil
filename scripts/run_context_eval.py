@@ -31,8 +31,6 @@ Usage:
     uv run python scripts/run_context_eval.py <QUESTION_ID> --workspace my-scratch
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import logging

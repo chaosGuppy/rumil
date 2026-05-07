@@ -23,8 +23,6 @@ we use sentinel ids (guaranteed not to appear in prose) and keep the
 continuation-body text simple.
 """
 
-from __future__ import annotations
-
 import asyncio
 import sys
 from pathlib import Path

@@ -4,8 +4,6 @@ Only heuristic paths (no --deep LLM calls). The heuristic logic is pure
 DB inspection plus scoring; no LLM involvement.
 """
 
-from __future__ import annotations
-
 import pytest
 from rumil_skills import _runctx, find_confusion
 

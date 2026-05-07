@@ -128,7 +128,7 @@ def cli_chat_io() -> ChatIO:
     async def get_input() -> str | None:
         try:
             return input(human("\nYou: ")).strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             return None
 
     async def send_output(text: str) -> None:

@@ -8,8 +8,6 @@ judged, and short human baselines being incorrectly excluded.
 Operates on DB-shaped versus_texts rows: ``kind``, ``response``, ``text``.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

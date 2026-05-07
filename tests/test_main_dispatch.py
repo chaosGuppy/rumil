@@ -5,8 +5,6 @@ namespace and the resolver that lives at the top of `async_main` (extracted
 into local helpers reachable via `main` import).
 """
 
-from __future__ import annotations
-
 import argparse
 
 import pytest

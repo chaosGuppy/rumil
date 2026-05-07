@@ -17,8 +17,6 @@ End-to-end ``run()`` is not exercised here; bridge / runner integration
 tests cover that path once the bridge is wired.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock

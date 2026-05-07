@@ -7,8 +7,6 @@ in disabled mode and decorators become no-ops (one auth-error log line per
 process — noise we silence below).
 """
 
-from __future__ import annotations
-
 import contextlib
 import logging
 import os

@@ -2,7 +2,7 @@
 name = "versus"
 version = "0.0.1"
 description = "Pairwise LLM eval over forethought.org essay completions"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "httpx>=0.27",
     "pydantic>=2.6",

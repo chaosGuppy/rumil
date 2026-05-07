@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import batched
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -132,7 +133,7 @@ def _is_retryable_api_error(exc: BaseException) -> bool:
         return False
     try:
         status = int(code)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     return 500 <= status < 600
 
@@ -393,7 +394,7 @@ class DB:
         client: AsyncClient | None = None,
         staged: bool = False,
         scope_question_id: str | None = None,
-    ) -> "DB":
+    ) -> DB:
         if client is None:
             url, key = get_settings().get_supabase_credentials(prod)
             client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
@@ -407,7 +408,7 @@ class DB:
         db._prod = prod
         return db
 
-    async def fork(self, scope_question_id: str | None | _Unset = _UNSET) -> "DB":
+    async def fork(self, scope_question_id: str | None | _Unset = _UNSET) -> DB:
         """Create a new DB instance with a fresh Supabase client.
 
         Shares run_id, project_id, and staged flag with the parent but gets
@@ -434,7 +435,7 @@ class DB:
         db._prod = self._prod
         return db
 
-    def view_as_staged(self, run_id: str) -> "DB":
+    def view_as_staged(self, run_id: str) -> DB:
         """Return a sibling DB with staged visibility for ``run_id``.
 
         Reuses the same Supabase client (no new HTTP connection, no close
@@ -452,7 +453,7 @@ class DB:
         db._prod = self._prod
         return db
 
-    def with_scope(self, scope_question_id: str | None) -> "DB":
+    def with_scope(self, scope_question_id: str | None) -> DB:
         """Return a sibling DB with a different page-scope visibility.
 
         Reuses the same Supabase client (no new HTTP connection, no close
@@ -897,14 +898,13 @@ class DB:
         if not page_ids:
             return {}
         result: dict[str, Page] = {}
-        id_list = list(page_ids)
-        batch_size = 200
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(page_ids, 200, strict=False):
             rows = _rows(
                 await self._execute(
                     self._scope_filter(
-                        self._staged_filter(self.client.table("pages").select("*").in_("id", batch))
+                        self._staged_filter(
+                            self.client.table("pages").select("*").in_("id", list(batch))
+                        )
                     )
                 )
             )
@@ -1496,16 +1496,15 @@ class DB:
         result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
         if not page_ids:
             return result
-        id_list = list(dict.fromkeys(page_ids))
-        batch_size = 100
         page_size = 2000
         all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(dict.fromkeys(page_ids), 100, strict=False):
             offset = 0
             while True:
                 query = (
-                    self.client.table("page_links").select(_LINK_COLUMNS).in_("from_page_id", batch)
+                    self.client.table("page_links")
+                    .select(_LINK_COLUMNS)
+                    .in_("from_page_id", list(batch))
                 )
                 query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
@@ -1526,16 +1525,15 @@ class DB:
         result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
         if not page_ids:
             return result
-        id_list = list(dict.fromkeys(page_ids))
-        batch_size = 100
         page_size = 2000
         all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(dict.fromkeys(page_ids), 100, strict=False):
             offset = 0
             while True:
                 query = (
-                    self.client.table("page_links").select(_LINK_COLUMNS).in_("to_page_id", batch)
+                    self.client.table("page_links")
+                    .select(_LINK_COLUMNS)
+                    .in_("to_page_id", list(batch))
                 )
                 query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
@@ -1548,7 +1546,7 @@ class DB:
             result.setdefault(link.to_page_id, []).append(link)
         return result
 
-    async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
+    async def get_latest_summary_for_question(self, question_id: str) -> Page | None:
         """Return the most recent active SUMMARY page linked to a question."""
         links = await self.get_links_to(question_id)
         summary_links = [l for l in links if l.link_type == LinkType.SUMMARIZES]
@@ -1730,18 +1728,15 @@ class DB:
         result: dict[str, list[Page]] = {qid: [] for qid in question_ids}
         if not question_ids:
             return result
-        id_list = list(dict.fromkeys(question_ids))
-        batch_size = 100
         page_size = 2000
         all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(dict.fromkeys(question_ids), 100, strict=False):
             offset = 0
             while True:
                 query = (
                     self.client.table("page_links")
                     .select(_LINK_COLUMNS)
-                    .in_("to_page_id", batch)
+                    .in_("to_page_id", list(batch))
                     .eq("link_type", LinkType.ANSWERS.value)
                 )
                 query = self._scope_filter(self._staged_filter(query))
@@ -1832,18 +1827,15 @@ class DB:
         """
         all_links: list[PageLink] = []
         if page_ids is not None:
-            id_list = list(page_ids)
-            batch_size = 100
             page_size = 1000
-            for start in range(0, len(id_list), batch_size):
-                batch = id_list[start : start + batch_size]
+            for batch in batched(page_ids, 100, strict=False):
                 offset = 0
                 while True:
                     query = (
                         self.client.table("page_links")
                         .select("*")
                         .eq("link_type", "depends_on")
-                        .in_("from_page_id", batch)
+                        .in_("from_page_id", list(batch))
                     )
                     query = self._scope_filter(self._staged_filter(query))
                     rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
@@ -2357,15 +2349,15 @@ class DB:
         within each batch to avoid PostgREST response-size failures.
         """
         all_links: dict[str, PageLink] = {}
-        id_list = list(page_ids)
-        batch_size = 100
         page_size = 2000
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(page_ids, 100, strict=False):
+            batch_list = list(batch)
             for col in ("from_page_id", "to_page_id"):
                 offset = 0
                 while True:
-                    query = self.client.table("page_links").select(_LINK_COLUMNS).in_(col, batch)
+                    query = (
+                        self.client.table("page_links").select(_LINK_COLUMNS).in_(col, batch_list)
+                    )
                     query = self._scope_filter(self._staged_filter(query))
                     rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                     for r in rows:
@@ -3035,7 +3027,7 @@ class DB:
         cost_usd: float | None,
         error: str | None,
         created_by: str | None,
-    ) -> "ForkRow":
+    ) -> ForkRow:
         from rumil.forks import ForkRow
 
         base_row: dict[str, Any] = {

@@ -6,8 +6,6 @@ as Continuation A. It survives on the judge_inputs blob and is computed
 from display_first vs sorted(source_a, source_b).
 """
 
-from __future__ import annotations
-
 import sys
 from dataclasses import dataclass
 from pathlib import Path

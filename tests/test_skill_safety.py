@@ -1,7 +1,5 @@
 """Tests for rumil_skills._safety.assert_local_ok."""
 
-from __future__ import annotations
-
 import pytest
 from rumil_skills._safety import assert_local_ok
 

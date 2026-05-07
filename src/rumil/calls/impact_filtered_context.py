@@ -27,8 +27,6 @@ Smoke-test bypass: when ``settings.is_smoke_test`` is True, the wrapper
 returns the inner builder's result unchanged.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from collections.abc import Sequence

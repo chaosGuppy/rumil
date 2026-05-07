@@ -73,7 +73,7 @@ class UnscoredItemScore(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _robustness_requires_reasoning(self) -> "UnscoredItemScore":
+    def _robustness_requires_reasoning(self) -> UnscoredItemScore:
         if self.robustness is not None and not (self.robustness_reasoning or "").strip():
             raise ValueError("robustness_reasoning is required when robustness is set")
         return self
@@ -102,7 +102,7 @@ class ItemReview(BaseModel):
     reasoning: str = ""
 
     @model_validator(mode="after")
-    def _new_robustness_requires_reasoning(self) -> "ItemReview":
+    def _new_robustness_requires_reasoning(self) -> ItemReview:
         if self.new_robustness is not None and not (self.new_robustness_reasoning or "").strip():
             raise ValueError("new_robustness_reasoning is required when new_robustness is set")
         return self

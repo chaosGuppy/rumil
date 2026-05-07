@@ -2,7 +2,6 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Generic, TypeVar
 
 from rumil.llm import Tool
 from rumil.models import (
@@ -48,11 +47,8 @@ def estimate_dispatch_cost(d: Dispatch) -> int:
     return 1
 
 
-S = TypeVar("S", bound=BaseDispatchPayload)
-
-
 @dataclass
-class DispatchDef(Generic[S]):
+class DispatchDef[S: BaseDispatchPayload]:
     """Definition of a dispatch type: its identity, tool schema, and call type."""
 
     call_type: CallType

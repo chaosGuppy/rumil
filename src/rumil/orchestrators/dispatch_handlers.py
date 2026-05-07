@@ -77,7 +77,7 @@ class DispatchContext:
     flow into the underlying call-side helper.
     """
 
-    orchestrator: "BaseOrchestrator"
+    orchestrator: BaseOrchestrator
     resolved_question_id: str
     parent_call_id: str | None
     force: bool

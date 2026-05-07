@@ -1,7 +1,5 @@
 """Tests for the list_questions skill module."""
 
-from __future__ import annotations
-
 import pytest
 import pytest_asyncio
 from rumil_skills import _runctx, list_questions

@@ -7,8 +7,6 @@ One-off utility like --summary: not traced, not budget-counted. The
 final LLM message is saved to pages/self-improvement/.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import re

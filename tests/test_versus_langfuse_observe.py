@@ -1,7 +1,5 @@
 """Regression tests for versus._langfuse.observe call-time enable check."""
 
-from __future__ import annotations
-
 import importlib
 
 import pytest

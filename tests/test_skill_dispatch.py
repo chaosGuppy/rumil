@@ -5,8 +5,6 @@ the call status moved past PENDING, the run row was created with
 origin=claude-code, at least one page was linked to the scope question.
 """
 
-from __future__ import annotations
-
 import pytest
 from rumil_skills import _runctx, dispatch_call
 

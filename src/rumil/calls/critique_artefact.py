@@ -7,8 +7,6 @@ context) and judging the artefact on its own merits, the critic can surface
 the most valuable kind of finding: gaps in the spec itself.
 """
 
-from __future__ import annotations
-
 import logging
 
 from pydantic import BaseModel, Field

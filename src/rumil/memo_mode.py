@@ -15,8 +15,6 @@ Default behaviour is unchanged: callers outside the memo pipeline see no
 ContextVar set and behave exactly as before.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar

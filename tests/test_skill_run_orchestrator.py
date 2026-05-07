@@ -6,8 +6,6 @@ structurally — exit 0, run row created with origin=claude-code, at least
 one call exists.
 """
 
-from __future__ import annotations
-
 import os
 import subprocess
 import sys

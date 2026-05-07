@@ -5,8 +5,6 @@ phases run in order, artifact extracted from closer text, cost summed
 across run calls), not the underlying SDK / orchestrator behavior.
 """
 
-from __future__ import annotations
-
 import sys
 from dataclasses import dataclass
 from pathlib import Path

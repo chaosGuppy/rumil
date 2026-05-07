@@ -1,7 +1,5 @@
 """UPDATE_EPISTEMIC move: update credence/robustness scores on an existing page."""
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING
 

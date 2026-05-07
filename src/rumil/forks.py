@@ -8,8 +8,6 @@ point — overrides replace specific fields, samples are fired in parallel,
 and rows persist to ``exchange_forks`` for side-by-side viewing.
 """
 
-from __future__ import annotations
-
 import asyncio
 import hashlib
 import json

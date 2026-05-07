@@ -6,8 +6,6 @@ completion_tokens) usage dicts, and accepts an optional cost_usd for
 rumil-mediated paths where we have a real $ figure.
 """
 
-from __future__ import annotations
-
 import pytest
 from versus.run_summary import RunSummary
 

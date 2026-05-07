@@ -1,7 +1,5 @@
 """Tests for rumil_skills.scan_log JSONL scan-log reader/writer."""
 
-from __future__ import annotations
-
 import json
 
 import pytest

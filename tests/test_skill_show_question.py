@@ -1,7 +1,5 @@
 """Tests for the show_question skill module."""
 
-from __future__ import annotations
-
 import pytest
 from rumil_skills import _runctx, show_question
 

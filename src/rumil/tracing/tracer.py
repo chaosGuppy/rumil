@@ -11,7 +11,7 @@ from rumil.tracing.trace_events import LLMExchangeEvent, TraceEvent
 
 log = logging.getLogger(__name__)
 
-_trace_var: contextvars.ContextVar["CallTrace | None"] = contextvars.ContextVar(
+_trace_var: contextvars.ContextVar[CallTrace | None] = contextvars.ContextVar(
     "rumil_call_trace", default=None
 )
 
@@ -28,12 +28,12 @@ class TraceRecordError(RuntimeError):
     """
 
 
-def get_trace() -> "CallTrace | None":
+def get_trace() -> CallTrace | None:
     """Return the current task-local CallTrace, or None if not set."""
     return _trace_var.get()
 
 
-def set_trace(trace: "CallTrace") -> contextvars.Token:
+def set_trace(trace: CallTrace) -> contextvars.Token:
     """Set the task-local CallTrace. Returns a token for optional reset."""
     return _trace_var.set(trace)
 

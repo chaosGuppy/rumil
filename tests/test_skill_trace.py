@@ -1,7 +1,5 @@
 """Tests for the trace skill module."""
 
-from __future__ import annotations
-
 import pytest
 from rumil_skills import _runctx
 from rumil_skills import trace as trace_mod

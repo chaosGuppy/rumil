@@ -4,7 +4,7 @@ Data models for the research workspace.
 
 import uuid
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,7 +21,7 @@ def _all_fields_required(schema: dict) -> None:
     schema["required"] = list(schema.get("properties", {}).keys())
 
 
-class PageType(str, Enum):
+class PageType(StrEnum):
     SOURCE = "source"
     CLAIM = "claim"
     QUESTION = "question"
@@ -35,23 +35,23 @@ class PageType(str, Enum):
     ARTEFACT = "artefact"  # long-form object produced by the generative workflow
 
 
-class PageDetail(str, Enum):
+class PageDetail(StrEnum):
     HEADLINE = "headline"
     ABSTRACT = "abstract"
     CONTENT = "content"
 
 
-class PageLayer(str, Enum):
+class PageLayer(StrEnum):
     WIKI = "wiki"
     SQUIDGY = "squidgy"
 
 
-class Workspace(str, Enum):
+class Workspace(StrEnum):
     RESEARCH = "research"
     PRIORITIZATION = "prioritization"
 
 
-class CallType(str, Enum):
+class CallType(StrEnum):
     FIND_CONSIDERATIONS = "find_considerations"
     ASSESS = "assess"
     PRIORITIZATION = "prioritization"
@@ -138,7 +138,7 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
 }
 
 
-class ScoutScope(str, Enum):
+class ScoutScope(StrEnum):
     QUESTION = "question"
     CLAIM = "claim"
 
@@ -173,14 +173,14 @@ def scout_scope(call_type: CallType) -> ScoutScope | None:
     return SCOUT_CALL_TYPES.get(call_type)
 
 
-class CallStatus(str, Enum):
+class CallStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETE = "complete"
     FAILED = "failed"
 
 
-class LinkType(str, Enum):
+class LinkType(StrEnum):
     CONSIDERATION = "consideration"  # claim -> question: claim should be accounted for in analysis of the question
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
@@ -205,7 +205,7 @@ class LinkType(str, Enum):
     )
 
 
-class MoveType(str, Enum):
+class MoveType(StrEnum):
     CREATE_CLAIM = "CREATE_CLAIM"
     CREATE_QUESTION = "CREATE_QUESTION"
     CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
@@ -230,18 +230,18 @@ class MoveType(str, Enum):
     REGENERATE_AND_CRITIQUE = "REGENERATE_AND_CRITIQUE"
 
 
-class CallStage(str, Enum):
+class CallStage(StrEnum):
     BUILD_CONTEXT = "build_context"
     UPDATE_WORKSPACE = "update_workspace"
     CLOSING_REVIEW = "closing_review"
 
 
-class LinkRole(str, Enum):
+class LinkRole(StrEnum):
     DIRECT = "direct"
     STRUCTURAL = "structural"
 
 
-class ConsiderationDirection(str, Enum):
+class ConsiderationDirection(StrEnum):
     SUPPORTS = "supports"
     OPPOSES = "opposes"
     NEUTRAL = "neutral"

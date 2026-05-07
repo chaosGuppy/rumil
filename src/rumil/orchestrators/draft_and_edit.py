@@ -37,8 +37,6 @@ Design notes (full sketch in ``planning/draft-and-edit-workflow-sketch.md``):
   without forking the workflow file.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import hashlib

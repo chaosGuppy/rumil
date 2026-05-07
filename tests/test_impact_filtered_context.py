@@ -8,8 +8,6 @@ Verify the wrapper's wiring without going through the LLM:
 - paring trigger fires only when inner context exceeds threshold
 """
 
-from __future__ import annotations
-
 import pytest_asyncio
 from pydantic import BaseModel
 

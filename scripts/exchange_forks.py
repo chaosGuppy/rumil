@@ -29,8 +29,6 @@ Tools are a full replacement — to remove a tool, omit it; to add or edit
 one, include the desired Anthropic tool dict.
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import getpass

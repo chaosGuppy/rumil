@@ -6,8 +6,6 @@ param because forks are operator state, not workspace state — they reach
 the base exchange via its UUID and don't filter by project.
 """
 
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 

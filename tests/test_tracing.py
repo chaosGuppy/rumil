@@ -8,8 +8,6 @@ Covers the two post/in-progress paths:
   silently falls out of sync with live DB state.
 """
 
-from __future__ import annotations
-
 import pytest
 import pytest_asyncio
 

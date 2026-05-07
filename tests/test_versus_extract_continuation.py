@@ -8,8 +8,6 @@ content) is worth pinning so future prompt tweaks don't silently change
 what gets judged.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from versus import complete

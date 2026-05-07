@@ -5,8 +5,6 @@ Thin wrapper over ``rumil.deep_research``. For workspace-integrated runs
 that produce a Source page, use the ``/rumil-deep-research`` skill instead.
 """
 
-from __future__ import annotations
-
 import argparse
 import signal
 import sys

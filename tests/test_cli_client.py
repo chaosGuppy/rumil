@@ -1,7 +1,5 @@
 """Laptop-side CLI client: JWT minting and end-to-end submit flow."""
 
-from __future__ import annotations
-
 import argparse
 import time
 

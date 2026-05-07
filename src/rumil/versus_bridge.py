@@ -22,6 +22,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from versus.tasks.judge_pair import (  # noqa: F401
     JudgeArtifact,
@@ -40,6 +41,7 @@ from rumil.database import DB
 from rumil.model_config import ModelConfig
 from rumil.models import Call, CallType
 from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
+from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
 from rumil.tracing.broadcast import Broadcaster
 from rumil.versus_closer import run_closer_agent
 
@@ -280,6 +282,96 @@ async def judge_pair_reflective(
     )
 
 
+async def judge_pair_simple_spine(
+    db: DB,
+    pair: PairContext,
+    *,
+    task_body: str,
+    model: str,
+    config_name: str,
+    budget: int,
+    tokens_per_round: int | None = None,
+    operating_assumptions: str = "",
+    output_guidance: str = "",
+    additional_context: str = "",
+    wall_clock_soft_s: float | None = None,
+    broadcaster: Broadcaster | None = None,
+    model_config: ModelConfig | None = None,
+) -> JudgeResult:
+    """Run :class:`SimpleSpineWorkflow` on a pair (judging side).
+
+    ``config_name`` selects a named :class:`SimpleSpineConfig` preset
+    (see :mod:`rumil.orchestrators.simple_spine.presets`). The workflow
+    writes its final answer text — which must end with one of the seven
+    preference labels — to ``question.content``; the runner reads it
+    and parses the label via :func:`extract_preference`.
+
+    ``budget`` is the SimpleSpine soft round cap (small int matching
+    the rumil convention). Token hard cap = ``budget * tokens_per_round``
+    (default 25k tokens/round in the workflow). Pass ``tokens_per_round``
+    to override for long-context configs.
+
+    The ``task_body`` (dimension rubric) is spliced into the workflow's
+    ``additional_context`` so mainline + every spawn can read the actual
+    rubric text rather than just the dimension slug. The pair surface
+    (prefix + both continuations) lives on ``question.content`` and is
+    rendered into the initial mainline prompt; the rubric is the missing
+    piece without this splice.
+
+    Returned :class:`JudgeResult` mirrors :func:`judge_pair_orch`.
+    """
+    rubric_block = f"## Dimension rubric (`{pair.task_name}`)\n\n{task_body.strip()}"
+    if additional_context.strip():
+        merged_context = f"{rubric_block}\n\n---\n\n{additional_context.strip()}"
+    else:
+        merged_context = rubric_block
+
+    ws_kwargs: dict[str, Any] = {
+        "budget": budget,
+        "config_name": config_name,
+        "call_type": "judge",
+        "wall_clock_soft_s": wall_clock_soft_s,
+        "operating_assumptions": operating_assumptions,
+        "output_guidance": output_guidance,
+        "additional_context": merged_context,
+    }
+    if tokens_per_round is not None:
+        ws_kwargs["tokens_per_round"] = tokens_per_round
+    workflow = SimpleSpineWorkflow(**ws_kwargs)
+    task = JudgePairTask(dimension=pair.task_name, dimension_body=task_body)
+    try:
+        result = await run_versus(
+            db,
+            workflow=workflow,
+            task=task,
+            inputs=pair,
+            model=model,
+            broadcaster=broadcaster,
+            model_config=model_config,
+        )
+    except Exception:
+        log.exception(
+            "versus simple_spine failed (essay=%s, pair=%s/%s, task=%s)",
+            pair.essay_id,
+            pair.source_a_id,
+            pair.source_b_id,
+            pair.task_name,
+        )
+        raise
+    return JudgeResult(
+        verdict=result.artifact.verdict,
+        preference_label=result.artifact.preference_label,
+        reasoning_text=result.artifact.reasoning_text,
+        trace_url=result.trace_url,
+        call_id=result.call_id,
+        run_id=result.run_id,
+        question_id=result.question_id,
+        cost_usd=result.cost_usd,
+        system_prompt=result.system_prompt,
+        user_prompt=result.user_prompt,
+    )
+
+
 __all__ = (
     "PREFERENCE_LABELS",
     "JudgeArtifact",
@@ -297,5 +389,6 @@ __all__ = (
     "get_rumil_dimension_body",
     "judge_pair_orch",
     "judge_pair_reflective",
+    "judge_pair_simple_spine",
     "label_to_verdict",
 )

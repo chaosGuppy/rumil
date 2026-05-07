@@ -77,14 +77,15 @@ def main() -> None:
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--variant",
-        choices=("orch", "reflective"),
+        choices=("orch", "reflective", "simple_spine"),
         default=None,
         help=(
             "Workflow variant. Omit for the default blind judge path. "
             "orch fires TwoPhaseOrchestrator (research + closer); "
             "reflective fires ReflectiveJudgeWorkflow (read → reflect → "
-            "verdict, no research). Both require --workspace and "
-            "running Supabase."
+            "verdict, no research); simple_spine fires SimpleSpineWorkflow "
+            "(structured-rounds main agent loop with parallel subroutine "
+            "spawns). All require --workspace and running Supabase."
         ),
     )
     ap.add_argument(
@@ -252,6 +253,25 @@ def main() -> None:
         default=None,
         help="Reflective: path to a markdown file replacing the built-in verdict prompt.",
     )
+    ap.add_argument(
+        "--simple-spine-config-name",
+        default="judge_pair",
+        help=(
+            "simple_spine: preset name resolved via "
+            "rumil.orchestrators.simple_spine.presets.get_preset. "
+            "Default: judge_pair."
+        ),
+    )
+    ap.add_argument(
+        "--simple-spine-tokens-per-round",
+        type=int,
+        default=None,
+        help=(
+            "simple_spine: override the budget→tokens multiplier "
+            "(default 25 000 in the workflow). Token hard cap = "
+            "budget × tokens_per_round."
+        ),
+    )
     args = ap.parse_args()
 
     contestants = (
@@ -323,9 +343,13 @@ def main() -> None:
 
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
 
-    # Reflective-only flags must be unset on the orch path so the
-    # CLI surface stays unambiguous about which variant they apply to.
-    if args.variant == "orch":
+    # Reflective-only flags must be unset on non-reflective paths so
+    # the CLI surface stays unambiguous about which variant they apply
+    # to. (Symmetric: simple_spine flags would be silently ignored on
+    # reflective/orch paths since they don't reach the bridge; not
+    # gated here because the default for simple-spine-config-name is
+    # the safe sentinel "judge_pair" which is harmless on other paths.)
+    if args.variant in ("orch", "simple_spine"):
         for flag, value in (
             ("--reader-model", args.reader_model),
             ("--reflector-model", args.reflector_model),
@@ -365,6 +389,8 @@ def main() -> None:
             read_prompt_path=args.read_prompt_path,
             reflect_prompt_path=args.reflect_prompt_path,
             verdict_prompt_path=args.verdict_prompt_path,
+            simple_spine_config_name=args.simple_spine_config_name,
+            simple_spine_tokens_per_round=args.simple_spine_tokens_per_round,
         )
     )
 

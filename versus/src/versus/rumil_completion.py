@@ -37,6 +37,7 @@ from typing import Any
 
 from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
 from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
+from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
 from rumil.versus_workflow import TwoPhaseWorkflow
 from versus import config, prepare, versus_db
 from versus.run_summary import RunSummary
@@ -56,6 +57,11 @@ from versus.tasks import CompleteEssayTask, EssayPrefixContext
 WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
     "two_phase": (TwoPhaseWorkflow, {}),
     "draft_and_edit": (DraftAndEditWorkflow, {}),
+    # SimpleSpine on the completion side: ``--orch simple_spine
+    # --workflow-arg config_name=essay_continuation --budget 10``.
+    # ``budget`` is interpreted as the SimpleSpine token cap (not a
+    # rumil call-unit budget); the orch self-paces against it.
+    "simple_spine": (SimpleSpineWorkflow, {"call_type": "complete"}),
 }
 
 # Judge-side workflows. Kept separate from WORKFLOW_REGISTRY so the
@@ -70,6 +76,7 @@ JUDGE_WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
         ReflectiveJudgeWorkflow,
         {"dimension_body": "<staleness-check-placeholder>"},
     ),
+    "simple_spine": (SimpleSpineWorkflow, {"call_type": "judge"}),
 }
 
 

@@ -1,0 +1,170 @@
+"""Thin tool-using agent loop shared by mainline + FreeformAgentSubroutine.
+
+Wraps :func:`rumil.llm.call_anthropic_api` to:
+- accept a fixed ``model`` (no settings.model dependency)
+- run a tool-using loop with arbitrary :class:`rumil.llm.Tool` instances
+- record token usage onto a :class:`BudgetClock`
+- stop when the model emits no tool calls, hits ``max_rounds``, or the
+  budget clock reports tokens_exhausted (caller still drains the final
+  response)
+
+Distinct from :func:`rumil.calls.common.run_agent_loop` which requires
+a ``MoveState`` and uses ``settings.model``. This one is decoupled from
+both — it's a primitive, not a rumil-call participant.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
+
+import anthropic
+from anthropic.types import TextBlock, ToolUseBlock
+
+from rumil.calls.common import prepare_tools
+from rumil.database import DB
+from rumil.llm import LLMExchangeMetadata, Tool, ToolCall, call_anthropic_api
+from rumil.model_config import ModelConfig
+from rumil.orchestrators.simple_spine.budget_clock import BudgetClock
+from rumil.settings import get_settings
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class ThinLoopResult:
+    final_text: str
+    messages: list[dict]
+    tool_calls: list[ToolCall]
+    rounds: int
+    stopped_because: str  # "no_tool_calls" | "max_rounds" | "tokens_exhausted"
+
+
+async def thin_agent_loop(
+    *,
+    system_prompt: str,
+    messages: list[dict],
+    tools: Sequence[Tool],
+    model: str,
+    model_config: ModelConfig | None,
+    db: DB,
+    call_id: str,
+    phase: str,
+    budget_clock: BudgetClock,
+    max_rounds: int,
+    cache: bool = True,
+    on_assistant_message: Callable[[int, str, list[ToolUseBlock]], Awaitable[None]] | None = None,
+) -> ThinLoopResult:
+    """Run the tool-using loop until termination.
+
+    ``messages`` is mutated in place — the caller can keep a reference
+    and observe the appended assistant + tool_result turns. Each
+    assistant message lands as one element; each batch of tool_results
+    lands as one user-role element grouping all results from that round.
+    """
+    if max_rounds < 1:
+        raise ValueError(f"max_rounds must be >= 1, got {max_rounds}")
+    settings = get_settings()
+    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    tool_defs, tool_fns = prepare_tools(tools) if tools else ([], {})
+
+    final_text = ""
+    all_tool_calls: list[ToolCall] = []
+    stopped_because = "max_rounds"
+    round_idx = 0
+
+    for round_idx in range(max_rounds):
+        meta = LLMExchangeMetadata(
+            call_id=call_id,
+            phase=phase,
+            round_num=round_idx,
+        )
+        api_resp = await call_anthropic_api(
+            client,
+            model,
+            system_prompt,
+            messages,
+            tool_defs or None,
+            metadata=meta,
+            db=db,
+            cache=cache,
+            model_config=model_config,
+        )
+        response = api_resp.message
+        usage = response.usage
+        if usage is not None:
+            total = (usage.input_tokens or 0) + (usage.output_tokens or 0)
+            budget_clock.record_tokens(total)
+
+        text_parts: list[str] = []
+        tool_uses: list[ToolUseBlock] = []
+        for block in response.content:
+            if isinstance(block, TextBlock):
+                text_parts.append(block.text)
+            elif isinstance(block, ToolUseBlock):
+                tool_uses.append(block)
+        round_text = "\n".join(text_parts)
+        final_text = round_text
+
+        # Append the assistant message verbatim (preserve thinking + tool_use blocks).
+        messages.append({"role": "assistant", "content": response.content})
+
+        if on_assistant_message is not None:
+            await on_assistant_message(round_idx, round_text, tool_uses)
+
+        if not tool_uses:
+            stopped_because = "no_tool_calls"
+            break
+
+        tool_results: list[dict] = []
+        for tu in tool_uses:
+            fn = tool_fns.get(tu.name)
+            if fn is None:
+                result_str = f"Unknown tool: {tu.name}"
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": result_str,
+                        "is_error": True,
+                    }
+                )
+            else:
+                try:
+                    result_str = await fn(tu.input)
+                except Exception as e:
+                    log.exception("Tool %s raised", tu.name)
+                    result_str = f"Error: {e}"
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tu.id,
+                            "content": result_str,
+                            "is_error": True,
+                        }
+                    )
+                else:
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tu.id,
+                            "content": result_str,
+                        }
+                    )
+            all_tool_calls.append(ToolCall(name=tu.name, input=tu.input, result=result_str))
+        messages.append({"role": "user", "content": tool_results})
+
+        if budget_clock.tokens_exhausted:
+            stopped_because = "tokens_exhausted"
+            break
+    else:
+        stopped_because = "max_rounds"
+
+    return ThinLoopResult(
+        final_text=final_text,
+        messages=messages,
+        tool_calls=all_tool_calls,
+        rounds=round_idx + 1,
+        stopped_because=stopped_because,
+    )

@@ -283,6 +283,8 @@ async def run_orch(
     read_prompt_path: str | None = None,
     reflect_prompt_path: str | None = None,
     verdict_prompt_path: str | None = None,
+    simple_spine_config_name: str | None = None,
+    simple_spine_tokens_per_round: int | None = None,
 ) -> None:
     """Run a workspace-aware rumil judge variant against pending pairs.
 
@@ -293,6 +295,10 @@ async def run_orch(
       verdict, fixed 3 LLM calls; ``budget`` is ignored). The
       ``reader_model`` / ``reflector_model`` / ``verdict_model`` and
       ``*_prompt_path`` kwargs are this variant's iteration knobs.
+    - ``"simple_spine"``: :class:`SimpleSpineWorkflow` with
+      ``call_type='judge'``. ``budget`` is the soft round cap (token
+      hard cap = budget * tokens_per_round). ``simple_spine_config_name``
+      selects a preset (default ``"judge_pair"``).
 
     ``model`` is the Anthropic model id the bridge (and the workflow's
     internal LLM calls) runs on; passed explicitly so versus controls
@@ -305,11 +311,18 @@ async def run_orch(
 
     from rumil.database import DB
     from rumil.settings import get_settings
-    from rumil.versus_bridge import PairContext, judge_pair_orch, judge_pair_reflective
+    from rumil.versus_bridge import (
+        PairContext,
+        judge_pair_orch,
+        judge_pair_reflective,
+        judge_pair_simple_spine,
+    )
     from versus.rumil_completion import short_model
 
-    if variant not in ("orch", "reflective"):
-        raise ValueError(f"unknown variant: {variant!r}; expected 'orch' or 'reflective'")
+    if variant not in ("orch", "reflective", "simple_spine"):
+        raise ValueError(
+            f"unknown variant: {variant!r}; expected one of 'orch', 'reflective', 'simple_spine'"
+        )
 
     settings = get_settings()
     # Gap 2 run-name disambiguation: when no prefix variant is configured,
@@ -373,6 +386,25 @@ async def run_orch(
                 budget=budget,
                 closer_hash=chash,
                 workspace_state_hash=workspace_state_hash,
+            )
+        if variant == "simple_spine":
+            # simple_spine: produces_artifact=True so no closer + no
+            # tools (same as reflective). Workflow fingerprint folds in
+            # config_fingerprint (full preset hash including subroutine
+            # prompts/models) + budget/tokens_per_round, so a different
+            # config_name or budget naturally forks the dedup hash.
+            return make_judge_config(
+                "simple_spine",
+                model=model,
+                dimension=dim,
+                model_config=mc,
+                prompt_hash=ph,
+                pair_surface_hash=qhash,
+                workspace_id=ws_short,
+                workspace_state_hash=workspace_state_hash,
+                budget=budget,
+                simple_spine_config_name=simple_spine_config_name or "judge_pair",
+                simple_spine_tokens_per_round=simple_spine_tokens_per_round,
             )
         # reflective: no closer, no tools — drop those fingerprint inputs.
         # Per-role models and prompt path overrides are threaded into
@@ -485,6 +517,9 @@ async def run_orch(
                 if variant == "orch":
                     workflow_name_judge = "two_phase"
                     budget_segment = f"b{budget}"
+                elif variant == "simple_spine":
+                    workflow_name_judge = "simple_spine"
+                    budget_segment = f"b{budget}"
                 else:
                     workflow_name_judge = "reflective"
                     # Reflective has no budget knob; emit a fixed segment
@@ -529,6 +564,17 @@ async def run_orch(
                         task_body=task_body,
                         model=model,
                         budget=budget,
+                        model_config=mc,
+                    )
+                elif variant == "simple_spine":
+                    result = await judge_pair_simple_spine(
+                        db,
+                        pair_ctx,
+                        task_body=task_body,
+                        model=model,
+                        config_name=simple_spine_config_name or "judge_pair",
+                        budget=budget,
+                        tokens_per_round=simple_spine_tokens_per_round,
                         model_config=mc,
                     )
                 else:

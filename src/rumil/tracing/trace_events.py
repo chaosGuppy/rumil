@@ -594,6 +594,61 @@ class ScoutPassEvent(BaseModel):
     model: str = ""
 
 
+class SpineRoundStartedEvent(BaseModel):
+    event: Literal["spine_round_started"] = "spine_round_started"
+    round_idx: int
+    tokens_used: int
+    tokens_remaining: int
+    elapsed_s: float
+
+
+class SpineSpawnStartedEvent(BaseModel):
+    event: Literal["spine_spawn_started"] = "spine_spawn_started"
+    round_idx: int
+    spawn_id: str
+    subroutine_name: str
+    overrides: dict[str, Any] = {}
+
+
+class SpineSpawnCompletedEvent(BaseModel):
+    event: Literal["spine_spawn_completed"] = "spine_spawn_completed"
+    round_idx: int
+    spawn_id: str
+    subroutine_name: str
+    text_summary_chars: int
+    extra: dict[str, Any] = {}
+    error: str | None = None
+
+
+class SpineConfigPrepEvent(BaseModel):
+    event: Literal["spine_config_prep"] = "spine_config_prep"
+    round_idx: int
+    spawn_id: str
+    subroutine_name: str
+    prepped_config: dict[str, Any] = {}
+
+
+class SpineNoteAddedEvent(BaseModel):
+    event: Literal["spine_note_added"] = "spine_note_added"
+    round_idx: int
+    text: str
+
+
+class SpineFinalizedEvent(BaseModel):
+    event: Literal["spine_finalized"] = "spine_finalized"
+    round_idx: int
+    answer_chars: int
+    reason: str
+    synthesized: bool = False
+
+
+class SpineThrottledEvent(BaseModel):
+    event: Literal["spine_throttled"] = "spine_throttled"
+    round_idx: int
+    requested: int
+    kept: int
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -646,6 +701,13 @@ TraceEvent = Annotated[
     | BriefAuditStartedEvent
     | BriefAuditEvent
     | ScoutPassStartedEvent
-    | ScoutPassEvent,
+    | ScoutPassEvent
+    | SpineRoundStartedEvent
+    | SpineSpawnStartedEvent
+    | SpineSpawnCompletedEvent
+    | SpineConfigPrepEvent
+    | SpineNoteAddedEvent
+    | SpineFinalizedEvent
+    | SpineThrottledEvent,
     Field(discriminator="event"),
 ]

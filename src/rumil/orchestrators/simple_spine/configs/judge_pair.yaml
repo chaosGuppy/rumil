@@ -1,0 +1,84 @@
+# judge_pair — SimpleSpine preset for versus pairwise-judging runs.
+#
+# Library: read (FreeformAgent) → steelman (SampleN n=2) → verdict
+# (FreeformAgent). Mainline + role models all default to opus; versus's
+# --model flag uniformly overrides via _apply_model_override.
+#
+# Mainline system prompt extends the default with an explicit
+# wire-format constraint listing the seven canonical preference labels.
+# Without this, mainline opus rewrites the verdict's correct label into
+# non-canonical phrasing on borderline pairs (e.g. "A clearly better"
+# instead of "A somewhat preferred"), breaking parse.
+#
+# Verdict subroutine carries a response_validator that retries when the
+# response doesn't end with a canonical label — defends against the
+# orthogonal failure mode where the verdict subroutine itself emits a
+# numeric scale ("Preference: -2") despite the 7-pt block being in its
+# own system prompt.
+
+name: judge_pair
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/main_judge_pair.md
+max_parallel_spawns_per_turn: 3
+
+subroutines:
+  - kind: freeform_agent
+    name: read
+    description: |
+      Initial reading of the pair against the rubric. Passes the prefix
+      + both continuations + rubric as additional_context.
+    sys_prompt_path: ../prompts/reader_judge_sys.md
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Pair + rubric
+      {additional_context}
+
+      Produce the initial read now.
+    model: claude-opus-4-7
+    max_rounds: 1
+    max_tokens: 4096
+
+  - kind: sample_n
+    name: steelman
+    description: |
+      Steelman one side of the pair. Pass the side ('A' / 'B') as
+      intent and the pair + rubric + prior read as additional_context.
+      Returns N independent steelmans.
+    sys_prompt_path: ../prompts/steelman_judge_sys.md
+    user_prompt_template: |
+      ## Intent (which side to steelman)
+      {intent}
+
+      ## Pair + rubric + prior read
+      {additional_context}
+
+      Produce the steelman now.
+    model: claude-sonnet-4-6
+    n: 2
+    temperature: 1.0
+    max_tokens: 2048
+
+  - kind: freeform_agent
+    name: verdict
+    description: |
+      Synthesize the final verdict + 7-point preference label. Pass the
+      pair + rubric + prior stages as additional_context. Returns the
+      verdict text ending with the label on its own line.
+    sys_prompt_path: ../prompts/verdict_judge_sys.md
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Pair + rubric + prior stages
+      {additional_context}
+
+      Produce the verdict and the 7-point label now.
+    model: claude-opus-4-7
+    max_rounds: 1
+    max_tokens: 4096
+    # Retry if the verdict response doesn't end with a canonical label.
+    response_validator: extract_preference_not_none
+    retry_message_path: ../prompts/verdict_judge_retry.md
+    response_max_retries: 2

@@ -25,7 +25,16 @@ from rumil.orchestrators.simple_spine.config import (
     OrchResult,
     SimpleSpineConfig,
 )
+from rumil.orchestrators.simple_spine.loader import (
+    discover_configs,
+    load_simple_spine_config,
+)
 from rumil.orchestrators.simple_spine.orchestrator import SimpleSpineOrchestrator
+from rumil.orchestrators.simple_spine.presets import (
+    get_preset,
+    list_presets,
+    register_preset,
+)
 from rumil.orchestrators.simple_spine.subroutines import (
     CallTypeSubroutine,
     ConfigPrepDef,
@@ -43,6 +52,10 @@ from rumil.orchestrators.simple_spine.tools import (
     make_note_finding_tool,
     register_tool,
     resolve_tools,
+)
+from rumil.orchestrators.simple_spine.validators import (
+    list_validators,
+    register_validator,
 )
 from rumil.orchestrators.simple_spine.workflow import SimpleSpineWorkflow
 
@@ -65,8 +78,15 @@ __all__ = (
     "SpawnCtx",
     "SubroutineDef",
     "SubroutineResult",
+    "discover_configs",
+    "get_preset",
+    "list_presets",
+    "list_validators",
+    "load_simple_spine_config",
     "make_finalize_tool",
     "make_note_finding_tool",
+    "register_preset",
     "register_tool",
+    "register_validator",
     "resolve_tools",
 )

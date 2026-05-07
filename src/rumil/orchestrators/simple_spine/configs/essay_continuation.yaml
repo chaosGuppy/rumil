@@ -1,0 +1,57 @@
+# essay_continuation — SimpleSpine preset for versus essay-continuation runs.
+#
+# Library: drafter (FreeformAgent, single-shot, 32k output) + critic
+# (SampleN, n=3 parallel critics). Mainline opus by default; per-role
+# models are pinned but can be overridden globally via versus's --model
+# flag (the workflow applies _apply_model_override at run time).
+#
+# Default models for the drafter / critic / mainline are claude-opus-4-7;
+# versus's --model flag overrides all three uniformly.
+
+name: essay_continuation
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/main_default.md
+max_parallel_spawns_per_turn: 4
+
+subroutines:
+  - kind: freeform_agent
+    name: draft
+    description: |
+      Draft an essay continuation. The drafter sees the prefix and
+      target length via the question; pass any additional context
+      (revision targets, planning notes) under additional_context.
+      Returns the continuation wrapped in <continuation> tags.
+    sys_prompt_path: ../prompts/drafter_essay_sys.md
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Additional context
+      {additional_context}
+
+      Produce the continuation now.
+    model: claude-opus-4-7
+    max_rounds: 1
+    # Wide enough that even verbose / planning-heavy drafters can
+    # finish a full continuation + closing </continuation> tag without
+    # truncation. Sonnet/Opus 4.x both support 32k+ output.
+    max_tokens: 32000
+
+  - kind: sample_n
+    name: critique
+    description: |
+      Run N independent critics on a draft to surface diverse criticism.
+      Pass the draft + prefix as additional_context.
+    sys_prompt_path: ../prompts/critic_essay_sys.md
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Draft + prefix
+      {additional_context}
+
+      Produce your critique now.
+    model: claude-sonnet-4-6
+    n: 3
+    temperature: 1.0
+    max_tokens: 2048

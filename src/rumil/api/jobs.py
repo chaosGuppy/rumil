@@ -148,7 +148,7 @@ def _job_to_item(job: client.V1Job) -> JobListItem:
         status=_classify_status(job),
         created_at=metadata.creation_timestamp,
         started_at=status.start_time if status else None,
-        completed_at=status.completion_time if status else None,
+        completed_at=_terminal_at(status),
         run_id=run_id,
         owner_user_id=labels.get(JOB_LABEL_OWNER, ""),
         workspace=annotations[JOB_ANNOTATION_WORKSPACE_NAME],
@@ -156,6 +156,34 @@ def _job_to_item(job: client.V1Job) -> JobListItem:
         logs_url=build_logs_url(name),
         trace_url=_build_trace_url(run_id),
     )
+
+
+def _terminal_at(status: client.V1JobStatus | None):
+    """Best-available timestamp for "this job stopped running".
+
+    Kubernetes only populates ``completion_time`` on **success**. For a
+    failed job ``completion_time`` stays None, so the frontend's duration
+    calculation falls back to ``Date.now()`` and the row appears to run
+    forever. Fall back to the latest ``Failed`` / ``Complete`` condition
+    transition time so failed runs report a sensible duration.
+    """
+    if status is None:
+        return None
+    if status.completion_time is not None:
+        return status.completion_time
+    conditions = status.conditions or []
+    terminal = [
+        c
+        for c in conditions
+        if (c.type or "") in ("Complete", "Failed") and (c.status or "") == "True"
+    ]
+    if not terminal:
+        return None
+    terminal.sort(
+        key=lambda c: c.last_transition_time or c.last_probe_time,
+        reverse=True,
+    )
+    return terminal[0].last_transition_time
 
 
 def _classify_status(job: client.V1Job) -> JobStatus:

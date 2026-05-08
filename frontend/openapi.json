@@ -7033,6 +7033,17 @@
             ],
             "title": "Prompt"
           },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt"
+          },
           "reasoning_text": {
             "anyOf": [
               {
@@ -7160,6 +7171,7 @@
           "is_rumil",
           "contamination_note",
           "prompt",
+          "system_prompt",
           "reasoning_text",
           "raw_response",
           "rumil_trace_url",

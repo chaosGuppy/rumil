@@ -509,6 +509,7 @@ class JudgmentDetail(pydantic.BaseModel):
     contamination_note: str | None
 
     prompt: str | None
+    system_prompt: str | None
     reasoning_text: str | None
     raw_response: dict | list | None
 
@@ -1646,6 +1647,7 @@ def get_judgment_by_key(key: str) -> JudgmentDetail:
         is_rumil=versus_config_mod.is_rumil_row(row_cfg, jm),
         contamination_note=row.get("contamination_note"),
         prompt=row.get("prompt"),
+        system_prompt=row.get("system_prompt"),
         reasoning_text=row.get("reasoning_text"),
         raw_response=row.get("raw_response"),
         rumil_trace_url=row.get("rumil_trace_url"),

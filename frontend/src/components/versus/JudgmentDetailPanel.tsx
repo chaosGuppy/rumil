@@ -210,10 +210,21 @@ function DetailContent({
         </section>
       )}
 
+      {data.system_prompt && (
+        <details className="detail-section">
+          <summary className="detail-section-label" style={{ cursor: "pointer" }}>
+            System prompt
+          </summary>
+          <pre className="detail-pre" style={{ marginTop: 6 }}>
+            {data.system_prompt}
+          </pre>
+        </details>
+      )}
+
       {data.prompt && (
         <details className="detail-section" open>
           <summary className="detail-section-label" style={{ cursor: "pointer" }}>
-            Prompt
+            User prompt
           </summary>
           <pre className="detail-pre" style={{ marginTop: 6 }}>
             {data.prompt}

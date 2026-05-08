@@ -2311,6 +2311,10 @@ export type JudgmentDetail = {
      */
     prompt: string | null;
     /**
+     * System Prompt
+     */
+    system_prompt: string | null;
+    /**
      * Reasoning Text
      */
     reasoning_text: string | null;

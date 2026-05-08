@@ -14,6 +14,9 @@ main_model: <model-id>
 main_system_prompt_path: prompts/main_default.md
 main_system_prompt: |           # OR inline; one or the other
   ...
+main_system_prompt_extra_path: prompts/foo_extra.md  # optional appendix
+main_system_prompt_extra: |     # OR inline; appended to the base
+  ...
 max_parallel_spawns_per_turn: 4 # optional
 enable_finalize_tool: true      # optional, default true
 enable_note_finding_tool: false # optional, default false
@@ -100,6 +103,11 @@ def load_simple_spine_config(path: str | Path) -> SimpleSpineConfig:
     )
     if main_system_prompt is None:
         raise ValueError(f"{path}: must set main_system_prompt or main_system_prompt_path")
+    extra = _resolve_prompt(
+        blob, "main_system_prompt_extra", "main_system_prompt_extra_path", base_dir
+    )
+    if extra is not None:
+        main_system_prompt = main_system_prompt.rstrip() + "\n\n" + extra.lstrip()
 
     name = blob.get("name")
     if not name or not isinstance(name, str):

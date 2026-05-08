@@ -18,7 +18,8 @@
 
 name: judge_pair
 main_model: claude-opus-4-7
-main_system_prompt_path: ../prompts/main_judge_pair.md
+main_system_prompt_path: ../prompts/main_default.md
+main_system_prompt_extra_path: ../prompts/judge_pair_wire_format.md
 max_parallel_spawns_per_turn: 3
 
 subroutines:

@@ -19,13 +19,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from rumil.llm import LLMExchangeMetadata, text_call
+import anthropic
+from anthropic.types import TextBlock
+
+from rumil.llm import LLMExchangeMetadata, call_anthropic_api
 from rumil.model_config import ModelConfig
 from rumil.orchestrators.simple_spine.subroutines.base import (
     ConfigPrepDef,
     SpawnCtx,
     SubroutineResult,
+    resolve_spawn_clock,
 )
+from rumil.settings import get_settings
 
 
 def _sha8(text: str) -> str:
@@ -61,6 +66,17 @@ class SampleNSubroutine:
     sys_prompt_path: str | Path | None = None
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "n"}))
     config_prep: ConfigPrepDef | None = None
+    # See FreeformAgentSubroutine for semantics. token_cap here covers
+    # the sum of all N samples' input + output tokens; the cap is
+    # enforced by short-circuiting remaining samples once the spawn's
+    # carved clock reports tokens_exhausted (samples already in flight
+    # finish — gather doesn't cancel siblings — but the parent clock's
+    # accounting still reflects their spend).
+    base_token_cap: int | None = None
+    cost_hint: str | None = None
+    # See FreeformAgentSubroutine for semantics.
+    intent_description: str | None = None
+    additional_context_description: str | None = None
     # When True, caller-supplied operating_assumptions (threaded via
     # SpawnCtx) are appended to this subroutine's system prompt at run
     # time. Default True; opt out when bias would distort the role
@@ -88,6 +104,7 @@ class SampleNSubroutine:
             "max_tokens": self.max_tokens,
             "overridable": sorted(self.overridable),
             "inherit_assumptions": self.inherit_assumptions,
+            "base_token_cap": self.base_token_cap,
         }
         if self.config_prep is not None:
             out["config_prep"] = self.config_prep.fingerprint()
@@ -97,7 +114,8 @@ class SampleNSubroutine:
         properties: dict[str, Any] = {
             "intent": {
                 "type": "string",
-                "description": (
+                "description": self.intent_description
+                or (
                     "Short statement of what you want this batch of samples to "
                     "address. Substituted into the user prompt template as "
                     "{intent}."
@@ -118,7 +136,20 @@ class SampleNSubroutine:
         if "additional_context" in self.overridable:
             properties["additional_context"] = {
                 "type": "string",
-                "description": "Extra context to splice into the user prompt under {additional_context}.",
+                "description": self.additional_context_description
+                or ("Extra context to splice into the user prompt under {additional_context}."),
+            }
+        if "token_cap" in self.overridable and self.base_token_cap is not None:
+            properties["token_cap"] = {
+                "type": "integer",
+                "minimum": 500,
+                "description": (
+                    f"Per-spawn token sub-cap covering all N samples "
+                    f"(default {self.base_token_cap}). Tokens still debit "
+                    "the parent budget; this just stops further samples "
+                    "from launching once the cap is hit. Capped at the "
+                    "parent's remaining."
+                ),
             }
         return {
             "type": "object",
@@ -152,19 +183,36 @@ class SampleNSubroutine:
                 "\n\n## Operating assumptions\n\n" + ctx.operating_assumptions.strip() + "\n"
             )
 
+        spawn_clock = resolve_spawn_clock(
+            ctx.budget_clock,
+            base_cap=self.base_token_cap,
+            override_cap=overrides.get("token_cap") if "token_cap" in self.overridable else None,
+        )
+        client = anthropic.AsyncAnthropic(api_key=get_settings().require_anthropic_key())
+        cfg = ModelConfig(temperature=self.temperature, max_tokens=self.max_tokens)
+        msgs: list[dict] = [{"role": "user", "content": user_message}]
+
         async def _one(idx: int) -> str:
-            cfg = ModelConfig(temperature=self.temperature, max_tokens=self.max_tokens)
-            return await text_call(
+            api_resp = await call_anthropic_api(
+                client,
+                self.model,
                 sys_prompt,
-                user_message,
+                msgs,
                 metadata=LLMExchangeMetadata(
                     call_id=ctx.parent_call_id,
                     phase=f"spawn:{self.name}:sample{idx}",
                 ),
                 db=ctx.db,
-                model=self.model,
+                cache=False,
                 model_config=cfg,
             )
+            usage = api_resp.message.usage
+            if usage is not None:
+                spawn_clock.record_tokens((usage.input_tokens or 0) + (usage.output_tokens or 0))
+            for block in api_resp.message.content:
+                if isinstance(block, TextBlock):
+                    return block.text
+            return ""
 
         completions = await asyncio.gather(*[_one(i) for i in range(n)])
 

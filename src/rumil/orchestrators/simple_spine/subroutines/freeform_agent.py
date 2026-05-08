@@ -26,6 +26,7 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     ConfigPrepDef,
     SpawnCtx,
     SubroutineResult,
+    resolve_spawn_clock,
 )
 
 log = logging.getLogger(__name__)
@@ -82,6 +83,27 @@ class FreeformAgentSubroutine:
         default_factory=lambda: frozenset({"intent", "additional_context"})
     )
     config_prep: ConfigPrepDef | None = None
+    # Optional per-spawn token cap. When set, the orchestrator carves a
+    # child BudgetClock from the parent so this spawn cannot spend more
+    # than ``base_token_cap`` tokens; mainline can override via the
+    # ``token_cap`` spawn arg if ``"token_cap" in overridable``. Tokens
+    # still flow up to the parent clock — this is a sub-cap, not extra
+    # budget. Without this, the spawn shares the unclamped parent clock.
+    base_token_cap: int | None = None
+    # Optional one-line cost hint shown in the spawn tool description so
+    # mainline can plan before its first spawn (after that, [spawn cost:
+    # …] feedback is real). Author-supplied; not auto-computed because
+    # input/output ratios vary too much for a worst-case bound to be
+    # useful.
+    cost_hint: str | None = None
+    # Per-subroutine overrides for the schema-level field descriptions.
+    # The kind-level defaults are intentionally generic ("Short statement
+    # of what you want this agent to do") because they have no role
+    # context; YAML authors can supply role-specific framing here so
+    # mainline knows what shape of text to put in each field for *this*
+    # subroutine (e.g. "A side label, 'A' or 'B'" for steelman).
+    intent_description: str | None = None
+    additional_context_description: str | None = None
     # Optional post-hoc validation on the final response text. When the
     # validator returns False, the subroutine appends ``retry_message``
     # to the conversation and re-runs the inner agent loop, up to
@@ -139,6 +161,7 @@ class FreeformAgentSubroutine:
             "allowed_tool_names": sorted(self.allowed_tool_names),
             "overridable": sorted(self.overridable),
             "inherit_assumptions": self.inherit_assumptions,
+            "base_token_cap": self.base_token_cap,
         }
         if self.config_prep is not None:
             out["config_prep"] = self.config_prep.fingerprint()
@@ -152,7 +175,8 @@ class FreeformAgentSubroutine:
         properties: dict[str, Any] = {
             "intent": {
                 "type": "string",
-                "description": (
+                "description": self.intent_description
+                or (
                     "Short statement of what you want this agent to do. "
                     "Substituted into the user prompt template as {intent}."
                 ),
@@ -162,7 +186,8 @@ class FreeformAgentSubroutine:
         if "additional_context" in self.overridable:
             properties["additional_context"] = {
                 "type": "string",
-                "description": (
+                "description": self.additional_context_description
+                or (
                     "Extra context / scratchpad excerpts to splice into the "
                     "user prompt under {additional_context}."
                 ),
@@ -173,6 +198,17 @@ class FreeformAgentSubroutine:
                 "minimum": 1,
                 "maximum": self.max_rounds,
                 "description": (f"Cap rounds for this spawn (default {self.max_rounds})."),
+            }
+        if "token_cap" in self.overridable and self.base_token_cap is not None:
+            properties["token_cap"] = {
+                "type": "integer",
+                "minimum": 500,
+                "description": (
+                    f"Per-spawn token sub-cap (default {self.base_token_cap}). "
+                    "Tokens still debit the parent budget; this just stops "
+                    "this spawn from spending more than the cap. Capped at "
+                    "the parent's remaining."
+                ),
             }
         return {
             "type": "object",
@@ -233,6 +269,11 @@ class FreeformAgentSubroutine:
         tools = resolve_tools(enabled_tool_names, ctx)
         cfg = ModelConfig(temperature=1.0, max_tokens=self.max_tokens)
         messages: list[dict] = [{"role": "user", "content": user_message}]
+        spawn_clock = resolve_spawn_clock(
+            ctx.budget_clock,
+            base_cap=self.base_token_cap,
+            override_cap=overrides.get("token_cap") if "token_cap" in self.overridable else None,
+        )
         result = await thin_agent_loop(
             system_prompt=sys_prompt,
             messages=messages,
@@ -242,7 +283,7 @@ class FreeformAgentSubroutine:
             db=ctx.db,
             call_id=ctx.parent_call_id,
             phase=f"spawn:{self.name}",
-            budget_clock=ctx.budget_clock,
+            budget_clock=spawn_clock,
             max_rounds=max_rounds,
             cache=True,
         )
@@ -252,7 +293,7 @@ class FreeformAgentSubroutine:
             for attempt in range(1, self.response_max_retries + 1):
                 if self.response_validator(result.final_text):
                     break
-                if ctx.budget_clock.tokens_exhausted:
+                if spawn_clock.tokens_exhausted:
                     log.warning(
                         "freeform_agent %s: validator failed but token budget "
                         "exhausted; returning last response unvalidated",
@@ -275,7 +316,7 @@ class FreeformAgentSubroutine:
                     db=ctx.db,
                     call_id=ctx.parent_call_id,
                     phase=f"spawn:{self.name}:retry{attempt}",
-                    budget_clock=ctx.budget_clock,
+                    budget_clock=spawn_clock,
                     max_rounds=max_rounds,
                     cache=True,
                 )

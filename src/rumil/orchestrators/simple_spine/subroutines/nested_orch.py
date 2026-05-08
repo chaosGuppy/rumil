@@ -53,6 +53,7 @@ class NestedOrchSubroutine:
         default_factory=lambda: frozenset({"intent", "additional_context"})
     )
     config_prep: ConfigPrepDef | None = None
+    cost_hint: str | None = None
 
     def fingerprint(self) -> Mapping[str, Any]:
         out: dict[str, Any] = {

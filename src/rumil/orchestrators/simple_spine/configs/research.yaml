@@ -19,12 +19,14 @@ subroutines:
   - kind: freeform_agent
     name: workspace_lookup
     description: |
-      Search the workspace for pages relevant to a query and return a
-      curated context block. Pass a focused topic / question / claim
-      as intent; the agent issues 1-3 embedding searches, drops
-      off-topic results, and returns the relevant pages with their
-      short IDs. Use early in a run to seed yourself with workspace
-      context, or later to dig into a specific sub-topic.
+      Curate workspace pages relevant to a topic.
+      Inputs: focused topic / question / claim in intent; optional
+      framing in additional_context.
+      Output: relevant pages with short IDs and brief framing — drops
+      off-topic hits.
+      Use after: cite returned page IDs in finalize, or feed them into
+      another spawn as additional_context. Cheap; safe to run early to
+      seed yourself before any heavier spawn.
     sys_prompt_path: ../prompts/workspace_lookup_sys.md
     user_prompt_template: |
       ## Intent
@@ -38,3 +40,12 @@ subroutines:
     max_rounds: 4
     max_tokens: 4096
     allowed_tool_names: [workspace_search]
+    overridable: [intent, additional_context, token_cap, max_rounds]
+    base_token_cap: 8000
+    cost_hint: "≈ 1–4 sonnet turns @ 4k out (~2–10k tokens; depends on how much it searches)"
+    intent_description: >
+      The topic, question, or claim to search for. Free-form; the agent
+      converts it to 1–3 embedding queries.
+    additional_context_description: >
+      Optional framing, e.g. "rule out X as already-covered" or "focus
+      on pages that bear on Y". Spliced under {additional_context}.

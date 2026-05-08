@@ -476,7 +476,7 @@ class SimpleSpineOrchestrator:
 
         return Tool(
             name=f"spawn_{sub.name}",
-            description=sub.description,
+            description=_format_tool_description(sub),
             input_schema=sub.spawn_tool_schema(),
             fn=fn,
         )
@@ -536,6 +536,7 @@ class SimpleSpineOrchestrator:
                 round_idx=round_idx,
                 trace=trace,
             )
+        tokens_before = clock.tokens_used
         try:
             result = await sub.run(ctx, tu.input)
         except Exception as e:
@@ -549,6 +550,12 @@ class SimpleSpineOrchestrator:
                 )
             )
             raise
+        tokens_consumed = max(clock.tokens_used - tokens_before, 0)
+        result = SubroutineResult(
+            text_summary=f"[spawn cost: {tokens_consumed:,} tokens]\n{result.text_summary}",
+            tokens_used=result.tokens_used,
+            extra={**dict(result.extra), "tokens_consumed": tokens_consumed},
+        )
         await trace.record(
             SpineSpawnCompletedEvent(
                 round_idx=round_idx,
@@ -617,6 +624,30 @@ class SimpleSpineOrchestrator:
             )
         )
         return prepped
+
+
+def _format_tool_description(sub: SubroutineDef) -> str:
+    """Compose the spawn tool description shown to mainline.
+
+    Layered on top of the author-supplied ``sub.description``:
+    - a ``2-step`` annotation when ``config_prep`` is set, so mainline
+      knows there's a hidden elaboration call between its ``intent`` and
+      the agent's actual prompt (and that the elaborator can see a slice
+      of the mainline thread);
+    - an author-supplied ``cost_hint`` line so mainline can plan its
+      first spawn before live ``[spawn cost: …]`` feedback arrives.
+    """
+    parts: list[str] = [sub.description.rstrip()]
+    if sub.config_prep is not None:
+        scope = sub.config_prep.mainline_context
+        parts.append(
+            f"_(2-step: thin intent → elaborator fills sys/user/tools; "
+            f"elaborator sees mainline_context={scope})_"
+        )
+    cost_hint = getattr(sub, "cost_hint", None)
+    if cost_hint:
+        parts.append(f"Cost hint: {cost_hint}")
+    return "\n\n".join(parts)
 
 
 def _summarize_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict]:

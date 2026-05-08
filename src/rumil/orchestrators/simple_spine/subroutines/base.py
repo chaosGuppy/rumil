@@ -34,6 +34,30 @@ if TYPE_CHECKING:
     from rumil.orchestrators.simple_spine.budget_clock import BudgetClock
 
 
+def resolve_spawn_clock(
+    parent: BudgetClock,
+    *,
+    base_cap: int | None,
+    override_cap: int | None,
+) -> BudgetClock:
+    """Pick the BudgetClock a spawn should use given its (optional) sub-cap.
+
+    Returns the parent clock unchanged when no cap is configured. When
+    a cap is set (override beats base), carves a child via
+    ``parent.carve_child`` so the spawn cannot spend more than the cap;
+    tokens still flow up to the parent. Mirrors the clamping pattern in
+    NestedOrchSubroutine: a request larger than the parent's remaining
+    is clamped down, and ``carve_child`` floors at 1 to keep the call
+    well-formed when the parent is already drained (the spawn will then
+    immediately report ``tokens_exhausted``).
+    """
+    cap = override_cap if override_cap is not None else base_cap
+    if cap is None:
+        return parent
+    capped = max(min(int(cap), parent.tokens_remaining), 1)
+    return parent.carve_child(capped)
+
+
 @dataclass(frozen=True)
 class ConfigPrepDef:
     """Hidden second-stage LLM call that elaborates a thin spawn intent.

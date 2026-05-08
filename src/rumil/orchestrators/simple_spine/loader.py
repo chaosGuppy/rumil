@@ -39,6 +39,20 @@ subroutines:
     response_validator: extract_preference_not_none   # optional, registry key
     retry_message_path: prompts/verdict_judge_retry.md  # required if validator set
     response_max_retries: 2     # optional, default 1
+    base_token_cap: 8000        # optional; enables `token_cap` override on
+                                 # the spawn schema (when `token_cap` is in
+                                 # `overridable`). Carved via carve_child so
+                                 # the spawn cannot exceed this without
+                                 # adding extra budget.
+    cost_hint: "≈ 1 opus turn @ 32k out"  # optional; appended to the spawn
+                                 # tool description so mainline can plan its
+                                 # first spawn before live cost feedback.
+    intent_description: ...     # optional; per-subroutine override for the
+                                 # generic kind-level `intent` field schema
+                                 # description. Use to give role-specific
+                                 # framing (e.g. "A side label, 'A' or 'B'").
+    additional_context_description: ...  # optional; same idea for
+                                          # `additional_context`.
 
   - kind: sample_n
     name: critique
@@ -52,6 +66,8 @@ subroutines:
     max_tokens: 2048
     overridable: [intent, n]
     inherit_assumptions: false  # optional, default true
+    # base_token_cap, cost_hint, intent_description,
+    # additional_context_description — same as freeform_agent above.
 ```
 
 CallTypeSubroutine and NestedOrchSubroutine kinds aren't supported in
@@ -214,6 +230,14 @@ def _load_freeform_agent(
         kwargs["overridable"] = frozenset(entry["overridable"])
     if "inherit_assumptions" in entry:
         kwargs["inherit_assumptions"] = bool(entry["inherit_assumptions"])
+    if "base_token_cap" in entry:
+        kwargs["base_token_cap"] = int(entry["base_token_cap"])
+    if "cost_hint" in entry:
+        kwargs["cost_hint"] = str(entry["cost_hint"])
+    if "intent_description" in entry:
+        kwargs["intent_description"] = str(entry["intent_description"])
+    if "additional_context_description" in entry:
+        kwargs["additional_context_description"] = str(entry["additional_context_description"])
 
     validator_name = entry.get("response_validator")
     if validator_name:
@@ -257,6 +281,14 @@ def _load_sample_n(entry: dict[str, Any], base_dir: Path, source: Path) -> Sampl
         kwargs["overridable"] = frozenset(entry["overridable"])
     if "inherit_assumptions" in entry:
         kwargs["inherit_assumptions"] = bool(entry["inherit_assumptions"])
+    if "base_token_cap" in entry:
+        kwargs["base_token_cap"] = int(entry["base_token_cap"])
+    if "cost_hint" in entry:
+        kwargs["cost_hint"] = str(entry["cost_hint"])
+    if "intent_description" in entry:
+        kwargs["intent_description"] = str(entry["intent_description"])
+    if "additional_context_description" in entry:
+        kwargs["additional_context_description"] = str(entry["additional_context_description"])
     return SampleNSubroutine(**kwargs)  # type: ignore[return-value]
 
 

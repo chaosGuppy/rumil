@@ -17,10 +17,12 @@ subroutines:
   - kind: freeform_agent
     name: draft
     description: |
-      Draft an essay continuation. The drafter sees the prefix and
-      target length via the question; pass any additional context
-      (revision targets, planning notes) under additional_context.
-      Returns the continuation wrapped in <continuation> tags.
+      Produce a full essay continuation in one shot.
+      Inputs: prefix + target length come from the question; pass any
+      revision targets / planning notes in additional_context.
+      Output: continuation wrapped in <continuation>…</continuation> tags.
+      Use after: run critique on the result, then re-spawn draft with
+      critique excerpts in additional_context to revise.
     sys_prompt_path: ../prompts/drafter_essay_sys.md
     user_prompt_template: |
       ## Intent
@@ -36,12 +38,26 @@ subroutines:
     # finish a full continuation + closing </continuation> tag without
     # truncation. Sonnet/Opus 4.x both support 32k+ output.
     max_tokens: 32000
+    overridable: [intent, additional_context, token_cap]
+    base_token_cap: 50000
+    cost_hint: "≈ 1 opus turn @ 32k out (~30–45k tokens — the most expensive single spawn in this preset)"
+    intent_description: >
+      What the drafter should aim for (e.g. "tighten the opening", "go
+      more empirical", or just "produce the continuation"). Spliced
+      verbatim into the user prompt as {intent}.
+    additional_context_description: >
+      Revision targets, planning notes, prior draft excerpts, critique
+      points to address. Spliced under {additional_context}.
 
   - kind: sample_n
     name: critique
     description: |
-      Run N independent critics on a draft to surface diverse criticism.
-      Pass the draft + prefix as additional_context.
+      Surface diverse criticism of a draft via N independent critics.
+      Inputs: full draft + prefix in additional_context; optional steering
+      in intent (e.g. "focus on argument structure").
+      Output: N critiques delimited under "## Sample 1", "## Sample 2", …
+      Use after: pick concrete weaknesses worth fixing, feed them as
+      revision targets into a follow-up draft spawn.
     sys_prompt_path: ../prompts/critic_essay_sys.md
     user_prompt_template: |
       ## Intent
@@ -55,3 +71,13 @@ subroutines:
     n: 3
     temperature: 1.0
     max_tokens: 2048
+    overridable: [intent, n, additional_context, token_cap]
+    base_token_cap: 12000
+    cost_hint: "≈ N sonnet turns @ 2k out each (~3k tokens per sample)"
+    intent_description: >
+      Optional emphasis (e.g. "focus on argument structure", "be brutal
+      about hedging"). Empty intent = open-ended critique.
+    additional_context_description: >
+      The draft + the prefix it's continuing. Spliced under
+      {additional_context}; critics can compare the continuation against
+      what came before.

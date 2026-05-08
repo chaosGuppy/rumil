@@ -24,11 +24,14 @@ max_parallel_spawns_per_turn: 3
 
 subroutines:
   - kind: freeform_agent
-    name: read
+    name: pair_notes
     description: |
-      Initial reading of the pair against the rubric. Passes the prefix
-      + both continuations + rubric as additional_context.
-    sys_prompt_path: ../prompts/reader_judge_sys.md
+      Stage 1 of 3 (pair_notes → steelman → verdict).
+      Inputs: pair (prefix + both continuations) + rubric in additional_context.
+      Output: structured initial reading — what each continuation is doing,
+      divergence points, evidence against rubric. NO preference label.
+      Use after: feed this back into steelman + verdict via additional_context.
+    sys_prompt_path: ../prompts/pair_notes_sys.md
     user_prompt_template: |
       ## Intent
       {intent}
@@ -40,13 +43,25 @@ subroutines:
     model: claude-opus-4-7
     max_rounds: 1
     max_tokens: 4096
+    overridable: [intent, additional_context, token_cap]
+    base_token_cap: 8000
+    cost_hint: "≈ 1 opus turn @ 4k out (~5–8k tokens)"
+    intent_description: >
+      What aspect of the pair to emphasize in the initial read (e.g.
+      "focus on argument structure" or just "general"). Free-form.
+    additional_context_description: >
+      The full pair + rubric: prefix, continuation A, continuation B,
+      and the dimension rubric. Spliced under {additional_context}.
 
   - kind: sample_n
     name: steelman
     description: |
-      Steelman one side of the pair. Pass the side ('A' / 'B') as
-      intent and the pair + rubric + prior read as additional_context.
-      Returns N independent steelmans.
+      Stage 2 of 3 (pair_notes → steelman → verdict).
+      Inputs: pair + rubric + pair_notes output in additional_context;
+      side label ('A' or 'B') in intent.
+      Output: N independent steelmans for the chosen side, delimited
+      under "## Sample 1", "## Sample 2", …
+      Use after: pass both sides' steelmans to verdict.
     sys_prompt_path: ../prompts/steelman_judge_sys.md
     user_prompt_template: |
       ## Intent (which side to steelman)
@@ -60,13 +75,24 @@ subroutines:
     n: 2
     temperature: 1.0
     max_tokens: 2048
+    overridable: [intent, n, additional_context, token_cap]
+    base_token_cap: 8000
+    cost_hint: "≈ N sonnet turns @ 2k out each (~3–5k tokens per sample)"
+    intent_description: >
+      Which side to steelman: 'A' or 'B'. Anything else falls through
+      verbatim into the prompt and the steelman will pick on its own.
+    additional_context_description: >
+      Pair + rubric + the pair_notes output, so the steelman sees the
+      same context the verdict will. Spliced under {additional_context}.
 
   - kind: freeform_agent
     name: verdict
     description: |
-      Synthesize the final verdict + 7-point preference label. Pass the
-      pair + rubric + prior stages as additional_context. Returns the
-      verdict text ending with the label on its own line.
+      Stage 3 of 3 (pair_notes → steelman → verdict).
+      Inputs: pair + rubric + pair_notes + both steelmans in additional_context.
+      Output: verdict text ending with one of the 7 canonical preference
+      labels on its own line (validator retries on non-canonical labels).
+      Use after: this is the deliverable; pass through finalize.
     sys_prompt_path: ../prompts/verdict_judge_sys.md
     user_prompt_template: |
       ## Intent
@@ -79,6 +105,15 @@ subroutines:
     model: claude-opus-4-7
     max_rounds: 1
     max_tokens: 4096
+    overridable: [intent, additional_context, token_cap]
+    base_token_cap: 12000
+    cost_hint: "≈ 1 opus turn @ 4k out, +1 retry on label miss (~6–14k tokens)"
+    intent_description: >
+      Optional steering for the verdict (e.g. "weight clarity over
+      ambition"). Usually empty — the rubric already specifies criteria.
+    additional_context_description: >
+      Pair + rubric + pair_notes + both steelmans. The verdict reads all
+      of this before producing the label. Spliced under {additional_context}.
     # Retry if the verdict response doesn't end with a canonical label.
     response_validator: extract_preference_not_none
     retry_message_path: ../prompts/verdict_judge_retry.md

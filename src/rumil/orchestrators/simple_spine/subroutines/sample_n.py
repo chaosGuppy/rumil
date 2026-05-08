@@ -37,6 +37,22 @@ def _sha8(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
 
 
+def _estimate_per_sample_worst(sys_prompt: str, user_message: str, max_tokens: int) -> int:
+    """Conservative upper bound on tokens one sample will consume.
+
+    Input is estimated via a ~4-chars-per-token heuristic (rough but
+    sufficient — the dominant term is usually max_tokens, and we already
+    use the *worst-case* output here). Output is bounded by ``max_tokens``.
+
+    The estimate is used to decide how many samples can be safely
+    launched in parallel without overshooting a token cap. Underestimating
+    input tokens by 2× still leaves a substantial safety margin because
+    real outputs are typically well below max_tokens.
+    """
+    input_estimate = (len(sys_prompt) + len(user_message)) // 4
+    return input_estimate + max_tokens
+
+
 def _load_prompt(path: str | Path | None, default: str) -> str:
     if path is None:
         return default
@@ -66,12 +82,19 @@ class SampleNSubroutine:
     sys_prompt_path: str | Path | None = None
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "n"}))
     config_prep: ConfigPrepDef | None = None
-    # See FreeformAgentSubroutine for semantics. token_cap here covers
-    # the sum of all N samples' input + output tokens; the cap is
-    # enforced by short-circuiting remaining samples once the spawn's
-    # carved clock reports tokens_exhausted (samples already in flight
-    # finish — gather doesn't cancel siblings — but the parent clock's
-    # accounting still reflects their spend).
+    # See FreeformAgentSubroutine for semantics. Enforcement here is
+    # affordability-aware: the run loop estimates a worst-case per-sample
+    # token cost (rough input estimate + max_tokens) and only launches as
+    # many samples per batch as fit in the carved clock's remaining
+    # budget. After each batch, the clock reflects actual (typically
+    # below worst-case) spend, so subsequent batches may launch more.
+    # When budget is comfortable this collapses to a single batch of N
+    # (full parallelism); when tight it degrades to smaller batches and
+    # may skip some samples entirely (text_summary indicates how many
+    # ran vs were skipped). The parent clock still receives every
+    # sample's spend via carve_child rollup. Slight overshoot is
+    # possible when actual usage exceeds the worst-case estimate (rare,
+    # since max_tokens is the dominant term and is a hard ceiling).
     base_token_cap: int | None = None
     cost_hint: str | None = None
     # See FreeformAgentSubroutine for semantics.
@@ -144,11 +167,12 @@ class SampleNSubroutine:
                 "type": "integer",
                 "minimum": 500,
                 "description": (
-                    f"Per-spawn token sub-cap covering all N samples "
-                    f"(default {self.base_token_cap}). Tokens still debit "
-                    "the parent budget; this just stops further samples "
-                    "from launching once the cap is hit. Capped at the "
-                    "parent's remaining."
+                    f"Per-spawn token budget covering all N samples "
+                    f"(default {self.base_token_cap}). Samples are launched "
+                    "in batches sized to fit the remaining cap; if the cap "
+                    "is too tight for all N, some samples are skipped (the "
+                    "text_summary reports run/total). Tokens still debit "
+                    "the parent budget. Capped at the parent's remaining."
                 ),
             }
         return {
@@ -214,15 +238,40 @@ class SampleNSubroutine:
                     return block.text
             return ""
 
-        completions = await asyncio.gather(*[_one(i) for i in range(n)])
+        # Affordability-aware launching. Pick a worst-case per-sample size
+        # (rough input estimate + max_tokens), then in each iteration
+        # launch as many samples as fit in the remaining clock and await
+        # them. After they finish, the clock has updated to reflect actual
+        # (typically lower-than-worst-case) spend, so we may have room
+        # for more. Stops when all N have run or the clock can't fit one
+        # more worst-case sample. Yields full parallelism when budget is
+        # comfortable (one big batch); falls back to smaller batches as
+        # the cap tightens, instead of overshooting it.
+        per_sample_worst = _estimate_per_sample_worst(sys_prompt, user_message, self.max_tokens)
+        completions: list[str] = []
+        launched = 0
+        while launched < n:
+            affordable = (
+                spawn_clock.tokens_remaining // per_sample_worst if per_sample_worst > 0 else n
+            )
+            if affordable <= 0:
+                break
+            batch_size = min(int(affordable), n - launched)
+            batch = await asyncio.gather(*[_one(launched + i) for i in range(batch_size)])
+            completions.extend(batch)
+            launched += batch_size
+        skipped = n - launched
 
-        parts: list[str] = [
-            f"# {self.name} — {n} samples (intent: {intent[:120]})",
-            "",
-        ]
+        header = f"# {self.name} — {len(completions)}/{n} samples (intent: {intent[:120]})"
+        if skipped:
+            header += f" — {skipped} skipped (token cap)"
+        parts: list[str] = [header, ""]
         for i, c in enumerate(completions):
             parts.append(f"## Sample {i + 1}")
             parts.append(c.strip())
             parts.append("")
         text_summary = "\n".join(parts)
-        return SubroutineResult(text_summary=text_summary, extra={"n": n})
+        return SubroutineResult(
+            text_summary=text_summary,
+            extra={"n": n, "samples_run": len(completions), "samples_skipped": skipped},
+        )

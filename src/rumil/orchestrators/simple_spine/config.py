@@ -22,28 +22,6 @@ if TYPE_CHECKING:
     from rumil.orchestrators.simple_spine.subroutines.base import SubroutineDef
 
 
-_DEFAULT_MAIN_SYSTEM_PROMPT = (
-    "You are SimpleSpine — a research / authoring agent operating against "
-    "a workspace question with a fixed token budget.\n\n"
-    "Each turn, you may:\n"
-    "- spawn one or more subroutines in parallel (use the spawn tools)\n"
-    "- finalize via `finalize` when you have enough to produce the deliverable\n\n"
-    "Operate in structured rounds: plan, then dispatch subroutines, then "
-    "read their results in your next turn and decide what to do next. "
-    "Subroutine output appears as tool results in the conversation. Do not "
-    "narrate your reasoning beyond what is useful for your own future "
-    "turns; the persistent thread is your scratchpad.\n\n"
-    "Budget discipline:\n"
-    "- The token budget is a HARD cap. When it is exhausted you will be "
-    "forced to finalize on your next turn. Plan accordingly.\n"
-    "- Wall-clock and round counts are soft signals. Pace yourself.\n\n"
-    "Finalize when one of these is true:\n"
-    "- you have a deliverable that satisfies the output guidance\n"
-    "- additional spawns are unlikely to materially improve the deliverable\n"
-    "- you are about to run out of tokens"
-)
-
-
 @dataclass(frozen=True)
 class SimpleSpineConfig:
     """Configuration for one SimpleSpine variant.
@@ -55,7 +33,7 @@ class SimpleSpineConfig:
 
     main_model: str
     process_library: tuple[SubroutineDef, ...]
-    main_system_prompt: str = _DEFAULT_MAIN_SYSTEM_PROMPT
+    main_system_prompt: str
     enable_finalize_tool: bool = True
     # Default off: in observed runs the note tool was offered every turn
     # but rarely used, and when used it didn't feed downstream stages —

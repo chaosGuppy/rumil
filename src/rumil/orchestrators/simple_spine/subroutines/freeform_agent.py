@@ -97,6 +97,13 @@ class FreeformAgentSubroutine:
     # ``response_validator`` is set so that two subroutines using
     # different validators don't fingerprint identically.
     response_validator_name: str | None = None
+    # When True, caller-supplied operating_assumptions (threaded via
+    # SpawnCtx) are appended to this subroutine's system prompt at run
+    # time. Default True so global rules (e.g. "judge blind") propagate
+    # without per-config wiring; opt out when bias would distort the
+    # subroutine's job (e.g. critics whose role is to push back on
+    # assumed framings).
+    inherit_assumptions: bool = True
 
     def __post_init__(self) -> None:
         if self.max_rounds < 1:
@@ -131,6 +138,7 @@ class FreeformAgentSubroutine:
             "max_tokens": self.max_tokens,
             "allowed_tool_names": sorted(self.allowed_tool_names),
             "overridable": sorted(self.overridable),
+            "inherit_assumptions": self.inherit_assumptions,
         }
         if self.config_prep is not None:
             out["config_prep"] = self.config_prep.fingerprint()
@@ -181,6 +189,10 @@ class FreeformAgentSubroutine:
         )
 
         sys_prompt = prepped.sys_prompt if prepped and prepped.sys_prompt else self.sys_prompt
+        if self.inherit_assumptions and ctx.operating_assumptions.strip():
+            sys_prompt = sys_prompt.rstrip() + (
+                "\n\n## Operating assumptions\n\n" + ctx.operating_assumptions.strip() + "\n"
+            )
         max_rounds_override = overrides.get("max_rounds")
         max_rounds = (
             int(max_rounds_override)

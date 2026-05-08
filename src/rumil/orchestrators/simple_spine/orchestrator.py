@@ -188,6 +188,9 @@ class SimpleSpineOrchestrator:
             for t in all_tools
         ]
         tool_fn_map = {t.name: t.fn for t in all_tools}
+        effective_system_prompt = _splice_assumptions_into_sys(
+            self.config.main_system_prompt, inputs.operating_assumptions
+        )
 
         last_status = "complete"
         spawn_count = 0
@@ -224,7 +227,7 @@ class SimpleSpineOrchestrator:
             api_resp = await call_anthropic_api(
                 client,
                 self.config.main_model,
-                self.config.main_system_prompt,
+                effective_system_prompt,
                 messages,
                 tool_defs,
                 metadata=LLMExchangeMetadata(
@@ -321,6 +324,7 @@ class SimpleSpineOrchestrator:
                             mainline_messages=messages,
                             round_idx=round_idx,
                             trace=trace,
+                            operating_assumptions=inputs.operating_assumptions,
                         )
                         for tu in kept_spawn_uses
                     ],
@@ -479,6 +483,7 @@ class SimpleSpineOrchestrator:
         mainline_messages: Sequence[Mapping[str, Any]],
         round_idx: int,
         trace: CallTrace,
+        operating_assumptions: str = "",
     ) -> SubroutineResult:
         """Resolve the spawn tool by name → SubroutineDef and run it.
 
@@ -511,6 +516,7 @@ class SimpleSpineOrchestrator:
             parent_call_id=call_id,
             question_id=question_id,
             spawn_id=spawn_id,
+            operating_assumptions=operating_assumptions,
         )
         if sub.config_prep is not None:
             ctx.prepped_config = await self._run_config_prep(
@@ -631,6 +637,21 @@ def _summarize_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict]:
     return out
 
 
+def _splice_assumptions_into_sys(main_system_prompt: str, operating_assumptions: str) -> str:
+    """Append operating assumptions to the mainline system prompt.
+
+    Operating assumptions are caller-supplied, rule-shaped constraints
+    (e.g. "judge blind", "no source attribution"). System position gives
+    them more instruction-following weight than burying them at the top
+    of the user thread, which drifts as rounds accumulate.
+    """
+    if not operating_assumptions.strip():
+        return main_system_prompt
+    return main_system_prompt.rstrip() + (
+        "\n\n## Operating assumptions\n\n" + operating_assumptions.strip() + "\n"
+    )
+
+
 async def _build_workspace_context(db: DB, question_id: str, question_headline: str) -> str:
     """Read-only embedding-based context for the scope question.
 
@@ -666,10 +687,6 @@ def _build_initial_user_message(
         question_content.strip(),
         "",
     ]
-    if inputs.operating_assumptions.strip():
-        sections.append("## Operating assumptions")
-        sections.append(inputs.operating_assumptions.strip())
-        sections.append("")
     if inputs.additional_context.strip():
         sections.append("## Additional context (from caller)")
         sections.append(inputs.additional_context.strip())

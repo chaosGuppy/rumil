@@ -31,6 +31,8 @@ subroutines:
     max_rounds: 1
     max_tokens: 32000
     overridable: [intent, additional_context]   # optional
+    inherit_assumptions: true   # optional, default true; opt out for roles
+                                 # whose job is to challenge framings
     response_validator: extract_preference_not_none   # optional, registry key
     retry_message_path: prompts/verdict_judge_retry.md  # required if validator set
     response_max_retries: 2     # optional, default 1
@@ -46,6 +48,7 @@ subroutines:
     temperature: 1.0
     max_tokens: 2048
     overridable: [intent, n]
+    inherit_assumptions: false  # optional, default true
 ```
 
 CallTypeSubroutine and NestedOrchSubroutine kinds aren't supported in
@@ -201,6 +204,8 @@ def _load_freeform_agent(
     }
     if "overridable" in entry:
         kwargs["overridable"] = frozenset(entry["overridable"])
+    if "inherit_assumptions" in entry:
+        kwargs["inherit_assumptions"] = bool(entry["inherit_assumptions"])
 
     validator_name = entry.get("response_validator")
     if validator_name:
@@ -242,6 +247,8 @@ def _load_sample_n(entry: dict[str, Any], base_dir: Path, source: Path) -> Sampl
     }
     if "overridable" in entry:
         kwargs["overridable"] = frozenset(entry["overridable"])
+    if "inherit_assumptions" in entry:
+        kwargs["inherit_assumptions"] = bool(entry["inherit_assumptions"])
     return SampleNSubroutine(**kwargs)  # type: ignore[return-value]
 
 

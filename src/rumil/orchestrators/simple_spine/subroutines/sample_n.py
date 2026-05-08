@@ -61,6 +61,11 @@ class SampleNSubroutine:
     sys_prompt_path: str | Path | None = None
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "n"}))
     config_prep: ConfigPrepDef | None = None
+    # When True, caller-supplied operating_assumptions (threaded via
+    # SpawnCtx) are appended to this subroutine's system prompt at run
+    # time. Default True; opt out when bias would distort the role
+    # (e.g. independent critics whose job is to challenge framings).
+    inherit_assumptions: bool = True
 
     def __post_init__(self) -> None:
         if self.n < 1:
@@ -82,6 +87,7 @@ class SampleNSubroutine:
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "overridable": sorted(self.overridable),
+            "inherit_assumptions": self.inherit_assumptions,
         }
         if self.config_prep is not None:
             out["config_prep"] = self.config_prep.fingerprint()
@@ -140,10 +146,16 @@ class SampleNSubroutine:
                 f"{sorted(format_kwargs)}"
             ) from e
 
+        sys_prompt = self.sys_prompt
+        if self.inherit_assumptions and ctx.operating_assumptions.strip():
+            sys_prompt = sys_prompt.rstrip() + (
+                "\n\n## Operating assumptions\n\n" + ctx.operating_assumptions.strip() + "\n"
+            )
+
         async def _one(idx: int) -> str:
             cfg = ModelConfig(temperature=self.temperature, max_tokens=self.max_tokens)
             return await text_call(
-                self.sys_prompt,
+                sys_prompt,
                 user_message,
                 metadata=LLMExchangeMetadata(
                     call_id=ctx.parent_call_id,

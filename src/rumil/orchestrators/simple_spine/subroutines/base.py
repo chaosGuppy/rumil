@@ -89,6 +89,10 @@ class SpawnCtx:
     # Output of the config-prep LLM call (when ``config_prep`` is set);
     # subroutine implementations cast this to their expected schema.
     prepped_config: BaseModel | None = None
+    # Caller-supplied operating assumptions threaded from OrchInputs.
+    # Subroutines that opt in via ``inherit_assumptions`` append this to
+    # their own system prompt at run time.
+    operating_assumptions: str = ""
 
 
 @dataclass

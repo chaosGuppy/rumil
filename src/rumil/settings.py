@@ -201,6 +201,11 @@ class Settings(BaseSettings):
     max_api_retries_429: int | None = _capture_field(default=None)
     max_api_retries_500: int | None = _capture_field(default=None)
     max_api_retries_529: int | None = _capture_field(default=None)
+    # Separate, smaller cap for connection-class transients (httpx/httpcore
+    # ReadError, ConnectError, *Timeout). These can fire on destined-to-fail
+    # generations (e.g. very long max_tokens streams the edge can't sustain),
+    # so we don't want to retry 60 times and burn money on every attempt.
+    max_api_retries_connection_error: int = _capture_field(default=5)
 
     view_importance_5_cap: int = _capture_field(default=5)
     view_importance_4_cap: int = _capture_field(default=10)

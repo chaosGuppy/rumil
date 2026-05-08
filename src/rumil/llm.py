@@ -130,6 +130,32 @@ def _exc_status(exc: BaseException | None) -> int | None:
     return status if isinstance(status, int) else None
 
 
+_CONNECTION_ERROR_NAME_MARKERS = (
+    "readerror",
+    "writeerror",
+    "connecterror",
+    "readtimeout",
+    "writetimeout",
+    "connecttimeout",
+    "pooltimeout",
+)
+
+
+def _is_connection_error(exc: BaseException | None) -> bool:
+    """True for httpx/httpcore connection-class transients.
+
+    These are real transients (mid-stream connection drops), but they
+    can also fire on destined-to-fail generations — e.g. very long
+    streams the edge can't sustain. They get a separate, smaller retry
+    budget (``max_api_retries_connection_error``) so we don't retry 60
+    times and burn money on every attempt.
+    """
+    if exc is None:
+        return False
+    name = type(exc).__name__.lower()
+    return any(marker in name for marker in _CONNECTION_ERROR_NAME_MARKERS)
+
+
 def _is_retryable(exc: BaseException) -> bool:
     """Return True if the exception represents a transient API error."""
     status = _exc_status(exc)
@@ -150,15 +176,27 @@ def _is_retryable(exc: BaseException) -> bool:
         or "remoteprotocol" in name
         or "incomplete chunked read" in msg
         or "peer closed connection" in msg
+        or _is_connection_error(exc)
     )
+
+
+def _max_retries_for_exc(exc: BaseException | None) -> int:
+    """Pick the retry-budget for *exc*.
+
+    Connection-class errors get the smaller ``max_api_retries_connection_error``
+    cap. Everything else routes through the per-status defaults.
+    """
+    settings = get_settings()
+    if _is_connection_error(exc):
+        cap = settings.max_api_retries_connection_error
+        return min(cap, 3) if settings.is_test_mode else cap
+    return settings.get_max_retries(_exc_status(exc))
 
 
 def _stop_after_status_retries(retry_state: RetryCallState) -> bool:
     """Stop callback that respects per-status retry limits from settings."""
     exc = retry_state.outcome.exception() if retry_state.outcome else None
-    status = _exc_status(exc)
-    max_retries = get_settings().get_max_retries(status)
-    return retry_state.attempt_number >= max_retries
+    return retry_state.attempt_number >= _max_retries_for_exc(exc)
 
 
 def _log_before_retry(retry_state: RetryCallState) -> None:
@@ -168,7 +206,7 @@ def _log_before_retry(retry_state: RetryCallState) -> None:
     name = type(exc).__name__.lower() if exc else "unknown"
     label = f"HTTP {status}" if status else name
     wait = retry_state.next_action.sleep if retry_state.next_action else 0
-    max_retries = get_settings().get_max_retries(status)
+    max_retries = _max_retries_for_exc(exc)
     log.warning(
         "API temporarily unavailable (%s), retrying in %gs (attempt %d/%d)",
         label,

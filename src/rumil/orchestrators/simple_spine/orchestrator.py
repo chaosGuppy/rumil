@@ -255,10 +255,23 @@ class SimpleSpineOrchestrator:
                     finalize_state["synthesized"] = True
                     finalize_reason = "token_exhaustion_synthesized"
                     last_status = "incomplete"
-                else:
-                    finalize_reason = "model_emitted_no_tools"
-                    last_status = "incomplete"
-                break
+                    break
+                # A text-only turn isn't a termination signal — the model
+                # may be planning aloud before the next batch of spawns.
+                # Nudge it and loop again. Token cap + _HARD_MAX_ROUNDS
+                # bound the worst case if the model never emits tools.
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[system] No tools called this turn. Spawn "
+                            "subroutines, call `finalize` with your "
+                            "deliverable, or note what you're waiting on.\n"
+                            f"[budget] {clock.render_for_prompt()}"
+                        ),
+                    }
+                )
+                continue
 
             tool_results: list[dict] = []
             spawn_uses: list[ToolUseBlock] = []

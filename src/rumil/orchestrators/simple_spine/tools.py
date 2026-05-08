@@ -12,13 +12,17 @@ own tools at spawn time. Registered tool factories produce
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING
 
+from rumil.context import build_embedding_based_context
 from rumil.llm import Tool
 
 if TYPE_CHECKING:
     from rumil.orchestrators.simple_spine.subroutines.base import SpawnCtx
+
+log = logging.getLogger(__name__)
 
 
 ToolFactory = Callable[["SpawnCtx"], Tool]
@@ -132,3 +136,57 @@ def make_note_finding_tool(
         },
         fn=fn,
     )
+
+
+def make_workspace_search_tool(ctx: SpawnCtx) -> Tool:
+    """Embedding-similarity search over the active workspace.
+
+    Wraps :func:`build_embedding_based_context` against the spawn's scope
+    question. Returns the rendered tiered context block (full / abstract /
+    summary / distillation) for whatever the agent passed as ``query``.
+    """
+
+    async def fn(args: dict) -> str:
+        query = str(args.get("query", "")).strip()
+        if not query:
+            return "Error: workspace_search requires a non-empty `query`."
+        try:
+            result = await build_embedding_based_context(
+                query,
+                ctx.db,
+                scope_question_id=ctx.question_id,
+            )
+        except Exception as e:
+            log.exception("workspace_search failed")
+            return f"Error: workspace search failed: {type(e).__name__}: {e}"
+        return result.context_text or "[no relevant pages found for this query]"
+
+    return Tool(
+        name="workspace_search",
+        description=(
+            "Search the workspace via embedding similarity for pages "
+            "relevant to a free-text query. Returns rendered page snippets "
+            "across tiers (full / abstract / summary). Use to surface "
+            "considerations, claims, or related questions that bear on the "
+            "scope question. Issue several queries if the first is thin — "
+            "varying phrasing often surfaces different pages."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Free-text query to embed. Phrase as a question or "
+                        "topic statement; the embedding model handles both."
+                    ),
+                },
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        fn=fn,
+    )
+
+
+register_tool("workspace_search", make_workspace_search_tool)

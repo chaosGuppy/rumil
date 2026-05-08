@@ -32,7 +32,6 @@ from anthropic.types import TextBlock, ToolUseBlock
 from pydantic import BaseModel, ValidationError
 
 from rumil.calls.common import mark_call_completed
-from rumil.context import build_embedding_based_context
 from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, Tool, call_anthropic_api, structured_call
 from rumil.model_config import ModelConfig
@@ -138,14 +137,10 @@ class SimpleSpineOrchestrator:
         if question is None:
             raise RuntimeError(f"SimpleSpine: question {inputs.question_id} not found")
 
-        workspace_block = await _build_workspace_context(
-            self.db, inputs.question_id, question.headline
-        )
         initial_user = _build_initial_user_message(
             question_id=inputs.question_id,
             question_headline=question.headline,
             question_content=question.content,
-            workspace_block=workspace_block,
             inputs=inputs,
             clock=clock,
         )
@@ -652,31 +647,11 @@ def _splice_assumptions_into_sys(main_system_prompt: str, operating_assumptions:
     )
 
 
-async def _build_workspace_context(db: DB, question_id: str, question_headline: str) -> str:
-    """Read-only embedding-based context for the scope question.
-
-    Returns an empty string when context-building fails or the question
-    has nothing nearby — failure here should never block the run, so we
-    swallow exceptions and let the agent operate on the raw question.
-    """
-    try:
-        result = await build_embedding_based_context(
-            question_headline,
-            db,
-            scope_question_id=question_id,
-        )
-        return result.context_text
-    except Exception:
-        log.exception("SimpleSpine: workspace context build failed; continuing without it")
-        return ""
-
-
 def _build_initial_user_message(
     *,
     question_id: str,
     question_headline: str,
     question_content: str,
-    workspace_block: str,
     inputs: OrchInputs,
     clock: BudgetClock,
 ) -> str:
@@ -700,10 +675,6 @@ def _build_initial_user_message(
         sections.append(
             f"```json\n{json.dumps(inputs.output_schema.model_json_schema(), indent=2)}\n```"
         )
-        sections.append("")
-    if workspace_block.strip():
-        sections.append("## Workspace context")
-        sections.append(workspace_block.strip())
         sections.append("")
     sections.append("## Budget status")
     sections.append(clock.render_for_prompt())

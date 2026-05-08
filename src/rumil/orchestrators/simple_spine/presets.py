@@ -6,6 +6,8 @@ names are usable from CLI as ``--workflow-arg config_name=<name>``.
 
 Built-in variants currently shipped under ``configs/``:
 
+- ``research`` — workspace_lookup (FreeformAgent with the
+  ``workspace_search`` tool). Default preset for non-versus usage.
 - ``essay_continuation`` — drafter (FreeformAgent, 32k output) + critic
   (SampleN n=3). Used by ``--orch simple_spine`` on the completion side.
 - ``judge_pair`` — read → steelman (SampleN n=2) → verdict (FreeformAgent
@@ -76,10 +78,11 @@ def _autoregister_yaml_configs() -> None:
         # field is required to match for clarity but not enforced here
         # (the loader validates the name field separately).
         _REGISTRY[yaml_path.stem] = _yaml_loader(yaml_path)
-    # ``default`` aliases ``essay_continuation`` for back-compat with
-    # callers that don't pass a config_name.
-    if "essay_continuation" in _REGISTRY:
-        _REGISTRY["default"] = _REGISTRY["essay_continuation"]
+    # ``default`` aliases ``research`` — the general non-versus preset.
+    # Versus callers always pass an explicit config_name, so this only
+    # affects callers that didn't specify one.
+    if "research" in _REGISTRY:
+        _REGISTRY["default"] = _REGISTRY["research"]
 
 
 _autoregister_yaml_configs()

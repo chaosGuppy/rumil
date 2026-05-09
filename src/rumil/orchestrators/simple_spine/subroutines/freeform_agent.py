@@ -6,7 +6,8 @@ from the SimpleSpine tool registry. Optionally allows recursion (the
 spawned agent can itself fire spawn tools — see ``allow_recurse``).
 
 When ``config_prep`` is set, the spawn tool exposes a thin ``intent``
-schema and a hidden config-prep call elaborates the full agent config.
+schema and a hidden config-prep call branches off mainline (same
+system + history) to elaborate the full agent config.
 """
 
 from __future__ import annotations

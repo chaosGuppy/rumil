@@ -383,7 +383,9 @@ class SimpleSpineOrchestrator:
                             call_id=call.id,
                             question_id=inputs.question_id,
                             clock=clock,
+                            mainline_system_prompt=effective_system_prompt,
                             mainline_messages=messages,
+                            mainline_tool_uses=tool_uses,
                             round_idx=round_idx,
                             trace=trace,
                             operating_assumptions=inputs.operating_assumptions,
@@ -539,7 +541,9 @@ class SimpleSpineOrchestrator:
         call_id: str,
         question_id: str,
         clock: BudgetClock,
+        mainline_system_prompt: str,
         mainline_messages: Sequence[Mapping[str, Any]],
+        mainline_tool_uses: Sequence[ToolUseBlock],
         round_idx: int,
         trace: CallTrace,
         operating_assumptions: str = "",
@@ -616,9 +620,11 @@ class SimpleSpineOrchestrator:
             ctx.prepped_config = await self._run_config_prep(
                 sub,
                 ctx,
-                tu.input,
+                tu,
                 call_id=call_id,
+                mainline_system_prompt=mainline_system_prompt,
                 mainline_messages=mainline_messages,
+                mainline_tool_uses=mainline_tool_uses,
                 round_idx=round_idx,
                 trace=trace,
             )
@@ -684,34 +690,45 @@ class SimpleSpineOrchestrator:
         self,
         sub: SubroutineDef,
         ctx: SpawnCtx,
-        intent_payload: Mapping[str, Any],
+        target_tu: ToolUseBlock,
         *,
         call_id: str,
+        mainline_system_prompt: str,
         mainline_messages: Sequence[Mapping[str, Any]],
+        mainline_tool_uses: Sequence[ToolUseBlock],
         round_idx: int,
         trace: CallTrace,
     ) -> BaseModel | None:
+        """Branch off mainline to elaborate ``target_tu`` into a full config.
+
+        Inherits mainline's system prompt and full message history (which
+        already ends with the assistant turn that issued ``target_tu``).
+        Synthesizes ``tool_result`` blocks for *every* tool_use in that
+        trailing assistant turn — the Anthropic API rejects a follow-up
+        user turn that omits any tool_use_id — then appends a text
+        instruction asking the elaborator to produce the structured
+        config. Tools are deliberately omitted from the request: we want
+        structured output, not another tool call, and dropping tools
+        keeps the request well-formed for ``messages.parse``.
+
+        Sibling tool_uses (other parallel spawns, ``finalize``, etc.) get
+        a "deferred — branched" placeholder. The branch never affects
+        mainline's actual execution; the real spawn runs after this prep
+        call returns.
+        """
         prep = sub.config_prep
         assert prep is not None
-        slice_msgs: Sequence[Mapping[str, Any]] = []
-        if prep.mainline_context == "last_turn":
-            slice_msgs = mainline_messages[-2:] if mainline_messages else []
-        elif prep.mainline_context == "last_k_turns":
-            k = max(prep.last_k * 2, 0)
-            slice_msgs = mainline_messages[-k:] if k else []
-        prep_user = json.dumps(
-            {
-                "subroutine_name": sub.name,
-                "intent_payload": dict(intent_payload),
-                "mainline_thread_excerpt": _summarize_messages(slice_msgs),
-            },
-            ensure_ascii=False,
-            indent=2,
+        synthetic_user = _build_prep_user_turn(
+            sub_name=sub.name,
+            target_tu=target_tu,
+            sibling_tool_uses=mainline_tool_uses,
+            instructions=prep.instructions,
         )
+        prep_messages = [*mainline_messages, {"role": "user", "content": synthetic_user}]
         prepped_result = await structured_call(
-            prep.sys_prompt,
-            prep_user,
-            prep.output_schema,
+            mainline_system_prompt,
+            messages=prep_messages,
+            response_model=prep.output_schema,
             metadata=LLMExchangeMetadata(
                 call_id=call_id,
                 phase=f"config_prep:{sub.name}",
@@ -759,18 +776,18 @@ def _format_tool_description(sub: SubroutineDef) -> str:
 
     Layered on top of the author-supplied ``sub.description``:
     - a ``2-step`` annotation when ``config_prep`` is set, so mainline
-      knows there's a hidden elaboration call between its ``intent`` and
-      the agent's actual prompt (and that the elaborator can see a slice
-      of the mainline thread);
+      knows there's a hidden elaboration call that branches off the
+      current conversation (same system + history) to fill in the
+      subroutine's full config from this thin spawn payload;
     - an author-supplied ``cost_hint`` line so mainline can plan its
       first spawn before live ``[spawn cost: …]`` feedback arrives.
     """
     parts: list[str] = [sub.description.rstrip()]
     if sub.config_prep is not None:
-        scope = sub.config_prep.mainline_context
         parts.append(
-            f"_(2-step: thin intent → elaborator fills sys/user/tools; "
-            f"elaborator sees mainline_context={scope})_"
+            "_(2-step: thin intent → elaborator branches off this "
+            "conversation, sees the same system + history, fills in "
+            "the full sys/user/tools config)_"
         )
     cost_hint = getattr(sub, "cost_hint", None)
     if cost_hint:
@@ -778,30 +795,64 @@ def _format_tool_description(sub: SubroutineDef) -> str:
     return "\n\n".join(parts)
 
 
-def _summarize_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict]:
-    """Compact representation of a slice of mainline thread for prep call."""
-    out: list[dict] = []
-    for m in messages:
-        role = m.get("role", "?")
-        content = m.get("content", "")
-        if isinstance(content, str):
-            out.append({"role": role, "text": content[:2000]})
+def _build_prep_user_turn(
+    *,
+    sub_name: str,
+    target_tu: ToolUseBlock,
+    sibling_tool_uses: Sequence[ToolUseBlock],
+    instructions: str,
+) -> list[dict]:
+    """Synthesize the user turn that follows mainline's trailing assistant turn.
+
+    Anthropic requires a ``tool_result`` for every ``tool_use_id`` in
+    the prior assistant turn — without that the API rejects with 400.
+    Since the spawn hasn't actually run, every result here is a
+    placeholder. The target spawn's placeholder explicitly frames the
+    branch ("now elaborate this config"); siblings get a generic
+    "deferred for branched elaboration" so they don't influence the
+    elaboration. A trailing text block carries the elaboration request
+    and any kind-specific ``instructions``.
+    """
+    blocks: list[dict] = []
+    for tu in sibling_tool_uses:
+        if tu.id == target_tu.id:
+            blocks.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tu.id,
+                    "content": (
+                        f"[branched] Before this `{tu.name}` runs, the "
+                        "harness is elaborating its full config — see "
+                        "the request below."
+                    ),
+                }
+            )
         else:
-            # Anthropic content blocks; flatten text + tool calls.
-            parts: list[str] = []
-            for b in content:  # type: ignore[assignment]
-                if isinstance(b, dict):
-                    bt = b.get("type", "")
-                    if bt == "text":
-                        parts.append(str(b.get("text", "")))
-                    elif bt == "tool_use":
-                        parts.append(f"[tool_use:{b.get('name', '')}]")
-                    elif bt == "tool_result":
-                        parts.append(f"[tool_result:{str(b.get('content', ''))[:400]}]")
-                else:
-                    parts.append(str(b)[:400])
-            out.append({"role": role, "text": "\n".join(parts)[:2000]})
-    return out
+            blocks.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tu.id,
+                    "content": (
+                        "[branched] Skipped for this elaboration branch; "
+                        "this tool_use will be handled in mainline's real flow."
+                    ),
+                }
+            )
+    intent_payload_text = json.dumps(dict(target_tu.input), ensure_ascii=False, indent=2)
+    elaboration = (
+        f"You just called `spawn_{sub_name}` with this thin payload:\n\n"
+        f"```json\n{intent_payload_text}\n```\n\n"
+        "Before that spawn runs, produce the **full structured config** "
+        "for it as your next response. Reply with structured output "
+        "matching the elaborator schema — do not call another tool. "
+        "Tune sys_prompts, user_prompts, tool selections, and any "
+        "kind-specific fields to mainline's current state and the "
+        "intent above."
+    )
+    if instructions.strip():
+        elaboration = elaboration + "\n\n" + instructions.strip()
+    blocks.append({"type": "text", "text": elaboration})
+    return blocks
 
 
 def _build_initial_user_message(

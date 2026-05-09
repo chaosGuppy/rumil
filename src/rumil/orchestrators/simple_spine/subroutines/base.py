@@ -9,8 +9,9 @@ agent can spawn. The protocol is intentionally narrow:
   mainline as a tool result.
 - ``fingerprint()`` returns a stable dict for the orch fingerprint.
 - ``config_prep`` is an optional hidden second-stage LLM call that
-  elaborates a thin spawn payload into the full subroutine config —
-  see :class:`ConfigPrepDef`.
+  branches off mainline (same system + history) to elaborate a thin
+  spawn payload into the full subroutine config — see
+  :class:`ConfigPrepDef`.
 
 Concurrency: every subroutine's ``run`` is awaited concurrently with
 its peers within one mainline turn (``asyncio.gather``). Subroutines
@@ -25,7 +26,7 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -105,30 +106,53 @@ class ConfigPrepDef:
 
     When set on a SubroutineDef, the spawn tool exposes a small
     ``intent`` payload to mainline; before running the subroutine, a
-    config-prep LLM call converts that intent (plus optional slices of
-    mainline's persistent thread) into the subroutine's full config. The
-    elaborated config is what the subroutine actually sees.
+    config-prep LLM call elaborates that intent into the subroutine's
+    full config. The elaborated config (matching ``output_schema``) is
+    what the subroutine actually sees on ``ctx.prepped_config``.
 
-    ``output_schema`` is the structured shape the prep call must return;
-    each subroutine kind interprets it (e.g. FreeformAgent expects a
-    schema with ``sys_prompt``, ``user_prompt``, ``tools``,
-    ``additional_context`` fields).
+    The prep call **inherits mainline's full context**: same system
+    prompt, same message history up through (and including) the
+    assistant turn that issued the spawn ``tool_use``. Per the
+    Anthropic Messages API, that trailing assistant turn must be
+    followed by a user turn containing a ``tool_result`` for every
+    ``tool_use_id``; the orchestrator synthesizes placeholder
+    ``tool_result`` blocks (the spawn hasn't actually run) and appends
+    a text instruction asking the model to elaborate the config as
+    structured output. Sibling parallel ``tool_use`` blocks in that
+    trailing turn — other spawns, ``finalize``, etc. — get
+    "deferred for branched elaboration" placeholders so the prep call
+    is well-formed without modifying mainline's actual flow.
+
+    Cache implications: mainline's system block reads from cache; the
+    prep call deliberately omits mainline's tool definitions (tool
+    definitions sit between system and messages in the cache key, and
+    we're branching to structured output not a tool call) so the
+    messages-prefix cache won't hit, but the system block still does.
+
+    ``output_schema`` is the structured shape the prep call must
+    return; each subroutine kind interprets it (e.g. FreeformAgent
+    expects a schema with ``sys_prompt``, ``user_prompt``,
+    ``enabled_tools``, ``max_rounds`` fields).
+
+    ``instructions`` is appended to the synthetic elaboration text
+    that the orchestrator writes after the synthetic tool_results —
+    use it to nudge the elaborator with kind-specific framing
+    ("Pick a sys_prompt that matches the intent's role", etc.).
+    Optional; default empty.
     """
 
     model: str
-    sys_prompt: str
     output_schema: type[BaseModel]
-    mainline_context: Literal["none", "last_turn", "last_k_turns"] = "last_turn"
-    last_k: int = 2
+    instructions: str = ""
 
     def fingerprint(self) -> Mapping[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "model": self.model,
-            "sys_prompt_hash": sha8(self.sys_prompt),
             "output_schema": self.output_schema.__name__,
-            "mainline_context": self.mainline_context,
-            "last_k": self.last_k,
         }
+        if self.instructions:
+            out["instructions_hash"] = sha8(self.instructions)
+        return out
 
 
 @dataclass

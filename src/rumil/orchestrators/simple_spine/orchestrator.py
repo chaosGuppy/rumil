@@ -85,6 +85,19 @@ log = logging.getLogger(__name__)
 _HARD_MAX_ROUNDS = 50
 
 
+def _tool_result(tool_use_id: str, content: str) -> dict:
+    return {"type": "tool_result", "tool_use_id": tool_use_id, "content": content}
+
+
+def _tool_result_error(tool_use_id: str, content: str) -> dict:
+    return {
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": content,
+        "is_error": True,
+    }
+
+
 class SimpleSpineOrchestrator:
     """SimpleSpine main-loop orchestrator. See module docstring."""
 
@@ -352,27 +365,14 @@ class SimpleSpineOrchestrator:
                     # them as subroutine kinds and fail.
                     fn = tool_fn_map.get(tu.name)
                     if fn is None:
-                        tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tu.id,
-                                "content": f"Unknown tool: {tu.name}",
-                                "is_error": True,
-                            }
-                        )
+                        tool_results.append(_tool_result_error(tu.id, f"Unknown tool: {tu.name}"))
                         continue
                     try:
                         result_str = await fn(tu.input)
                     except Exception as e:
                         result_str = f"Error: {e}"
                         log.exception("Tool %s raised", tu.name)
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tu.id,
-                            "content": result_str,
-                        }
-                    )
+                    tool_results.append(_tool_result(tu.id, result_str))
                     if tu.name == "finalize":
                         finalize_reason = str(tu.input.get("reason", "")) or "model_finalize"
 
@@ -390,16 +390,12 @@ class SimpleSpineOrchestrator:
                     )
                     for tu in throttled:
                         tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tu.id,
-                                "content": (
-                                    f"[throttled] You requested {len(spawn_uses)} "
-                                    f"parallel spawns; only {cap} were run this "
-                                    "turn. Try the rest next turn if still wanted."
-                                ),
-                                "is_error": True,
-                            }
+                            _tool_result_error(
+                                tu.id,
+                                f"[throttled] You requested {len(spawn_uses)} "
+                                f"parallel spawns; only {cap} were run this "
+                                "turn. Try the rest next turn if still wanted.",
+                            )
                         )
 
                 if kept_spawn_uses and not clock.tokens_exhausted:
@@ -427,33 +423,21 @@ class SimpleSpineOrchestrator:
                         if isinstance(res, BaseException):
                             log.exception("Spawn %s raised", tu.name, exc_info=res)
                             tool_results.append(
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": tu.id,
-                                    "content": f"Spawn error: {type(res).__name__}: {res}",
-                                    "is_error": True,
-                                }
+                                _tool_result_error(
+                                    tu.id,
+                                    f"Spawn error: {type(res).__name__}: {res}",
+                                )
                             )
                         else:
-                            tool_results.append(
-                                {
-                                    "type": "tool_result",
-                                    "tool_use_id": tu.id,
-                                    "content": res.text_summary,
-                                }
-                            )
+                            tool_results.append(_tool_result(tu.id, res.text_summary))
                 elif kept_spawn_uses and clock.tokens_exhausted:
                     for tu in kept_spawn_uses:
                         tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tu.id,
-                                "content": (
-                                    "[budget] Token budget exhausted before this "
-                                    "spawn could run. Finalize next turn."
-                                ),
-                                "is_error": True,
-                            }
+                            _tool_result_error(
+                                tu.id,
+                                "[budget] Token budget exhausted before this "
+                                "spawn could run. Finalize next turn.",
+                            )
                         )
 
                 if tool_results:
@@ -866,26 +850,20 @@ def _build_prep_user_turn(
     for tu in sibling_tool_uses:
         if tu.id == target_tu.id:
             blocks.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": (
-                        f"[branched] Before this `{tu.name}` runs, the "
-                        "harness is elaborating its full config — see "
-                        "the request below."
-                    ),
-                }
+                _tool_result(
+                    tu.id,
+                    f"[branched] Before this `{tu.name}` runs, the "
+                    "harness is elaborating its full config — see "
+                    "the request below.",
+                )
             )
         else:
             blocks.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": (
-                        "[branched] Skipped for this elaboration branch; "
-                        "this tool_use will be handled in mainline's real flow."
-                    ),
-                }
+                _tool_result(
+                    tu.id,
+                    "[branched] Skipped for this elaboration branch; "
+                    "this tool_use will be handled in mainline's real flow.",
+                )
             )
     intent_payload_text = json.dumps(dict(target_tu.input), ensure_ascii=False, indent=2)
     elaboration = (

@@ -35,7 +35,13 @@ from pydantic import BaseModel, ValidationError
 
 from rumil.calls.common import mark_call_completed
 from rumil.database import DB
-from rumil.llm import LLMExchangeMetadata, Tool, call_anthropic_api, structured_call
+from rumil.llm import (
+    LLMExchangeMetadata,
+    Tool,
+    _aggregate_usage_tokens,
+    call_anthropic_api,
+    structured_call,
+)
 from rumil.model_config import ModelConfig
 from rumil.models import Call, CallStatus, CallType
 from rumil.orchestrators.simple_spine.artifacts import ArtifactStore
@@ -250,7 +256,12 @@ class SimpleSpineOrchestrator:
             response = api_resp.message
             usage = response.usage
             if usage is not None:
-                clock.record_tokens((usage.input_tokens or 0) + (usage.output_tokens or 0))
+                # Aggregate across compaction iterations: when compaction
+                # fires the API runs an extra summarisation iteration whose
+                # tokens are NOT in top-level usage. Without aggregation the
+                # budget clock under-counts (and compaction looks free).
+                agg_in, agg_out = _aggregate_usage_tokens(usage)
+                clock.record_tokens(agg_in + agg_out)
 
             assistant_text = ""
             tool_uses: list[ToolUseBlock] = []

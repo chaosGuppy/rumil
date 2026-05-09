@@ -372,6 +372,26 @@ def _with_date_suffix(system_prompt: str) -> str:
     return system_prompt + f"\n\nIMPORTANT: Today's date is {today}\n"
 
 
+def _aggregate_usage_tokens(usage: Any) -> tuple[int, int]:
+    """Return (input_tokens, output_tokens) summed across compaction iterations.
+
+    Per Anthropic's compact_20260112 docs: when compaction fires the API
+    runs an extra summarisation iteration whose tokens are NOT folded
+    into top-level ``usage.input_tokens``/``output_tokens`` — those only
+    reflect the final ``message`` iteration. ``usage.iterations`` lists
+    every iteration (``type``=``"compaction"`` or ``"message"``) with
+    its own input/output counts; sum across to get the true totals for
+    cost tracking. When ``iterations`` is absent/empty (no new
+    compaction this request) the top-level fields are accurate.
+    """
+    iterations = getattr(usage, "iterations", None) or []
+    if not iterations:
+        return (usage.input_tokens or 0, usage.output_tokens or 0)
+    total_in = sum((getattr(it, "input_tokens", 0) or 0) for it in iterations)
+    total_out = sum((getattr(it, "output_tokens", 0) or 0) for it in iterations)
+    return (total_in, total_out)
+
+
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
 
 
@@ -1042,9 +1062,21 @@ async def call_anthropic_api(
     else:
         cfg = model_config
     system_prompt = _with_date_suffix(system_prompt)
+    # When caching, place a cache_control breakpoint at the end of the
+    # system prompt as well as the last message. This keeps the system
+    # prompt cached separately so that compaction (which invalidates the
+    # conversation cache) doesn't force the system prompt to be re-cached
+    # — see Anthropic's "Maximizing cache hits with system prompts"
+    # guidance under the compact_20260112 docs. Two breakpoints (system +
+    # last message) is well under Anthropic's 4-breakpoint limit.
+    system_param: Any = (
+        [{"type": "text", "text": system_prompt, "cache_control": _CACHE_BREAKPOINT}]
+        if cache
+        else system_prompt
+    )
     kwargs: dict = {
         "model": model,
-        "system": system_prompt,
+        "system": system_param,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
         **cfg.to_anthropic_kwargs(),
     }
@@ -1149,6 +1181,11 @@ async def call_anthropic_api(
         response.usage,
     )
     parsed = parse_anthropic_response(response.content)
+    # Aggregate across compaction iterations so the recorded exchange
+    # reflects the full billed token count (top-level usage drops the
+    # compaction-summarisation iteration). No-op when compaction didn't
+    # fire on this request.
+    agg_input_tokens, agg_output_tokens = _aggregate_usage_tokens(response.usage)
     if metadata and db:
         serialized = _serialize_messages(messages) if len(messages) > 1 else None
         try:
@@ -1159,8 +1196,8 @@ async def call_anthropic_api(
                 system_prompt=system_prompt,
                 response_text=parsed.text or None,
                 tool_calls=parsed.tool_calls,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
+                input_tokens=agg_input_tokens,
+                output_tokens=agg_output_tokens,
                 duration_ms=elapsed_ms,
                 cache_creation_input_tokens=getattr(
                     response.usage, "cache_creation_input_tokens", 0

@@ -73,6 +73,7 @@ from rumil.orchestrators.simple_spine.trace_events import (
     SpineThrottledEvent,
 )
 from rumil.settings import get_settings
+from rumil.tracing import get_langfuse, observe, phase_span, propagate_attributes
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
@@ -97,6 +98,7 @@ class SimpleSpineOrchestrator:
         self.config = config
         self.broadcaster = broadcaster
 
+    @observe(name="orchestrator.simple_spine")
     async def run(
         self,
         inputs: OrchInputs,
@@ -131,10 +133,33 @@ class SimpleSpineOrchestrator:
             },
         )
         await self.db.update_call_status(call.id, CallStatus.RUNNING)
+        lf = get_langfuse()
+        if lf is not None:
+            lf.update_current_span(
+                name=f"orchestrator.simple_spine[{self.config.fingerprint_short}]",
+                metadata={
+                    "call_id": call.id,
+                    "call_type": call_type.value,
+                    "question_id": inputs.question_id,
+                    "parent_call_id": parent_call_id,
+                    "fingerprint": self.config.fingerprint_short,
+                    "max_tokens": clock.spec.max_tokens,
+                    "library": [s.name for s in self.config.process_library],
+                },
+            )
         trace = CallTrace(call.id, self.db, broadcaster=self.broadcaster)
         trace_token = set_trace(trace)
         try:
-            return await self._run_inner(call, inputs, clock, trace)
+            with propagate_attributes(
+                session_id=self.db.run_id or None,
+                metadata={
+                    "orchestrator": "simple_spine",
+                    "fingerprint": self.config.fingerprint_short,
+                    "call_id": call.id,
+                },
+                tags=["orchestrator:simple_spine"],
+            ):
+                return await self._run_inner(call, inputs, clock, trace)
         finally:
             reset_trace(trace_token)
 
@@ -216,239 +241,241 @@ class SimpleSpineOrchestrator:
             }
 
         for round_idx in range(_HARD_MAX_ROUNDS):
-            await trace.record(
-                SpineRoundStartedEvent(
-                    round_idx=round_idx,
-                    tokens_used=clock.tokens_used,
-                    tokens_remaining=clock.tokens_remaining,
-                    elapsed_s=clock.elapsed_s,
-                )
-            )
-            if clock.tokens_exhausted:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "[system] Token budget exhausted. Call `finalize` "
-                            "now with the best answer you can synthesize from "
-                            "the work so far. No further spawns will run."
-                        ),
-                    }
-                )
-
-            # Mainline ModelConfig — knobs live on SimpleSpineConfig so
-            # presets (versus vs. research) can pin values that match
-            # their finalize.answer payload size. Versus pins
-            # ``mainline_max_tokens=32_000`` so the deliverable doesn't
-            # get truncated when finalize lands in a single turn.
-            cfg = ModelConfig(
-                temperature=self.config.mainline_temperature,
-                max_tokens=self.config.mainline_max_tokens,
-            )
-            api_resp = await call_anthropic_api(
-                client,
-                self.config.main_model,
-                effective_system_prompt,
-                messages,
-                tool_defs,
-                metadata=LLMExchangeMetadata(
-                    call_id=call.id,
-                    phase="mainline",
-                    round_num=round_idx,
-                ),
-                db=self.db,
-                cache=True,
-                model_config=cfg,
-                **compaction_kwargs,
-            )
-            response = api_resp.message
-            usage = response.usage
-            if usage is not None:
-                # Aggregate across compaction iterations: when compaction
-                # fires the API runs an extra summarisation iteration whose
-                # tokens are NOT in top-level usage. Without aggregation the
-                # budget clock under-counts (and compaction looks free).
-                agg_in, agg_out = _aggregate_usage_tokens(usage)
-                clock.record_tokens(agg_in + agg_out)
-
-            assistant_text = ""
-            tool_uses: list[ToolUseBlock] = []
-            for block in response.content:
-                if isinstance(block, TextBlock):
-                    assistant_text += block.text
-                elif isinstance(block, ToolUseBlock):
-                    tool_uses.append(block)
-                elif getattr(block, "type", None) == "compaction":
-                    summary = getattr(block, "content", None) or ""
-                    await trace.record(
-                        SpineCompactedEvent(
-                            round_idx=round_idx,
-                            summary_chars=len(summary),
-                            summary_text=summary,
-                        )
-                    )
-            messages.append({"role": "assistant", "content": response.content})
-
-            if not tool_uses:
-                if clock.tokens_exhausted and self.config.force_finalize_on_token_exhaustion:
-                    finalize_state["answer"] = assistant_text.strip()
-                    finalize_state["synthesized"] = True
-                    finalize_reason = "token_exhaustion_synthesized"
-                    last_status = "incomplete"
-                    break
-                # A text-only turn isn't a termination signal — the model
-                # may be planning aloud before the next batch of spawns.
-                # Nudge it and loop again. Token cap + _HARD_MAX_ROUNDS
-                # bound the worst case if the model never emits tools.
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "[system] No tools called this turn. Spawn "
-                            "subroutines, call `finalize` with your "
-                            "deliverable, or note what you're waiting on.\n"
-                            f"[budget] {clock.render_for_prompt()}"
-                        ),
-                    }
-                )
-                continue
-
-            tool_results: list[dict] = []
-            spawn_uses: list[ToolUseBlock] = []
-            for tu in tool_uses:
-                if tu.name.startswith("spawn_"):
-                    spawn_uses.append(tu)
-                    continue
-                # Non-spawn tools (finalize, read_artifact, search_artifacts,
-                # any future first-class mainline tool) execute locally via
-                # tool_fn_map. Routing them through _run_spawn would treat
-                # them as subroutine kinds and fail.
-                fn = tool_fn_map.get(tu.name)
-                if fn is None:
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tu.id,
-                            "content": f"Unknown tool: {tu.name}",
-                            "is_error": True,
-                        }
-                    )
-                    continue
-                try:
-                    result_str = await fn(tu.input)
-                except Exception as e:
-                    result_str = f"Error: {e}"
-                    log.exception("Tool %s raised", tu.name)
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": result_str,
-                    }
-                )
-                if tu.name == "finalize":
-                    finalize_reason = str(tu.input.get("reason", "")) or "model_finalize"
-
-            kept_spawn_uses = spawn_uses
-            cap = self.config.max_parallel_spawns_per_turn
-            if cap is not None and len(spawn_uses) > cap:
-                kept_spawn_uses = spawn_uses[:cap]
-                throttled = spawn_uses[cap:]
+            with phase_span(f"round_{round_idx}"):
                 await trace.record(
-                    SpineThrottledEvent(
+                    SpineRoundStartedEvent(
                         round_idx=round_idx,
-                        requested=len(spawn_uses),
-                        kept=len(kept_spawn_uses),
+                        tokens_used=clock.tokens_used,
+                        tokens_remaining=clock.tokens_remaining,
+                        elapsed_s=clock.elapsed_s,
                     )
                 )
-                for tu in throttled:
-                    tool_results.append(
+                if clock.tokens_exhausted:
+                    messages.append(
                         {
-                            "type": "tool_result",
-                            "tool_use_id": tu.id,
+                            "role": "user",
                             "content": (
-                                f"[throttled] You requested {len(spawn_uses)} "
-                                f"parallel spawns; only {cap} were run this "
-                                "turn. Try the rest next turn if still wanted."
+                                "[system] Token budget exhausted. Call `finalize` "
+                                "now with the best answer you can synthesize from "
+                                "the work so far. No further spawns will run."
                             ),
-                            "is_error": True,
                         }
                     )
 
-            if kept_spawn_uses and not clock.tokens_exhausted:
-                spawn_results = await asyncio.gather(
-                    *[
-                        self._run_spawn(
-                            tu,
-                            call_id=call.id,
-                            question_id=inputs.question_id,
-                            clock=clock,
-                            mainline_system_prompt=effective_system_prompt,
-                            mainline_messages=messages,
-                            mainline_tool_uses=tool_uses,
-                            round_idx=round_idx,
-                            trace=trace,
-                            operating_assumptions=inputs.operating_assumptions,
-                            artifact_store=artifact_store,
-                        )
-                        for tu in kept_spawn_uses
-                    ],
-                    return_exceptions=True,
+                # Mainline ModelConfig — knobs live on SimpleSpineConfig so
+                # presets (versus vs. research) can pin values that match
+                # their finalize.answer payload size. Versus pins
+                # ``mainline_max_tokens=32_000`` so the deliverable doesn't
+                # get truncated when finalize lands in a single turn.
+                cfg = ModelConfig(
+                    temperature=self.config.mainline_temperature,
+                    max_tokens=self.config.mainline_max_tokens,
                 )
-                spawn_count += len(kept_spawn_uses)
-                for tu, res in zip(kept_spawn_uses, spawn_results):
-                    if isinstance(res, BaseException):
-                        log.exception("Spawn %s raised", tu.name, exc_info=res)
+                with phase_span("mainline"):
+                    api_resp = await call_anthropic_api(
+                        client,
+                        self.config.main_model,
+                        effective_system_prompt,
+                        messages,
+                        tool_defs,
+                        metadata=LLMExchangeMetadata(
+                            call_id=call.id,
+                            phase="mainline",
+                            round_num=round_idx,
+                        ),
+                        db=self.db,
+                        cache=True,
+                        model_config=cfg,
+                        **compaction_kwargs,
+                    )
+                response = api_resp.message
+                usage = response.usage
+                if usage is not None:
+                    # Aggregate across compaction iterations: when compaction
+                    # fires the API runs an extra summarisation iteration whose
+                    # tokens are NOT in top-level usage. Without aggregation the
+                    # budget clock under-counts (and compaction looks free).
+                    agg_in, agg_out = _aggregate_usage_tokens(usage)
+                    clock.record_tokens(agg_in + agg_out)
+
+                assistant_text = ""
+                tool_uses: list[ToolUseBlock] = []
+                for block in response.content:
+                    if isinstance(block, TextBlock):
+                        assistant_text += block.text
+                    elif isinstance(block, ToolUseBlock):
+                        tool_uses.append(block)
+                    elif getattr(block, "type", None) == "compaction":
+                        summary = getattr(block, "content", None) or ""
+                        await trace.record(
+                            SpineCompactedEvent(
+                                round_idx=round_idx,
+                                summary_chars=len(summary),
+                                summary_text=summary,
+                            )
+                        )
+                messages.append({"role": "assistant", "content": response.content})
+
+                if not tool_uses:
+                    if clock.tokens_exhausted and self.config.force_finalize_on_token_exhaustion:
+                        finalize_state["answer"] = assistant_text.strip()
+                        finalize_state["synthesized"] = True
+                        finalize_reason = "token_exhaustion_synthesized"
+                        last_status = "incomplete"
+                        break
+                    # A text-only turn isn't a termination signal — the model
+                    # may be planning aloud before the next batch of spawns.
+                    # Nudge it and loop again. Token cap + _HARD_MAX_ROUNDS
+                    # bound the worst case if the model never emits tools.
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "[system] No tools called this turn. Spawn "
+                                "subroutines, call `finalize` with your "
+                                "deliverable, or note what you're waiting on.\n"
+                                f"[budget] {clock.render_for_prompt()}"
+                            ),
+                        }
+                    )
+                    continue
+
+                tool_results: list[dict] = []
+                spawn_uses: list[ToolUseBlock] = []
+                for tu in tool_uses:
+                    if tu.name.startswith("spawn_"):
+                        spawn_uses.append(tu)
+                        continue
+                    # Non-spawn tools (finalize, read_artifact, search_artifacts,
+                    # any future first-class mainline tool) execute locally via
+                    # tool_fn_map. Routing them through _run_spawn would treat
+                    # them as subroutine kinds and fail.
+                    fn = tool_fn_map.get(tu.name)
+                    if fn is None:
                         tool_results.append(
                             {
                                 "type": "tool_result",
                                 "tool_use_id": tu.id,
-                                "content": f"Spawn error: {type(res).__name__}: {res}",
+                                "content": f"Unknown tool: {tu.name}",
                                 "is_error": True,
                             }
                         )
-                    else:
-                        tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tu.id,
-                                "content": res.text_summary,
-                            }
-                        )
-            elif kept_spawn_uses and clock.tokens_exhausted:
-                for tu in kept_spawn_uses:
+                        continue
+                    try:
+                        result_str = await fn(tu.input)
+                    except Exception as e:
+                        result_str = f"Error: {e}"
+                        log.exception("Tool %s raised", tu.name)
                     tool_results.append(
                         {
                             "type": "tool_result",
                             "tool_use_id": tu.id,
-                            "content": (
-                                "[budget] Token budget exhausted before this "
-                                "spawn could run. Finalize next turn."
-                            ),
-                            "is_error": True,
+                            "content": result_str,
                         }
                     )
+                    if tu.name == "finalize":
+                        finalize_reason = str(tu.input.get("reason", "")) or "model_finalize"
 
-            if tool_results:
-                # Budget telemetry rides along on the tool-result message
-                # so the model sees up-to-date counters every turn without
-                # us having to insert a separate user turn (which would
-                # break the tool_use → tool_result adjacency rule).
-                budget_block = {
-                    "type": "text",
-                    "text": (
-                        f"[budget] {clock.render_for_prompt()}"
-                        + (
-                            "\n[budget] Token cap exhausted — finalize on your next turn."
-                            if clock.tokens_exhausted
-                            else ""
+                kept_spawn_uses = spawn_uses
+                cap = self.config.max_parallel_spawns_per_turn
+                if cap is not None and len(spawn_uses) > cap:
+                    kept_spawn_uses = spawn_uses[:cap]
+                    throttled = spawn_uses[cap:]
+                    await trace.record(
+                        SpineThrottledEvent(
+                            round_idx=round_idx,
+                            requested=len(spawn_uses),
+                            kept=len(kept_spawn_uses),
                         )
-                    ),
-                }
-                messages.append({"role": "user", "content": [*tool_results, budget_block]})
+                    )
+                    for tu in throttled:
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tu.id,
+                                "content": (
+                                    f"[throttled] You requested {len(spawn_uses)} "
+                                    f"parallel spawns; only {cap} were run this "
+                                    "turn. Try the rest next turn if still wanted."
+                                ),
+                                "is_error": True,
+                            }
+                        )
 
-            if finalize_state["done"]:
-                break
+                if kept_spawn_uses and not clock.tokens_exhausted:
+                    spawn_results = await asyncio.gather(
+                        *[
+                            self._run_spawn(
+                                tu,
+                                call_id=call.id,
+                                question_id=inputs.question_id,
+                                clock=clock,
+                                mainline_system_prompt=effective_system_prompt,
+                                mainline_messages=messages,
+                                mainline_tool_uses=tool_uses,
+                                round_idx=round_idx,
+                                trace=trace,
+                                operating_assumptions=inputs.operating_assumptions,
+                                artifact_store=artifact_store,
+                            )
+                            for tu in kept_spawn_uses
+                        ],
+                        return_exceptions=True,
+                    )
+                    spawn_count += len(kept_spawn_uses)
+                    for tu, res in zip(kept_spawn_uses, spawn_results):
+                        if isinstance(res, BaseException):
+                            log.exception("Spawn %s raised", tu.name, exc_info=res)
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tu.id,
+                                    "content": f"Spawn error: {type(res).__name__}: {res}",
+                                    "is_error": True,
+                                }
+                            )
+                        else:
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tu.id,
+                                    "content": res.text_summary,
+                                }
+                            )
+                elif kept_spawn_uses and clock.tokens_exhausted:
+                    for tu in kept_spawn_uses:
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tu.id,
+                                "content": (
+                                    "[budget] Token budget exhausted before this "
+                                    "spawn could run. Finalize next turn."
+                                ),
+                                "is_error": True,
+                            }
+                        )
+
+                if tool_results:
+                    # Budget telemetry rides along on the tool-result message
+                    # so the model sees up-to-date counters every turn without
+                    # us having to insert a separate user turn (which would
+                    # break the tool_use → tool_result adjacency rule).
+                    budget_block = {
+                        "type": "text",
+                        "text": (
+                            f"[budget] {clock.render_for_prompt()}"
+                            + (
+                                "\n[budget] Token cap exhausted — finalize on your next turn."
+                                if clock.tokens_exhausted
+                                else ""
+                            )
+                        ),
+                    }
+                    messages.append({"role": "user", "content": [*tool_results, budget_block]})
+
+                if finalize_state["done"]:
+                    break
         else:
             last_status = "incomplete"
             finalize_reason = "hard_round_cap"
@@ -534,6 +561,7 @@ class SimpleSpineOrchestrator:
             fn=fn,
         )
 
+    @observe(name="spawn")
     async def _run_spawn(
         self,
         tu: ToolUseBlock,
@@ -573,6 +601,16 @@ class SimpleSpineOrchestrator:
         if sub is None:
             raise KeyError(f"Unknown subroutine: {sub_name}")
         spawn_id = str(uuid.uuid4())
+        lf = get_langfuse()
+        if lf is not None:
+            lf.update_current_span(
+                name=f"spawn.{sub.name}",
+                metadata={
+                    "subroutine": sub.name,
+                    "spawn_id": spawn_id,
+                    "round_idx": round_idx,
+                },
+            )
         raw_include = tu.input.get("include_artifacts") or ()
         if not isinstance(raw_include, (list, tuple)):
             raise ValueError(
@@ -686,6 +724,7 @@ class SimpleSpineOrchestrator:
         )
         return result
 
+    @observe(name="config_prep")
     async def _run_config_prep(
         self,
         sub: SubroutineDef,
@@ -718,6 +757,16 @@ class SimpleSpineOrchestrator:
         """
         prep = sub.config_prep
         assert prep is not None
+        lf = get_langfuse()
+        if lf is not None:
+            lf.update_current_span(
+                name=f"config_prep.{sub.name}",
+                metadata={
+                    "subroutine": sub.name,
+                    "spawn_id": ctx.spawn_id,
+                    "round_idx": round_idx,
+                },
+            )
         synthetic_user = _build_prep_user_turn(
             sub_name=sub.name,
             target_tu=target_tu,

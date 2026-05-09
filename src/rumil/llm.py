@@ -1017,6 +1017,21 @@ async def call_anthropic_api(
         raise ValueError("metadata and db must be provided together")
     if model_config is not None and effort is not None:
         raise ValueError("pass effort via model_config.effort, not both")
+    # Backfill metadata.user_message from messages[0] for single-turn calls.
+    # The persistence sites below skip user_messages when len(messages)==1 to
+    # avoid duplicating the prompt across user_message and user_messages, on
+    # the assumption that single-turn callers (text_call etc.) populate
+    # metadata.user_message. Multi-turn callers like thin_agent_loop pass
+    # messages directly and don't set it, so round-0 calls otherwise persist
+    # neither column. Future cleanup: collapse user_message and user_messages
+    # to a single column and drop both this backfill and the len>1 guards.
+    if (
+        metadata is not None
+        and not metadata.user_message
+        and len(messages) == 1
+        and isinstance(messages[0].get("content"), str)
+    ):
+        metadata.user_message = messages[0]["content"]
     if model_config is None:
         cfg = derive_model_config(model)
         # Caller can override effort only when the model actually supports it;

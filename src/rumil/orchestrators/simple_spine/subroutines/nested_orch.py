@@ -19,7 +19,6 @@ SubroutineDef agnostic about which orch shape it wraps.
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,11 +28,6 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SubroutineBase,
     SubroutineResult,
 )
-
-
-def _sha8(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
-
 
 # Factory: (ctx, sub_token_cap, overrides) -> awaitable returning a text
 # summary that bubbles back to mainline.
@@ -69,47 +63,25 @@ class NestedOrchSubroutine(SubroutineBase):
             )
 
     def fingerprint(self) -> Mapping[str, Any]:
-        out: dict[str, Any] = {
-            "kind": "nested_orch",
-            "name": self.name,
-            "orch_kind": self.orch_kind,
-            "base_token_cap": self.base_token_cap,
-            "overridable": sorted(self.overridable),
-            "inherit_assumptions": self.inherit_assumptions,
-        }
-        if self.config_prep is not None:
-            out["config_prep"] = self.config_prep.fingerprint()
+        out = dict(super().fingerprint())
+        out["kind"] = "nested_orch"
+        out["orch_kind"] = self.orch_kind
         return out
 
-    def spawn_tool_schema(self) -> dict[str, Any]:
-        properties: dict[str, Any] = {
-            "intent": {
-                "type": "string",
-                "description": self.intent_description
-                or "What you want this nested orch to investigate / produce.",
-            },
-        }
-        required = ["intent"]
-        if "additional_context" in self.overridable:
-            properties["additional_context"] = {
-                "type": "string",
-                "description": self.additional_context_description
-                or "Context to forward to the nested orch.",
-            }
-        if "token_cap" in self.overridable:
-            properties["token_cap"] = {
-                "type": "integer",
-                "minimum": 1000,
-                "description": (
-                    "Override the token sub-cap (default "
-                    f"{self.base_token_cap}). Capped at parent's remaining."
-                ),
-            }
+    def _default_intent_description(self) -> str:
+        return "What you want this nested orch to investigate / produce."
+
+    def _default_additional_context_description(self) -> str:
+        return "Context to forward to the nested orch."
+
+    def _token_cap_property(self) -> dict[str, Any]:
         return {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": False,
+            "type": "integer",
+            "minimum": 1000,
+            "description": (
+                "Override the token sub-cap (default "
+                f"{self.base_token_cap}). Capped at parent's remaining."
+            ),
         }
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:

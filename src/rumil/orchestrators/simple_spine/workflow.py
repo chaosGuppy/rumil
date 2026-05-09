@@ -22,7 +22,6 @@ key — no manual version bump.
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 from collections.abc import Mapping, Sequence
 
 from rumil.database import DB
@@ -31,12 +30,9 @@ from rumil.models import CallType
 from rumil.orchestrators.simple_spine.budget_clock import BudgetSpec
 from rumil.orchestrators.simple_spine.config import OrchInputs, SimpleSpineConfig
 from rumil.orchestrators.simple_spine.orchestrator import SimpleSpineOrchestrator
+from rumil.orchestrators.simple_spine.subroutines.base import sha8
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
-
-
-def _sha8(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
 
 
 def _apply_model_override(config: SimpleSpineConfig, model: str) -> SimpleSpineConfig:
@@ -131,9 +127,9 @@ class SimpleSpineWorkflow:
             "budget": self.budget,
             "tokens_per_round": self.tokens_per_round,
             "wall_clock_soft_s": (int(self.wall_clock_soft_s) if self.wall_clock_soft_s else None),
-            "operating_assumptions_hash": _sha8(self.operating_assumptions),
-            "output_guidance_hash": _sha8(self.output_guidance),
-            "additional_context_hash": _sha8(self.additional_context),
+            "operating_assumptions_hash": sha8(self.operating_assumptions),
+            "output_guidance_hash": sha8(self.output_guidance),
+            "additional_context_hash": sha8(self.additional_context),
         }
 
     async def setup(self, db: DB, question_id: str) -> None:

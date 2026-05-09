@@ -26,7 +26,6 @@ purely additive and well-behaved in staged mode.
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -42,18 +41,14 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
 )
 
 
-def _sha8(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
-
-
 @dataclass(frozen=True, kw_only=True)
 class CallTypeSubroutine(SubroutineBase):
     """Wrap an existing rumil CallRunner inside a staged sub-DB.
 
-    Inherits cross-cutting fields from :class:`SubroutineBase`. Doesn't
-    inherit :class:`LLMSubroutineBase` because the wrapped CallRunner
-    fires its own LLM calls with its own prompts/models — the
-    SubroutineDef just specifies which rumil CallType to wrap.
+    Inherits cross-cutting fields from :class:`SubroutineBase`. The
+    wrapped CallRunner fires its own LLM calls with its own
+    prompts/models — this SubroutineDef just specifies which rumil
+    CallType to wrap.
     """
 
     call_type: CallType
@@ -63,35 +58,25 @@ class CallTypeSubroutine(SubroutineBase):
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "max_rounds"}))
 
     def fingerprint(self) -> Mapping[str, Any]:
-        out: dict[str, Any] = {
-            "kind": "call_type",
-            "name": self.name,
-            "call_type": self.call_type.value,
-            "runner_cls": self.runner_cls.__name__,
-            "base_max_rounds": self.base_max_rounds,
-            "base_budget": self.base_budget,
-            "overridable": sorted(self.overridable),
-            "inherit_assumptions": self.inherit_assumptions,
-        }
-        if self.config_prep is not None:
-            out["config_prep"] = self.config_prep.fingerprint()
+        out = dict(super().fingerprint())
+        out["kind"] = "call_type"
+        out["call_type"] = self.call_type.value
+        out["runner_cls"] = self.runner_cls.__name__
+        out["base_max_rounds"] = self.base_max_rounds
+        out["base_budget"] = self.base_budget
         return out
 
-    def spawn_tool_schema(self) -> dict[str, Any]:
-        properties: dict[str, Any] = {
-            "intent": {
-                "type": "string",
-                "description": self.intent_description
-                or (
-                    "Brief statement of what you want this call to investigate. "
-                    "Recorded on the trace; the underlying CallType uses its "
-                    "own context-builder to drive the work."
-                ),
-            },
-        }
-        required = ["intent"]
+    def _default_intent_description(self) -> str:
+        return (
+            "Brief statement of what you want this call to investigate. "
+            "Recorded on the trace; the underlying CallType uses its "
+            "own context-builder to drive the work."
+        )
+
+    def _extra_schema_properties(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
         if "max_rounds" in self.overridable:
-            properties["max_rounds"] = {
+            out["max_rounds"] = {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": self.base_max_rounds,
@@ -100,12 +85,7 @@ class CallTypeSubroutine(SubroutineBase):
                     "consumes one budget unit in the spawned sub-DB."
                 ),
             }
-        return {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": False,
-        }
+        return out
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:
         max_rounds_override = overrides.get("max_rounds")

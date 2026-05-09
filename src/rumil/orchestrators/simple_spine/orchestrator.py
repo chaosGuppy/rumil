@@ -46,6 +46,7 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SpawnCtx,
     SubroutineDef,
     SubroutineResult,
+    splice_assumptions,
 )
 from rumil.orchestrators.simple_spine.tools import make_finalize_tool
 from rumil.orchestrators.simple_spine.trace_events import (
@@ -165,7 +166,7 @@ class SimpleSpineOrchestrator:
             for t in all_tools
         ]
         tool_fn_map = {t.name: t.fn for t in all_tools}
-        effective_system_prompt = _splice_assumptions_into_sys(
+        effective_system_prompt = splice_assumptions(
             self.config.main_system_prompt, inputs.operating_assumptions
         )
 
@@ -654,21 +655,6 @@ def _summarize_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict]:
                     parts.append(str(b)[:400])
             out.append({"role": role, "text": "\n".join(parts)[:2000]})
     return out
-
-
-def _splice_assumptions_into_sys(main_system_prompt: str, operating_assumptions: str) -> str:
-    """Append operating assumptions to the mainline system prompt.
-
-    Operating assumptions are caller-supplied, rule-shaped constraints
-    (e.g. "judge blind", "no source attribution"). System position gives
-    them more instruction-following weight than burying them at the top
-    of the user thread, which drifts as rounds accumulate.
-    """
-    if not operating_assumptions.strip():
-        return main_system_prompt
-    return main_system_prompt.rstrip() + (
-        "\n\n## Operating assumptions\n\n" + operating_assumptions.strip() + "\n"
-    )
 
 
 def _build_initial_user_message(

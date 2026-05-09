@@ -13,7 +13,6 @@ For long completions this can blow up tokens fast — keep ``n`` modest
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,13 +27,11 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SpawnCtx,
     SubroutineBase,
     SubroutineResult,
+    load_prompt,
     resolve_spawn_clock,
+    sha8,
 )
 from rumil.settings import get_settings
-
-
-def _sha8(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
 
 
 def _estimate_per_sample_worst(sys_prompt: str, user_message: str, max_tokens: int) -> int:
@@ -51,15 +48,6 @@ def _estimate_per_sample_worst(sys_prompt: str, user_message: str, max_tokens: i
     """
     input_estimate = (len(sys_prompt) + len(user_message)) // 4
     return input_estimate + max_tokens
-
-
-def _load_prompt(path: str | Path | None, default: str) -> str:
-    if path is None:
-        return default
-    text = Path(path).read_text(encoding="utf-8")
-    if not text.strip():
-        raise ValueError(f"prompt file is empty or whitespace-only: {path}")
-    return text
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -99,42 +87,48 @@ class SampleNSubroutine(SubroutineBase):
         # Resolve prompt content at construction so fingerprint() is stable.
         if self.sys_prompt_path is not None:
             object.__setattr__(
-                self, "sys_prompt", _load_prompt(self.sys_prompt_path, self.sys_prompt)
+                self, "sys_prompt", load_prompt(self.sys_prompt_path, self.sys_prompt)
             )
 
     def fingerprint(self) -> Mapping[str, Any]:
-        out: dict[str, Any] = {
-            "kind": "sample_n",
-            "name": self.name,
-            "model": self.model,
-            "sys_prompt_hash": _sha8(self.sys_prompt),
-            "user_prompt_template_hash": _sha8(self.user_prompt_template),
-            "n": self.n,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "overridable": sorted(self.overridable),
-            "inherit_assumptions": self.inherit_assumptions,
-            "base_token_cap": self.base_token_cap,
-        }
-        if self.config_prep is not None:
-            out["config_prep"] = self.config_prep.fingerprint()
+        out = dict(super().fingerprint())
+        out["kind"] = "sample_n"
+        out["model"] = self.model
+        out["sys_prompt_hash"] = sha8(self.sys_prompt)
+        out["user_prompt_template_hash"] = sha8(self.user_prompt_template)
+        out["n"] = self.n
+        out["temperature"] = self.temperature
+        out["max_tokens"] = self.max_tokens
         return out
 
-    def spawn_tool_schema(self) -> dict[str, Any]:
-        properties: dict[str, Any] = {
-            "intent": {
-                "type": "string",
-                "description": self.intent_description
-                or (
-                    "Short statement of what you want this batch of samples to "
-                    "address. Substituted into the user prompt template as "
-                    "{intent}."
-                ),
-            },
+    def _default_intent_description(self) -> str:
+        return (
+            "Short statement of what you want this batch of samples to "
+            "address. Substituted into the user prompt template as "
+            "{intent}."
+        )
+
+    def _default_additional_context_description(self) -> str:
+        return "Extra context to splice into the user prompt under {additional_context}."
+
+    def _token_cap_property(self) -> dict[str, Any]:
+        return {
+            "type": "integer",
+            "minimum": 500,
+            "description": (
+                f"Per-spawn token budget covering all N samples "
+                f"(default {self.base_token_cap}). Samples are launched "
+                "in batches sized to fit the remaining cap; if the cap "
+                "is too tight for all N, some samples are skipped (the "
+                "text_summary reports run/total). Tokens still debit "
+                "the parent budget. Capped at the parent's remaining."
+            ),
         }
-        required = ["intent"]
+
+    def _extra_schema_properties(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
         if "n" in self.overridable:
-            properties["n"] = {
+            out["n"] = {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 10,
@@ -143,31 +137,7 @@ class SampleNSubroutine(SubroutineBase):
                     "diversity but proportional token spend."
                 ),
             }
-        if "additional_context" in self.overridable:
-            properties["additional_context"] = {
-                "type": "string",
-                "description": self.additional_context_description
-                or ("Extra context to splice into the user prompt under {additional_context}."),
-            }
-        if "token_cap" in self.overridable and self.base_token_cap is not None:
-            properties["token_cap"] = {
-                "type": "integer",
-                "minimum": 500,
-                "description": (
-                    f"Per-spawn token budget covering all N samples "
-                    f"(default {self.base_token_cap}). Samples are launched "
-                    "in batches sized to fit the remaining cap; if the cap "
-                    "is too tight for all N, some samples are skipped (the "
-                    "text_summary reports run/total). Tokens still debit "
-                    "the parent budget. Capped at the parent's remaining."
-                ),
-            }
-        return {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": False,
-        }
+        return out
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:
         n = int(overrides.get("n", self.n)) if "n" in self.overridable else self.n
@@ -188,11 +158,7 @@ class SampleNSubroutine(SubroutineBase):
                 f"{sorted(format_kwargs)}"
             ) from e
 
-        sys_prompt = self.sys_prompt
-        if self.inherit_assumptions and ctx.operating_assumptions.strip():
-            sys_prompt = sys_prompt.rstrip() + (
-                "\n\n## Operating assumptions\n\n" + ctx.operating_assumptions.strip() + "\n"
-            )
+        sys_prompt = self.apply_assumptions(self.sys_prompt, ctx)
 
         spawn_clock = resolve_spawn_clock(
             ctx.budget_clock,

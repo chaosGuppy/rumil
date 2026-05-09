@@ -11,7 +11,6 @@ schema and a hidden config-prep call elaborates the full agent config.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -26,23 +25,12 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SpawnCtx,
     SubroutineBase,
     SubroutineResult,
+    load_prompt,
     resolve_spawn_clock,
+    sha8,
 )
 
 log = logging.getLogger(__name__)
-
-
-def _sha8(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
-
-
-def _load_prompt(path: str | Path | None, default: str) -> str:
-    if path is None:
-        return default
-    text = Path(path).read_text(encoding="utf-8")
-    if not text.strip():
-        raise ValueError(f"prompt file is empty or whitespace-only: {path}")
-    return text
 
 
 class FreeformAgentPreppedConfig(BaseModel):
@@ -101,7 +89,7 @@ class FreeformAgentSubroutine(SubroutineBase):
             object.__setattr__(
                 self,
                 "sys_prompt",
-                _load_prompt(self.sys_prompt_path, self.sys_prompt),
+                load_prompt(self.sys_prompt_path, self.sys_prompt),
             )
         if self.response_validator is not None and self.response_validator_name is None:
             raise ValueError(
@@ -117,72 +105,36 @@ class FreeformAgentSubroutine(SubroutineBase):
             )
 
     def fingerprint(self) -> Mapping[str, Any]:
-        out: dict[str, Any] = {
-            "kind": "freeform_agent",
-            "name": self.name,
-            "model": self.model,
-            "sys_prompt_hash": _sha8(self.sys_prompt),
-            "user_prompt_template_hash": _sha8(self.user_prompt_template),
-            "max_rounds": self.max_rounds,
-            "max_tokens": self.max_tokens,
-            "allowed_tool_names": sorted(self.allowed_tool_names),
-            "overridable": sorted(self.overridable),
-            "inherit_assumptions": self.inherit_assumptions,
-            "base_token_cap": self.base_token_cap,
-        }
-        if self.config_prep is not None:
-            out["config_prep"] = self.config_prep.fingerprint()
+        out = dict(super().fingerprint())
+        out["kind"] = "freeform_agent"
+        out["model"] = self.model
+        out["sys_prompt_hash"] = sha8(self.sys_prompt)
+        out["user_prompt_template_hash"] = sha8(self.user_prompt_template)
+        out["max_rounds"] = self.max_rounds
+        out["max_tokens"] = self.max_tokens
+        out["allowed_tool_names"] = sorted(self.allowed_tool_names)
         if self.response_validator is not None:
             out["response_validator_name"] = self.response_validator_name
-            out["retry_message_hash"] = _sha8(self.retry_message)
+            out["retry_message_hash"] = sha8(self.retry_message)
             out["response_max_retries"] = self.response_max_retries
         return out
 
-    def spawn_tool_schema(self) -> dict[str, Any]:
-        properties: dict[str, Any] = {
-            "intent": {
-                "type": "string",
-                "description": self.intent_description
-                or (
-                    "Short statement of what you want this agent to do. "
-                    "Substituted into the user prompt template as {intent}."
-                ),
-            },
-        }
-        required = ["intent"]
-        if "additional_context" in self.overridable:
-            properties["additional_context"] = {
-                "type": "string",
-                "description": self.additional_context_description
-                or (
-                    "Extra context / scratchpad excerpts to splice into the "
-                    "user prompt under {additional_context}."
-                ),
-            }
+    def _default_intent_description(self) -> str:
+        return (
+            "Short statement of what you want this agent to do. "
+            "Substituted into the user prompt template as {intent}."
+        )
+
+    def _extra_schema_properties(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
         if "max_rounds" in self.overridable:
-            properties["max_rounds"] = {
+            out["max_rounds"] = {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": self.max_rounds,
                 "description": (f"Cap rounds for this spawn (default {self.max_rounds})."),
             }
-        if "token_cap" in self.overridable and self.base_token_cap is not None:
-            properties["token_cap"] = {
-                "type": "integer",
-                "minimum": 500,
-                "description": (
-                    f"Per-spawn token sub-cap (default {self.base_token_cap}). "
-                    "Tokens still debit the parent budget; this just stops "
-                    "this spawn from spending more than the cap. Capped at "
-                    "the parent's remaining."
-                ),
-            }
-        return {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": False,
-        }
+        return out
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:
         prepped = (
@@ -192,10 +144,7 @@ class FreeformAgentSubroutine(SubroutineBase):
         )
 
         sys_prompt = prepped.sys_prompt if prepped and prepped.sys_prompt else self.sys_prompt
-        if self.inherit_assumptions and ctx.operating_assumptions.strip():
-            sys_prompt = sys_prompt.rstrip() + (
-                "\n\n## Operating assumptions\n\n" + ctx.operating_assumptions.strip() + "\n"
-            )
+        sys_prompt = self.apply_assumptions(sys_prompt, ctx)
         max_rounds_override = overrides.get("max_rounds")
         max_rounds = (
             int(max_rounds_override)

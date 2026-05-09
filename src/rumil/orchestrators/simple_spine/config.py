@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import BaseModel
 
 from rumil.orchestrators.simple_spine.budget_clock import BudgetSpec
+from rumil.orchestrators.simple_spine.subroutines.base import sha8
 
 if TYPE_CHECKING:
     from rumil.orchestrators.simple_spine.subroutines.base import SubroutineDef
@@ -52,7 +53,7 @@ class SimpleSpineConfig:
         """sha256 of a canonical-form dump. First 12 hex chars usable as a tag."""
         blob = {
             "main_model": self.main_model,
-            "main_system_prompt_hash": _sha8(self.main_system_prompt),
+            "main_system_prompt_hash": sha8(self.main_system_prompt),
             "enable_finalize_tool": self.enable_finalize_tool,
             "max_parallel_spawns_per_turn": self.max_parallel_spawns_per_turn,
             "force_finalize_on_token_exhaustion": self.force_finalize_on_token_exhaustion,
@@ -69,7 +70,7 @@ class SimpleSpineConfig:
         """Decomposed fingerprint for trace inspection / call_params."""
         return {
             "main_model": self.main_model,
-            "main_system_prompt_hash": _sha8(self.main_system_prompt),
+            "main_system_prompt_hash": sha8(self.main_system_prompt),
             "enable_finalize_tool": self.enable_finalize_tool,
             "max_parallel_spawns_per_turn": self.max_parallel_spawns_per_turn,
             "force_finalize_on_token_exhaustion": self.force_finalize_on_token_exhaustion,
@@ -108,7 +109,3 @@ class OrchResult:
     elapsed_s: float
     finalize_reason: str
     last_status: str = "complete"
-
-
-def _sha8(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]

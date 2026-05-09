@@ -21,8 +21,10 @@ needed at this layer.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
@@ -32,6 +34,44 @@ from rumil.tracing.broadcast import Broadcaster
 
 if TYPE_CHECKING:
     from rumil.orchestrators.simple_spine.budget_clock import BudgetClock
+
+
+def sha8(text: str) -> str:
+    """First 8 hex chars of sha256 — used for stable prompt-content hashes."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+
+
+def load_prompt(path: str | Path | None, default: str) -> str:
+    """Read a prompt file at ``path``; fall back to ``default`` when path is None.
+
+    Raises if the file is empty/whitespace-only — silent fallback to
+    default would let a typo'd path silently swap in the default
+    prompt and the variant would fingerprint as the default.
+    """
+    if path is None:
+        return default
+    text = Path(path).read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError(f"prompt file is empty or whitespace-only: {path}")
+    return text
+
+
+def splice_assumptions(sys_prompt: str, operating_assumptions: str) -> str:
+    """Append an "Operating assumptions" section to a system prompt.
+
+    No-op when ``operating_assumptions`` is empty/whitespace-only. Used
+    by the orchestrator (mainline sys_prompt) and by FreeformAgent /
+    SampleN (sub-agent sys_prompt) — same shape so the model sees a
+    consistent rule-section format wherever assumptions are spliced.
+    """
+    if not operating_assumptions.strip():
+        return sys_prompt
+    return (
+        sys_prompt.rstrip()
+        + "\n\n## Operating assumptions\n\n"
+        + operating_assumptions.strip()
+        + "\n"
+    )
 
 
 def resolve_spawn_clock(
@@ -81,11 +121,9 @@ class ConfigPrepDef:
     last_k: int = 2
 
     def fingerprint(self) -> Mapping[str, Any]:
-        from rumil.orchestrators.simple_spine.config import _sha8
-
         return {
             "model": self.model,
-            "sys_prompt_hash": _sha8(self.sys_prompt),
+            "sys_prompt_hash": sha8(self.sys_prompt),
             "output_schema": self.output_schema.__name__,
             "mainline_context": self.mainline_context,
             "last_k": self.last_k,
@@ -179,6 +217,117 @@ class SubroutineBase:
     # Optional per-spawn token cap. See class docstring — different
     # kinds enforce this differently; CallType ignores it entirely.
     base_token_cap: int | None = None
+
+    def apply_assumptions(self, sys_prompt: str, ctx: SpawnCtx) -> str:
+        """Splice ctx.operating_assumptions into ``sys_prompt`` when honoring is on.
+
+        Honors ``self.inherit_assumptions`` so kinds that opt out (e.g.
+        a critic whose role is to push back on framings) get a clean
+        prompt. Returns ``sys_prompt`` unchanged when assumptions are
+        empty or inheritance is off.
+        """
+        if not self.inherit_assumptions:
+            return sys_prompt
+        return splice_assumptions(sys_prompt, ctx.operating_assumptions)
+
+    def fingerprint(self) -> Mapping[str, Any]:
+        """Universal fingerprint contribution.
+
+        Every kind's ``fingerprint()`` should call ``super().fingerprint()``
+        and extend with kind-specific fields. The base emits the
+        cross-cutting fields (description / overridable / inherit_assumptions /
+        base_token_cap / cost_hint / intent_description /
+        additional_context_description / config_prep) so editing any of
+        them naturally forks the variant fingerprint without per-kind
+        bookkeeping.
+        """
+        out: dict[str, Any] = {
+            "name": self.name,
+            "description_hash": sha8(self.description),
+            "overridable": sorted(self.overridable),
+            "inherit_assumptions": self.inherit_assumptions,
+            "base_token_cap": self.base_token_cap,
+        }
+        if self.cost_hint is not None:
+            out["cost_hint_hash"] = sha8(self.cost_hint)
+        if self.intent_description is not None:
+            out["intent_description_hash"] = sha8(self.intent_description)
+        if self.additional_context_description is not None:
+            out["additional_context_description_hash"] = sha8(self.additional_context_description)
+        if self.config_prep is not None:
+            out["config_prep"] = self.config_prep.fingerprint()
+        return out
+
+    def spawn_tool_schema(self) -> dict[str, Any]:
+        """Assemble the JSON schema mainline sees for the spawn tool.
+
+        Base implementation handles the universal ``intent`` /
+        ``additional_context`` / ``token_cap`` properties. Kinds with
+        their own properties (``max_rounds``, ``n``, etc.) override
+        ``_extra_schema_properties()``; kinds with kind-specific
+        defaults override ``_default_intent_description()`` /
+        ``_default_additional_context_description()`` /
+        ``_token_cap_property()``.
+        """
+        properties = self._build_common_schema_properties()
+        properties.update(self._extra_schema_properties())
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": ["intent"],
+            "additionalProperties": False,
+        }
+
+    def _build_common_schema_properties(self) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "intent": {
+                "type": "string",
+                "description": self.intent_description or self._default_intent_description(),
+            },
+        }
+        if "additional_context" in self.overridable:
+            out["additional_context"] = {
+                "type": "string",
+                "description": self.additional_context_description
+                or self._default_additional_context_description(),
+            }
+        if "token_cap" in self.overridable and self.base_token_cap is not None:
+            out["token_cap"] = self._token_cap_property()
+        return out
+
+    def _default_intent_description(self) -> str:
+        """Subclass hook: kind-specific default for the ``intent`` schema field."""
+        return (
+            "Short statement of what you want this subroutine to do. "
+            "Substituted into the user prompt template as {intent}."
+        )
+
+    def _default_additional_context_description(self) -> str:
+        """Subclass hook: kind-specific default for ``additional_context``."""
+        return (
+            "Extra context / scratchpad excerpts to splice into the "
+            "user prompt under {additional_context}."
+        )
+
+    def _token_cap_property(self) -> dict[str, Any]:
+        """Subclass hook: kind-specific ``token_cap`` schema property."""
+        return {
+            "type": "integer",
+            "minimum": 500,
+            "description": (
+                f"Per-spawn token sub-cap (default {self.base_token_cap}). "
+                "Tokens still debit the parent budget; capped at the "
+                "parent's remaining."
+            ),
+        }
+
+    def _extra_schema_properties(self) -> dict[str, Any]:
+        """Subclass hook: properties beyond the universal triplet.
+
+        Default returns an empty dict. Subclasses with kind-specific
+        spawn-tool fields (``max_rounds``, ``n``, etc.) override this.
+        """
+        return {}
 
 
 @dataclass

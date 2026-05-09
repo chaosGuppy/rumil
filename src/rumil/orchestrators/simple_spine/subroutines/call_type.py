@@ -71,6 +71,7 @@ class CallTypeSubroutine(SubroutineBase):
             "base_max_rounds": self.base_max_rounds,
             "base_budget": self.base_budget,
             "overridable": sorted(self.overridable),
+            "inherit_assumptions": self.inherit_assumptions,
         }
         if self.config_prep is not None:
             out["config_prep"] = self.config_prep.fingerprint()
@@ -80,7 +81,8 @@ class CallTypeSubroutine(SubroutineBase):
         properties: dict[str, Any] = {
             "intent": {
                 "type": "string",
-                "description": (
+                "description": self.intent_description
+                or (
                     "Brief statement of what you want this call to investigate. "
                     "Recorded on the trace; the underlying CallType uses its "
                     "own context-builder to drive the work."
@@ -131,6 +133,24 @@ class CallTypeSubroutine(SubroutineBase):
                 },
             )
             await sub_db.init_budget(self.base_budget)
+            # Honor inherit_assumptions by appending the operating
+            # assumptions to the question's content in the staged sub-DB.
+            # The wrapped CallRunner reads the question via its
+            # context-builder, so the assumptions reach the LLM through
+            # the natural context-rendering path. The mutation is
+            # recorded as a staged-only event so the baseline question
+            # is untouched. The semantic framing — assumptions as part
+            # of the question — is mild but the model reads it the
+            # same way regardless.
+            if self.inherit_assumptions and ctx.operating_assumptions.strip():
+                question = await sub_db.get_page(ctx.question_id)
+                if question is not None:
+                    augmented = question.content.rstrip() + (
+                        "\n\n## Operating assumptions\n\n"
+                        + ctx.operating_assumptions.strip()
+                        + "\n"
+                    )
+                    await sub_db.update_page_content(ctx.question_id, augmented)
             call = await sub_db.create_call(
                 self.call_type,
                 scope_page_id=ctx.question_id,

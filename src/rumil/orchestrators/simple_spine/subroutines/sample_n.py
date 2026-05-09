@@ -25,8 +25,8 @@ from anthropic.types import TextBlock
 from rumil.llm import LLMExchangeMetadata, call_anthropic_api
 from rumil.model_config import ModelConfig
 from rumil.orchestrators.simple_spine.subroutines.base import (
-    LLMSubroutineBase,
     SpawnCtx,
+    SubroutineBase,
     SubroutineResult,
     resolve_spawn_clock,
 )
@@ -63,10 +63,10 @@ def _load_prompt(path: str | Path | None, default: str) -> str:
 
 
 @dataclass(frozen=True, kw_only=True)
-class SampleNSubroutine(LLMSubroutineBase):
+class SampleNSubroutine(SubroutineBase):
     """Fire ``user_prompt_template`` to ``model`` ``n`` times in parallel.
 
-    Inherits cross-cutting fields from :class:`LLMSubroutineBase`. The
+    Inherits cross-cutting fields from :class:`SubroutineBase`. The
     template is rendered with the override dict via
     ``.format(**overrides)`` plus the keys ``additional_context`` and
     ``operating_assumptions`` that the orchestrator always passes through.

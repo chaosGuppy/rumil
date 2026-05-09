@@ -123,13 +123,33 @@ class SpawnCtx:
 class SubroutineBase:
     """Cross-cutting fields every concrete SubroutineDef shares.
 
-    Concrete subroutine kinds (FreeformAgent, SampleN, NestedOrch,
-    CallType) inherit from this (or from :class:`LLMSubroutineBase` for
-    kinds that fire their own LLM call directly) so the universal
-    surface — what mainline sees, what shows up in the fingerprint —
-    lives in one place. Subclasses use ``@dataclass(frozen=True,
-    kw_only=True)`` to mix required and optional fields without ordering
-    pain.
+    All four kinds — FreeformAgent, SampleN, NestedOrch, CallType —
+    inherit directly from this. Subclasses use
+    ``@dataclass(frozen=True, kw_only=True)`` so they can mix required
+    and optional fields without ordering pain (and can override a
+    base default to require the field, the way NestedOrch does for
+    ``base_token_cap``).
+
+    **Field-honoring is per-kind.** Some fields below are honored by
+    every kind; others only have effect in some kinds. The base
+    declares the surface; each kind documents what it does (or
+    doesn't) with each field:
+
+    - ``intent_description`` / ``additional_context_description``:
+      honored by every kind in ``spawn_tool_schema`` (override the
+      kind-level default schema-field descriptions).
+    - ``inherit_assumptions``: honored by FreeformAgent and SampleN
+      (spliced into their system prompt at run time); CallType
+      honors it by appending an "Operating assumptions" section to
+      its staged sub-DB question content; NestedOrch honors it by
+      gating whether ``ctx.operating_assumptions`` is forwarded to
+      the nested orch's factory.
+    - ``base_token_cap``: honored by FreeformAgent and SampleN
+      (carve a child BudgetClock); required by NestedOrch; **inert
+      on CallType** because the wrapped CallRunner makes LLM calls
+      through a path that doesn't tap into the SimpleSpine
+      BudgetClock (its budgeting is via init_budget on the staged
+      sub-DB instead).
     """
 
     name: str
@@ -141,21 +161,6 @@ class SubroutineBase:
     # input/output ratios vary too much for a worst-case bound to be
     # useful as auto-computed text.
     cost_hint: str | None = None
-
-
-@dataclass(frozen=True, kw_only=True)
-class LLMSubroutineBase(SubroutineBase):
-    """Base for subroutines that fire their own author-supplied LLM call.
-
-    Adds the fields shared by FreeformAgent and SampleN: per-spawn
-    description overrides for the schema-level intent / additional_context
-    fields, the operating-assumptions inheritance flag, and the optional
-    sub-cap that lets the subroutine carve a child BudgetClock.
-    Subroutines that wrap other infrastructure (NestedOrch wraps another
-    orch; CallType wraps a CallRunner) don't fit this shape and inherit
-    from :class:`SubroutineBase` directly.
-    """
-
     # Per-subroutine overrides for the schema-level field descriptions.
     # The kind-level defaults are intentionally generic ("Short statement
     # of what you want this agent to do") because they have no role
@@ -165,17 +170,14 @@ class LLMSubroutineBase(SubroutineBase):
     intent_description: str | None = None
     additional_context_description: str | None = None
     # When True, caller-supplied operating_assumptions (threaded via
-    # SpawnCtx) are appended to this subroutine's system prompt at run
-    # time. Default True so global rules (e.g. "judge blind") propagate
-    # without per-config wiring; opt out when bias would distort the
-    # role (e.g. critics whose job is to push back on assumed framings).
+    # SpawnCtx) propagate to the spawned subroutine. Default True so
+    # global rules (e.g. "judge blind") propagate without per-config
+    # wiring; opt out when bias would distort the role (e.g. critics
+    # whose job is to push back on assumed framings). See class
+    # docstring for how each kind honors this field.
     inherit_assumptions: bool = True
-    # Optional per-spawn token cap. When set, the subroutine carves a
-    # child BudgetClock from the parent so it cannot spend more than
-    # ``base_token_cap`` tokens; mainline can override via the
-    # ``token_cap`` spawn arg if ``"token_cap" in overridable``. Tokens
-    # still flow up to the parent clock — this is a sub-cap, not extra
-    # budget.
+    # Optional per-spawn token cap. See class docstring — different
+    # kinds enforce this differently; CallType ignores it entirely.
     base_token_cap: int | None = None
 
 

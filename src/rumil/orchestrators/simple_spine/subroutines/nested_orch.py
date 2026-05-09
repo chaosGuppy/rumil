@@ -18,6 +18,7 @@ SubroutineDef agnostic about which orch shape it wraps.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -46,21 +47,26 @@ NestedOrchFactory = Callable[
 class NestedOrchSubroutine(SubroutineBase):
     """Recurse into another orchestrator with a carved sub-budget.
 
-    Inherits cross-cutting fields (name, description, overridable,
-    config_prep, cost_hint) from :class:`SubroutineBase`. Doesn't
-    inherit :class:`LLMSubroutineBase` because it wraps another orch
-    rather than firing its own LLM call directly — the nested orch
-    handles its own assumption inheritance and per-call sys/user prompts.
+    Inherits cross-cutting fields from :class:`SubroutineBase`. Honors
+    ``inherit_assumptions`` by gating whether ``ctx.operating_assumptions``
+    is forwarded to the nested orch's factory. Treats
+    ``base_token_cap`` as **required** (validated in ``__post_init__``)
+    because nested orchs can recurse arbitrarily deep without it.
     """
 
     orch_kind: str  # "two_phase" | "draft_and_edit" | "simple_spine" | etc.
     factory: NestedOrchFactory
-    # Required (no default): nested orchs always need an explicit token
-    # sub-cap because they can recurse arbitrarily deep otherwise.
-    base_token_cap: int
     overridable: frozenset[str] = field(
         default_factory=lambda: frozenset({"intent", "additional_context"})
     )
+
+    def __post_init__(self) -> None:
+        if self.base_token_cap is None:
+            raise ValueError(
+                f"NestedOrchSubroutine {self.name!r}: base_token_cap is "
+                "required (nested orchs always need an explicit token "
+                "sub-cap because they can recurse arbitrarily deep)"
+            )
 
     def fingerprint(self) -> Mapping[str, Any]:
         out: dict[str, Any] = {
@@ -69,6 +75,7 @@ class NestedOrchSubroutine(SubroutineBase):
             "orch_kind": self.orch_kind,
             "base_token_cap": self.base_token_cap,
             "overridable": sorted(self.overridable),
+            "inherit_assumptions": self.inherit_assumptions,
         }
         if self.config_prep is not None:
             out["config_prep"] = self.config_prep.fingerprint()
@@ -78,14 +85,16 @@ class NestedOrchSubroutine(SubroutineBase):
         properties: dict[str, Any] = {
             "intent": {
                 "type": "string",
-                "description": "What you want this nested orch to investigate / produce.",
+                "description": self.intent_description
+                or "What you want this nested orch to investigate / produce.",
             },
         }
         required = ["intent"]
         if "additional_context" in self.overridable:
             properties["additional_context"] = {
                 "type": "string",
-                "description": "Context to forward to the nested orch.",
+                "description": self.additional_context_description
+                or "Context to forward to the nested orch.",
             }
         if "token_cap" in self.overridable:
             properties["token_cap"] = {
@@ -105,6 +114,9 @@ class NestedOrchSubroutine(SubroutineBase):
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:
         cap_override = overrides.get("token_cap")
+        # base_token_cap is enforced non-None in __post_init__; assert keeps
+        # pyright happy without re-validating at every spawn.
+        assert self.base_token_cap is not None
         sub_cap = (
             int(cap_override)
             if cap_override is not None and "token_cap" in self.overridable
@@ -115,8 +127,14 @@ class NestedOrchSubroutine(SubroutineBase):
         # is well-formed and immediately reports tokens_exhausted.
         sub_cap = max(min(sub_cap, ctx.budget_clock.tokens_remaining), 1)
 
+        # Honor inherit_assumptions by zeroing operating_assumptions on
+        # the ctx forwarded to the factory. Default-True so global rules
+        # propagate; opt-out for nested orchs whose role is to push back.
+        forward_ctx = (
+            ctx if self.inherit_assumptions else dataclasses.replace(ctx, operating_assumptions="")
+        )
         before = ctx.budget_clock.tokens_used
-        text_summary = await self.factory(ctx, sub_cap, overrides)
+        text_summary = await self.factory(forward_ctx, sub_cap, overrides)
         consumed = ctx.budget_clock.tokens_used - before
         return SubroutineResult(
             text_summary=text_summary,

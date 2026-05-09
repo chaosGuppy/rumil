@@ -23,8 +23,8 @@ from pydantic import BaseModel
 from rumil.model_config import ModelConfig
 from rumil.orchestrators.simple_spine.agent_loop import thin_agent_loop
 from rumil.orchestrators.simple_spine.subroutines.base import (
-    LLMSubroutineBase,
     SpawnCtx,
+    SubroutineBase,
     SubroutineResult,
     resolve_spawn_clock,
 )
@@ -60,13 +60,12 @@ class FreeformAgentPreppedConfig(BaseModel):
 
 
 @dataclass(frozen=True, kw_only=True)
-class FreeformAgentSubroutine(LLMSubroutineBase):
+class FreeformAgentSubroutine(SubroutineBase):
     """Configurable agent loop with arbitrary tools.
 
-    Inherits the cross-cutting fields (name, description, overridable,
-    config_prep, cost_hint, intent_description, additional_context_description,
-    inherit_assumptions, base_token_cap) from :class:`LLMSubroutineBase`.
-    Adds the FreeformAgent-specific fields below.
+    Inherits the cross-cutting fields from :class:`SubroutineBase`.
+    Honors ``inherit_assumptions`` (spliced into sys_prompt at run time)
+    and ``base_token_cap`` (carves a child BudgetClock).
     """
 
     sys_prompt: str

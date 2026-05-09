@@ -198,6 +198,31 @@ def _load_subroutine(entry: dict[str, Any], base_dir: Path, *, source: Path) -> 
     )
 
 
+def _base_field_kwargs(entry: dict[str, Any]) -> dict[str, Any]:
+    """Pull SubroutineBase fields off the YAML entry into kwargs.
+
+    Single source for loading the cross-cutting fields shared by every
+    subroutine kind (overridable, cost_hint, intent_description,
+    additional_context_description, inherit_assumptions, base_token_cap).
+    Used by every kind's loader so YAML field handling is uniform —
+    adding a field to SubroutineBase requires editing only this helper.
+    """
+    out: dict[str, Any] = {}
+    if "overridable" in entry:
+        out["overridable"] = frozenset(entry["overridable"])
+    if "inherit_assumptions" in entry:
+        out["inherit_assumptions"] = bool(entry["inherit_assumptions"])
+    if "base_token_cap" in entry:
+        out["base_token_cap"] = int(entry["base_token_cap"])
+    if "cost_hint" in entry:
+        out["cost_hint"] = str(entry["cost_hint"])
+    if "intent_description" in entry:
+        out["intent_description"] = str(entry["intent_description"])
+    if "additional_context_description" in entry:
+        out["additional_context_description"] = str(entry["additional_context_description"])
+    return out
+
+
 def _load_freeform_agent(
     entry: dict[str, Any], base_dir: Path, source: Path
 ) -> FreeformAgentSubroutine:
@@ -222,19 +247,8 @@ def _load_freeform_agent(
         "max_rounds": int(entry.get("max_rounds", 5)),
         "max_tokens": int(entry.get("max_tokens", 4096)),
         "allowed_tool_names": tuple(entry.get("allowed_tool_names") or ()),
+        **_base_field_kwargs(entry),
     }
-    if "overridable" in entry:
-        kwargs["overridable"] = frozenset(entry["overridable"])
-    if "inherit_assumptions" in entry:
-        kwargs["inherit_assumptions"] = bool(entry["inherit_assumptions"])
-    if "base_token_cap" in entry:
-        kwargs["base_token_cap"] = int(entry["base_token_cap"])
-    if "cost_hint" in entry:
-        kwargs["cost_hint"] = str(entry["cost_hint"])
-    if "intent_description" in entry:
-        kwargs["intent_description"] = str(entry["intent_description"])
-    if "additional_context_description" in entry:
-        kwargs["additional_context_description"] = str(entry["additional_context_description"])
 
     validator_name = entry.get("response_validator")
     if validator_name:
@@ -273,19 +287,8 @@ def _load_sample_n(entry: dict[str, Any], base_dir: Path, source: Path) -> Sampl
         "n": int(entry.get("n", 3)),
         "temperature": float(entry.get("temperature", 1.0)),
         "max_tokens": int(entry.get("max_tokens", 4096)),
+        **_base_field_kwargs(entry),
     }
-    if "overridable" in entry:
-        kwargs["overridable"] = frozenset(entry["overridable"])
-    if "inherit_assumptions" in entry:
-        kwargs["inherit_assumptions"] = bool(entry["inherit_assumptions"])
-    if "base_token_cap" in entry:
-        kwargs["base_token_cap"] = int(entry["base_token_cap"])
-    if "cost_hint" in entry:
-        kwargs["cost_hint"] = str(entry["cost_hint"])
-    if "intent_description" in entry:
-        kwargs["intent_description"] = str(entry["intent_description"])
-    if "additional_context_description" in entry:
-        kwargs["additional_context_description"] = str(entry["additional_context_description"])
     return SampleNSubroutine(**kwargs)  # type: ignore[return-value]
 
 
@@ -304,9 +307,8 @@ def _load_call_type(entry: dict[str, Any], source: Path) -> CallTypeSubroutine:
         "runner_cls": runner_cls,
         "base_max_rounds": int(entry.get("base_max_rounds", 5)),
         "base_budget": int(entry.get("base_budget", 1)),
+        **_base_field_kwargs(entry),
     }
-    if "overridable" in entry:
-        kwargs["overridable"] = frozenset(entry["overridable"])
     return CallTypeSubroutine(**kwargs)
 
 
@@ -329,10 +331,12 @@ def _load_nested_orch(entry: dict[str, Any], source: Path) -> NestedOrchSubrouti
         "description": entry.get("description", ""),
         "orch_kind": key,
         "factory": factory,
+        **_base_field_kwargs(entry),
+        # base_token_cap is required for nested_orch (validated above);
+        # _base_field_kwargs would only set it if present in YAML, so set
+        # the cast int here unconditionally to override its None default.
         "base_token_cap": int(base_token_cap),
     }
-    if "overridable" in entry:
-        kwargs["overridable"] = frozenset(entry["overridable"])
     return NestedOrchSubroutine(**kwargs)
 
 

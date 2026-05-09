@@ -70,11 +70,22 @@ async def _simple_spine_recurse(
     preset_name = str(overrides.get("preset_name", "")) or "default"
     sub_cfg = get_preset(preset_name)
     sub_clock = ctx.budget_clock.carve_child(sub_token_cap)
+    # Explicit `output_guidance` wins; fall back to `intent` for the
+    # historical "intent doubles as guidance" behavior so callers that
+    # only pass `intent` keep working.
+    output_guidance = str(overrides.get("output_guidance") or overrides.get("intent") or "")
+    raw_schema = overrides.get("output_schema")
+    if raw_schema is not None and not isinstance(raw_schema, dict):
+        raise ValueError(
+            f"nested_orch override `output_schema` must be a JSON Schema dict, "
+            f"got {type(raw_schema).__name__}"
+        )
     sub_inputs = OrchInputs(
         question_id=ctx.question_id,
         additional_context=str(overrides.get("additional_context", "")),
         operating_assumptions="",
-        output_guidance=str(overrides.get("intent", "")),
+        output_guidance=output_guidance,
+        output_schema=raw_schema,
         budget=sub_clock.spec,
     )
     sub_orch = SimpleSpineOrchestrator(ctx.db, sub_cfg, broadcaster=ctx.broadcaster)

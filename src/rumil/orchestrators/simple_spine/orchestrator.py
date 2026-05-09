@@ -41,6 +41,7 @@ from rumil.llm import (
     _aggregate_usage_tokens,
     call_anthropic_api,
     structured_call,
+    text_call,
 )
 from rumil.model_config import ModelConfig
 from rumil.models import Call, CallStatus, CallType
@@ -459,7 +460,7 @@ class SimpleSpineOrchestrator:
             )
         )
 
-        structured_answer: BaseModel | None = None
+        structured_answer: BaseModel | dict[str, Any] | None = None
         if inputs.output_schema is not None and finalize_state["answer"]:
             structured_answer = await _validate_finalize(
                 finalize_state["answer"],
@@ -839,9 +840,12 @@ def _build_initial_user_message(
         sections.append("")
     if inputs.output_schema is not None:
         sections.append("## Output schema (your finalize answer will be parsed against this)")
-        sections.append(
-            f"```json\n{json.dumps(inputs.output_schema.model_json_schema(), indent=2)}\n```"
+        schema_json = (
+            inputs.output_schema
+            if isinstance(inputs.output_schema, dict)
+            else inputs.output_schema.model_json_schema()
         )
+        sections.append(f"```json\n{json.dumps(schema_json, indent=2)}\n```")
         sections.append("")
     seed_block = artifact_store.render_seed_block()
     if seed_block:
@@ -873,18 +877,21 @@ def _build_initial_user_message(
 
 async def _validate_finalize(
     answer_text: str,
-    schema: type[BaseModel],
+    schema: type[BaseModel] | dict[str, Any],
     *,
     model: str,
     call_id: str,
     db: DB,
-) -> BaseModel | None:
-    """Run a final structured-call to coerce the freeform answer into ``schema``.
+) -> BaseModel | dict[str, Any] | None:
+    """Run a final coercion call to shape the freeform answer into ``schema``.
 
-    Run AFTER the agent has emitted its freeform answer (the user's
-    chosen approach, not finalize-as-structured-call). Failure surfaces
-    as a None return + a logged warning rather than raising, so the
-    caller still gets ``answer_text`` even when validation fails.
+    Run AFTER the agent has emitted its freeform answer. Pydantic schemas
+    go through ``structured_call`` for full schema enforcement; raw JSON
+    Schema dicts go through a ``text_call`` + ``json.loads`` (no
+    schema-side validation — callers parse / validate themselves on the
+    dict path). Failure surfaces as a None return + a logged warning
+    rather than raising, so the caller still gets ``answer_text`` even
+    when coercion fails.
     """
     sys_prompt = (
         "You are a strict JSON formatter. The user message contains an answer "
@@ -894,12 +901,35 @@ async def _validate_finalize(
         "use the closest reasonable approximation and keep prose-form fields "
         "verbatim where possible."
     )
+    schema_json = schema if isinstance(schema, dict) else schema.model_json_schema()
     user_message = (
         "## Answer text\n"
         f"{answer_text}\n\n"
         "## Schema\n"
-        f"```json\n{json.dumps(schema.model_json_schema(), indent=2)}\n```\n"
+        f"```json\n{json.dumps(schema_json, indent=2)}\n```\n"
     )
+    if isinstance(schema, dict):
+        try:
+            text = await text_call(
+                sys_prompt + " Respond with only the JSON object, no prose.",
+                user_message,
+                metadata=LLMExchangeMetadata(
+                    call_id=call_id,
+                    phase="finalize_validation",
+                ),
+                db=db,
+                model=model,
+            )
+            parsed = json.loads(_strip_json_fence(text))
+            if not isinstance(parsed, dict):
+                log.warning(
+                    "SimpleSpine: finalize coercion returned non-object JSON; returning None"
+                )
+                return None
+            return parsed
+        except (json.JSONDecodeError, Exception):
+            log.exception("SimpleSpine: finalize coercion (dict schema) failed; returning None")
+            return None
     try:
         result = await structured_call(
             sys_prompt,
@@ -916,3 +946,13 @@ async def _validate_finalize(
     except (ValidationError, Exception):
         log.exception("SimpleSpine: finalize validation failed; returning None")
         return None
+
+
+def _strip_json_fence(text: str) -> str:
+    """Strip a ```json ... ``` fence from a model response, if present."""
+    s = text.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[1] if "\n" in s else s[3:]
+        if s.endswith("```"):
+            s = s[: -len("```")].rstrip()
+    return s

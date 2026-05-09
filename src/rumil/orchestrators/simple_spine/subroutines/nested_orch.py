@@ -51,7 +51,9 @@ class NestedOrchSubroutine(SubroutineBase):
     orch_kind: str  # "two_phase" | "draft_and_edit" | "simple_spine" | etc.
     factory: NestedOrchFactory
     overridable: frozenset[str] = field(
-        default_factory=lambda: frozenset({"intent", "additional_context"})
+        default_factory=lambda: frozenset(
+            {"intent", "additional_context", "output_guidance", "output_schema"}
+        )
     )
 
     def __post_init__(self) -> None:
@@ -94,6 +96,35 @@ class NestedOrchSubroutine(SubroutineBase):
                 f"{self.base_token_cap}). Capped at parent's remaining."
             ),
         }
+
+    def _extra_schema_properties(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if "output_guidance" in self.overridable:
+            out["output_guidance"] = {
+                "type": "string",
+                "description": (
+                    "What the nested orch's deliverable should look like — "
+                    "format, length, must-cover sections. Spliced into the "
+                    "child's first user turn under '## Output guidance'. "
+                    "Distinct from `intent` (which is the freeform "
+                    "investigative steer); use this when you want to pin "
+                    "down the shape of the answer."
+                ),
+            }
+        if "output_schema" in self.overridable:
+            out["output_schema"] = {
+                "type": "object",
+                "additionalProperties": True,
+                "description": (
+                    "Optional JSON Schema dict the child's finalize answer "
+                    "should match. Rendered into the child's first user "
+                    "turn and used to coerce its freeform answer into JSON "
+                    "after finalize. Pass standard JSON Schema (e.g. "
+                    "{type: object, properties: {...}, required: [...]}). "
+                    "Omit for freeform prose deliverables."
+                ),
+            }
+        return out
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:
         cap_override = overrides.get("token_cap")

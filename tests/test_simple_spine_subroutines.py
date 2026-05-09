@@ -138,6 +138,141 @@ def test_nested_orch_skips_include_artifacts_in_schema():
     assert "include_artifacts" not in schema["properties"]
 
 
+def test_nested_orch_exposes_output_guidance_and_schema_by_default():
+    factory = AsyncMock(return_value="result text")
+    sub = NestedOrchSubroutine(
+        name="x",
+        description="d",
+        orch_kind="simple_spine",
+        factory=factory,
+        base_token_cap=10_000,
+    )
+    props = sub.spawn_tool_schema()["properties"]
+    assert "output_guidance" in props
+    assert props["output_guidance"]["type"] == "string"
+    assert "output_schema" in props
+    assert props["output_schema"]["type"] == "object"
+    assert props["output_schema"]["additionalProperties"] is True
+
+
+def test_nested_orch_overridable_opt_out_hides_output_fields():
+    factory = AsyncMock(return_value="result text")
+    sub = NestedOrchSubroutine(
+        name="x",
+        description="d",
+        orch_kind="simple_spine",
+        factory=factory,
+        base_token_cap=10_000,
+        overridable=frozenset({"intent", "additional_context"}),
+    )
+    props = sub.spawn_tool_schema()["properties"]
+    assert "output_guidance" not in props
+    assert "output_schema" not in props
+
+
+@pytest.mark.asyncio
+async def test_simple_spine_recurse_threads_output_overrides_into_orch_inputs(mocker):
+    """`_simple_spine_recurse` must forward `output_guidance` and
+    `output_schema` overrides onto the child OrchInputs so the nested
+    orch's first user turn carries them.
+    """
+    from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
+
+    captured: dict = {}
+
+    class _FakeOrch:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def run(self, sub_inputs, *, call_type, parent_call_id, budget_clock):
+            captured["sub_inputs"] = sub_inputs
+            return MagicMock(answer_text="child deliverable")
+
+    mocker.patch(
+        "rumil.orchestrators.simple_spine.orchestrator.SimpleSpineOrchestrator",
+        _FakeOrch,
+    )
+    mocker.patch(
+        "rumil.orchestrators.simple_spine.presets.get_preset",
+        return_value=MagicMock(),
+    )
+
+    ctx = _spawn_ctx(db=MagicMock())
+    schema = {"type": "object", "properties": {"verdict": {"type": "string"}}}
+    out = await nested_mod._simple_spine_recurse(
+        ctx,
+        sub_token_cap=5000,
+        overrides={
+            "intent": "investigate the claim",
+            "output_guidance": "Return a verdict with reasoning.",
+            "output_schema": schema,
+        },
+    )
+
+    assert out == "child deliverable"
+    sub_inputs = captured["sub_inputs"]
+    assert sub_inputs.output_guidance == "Return a verdict with reasoning."
+    assert sub_inputs.output_schema == schema
+
+
+@pytest.mark.asyncio
+async def test_simple_spine_recurse_falls_back_intent_to_output_guidance(mocker):
+    """Backwards compat: if `output_guidance` isn't passed, `intent`
+    still acts as the child's output guidance.
+    """
+    from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
+
+    captured: dict = {}
+
+    class _FakeOrch:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def run(self, sub_inputs, *, call_type, parent_call_id, budget_clock):
+            captured["sub_inputs"] = sub_inputs
+            return MagicMock(answer_text="ok")
+
+    mocker.patch(
+        "rumil.orchestrators.simple_spine.orchestrator.SimpleSpineOrchestrator",
+        _FakeOrch,
+    )
+    mocker.patch(
+        "rumil.orchestrators.simple_spine.presets.get_preset",
+        return_value=MagicMock(),
+    )
+
+    ctx = _spawn_ctx(db=MagicMock())
+    await nested_mod._simple_spine_recurse(
+        ctx,
+        sub_token_cap=5000,
+        overrides={"intent": "go deep"},
+    )
+    assert captured["sub_inputs"].output_guidance == "go deep"
+    assert captured["sub_inputs"].output_schema is None
+
+
+@pytest.mark.asyncio
+async def test_simple_spine_recurse_rejects_non_dict_output_schema(mocker):
+    from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
+
+    mocker.patch(
+        "rumil.orchestrators.simple_spine.orchestrator.SimpleSpineOrchestrator",
+        MagicMock(),
+    )
+    mocker.patch(
+        "rumil.orchestrators.simple_spine.presets.get_preset",
+        return_value=MagicMock(),
+    )
+
+    ctx = _spawn_ctx(db=MagicMock())
+    with pytest.raises(ValueError, match=r"output_schema.*must be a JSON Schema dict"):
+        await nested_mod._simple_spine_recurse(
+            ctx,
+            sub_token_cap=5000,
+            overrides={"intent": "x", "output_schema": "not-a-dict"},
+        )
+
+
 def test_freeform_and_sample_n_expose_include_artifacts_in_schema():
     f = FreeformAgentSubroutine(
         name="freeform",

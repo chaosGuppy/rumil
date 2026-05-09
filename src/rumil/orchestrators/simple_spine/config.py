@@ -143,7 +143,15 @@ class OrchInputs:
     additional_context: str = ""
     operating_assumptions: str = ""
     output_guidance: str = ""
-    output_schema: type[BaseModel] | None = None
+    # ``output_schema`` is rendered into the mainline's first user turn so
+    # the model knows what shape its finalize answer should take. A
+    # Pydantic class triggers a post-hoc structured-call coercion (full
+    # schema enforcement); a raw JSON Schema dict triggers a lighter
+    # text-call coercion that parses JSON but does not validate against
+    # the schema (callers parse / validate themselves on the dict path).
+    # Dict shape is what tool-call callers pass — Pydantic classes can't
+    # cross a JSON tool boundary.
+    output_schema: type[BaseModel] | dict[str, Any] | None = None
     budget: BudgetSpec = field(default_factory=lambda: BudgetSpec(max_tokens=200_000))
     artifacts: Mapping[str, str] = field(default_factory=dict)
 
@@ -153,7 +161,7 @@ class OrchResult:
     """Return value of SimpleSpineOrchestrator.run."""
 
     answer_text: str
-    structured_answer: BaseModel | None
+    structured_answer: BaseModel | dict[str, Any] | None
     fingerprint: str
     call_id: str
     spawn_count: int

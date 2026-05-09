@@ -246,6 +246,7 @@ _OPAQUE_TO_FINGERPRINT = {
     "produces_artifact",
     "relevant_settings",
     "last_status",
+    "last_artifact",
     # Prompt path attrs are pure telemetry; identical content via
     # different paths fingerprints the same via *_prompt_hash.
     "drafter_prompt_path",
@@ -310,11 +311,12 @@ async def test_setup_seeds_budget(mocker):
 
 
 @pytest.mark.asyncio
-async def test_run_one_round_writes_final_draft_to_question_content(mocker):
+async def test_run_one_round_writes_final_draft_to_last_artifact(mocker):
     """budget=1, max_rounds=1: drafter fires once, no critics (final
     round → no editor will read them), no editor. The drafter's
-    output lands on question.content."""
+    output lands on wf.last_artifact and question.content stays put."""
     db, question, _call = _make_db(mocker)
+    original_content = question.content
     fake_text_call = _patch_text_call(
         mocker,
         drafter_text="DRAFT_R0",
@@ -326,8 +328,9 @@ async def test_run_one_round_writes_final_draft_to_question_content(mocker):
     await wf.run(db, "q-1", broadcaster=None)
 
     assert wf.last_status == "complete"
-    db.update_page_content.assert_awaited_once_with("q-1", "DRAFT_R0")
-    assert question.content == "DRAFT_R0"
+    assert wf.last_artifact == "DRAFT_R0"
+    db.update_page_content.assert_not_awaited()
+    assert question.content == original_content
     # 1 drafter; no critics (round 0 is also the final round, so the
     # critique step is skipped); no editor.
     assert fake_text_call.await_count == 1
@@ -351,11 +354,13 @@ async def test_run_two_rounds_fires_editor_in_round_one(mocker):
     )
 
     wf = DraftAndEditWorkflow(budget=2, n_critics=2, max_rounds=2)
+    original_content = question.content
     await wf.run(db, "q-1", broadcaster=None)
 
     assert wf.last_status == "complete"
-    db.update_page_content.assert_awaited_once_with("q-1", "EDITED_R1")
-    assert question.content == "EDITED_R1"
+    assert wf.last_artifact == "EDITED_R1"
+    db.update_page_content.assert_not_awaited()
+    assert question.content == original_content
     # 1 draft + 2 critics + 1 edit = 4 LLM calls. The round-1
     # critique would have been wasted (no round-2 editor to read it),
     # so it's skipped.
@@ -420,7 +425,7 @@ async def test_run_consumes_one_budget_unit_per_round(mocker):
 async def test_run_marks_incomplete_when_budget_exhausts_before_first_draft(mocker):
     """If consume_budget returns False on the very first round, no
     draft is produced — last_status flips to ``incomplete`` and
-    ``update_page_content`` is never called."""
+    ``last_artifact`` stays empty."""
     db, _question, _call = _make_db(mocker)
     db.consume_budget = AsyncMock(return_value=False)
     fake_text_call = _patch_text_call(
@@ -434,6 +439,7 @@ async def test_run_marks_incomplete_when_budget_exhausts_before_first_draft(mock
     await wf.run(db, "q-1", broadcaster=None)
 
     assert wf.last_status == "incomplete"
+    assert wf.last_artifact == ""
     fake_text_call.assert_not_awaited()
     db.update_page_content.assert_not_awaited()
 
@@ -452,7 +458,8 @@ async def test_run_completes_when_budget_exhausts_after_first_draft(mocker):
     await wf.run(db, "q-1", broadcaster=None)
 
     assert wf.last_status == "complete"
-    db.update_page_content.assert_awaited_once_with("q-1", "DRAFT_R0")
+    assert wf.last_artifact == "DRAFT_R0"
+    db.update_page_content.assert_not_awaited()
 
 
 @pytest.mark.asyncio

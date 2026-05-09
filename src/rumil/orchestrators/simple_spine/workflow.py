@@ -1,8 +1,9 @@
 """SimpleSpineWorkflow — versus :class:`Workflow` adapter.
 
-``produces_artifact=True``: the orchestrator writes its final answer to
-``question.content`` so the versus runner can read it and feed it to
-the task's ``extract_artifact``.
+``produces_artifact=True``: the orchestrator surfaces its final answer
+on ``self.last_artifact`` (the workflow contract). The versus runner
+reads it from there and feeds it to the task's ``extract_artifact``.
+``question.content`` stays untouched throughout the run.
 
 Constructor knobs:
 
@@ -118,6 +119,9 @@ class SimpleSpineWorkflow:
         self.output_guidance = output_guidance
         self.additional_context = additional_context
         self.last_status: str = "complete"
+        # Set in run() to the orch's answer_text; the versus runner reads
+        # this directly when produces_artifact=True.
+        self.last_artifact: str = ""
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]:
         return {
@@ -170,4 +174,10 @@ class SimpleSpineWorkflow:
         orch = SimpleSpineOrchestrator(db, effective_config, broadcaster=broadcaster)
         result = await orch.run(inputs, call_type=self.call_type_enum)
         self.last_status = result.last_status
-        await db.update_page_content(question_id, result.answer_text)
+        # Surface the deliverable via the workflow contract — the versus
+        # runner reads ``last_artifact`` directly. We deliberately do not
+        # mutate question.content: it stays as the input (pair surface
+        # for judging, prefix-framing for completion) so handlers
+        # observing the workspace mid-run or post-run see what the
+        # workflow consumed, not what it produced.
+        self.last_artifact = result.answer_text

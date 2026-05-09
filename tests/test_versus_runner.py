@@ -207,17 +207,15 @@ async def test_run_versus_threads_model_into_settings_override(mocker):
 
 @pytest.mark.asyncio
 async def test_run_versus_skips_closer_when_workflow_produces_artifact(mocker):
-    """``produces_artifact=True`` workflows have already written the
-    final text to ``question.content``; the runner reads it directly
-    and skips the closer call. ``extract_artifact`` runs against that
-    text; ``system_prompt`` / ``user_prompt`` come back empty.
+    """``produces_artifact=True`` workflows surface their deliverable on
+    ``workflow.last_artifact``; the runner reads it directly and skips
+    the closer call. ``extract_artifact`` runs against that text;
+    ``system_prompt`` / ``user_prompt`` come back empty.
     """
     workflow = _make_workflow(mocker, produces_artifact=True)
+    workflow.last_artifact = "FINAL_ARTIFACT_TEXT"
     task = _make_task(mocker)
     db = _make_db(mocker)
-    fake_question = MagicMock()
-    fake_question.content = "FINAL_ARTIFACT_TEXT"
-    db.get_page = AsyncMock(return_value=fake_question)
     fake_call = MagicMock()
     fake_call.id = "wf-call-1"
     fake_call.created_at = 1.0
@@ -244,12 +242,15 @@ async def test_run_versus_skips_closer_when_workflow_produces_artifact(mocker):
 
 
 @pytest.mark.asyncio
-async def test_run_versus_raises_when_artifact_workflow_question_missing(mocker):
+async def test_run_versus_raises_when_artifact_workflow_did_not_set_last_artifact(mocker):
+    """A produces_artifact=True workflow that returns from run() without
+    setting ``last_artifact`` is a contract violation — surface it loudly
+    rather than feeding extract_artifact an empty string."""
     workflow = _make_workflow(mocker, produces_artifact=True)
+    workflow.last_artifact = ""
     task = _make_task(mocker)
     db = _make_db(mocker)
-    db.get_page = AsyncMock(return_value=None)
-    with pytest.raises(RuntimeError, match="produces_artifact"):
+    with pytest.raises(RuntimeError, match="last_artifact"):
         await run_versus(
             db,
             workflow=workflow,

@@ -9,10 +9,19 @@ The protocol is deliberately thin — ``setup`` seeds the budget,
 ``run`` does the work, ``fingerprint`` describes the workflow's
 behaviour-affecting knobs for dedup keys. ``code_paths`` is declared
 on the protocol now and consumed in #425 when per-workflow code
-fingerprinting lands. ``produces_artifact`` flags whether the closer
-should read ``question.content`` verbatim (artifact workflows like
-DraftAndEdit) or extract a label from the research subgraph
+fingerprinting lands. ``produces_artifact`` flags whether the workflow
+emits its deliverable directly (artifact workflows like DraftAndEdit
+set ``self.last_artifact`` for the runner to read) or expects the
+runner's closer to extract a label from the research subgraph
 (research workflows like TwoPhase).
+
+Artifact contract: ``produces_artifact=True`` workflows MUST set
+``self.last_artifact`` to the deliverable text before ``run`` returns.
+The runner reads it directly and feeds it into
+``task.extract_artifact``. Workflows must NOT overwrite
+``question.content`` for this purpose — that surface stays as the
+input (pair surface, prefix-framing) so handlers reading it mid-run
+or post-run see what the workflow consumed, not what it produced.
 
 Invariants worth preserving in subclasses:
 
@@ -45,6 +54,13 @@ class Workflow(Protocol):
     name: str
     code_paths: Sequence[str]
     produces_artifact: bool
+    # Set by ``produces_artifact=True`` workflows during ``run`` to the
+    # deliverable text the runner should feed into ``task.extract_artifact``.
+    # Workflows MUST initialise to "" in __init__ so the attribute always
+    # exists; the runner asserts non-empty after run when
+    # ``produces_artifact=True``. Research workflows (produces_artifact
+    # False) leave this empty — the runner's closer fills the role instead.
+    last_artifact: str
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]: ...
 
@@ -84,6 +100,9 @@ class _BudgetedOrchWorkflow:
     name: str = "<override>"
     code_paths: Sequence[str] = ()
     produces_artifact: bool = False
+    # Class-level for protocol satisfaction; research workflows leave
+    # it empty (the runner's closer fills the role).
+    last_artifact: str = ""
     orch_cls: type
     relevant_settings: Sequence[str] = (
         # which assess implementation runs (default vs big context).

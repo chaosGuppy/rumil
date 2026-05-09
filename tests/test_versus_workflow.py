@@ -92,6 +92,7 @@ _WORKFLOW_ATTRS_OPAQUE_TO_FINGERPRINT = {
     "orch_cls",  # class reference, covered via code_paths
     "relevant_settings",  # the names; their *values* fold in via fingerprint()
     "last_status",  # set by run(); not an init-time knob
+    "last_artifact",  # set by run(); not an init-time knob
 }
 
 

@@ -172,6 +172,7 @@ _OPAQUE_TO_FINGERPRINT = {
     "produces_artifact",
     "relevant_settings",
     "last_status",
+    "last_artifact",
     "dimension_body",
     # Path attrs are pure telemetry; identical content via different
     # paths fingerprints the same via *_prompt_hash.

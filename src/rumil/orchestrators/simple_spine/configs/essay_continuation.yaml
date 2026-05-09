@@ -12,6 +12,12 @@ name: essay_continuation
 main_model: claude-opus-4-7
 main_system_prompt_path: ../prompts/main_default.md
 max_parallel_spawns_per_turn: 4
+# Versus pins these explicitly: 32k mainline output is required so the
+# `finalize.answer` can carry a full essay continuation when the model
+# finalizes in a single turn (drafter outputs up to 32k; mainline must
+# be able to pass that through verbatim).
+mainline_temperature: 1.0
+mainline_max_tokens: 32000
 
 subroutines:
   - kind: freeform_agent

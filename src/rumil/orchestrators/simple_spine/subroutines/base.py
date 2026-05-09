@@ -183,11 +183,12 @@ class SubroutineBase:
       gating whether ``ctx.operating_assumptions`` is forwarded to
       the nested orch's factory.
     - ``base_token_cap``: honored by FreeformAgent and SampleN
-      (carve a child BudgetClock); required by NestedOrch; **inert
-      on CallType** because the wrapped CallRunner makes LLM calls
-      through a path that doesn't tap into the SimpleSpine
-      BudgetClock (its budgeting is via init_budget on the staged
-      sub-DB instead).
+      (carve a child BudgetClock); required by NestedOrch;
+      **rejected by CallType** in ``__post_init__`` because the
+      wrapped CallRunner makes LLM calls through a path that doesn't
+      tap into the SimpleSpine BudgetClock (its budgeting is via
+      init_budget on the staged sub-DB instead) — silent acceptance
+      would let YAML authors set a value that does nothing.
     """
 
     name: str
@@ -218,17 +219,20 @@ class SubroutineBase:
     # kinds enforce this differently; CallType ignores it entirely.
     base_token_cap: int | None = None
 
-    def apply_assumptions(self, sys_prompt: str, ctx: SpawnCtx) -> str:
-        """Splice ctx.operating_assumptions into ``sys_prompt`` when honoring is on.
+    def apply_assumptions(self, text: str, ctx: SpawnCtx) -> str:
+        """Splice ctx.operating_assumptions into ``text`` when honoring is on.
 
-        Honors ``self.inherit_assumptions`` so kinds that opt out (e.g.
-        a critic whose role is to push back on framings) get a clean
-        prompt. Returns ``sys_prompt`` unchanged when assumptions are
-        empty or inheritance is off.
+        Single entry point for subroutine kinds — handles the
+        ``inherit_assumptions`` gate and the format-uniformity contract.
+        Used for sys prompts (FreeformAgent, SampleN) and question
+        content (CallType writing into its staged sub-DB). Returns
+        ``text`` unchanged when assumptions are empty or inheritance
+        is off. Don't call ``splice_assumptions`` directly from a
+        subroutine — bypassing this method skips the gate.
         """
         if not self.inherit_assumptions:
-            return sys_prompt
-        return splice_assumptions(sys_prompt, ctx.operating_assumptions)
+            return text
+        return splice_assumptions(text, ctx.operating_assumptions)
 
     def fingerprint(self) -> Mapping[str, Any]:
         """Universal fingerprint contribution.

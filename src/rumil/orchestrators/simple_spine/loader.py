@@ -19,6 +19,13 @@ main_system_prompt_extra: |     # OR inline; appended to the base
   ...
 max_parallel_spawns_per_turn: 4 # optional
 enable_finalize_tool: true      # optional, default true
+mainline_temperature: 1.0       # optional, default 1.0; per-turn temp
+                                #   for the mainline agent
+mainline_max_tokens: 8192       # optional, default 8192; per-turn cap
+                                #   on mainline output. Must fit the
+                                #   full finalize.answer when finalize
+                                #   lands in a single turn — versus
+                                #   presets pin 32000 for that reason.
 
 subroutines:
   - kind: freeform_agent
@@ -69,9 +76,9 @@ subroutines:
     # additional_context_description — same as freeform_agent above.
 ```
 
-CallTypeSubroutine and NestedOrchSubroutine kinds aren't supported in
-YAML yet — they reference Python classes / factories that need a richer
-registry. Add when needed.
+All four subroutine kinds are supported via ``kind`` discriminator:
+``freeform_agent``, ``sample_n``, ``call_type`` (resolved through
+:mod:`runners`), ``nested_orch`` (resolved through :mod:`nested_orchs`).
 """
 
 from __future__ import annotations
@@ -147,6 +154,10 @@ def load_simple_spine_config(path: str | Path) -> SimpleSpineConfig:
         cfg_kwargs["max_parallel_spawns_per_turn"] = blob["max_parallel_spawns_per_turn"]
     if "enable_finalize_tool" in blob:
         cfg_kwargs["enable_finalize_tool"] = bool(blob["enable_finalize_tool"])
+    if "mainline_temperature" in blob:
+        cfg_kwargs["mainline_temperature"] = float(blob["mainline_temperature"])
+    if "mainline_max_tokens" in blob:
+        cfg_kwargs["mainline_max_tokens"] = int(blob["mainline_max_tokens"])
     if "force_finalize_on_token_exhaustion" in blob:
         cfg_kwargs["force_finalize_on_token_exhaustion"] = bool(
             blob["force_finalize_on_token_exhaustion"]

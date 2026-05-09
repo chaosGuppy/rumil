@@ -296,8 +296,8 @@ async def run_orch(
       ``reader_model`` / ``reflector_model`` / ``verdict_model`` and
       ``*_prompt_path`` kwargs are this variant's iteration knobs.
     - ``"simple_spine"``: :class:`SimpleSpineWorkflow` with
-      ``call_type='judge'``. ``budget`` is the soft round cap (token
-      hard cap = budget * tokens_per_round). ``simple_spine_config_name``
+      ``call_type='judge'``. The token cap (the only hard cap) is
+      ``budget * tokens_per_round``. ``simple_spine_config_name``
       selects a preset (default ``"judge_pair"``).
 
     ``model`` is the Anthropic model id the bridge (and the workflow's

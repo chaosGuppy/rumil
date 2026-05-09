@@ -21,6 +21,13 @@ main_model: claude-opus-4-7
 main_system_prompt_path: ../prompts/main_default.md
 main_system_prompt_extra_path: ../prompts/judge_pair_wire_format.md
 max_parallel_spawns_per_turn: 3
+# Versus pins these explicitly: the verdict deliverable + canonical
+# label fits comfortably under 32k, but mainline finalize may quote
+# pair_notes / steelman summaries inline before the label, so we
+# match the essay-continuation cap rather than dropping to a smaller
+# value. Temperature 1.0 lets mainline plan diverse spawn batches.
+mainline_temperature: 1.0
+mainline_max_tokens: 32000
 
 subroutines:
   - kind: freeform_agent
@@ -84,6 +91,10 @@ subroutines:
     additional_context_description: >
       Pair + rubric + the pair_notes output, so the steelman sees the
       same context the verdict will. Spliced under {additional_context}.
+    # A steelman's job is to argue maximally for one side; global
+    # operating_assumptions like "be neutral" would distort that role.
+    # Same logic the SubroutineBase docstring flags for critics.
+    inherit_assumptions: false
 
   - kind: freeform_agent
     name: verdict

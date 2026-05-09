@@ -7,8 +7,10 @@ Runs the mainline agent on a persistent thread:
 - Spawn tool calls in the same turn are executed concurrently via
   ``asyncio.gather``; each spawn does its own internal config-prep step
   (when its ``SubroutineDef`` declares one) before running.
-- Token budget is the only hard cap. Wall-clock + soft round count are
-  surfaced in the per-round system reminder; the agent self-paces.
+- Token budget is the only hard cap. Wall-clock is surfaced as a soft
+  signal in the per-round system reminder; the agent self-paces. A
+  loop-prevention turn ceiling (``_HARD_MAX_ROUNDS``) backstops a model
+  that never finalizes and never spends its tokens.
 - On token exhaustion, the next round's prompt instructs the agent to
   finalize. If it still emits no ``finalize`` tool, the orch synthesizes
   a finalize from the last assistant text (``last_status='incomplete'``).
@@ -64,8 +66,9 @@ from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
 log = logging.getLogger(__name__)
 
-# Hard cap on assistant turns, regardless of soft max_rounds. Prevents
-# infinite loops if the model never finalizes and never runs out of tokens.
+# Loop-prevention ceiling on assistant turns. Prevents infinite loops
+# if the model never finalizes and never runs out of tokens. Token cap
+# is the real budget primitive — this is just a backstop.
 _HARD_MAX_ROUNDS = 50
 
 
@@ -212,12 +215,15 @@ class SimpleSpineOrchestrator:
                     }
                 )
 
-            # Bumped from 8192 → 32k so mainline can carry a long
-            # `finalize.answer` (the deliverable lives in the tool
-            # input). At 8192 we'd silently truncate any deliverable
-            # over ~32k chars; matches the drafter cap so any draft a
-            # subroutine can produce, mainline can pass through.
-            cfg = ModelConfig(temperature=1.0, max_tokens=32_000)
+            # Mainline ModelConfig — knobs live on SimpleSpineConfig so
+            # presets (versus vs. research) can pin values that match
+            # their finalize.answer payload size. Versus pins
+            # ``mainline_max_tokens=32_000`` so the deliverable doesn't
+            # get truncated when finalize lands in a single turn.
+            cfg = ModelConfig(
+                temperature=self.config.mainline_temperature,
+                max_tokens=self.config.mainline_max_tokens,
+            )
             api_resp = await call_anthropic_api(
                 client,
                 self.config.main_model,
@@ -298,8 +304,7 @@ class SimpleSpineOrchestrator:
                             "content": result_str,
                         }
                     )
-                    if tu.name == "finalize":
-                        finalize_reason = str(tu.input.get("reason", "")) or "model_finalize"
+                    finalize_reason = str(tu.input.get("reason", "")) or "model_finalize"
                 else:
                     spawn_uses.append(tu)
 

@@ -57,6 +57,21 @@ class CallTypeSubroutine(SubroutineBase):
     base_budget: int = 1
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "max_rounds"}))
 
+    def __post_init__(self) -> None:
+        if self.base_token_cap is not None:
+            raise ValueError(
+                f"CallTypeSubroutine {self.name!r}: base_token_cap is "
+                "inert on call_type kinds — the wrapped CallRunner makes "
+                "LLM calls through a path that doesn't tap the SimpleSpine "
+                "BudgetClock; budgeting is via init_budget on the staged "
+                "sub-DB. Drop base_token_cap from this entry."
+            )
+        if "token_cap" in self.overridable:
+            raise ValueError(
+                f"CallTypeSubroutine {self.name!r}: 'token_cap' in "
+                "overridable is inert (see base_token_cap). Drop it."
+            )
+
     def fingerprint(self) -> Mapping[str, Any]:
         out = dict(super().fingerprint())
         out["kind"] = "call_type"
@@ -119,17 +134,12 @@ class CallTypeSubroutine(SubroutineBase):
             # context-builder, so the assumptions reach the LLM through
             # the natural context-rendering path. The mutation is
             # recorded as a staged-only event so the baseline question
-            # is untouched. The semantic framing — assumptions as part
-            # of the question — is mild but the model reads it the
-            # same way regardless.
+            # is untouched. Pre-gate avoids a no-op DB read+write when
+            # there's nothing to splice.
             if self.inherit_assumptions and ctx.operating_assumptions.strip():
                 question = await sub_db.get_page(ctx.question_id)
                 if question is not None:
-                    augmented = question.content.rstrip() + (
-                        "\n\n## Operating assumptions\n\n"
-                        + ctx.operating_assumptions.strip()
-                        + "\n"
-                    )
+                    augmented = self.apply_assumptions(question.content, ctx)
                     await sub_db.update_page_content(ctx.question_id, augmented)
             call = await sub_db.create_call(
                 self.call_type,

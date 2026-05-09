@@ -306,10 +306,10 @@ async def judge_pair_simple_spine(
     preference labels — to ``question.content``; the runner reads it
     and parses the label via :func:`extract_preference`.
 
-    ``budget`` is the SimpleSpine soft round cap (small int matching
-    the rumil convention). Token hard cap = ``budget * tokens_per_round``
-    (default 25k tokens/round in the workflow). Pass ``tokens_per_round``
-    to override for long-context configs.
+    ``budget`` is a small int matching the rumil convention; the only
+    hard cap is the token budget = ``budget * tokens_per_round``
+    (default 40k tokens/unit; ~$1 of opus uncached per unit). Pass
+    ``tokens_per_round`` to override for long-context configs.
 
     The ``task_body`` (dimension rubric) is spliced into the workflow's
     ``additional_context`` so mainline + every spawn can read the actual

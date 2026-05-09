@@ -41,6 +41,16 @@ class SimpleSpineConfig:
     # turn, the excess get "throttled" tool results telling the agent to
     # try again next round; results from the kept ones still come back.
     max_parallel_spawns_per_turn: int | None = None
+    # Per-turn ModelConfig for the mainline agent. ``mainline_max_tokens``
+    # caps each round's assistant output (including the finalize tool's
+    # ``answer`` payload — set this large enough to fit the full
+    # deliverable when the model finalizes in a single turn).
+    # Default 8192 is sized for typical orchestration / research use;
+    # the versus presets (essay_continuation, judge_pair) pin 32_000
+    # explicitly because their finalize.answer can carry a full essay
+    # continuation or a verdict that quotes long sub-results inline.
+    mainline_temperature: float = 1.0
+    mainline_max_tokens: int = 8_192
     # When tokens are exhausted, the next mainline turn is invoked with a
     # forced-finalize system reminder. If the agent still doesn't call
     # finalize on that turn, the orch synthesizes a finalize from the
@@ -65,6 +75,8 @@ class SimpleSpineConfig:
             "main_system_prompt_hash": sha8(self.main_system_prompt),
             "enable_finalize_tool": self.enable_finalize_tool,
             "max_parallel_spawns_per_turn": self.max_parallel_spawns_per_turn,
+            "mainline_temperature": self.mainline_temperature,
+            "mainline_max_tokens": self.mainline_max_tokens,
             "force_finalize_on_token_exhaustion": self.force_finalize_on_token_exhaustion,
             "enable_server_compaction": self.enable_server_compaction,
             "compaction_trigger_tokens": self.compaction_trigger_tokens,
@@ -87,6 +99,8 @@ class SimpleSpineConfig:
             "main_system_prompt_hash": sha8(self.main_system_prompt),
             "enable_finalize_tool": self.enable_finalize_tool,
             "max_parallel_spawns_per_turn": self.max_parallel_spawns_per_turn,
+            "mainline_temperature": self.mainline_temperature,
+            "mainline_max_tokens": self.mainline_max_tokens,
             "force_finalize_on_token_exhaustion": self.force_finalize_on_token_exhaustion,
             "enable_server_compaction": self.enable_server_compaction,
             "compaction_trigger_tokens": self.compaction_trigger_tokens,

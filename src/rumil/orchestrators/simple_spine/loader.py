@@ -277,7 +277,7 @@ def _base_field_kwargs(entry: dict[str, Any]) -> dict[str, Any]:
     if "inherit_assumptions" in entry:
         out["inherit_assumptions"] = bool(entry["inherit_assumptions"])
     if "base_cost_cap_usd" in entry:
-        out["base_cost_cap_usd"] = int(entry["base_cost_cap_usd"])
+        out["base_cost_cap_usd"] = float(entry["base_cost_cap_usd"])
     if "cost_hint" in entry:
         out["cost_hint"] = str(entry["cost_hint"])
     if "intent_description" in entry:
@@ -398,7 +398,7 @@ def _load_nested_orch(entry: dict[str, Any], source: Path) -> NestedOrchSubrouti
     if base_cost_cap_usd is None:
         raise ValueError(
             f"{source}: nested_orch subroutine {entry.get('name')!r} requires "
-            "`base_cost_cap_usd` (default token sub-cap when not overridden)"
+            "`base_cost_cap_usd` (default USD sub-cap when not overridden)"
         )
     kwargs: dict[str, Any] = {
         "name": entry["name"],
@@ -408,8 +408,8 @@ def _load_nested_orch(entry: dict[str, Any], source: Path) -> NestedOrchSubrouti
         **_base_field_kwargs(entry),
         # base_cost_cap_usd is required for nested_orch (validated above);
         # _base_field_kwargs would only set it if present in YAML, so set
-        # the cast int here unconditionally to override its None default.
-        "base_cost_cap_usd": int(base_cost_cap_usd),
+        # the float cast here unconditionally to override its None default.
+        "base_cost_cap_usd": float(base_cost_cap_usd),
     }
     return NestedOrchSubroutine(**kwargs)
 

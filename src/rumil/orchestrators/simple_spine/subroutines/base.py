@@ -240,6 +240,36 @@ class SubroutineBase:
     # separate design and is out of MVP scope.
     consumes: tuple[str, ...] = ()
 
+    def carve_spawn_clock(
+        self,
+        parent: BudgetClock,
+        *,
+        override_cap: int | None,
+    ) -> BudgetClock:
+        """Per-spawn :class:`BudgetClock` for accounting + cap enforcement.
+
+        The orchestrator calls this once per spawn before invoking
+        ``run`` and threads the returned clock through ``ctx.budget_clock``
+        — that means subroutine kinds always see a clock scoped to their
+        own spawn, and the trace's ``tokens_consumed`` reads directly from
+        ``spawn_clock.tokens_used`` (no parent-clock-delta needed, which
+        would double-count under parallel spawns).
+
+        Default behavior: carve a child via :func:`resolve_spawn_clock`
+        using ``base_token_cap`` (or the override). When neither is set
+        we still carve a child clock (capped at the parent's remaining)
+        so ``tokens_used`` is per-spawn accurate even without a configured
+        cap. Overridden by :class:`CallType` whose LLM calls bypass the
+        SimpleSpine clock — it returns the parent unchanged so the
+        existing parent-delta accounting in the orchestrator still works
+        for that one kind.
+        """
+        cap = override_cap if override_cap is not None else self.base_token_cap
+        if cap is None:
+            cap = parent.tokens_remaining
+        capped = max(min(int(cap), parent.tokens_remaining), 1)
+        return parent.carve_child(capped)
+
     def render_artifact_block(self, ctx: SpawnCtx) -> str:
         """Build the artifact block to prepend to the spawn's user prompt.
 
@@ -470,5 +500,9 @@ class SubroutineDef(Protocol):
         ...
 
     def fingerprint(self) -> Mapping[str, Any]: ...
+
+    def carve_spawn_clock(
+        self, parent: BudgetClock, *, override_cap: int | None
+    ) -> BudgetClock: ...
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult: ...

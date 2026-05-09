@@ -116,14 +116,14 @@ class NestedOrchSubroutine(SubroutineBase):
         forward_ctx = (
             ctx if self.inherit_assumptions else dataclasses.replace(ctx, operating_assumptions="")
         )
-        before = ctx.budget_clock.tokens_used
         text_summary = await self.factory(forward_ctx, sub_cap, overrides)
-        consumed = ctx.budget_clock.tokens_used - before
+        # tokens_consumed is reported by the orchestrator from the
+        # per-spawn BudgetClock (carved via SubroutineBase.carve_spawn_clock);
+        # no need for a manual delta here.
         return SubroutineResult(
             text_summary=text_summary,
             extra={
                 "nested_orch_kind": self.orch_kind,
                 "sub_token_cap": sub_cap,
-                "tokens_consumed": consumed,
             },
         )

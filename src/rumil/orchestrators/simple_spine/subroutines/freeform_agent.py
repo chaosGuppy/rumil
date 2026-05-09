@@ -26,7 +26,6 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SubroutineBase,
     SubroutineResult,
     load_prompt,
-    resolve_spawn_clock,
     sha8,
 )
 
@@ -189,11 +188,10 @@ class FreeformAgentSubroutine(SubroutineBase):
         tools = resolve_tools(enabled_tool_names, ctx)
         cfg = ModelConfig(temperature=1.0, max_tokens=self.max_tokens)
         messages: list[dict] = [{"role": "user", "content": user_message}]
-        spawn_clock = resolve_spawn_clock(
-            ctx.budget_clock,
-            base_cap=self.base_token_cap,
-            override_cap=overrides.get("token_cap") if "token_cap" in self.overridable else None,
-        )
+        # ctx.budget_clock is already the per-spawn child carved by the
+        # orchestrator (see SubroutineBase.carve_spawn_clock + the
+        # _run_spawn dispatch site). Use it directly.
+        spawn_clock = ctx.budget_clock
         result = await thin_agent_loop(
             system_prompt=sys_prompt,
             messages=messages,

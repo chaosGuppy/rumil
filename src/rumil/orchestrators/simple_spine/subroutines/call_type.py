@@ -57,6 +57,22 @@ class CallTypeSubroutine(SubroutineBase):
     base_budget: int = 1
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "max_rounds"}))
 
+    def carve_spawn_clock(self, parent, *, override_cap):
+        """Override of base: return parent unchanged.
+
+        The wrapped CallRunner makes LLM calls through a path that
+        doesn't tap into the SimpleSpine BudgetClock (budgeting goes via
+        ``init_budget`` on the staged sub-DB instead). Carving a child
+        here would just produce a clock whose ``tokens_used`` stays at
+        zero — which would silently report ``tokens_consumed=0`` for
+        every call_type spawn in the trace. Returning the parent makes
+        the orchestrator fall back to parent-delta accounting; that
+        path can theoretically over-count under parallel spawns, but
+        call_type spawns aren't parallelized in practice.
+        """
+        del override_cap
+        return parent
+
     def __post_init__(self) -> None:
         if self.base_token_cap is not None:
             raise ValueError(

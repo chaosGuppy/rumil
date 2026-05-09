@@ -568,9 +568,19 @@ class SimpleSpineOrchestrator:
                 overrides=dict(tu.input),
             )
         )
+        # Carve a per-spawn BudgetClock so accounting is accurate under
+        # parallel spawns: under asyncio.gather, sibling spawns share one
+        # clock and a parent-delta would double-count whichever spawn
+        # finishes last. Each kind's `carve_spawn_clock` decides how —
+        # default carves a child from the parent (record_tokens still
+        # bubbles up so the run-level cap is enforced); CallType returns
+        # the parent because its LLM calls bypass the SimpleSpine clock.
+        raw_cap = tu.input.get("token_cap") if "token_cap" in sub.overridable else None
+        override_cap = int(raw_cap) if isinstance(raw_cap, (int, str)) else None
+        spawn_clock = sub.carve_spawn_clock(clock, override_cap=override_cap)
         ctx = SpawnCtx(
             db=self.db,
-            budget_clock=clock,
+            budget_clock=spawn_clock,
             broadcaster=self.broadcaster,
             parent_call_id=call_id,
             question_id=question_id,
@@ -589,7 +599,7 @@ class SimpleSpineOrchestrator:
                 round_idx=round_idx,
                 trace=trace,
             )
-        tokens_before = clock.tokens_used
+        tokens_before = spawn_clock.tokens_used
         try:
             result = await sub.run(ctx, tu.input)
         except Exception as e:
@@ -603,7 +613,7 @@ class SimpleSpineOrchestrator:
                 )
             )
             raise
-        tokens_consumed = max(clock.tokens_used - tokens_before, 0)
+        tokens_consumed = max(spawn_clock.tokens_used - tokens_before, 0)
         # Fold produces into the store. Empty sub-key → <name>/<spawn_id_short>;
         # non-empty sub-key → <name>/<spawn_id_short>/<sub_key>. Skip
         # empty-text entries (no point announcing a key with no content).

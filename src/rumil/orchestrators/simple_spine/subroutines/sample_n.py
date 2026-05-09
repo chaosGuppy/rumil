@@ -28,7 +28,6 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SubroutineBase,
     SubroutineResult,
     load_prompt,
-    resolve_spawn_clock,
     sha8,
 )
 from rumil.settings import get_settings
@@ -164,11 +163,11 @@ class SampleNSubroutine(SubroutineBase):
 
         sys_prompt = self.apply_assumptions(self.sys_prompt, ctx)
 
-        spawn_clock = resolve_spawn_clock(
-            ctx.budget_clock,
-            base_cap=self.base_token_cap,
-            override_cap=overrides.get("token_cap") if "token_cap" in self.overridable else None,
-        )
+        # ctx.budget_clock is already the per-spawn child carved by the
+        # orchestrator (see SubroutineBase.carve_spawn_clock); use it
+        # directly so per-sample affordability checks read from the
+        # spawn-scoped clock.
+        spawn_clock = ctx.budget_clock
         client = anthropic.AsyncAnthropic(api_key=get_settings().require_anthropic_key())
         cfg = ModelConfig(temperature=self.temperature, max_tokens=self.max_tokens)
         msgs: list[dict] = [{"role": "user", "content": user_message}]

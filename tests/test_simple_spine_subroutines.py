@@ -37,16 +37,26 @@ def _spawn_ctx(
     artifacts: ArtifactStore | None = None,
     include: tuple[str, ...] = (),
     operating_assumptions: str = "",
+    tokens_remaining: int = 1_000_000,
 ):
-    """Minimal SpawnCtx for subroutine.run() — clock + broadcaster stubbed."""
+    """Minimal SpawnCtx for subroutine.run() — clock + broadcaster stubbed.
+
+    ``tokens_remaining`` controls what the spawn-scoped clock reports.
+    Subroutine kinds read ``ctx.budget_clock`` directly (carving happens
+    in the orchestrator before SpawnCtx construction), so set this to a
+    small value to drive sample_n's affordability check into the
+    skip-all-samples branch.
+    """
     clock = MagicMock()
-    clock.tokens_remaining = 1_000_000
+    clock.tokens_remaining = tokens_remaining
+    clock.tokens_used = 0
     clock.tokens_exhausted = False
     clock.record_tokens = MagicMock()
 
     def _carve_child(cap):
         child = MagicMock()
         child.tokens_remaining = cap
+        child.tokens_used = 0
         child.tokens_exhausted = False
         child.record_tokens = MagicMock()
         return child
@@ -303,9 +313,8 @@ async def test_sample_n_no_completions_no_produces_entry(mocker):
 
     mocker.patch.object(Settings, "require_anthropic_key", return_value="sk-fake")
     # Force the spawn clock to have ~0 remaining so the affordability
-    # check skips all N. _spawn_ctx's carve_child takes a cap, but the
-    # SampleN run uses spawn_clock.tokens_remaining // per_sample_worst,
-    # so passing a tiny cap forces zero affordable.
+    # check skips all N. The orchestrator does the carving now, so the
+    # test stubs the budget_clock directly with tokens_remaining=1.
     mocker.patch(
         "rumil.orchestrators.simple_spine.subroutines.sample_n.call_anthropic_api",
         new=AsyncMock(),  # never awaited because affordability skips all
@@ -319,9 +328,9 @@ async def test_sample_n_no_completions_no_produces_entry(mocker):
         model="claude-haiku-4-5",
         n=3,
         max_tokens=4096,
-        base_token_cap=1,  # forces carve_child to clamp to 1 → nothing affordable
+        base_token_cap=1,
     )
-    ctx = _spawn_ctx(db=MagicMock())
+    ctx = _spawn_ctx(db=MagicMock(), tokens_remaining=1)
     result = await sub.run(ctx, {"intent": "x"})
     assert result.produces == {}
     assert result.extra["samples_run"] == 0

@@ -6,5 +6,3 @@ Your prior response did not end with one of the seven canonical preference label
   - B slightly preferred
   - B somewhat preferred
   - B strongly preferred
-
-Do not use numeric scales (`Preference: -2`), do not invent new phrasing (`A clearly better`, `A is the winner`), do not wrap the label in quotes or punctuation. Re-emit your verdict reasoning and end with the single closest label from the list above on its own line, with nothing after it.

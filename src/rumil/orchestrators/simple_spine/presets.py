@@ -4,17 +4,6 @@ Variants live in ``configs/<name>.yaml`` and are auto-registered at
 module import time via :func:`load_simple_spine_config`. Registered
 names are usable from CLI as ``--workflow-arg config_name=<name>``.
 
-Built-in variants currently shipped under ``configs/``:
-
-- ``research`` — workspace_lookup (FreeformAgent with the
-  ``workspace_search`` tool). Default preset for non-versus usage.
-- ``essay_continuation`` — drafter (FreeformAgent, 32k output) + critic
-  (SampleN n=3). Used by ``--orch simple_spine`` on the completion side.
-- ``judge_pair`` — read → steelman (SampleN n=2) → verdict (FreeformAgent
-  with response_validator + retry on non-canonical label). Used by
-  ``--variant simple_spine`` on the judging side. Mainline system
-  prompt extends the default with the 7-point wire-format constraint.
-
 Adding a new variant: drop ``configs/<name>.yaml`` referencing prompts
 in ``prompts/``. No code edits needed unless the variant uses a new
 ``response_validator`` (register in ``validators.py``) or an

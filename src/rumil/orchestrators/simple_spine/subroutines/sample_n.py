@@ -25,7 +25,7 @@ from anthropic.types import TextBlock
 from rumil.llm import LLMExchangeMetadata, call_anthropic_api
 from rumil.model_config import ModelConfig
 from rumil.orchestrators.simple_spine.subroutines.base import (
-    ConfigPrepDef,
+    LLMSubroutineBase,
     SpawnCtx,
     SubroutineResult,
     resolve_spawn_clock,
@@ -62,17 +62,28 @@ def _load_prompt(path: str | Path | None, default: str) -> str:
     return text
 
 
-@dataclass(frozen=True)
-class SampleNSubroutine:
+@dataclass(frozen=True, kw_only=True)
+class SampleNSubroutine(LLMSubroutineBase):
     """Fire ``user_prompt_template`` to ``model`` ``n`` times in parallel.
 
-    The template is rendered with the override dict via ``.format(**overrides)``
-    plus the keys ``additional_context`` and ``operating_assumptions``
-    that the orchestrator always passes through.
+    Inherits cross-cutting fields from :class:`LLMSubroutineBase`. The
+    template is rendered with the override dict via
+    ``.format(**overrides)`` plus the keys ``additional_context`` and
+    ``operating_assumptions`` that the orchestrator always passes through.
+
+    ``base_token_cap`` enforcement here is affordability-aware: the run
+    loop estimates a worst-case per-sample token cost (rough input
+    estimate + max_tokens) and only launches as many samples per batch as
+    fit in the carved clock's remaining budget. After each batch, the
+    clock reflects actual (typically below worst-case) spend, so
+    subsequent batches may launch more. When budget is comfortable this
+    collapses to a single batch of N (full parallelism); when tight it
+    degrades to smaller batches and may skip some samples entirely
+    (text_summary indicates how many ran vs were skipped). Slight
+    overshoot is possible when actual usage exceeds the worst-case
+    estimate (rare, since max_tokens dominates and is a hard ceiling).
     """
 
-    name: str
-    description: str
     sys_prompt: str
     user_prompt_template: str
     model: str
@@ -81,30 +92,6 @@ class SampleNSubroutine:
     max_tokens: int = 4096
     sys_prompt_path: str | Path | None = None
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "n"}))
-    config_prep: ConfigPrepDef | None = None
-    # See FreeformAgentSubroutine for semantics. Enforcement here is
-    # affordability-aware: the run loop estimates a worst-case per-sample
-    # token cost (rough input estimate + max_tokens) and only launches as
-    # many samples per batch as fit in the carved clock's remaining
-    # budget. After each batch, the clock reflects actual (typically
-    # below worst-case) spend, so subsequent batches may launch more.
-    # When budget is comfortable this collapses to a single batch of N
-    # (full parallelism); when tight it degrades to smaller batches and
-    # may skip some samples entirely (text_summary indicates how many
-    # ran vs were skipped). The parent clock still receives every
-    # sample's spend via carve_child rollup. Slight overshoot is
-    # possible when actual usage exceeds the worst-case estimate (rare,
-    # since max_tokens is the dominant term and is a hard ceiling).
-    base_token_cap: int | None = None
-    cost_hint: str | None = None
-    # See FreeformAgentSubroutine for semantics.
-    intent_description: str | None = None
-    additional_context_description: str | None = None
-    # When True, caller-supplied operating_assumptions (threaded via
-    # SpawnCtx) are appended to this subroutine's system prompt at run
-    # time. Default True; opt out when bias would distort the role
-    # (e.g. independent critics whose job is to challenge framings).
-    inherit_assumptions: bool = True
 
     def __post_init__(self) -> None:
         if self.n < 1:

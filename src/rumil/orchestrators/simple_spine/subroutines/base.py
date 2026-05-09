@@ -119,6 +119,66 @@ class SpawnCtx:
     operating_assumptions: str = ""
 
 
+@dataclass(frozen=True, kw_only=True)
+class SubroutineBase:
+    """Cross-cutting fields every concrete SubroutineDef shares.
+
+    Concrete subroutine kinds (FreeformAgent, SampleN, NestedOrch,
+    CallType) inherit from this (or from :class:`LLMSubroutineBase` for
+    kinds that fire their own LLM call directly) so the universal
+    surface — what mainline sees, what shows up in the fingerprint —
+    lives in one place. Subclasses use ``@dataclass(frozen=True,
+    kw_only=True)`` to mix required and optional fields without ordering
+    pain.
+    """
+
+    name: str
+    description: str
+    overridable: frozenset[str] = field(default_factory=frozenset)
+    config_prep: ConfigPrepDef | None = None
+    # Optional one-line cost hint shown in the spawn tool description so
+    # mainline can plan before its first spawn. Author-supplied because
+    # input/output ratios vary too much for a worst-case bound to be
+    # useful as auto-computed text.
+    cost_hint: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class LLMSubroutineBase(SubroutineBase):
+    """Base for subroutines that fire their own author-supplied LLM call.
+
+    Adds the fields shared by FreeformAgent and SampleN: per-spawn
+    description overrides for the schema-level intent / additional_context
+    fields, the operating-assumptions inheritance flag, and the optional
+    sub-cap that lets the subroutine carve a child BudgetClock.
+    Subroutines that wrap other infrastructure (NestedOrch wraps another
+    orch; CallType wraps a CallRunner) don't fit this shape and inherit
+    from :class:`SubroutineBase` directly.
+    """
+
+    # Per-subroutine overrides for the schema-level field descriptions.
+    # The kind-level defaults are intentionally generic ("Short statement
+    # of what you want this agent to do") because they have no role
+    # context; YAML authors can supply role-specific framing here so
+    # mainline knows what shape of text to put in each field for *this*
+    # subroutine (e.g. "A side label, 'A' or 'B'" for steelman).
+    intent_description: str | None = None
+    additional_context_description: str | None = None
+    # When True, caller-supplied operating_assumptions (threaded via
+    # SpawnCtx) are appended to this subroutine's system prompt at run
+    # time. Default True so global rules (e.g. "judge blind") propagate
+    # without per-config wiring; opt out when bias would distort the
+    # role (e.g. critics whose job is to push back on assumed framings).
+    inherit_assumptions: bool = True
+    # Optional per-spawn token cap. When set, the subroutine carves a
+    # child BudgetClock from the parent so it cannot spend more than
+    # ``base_token_cap`` tokens; mainline can override via the
+    # ``token_cap`` spawn arg if ``"token_cap" in overridable``. Tokens
+    # still flow up to the parent clock — this is a sub-cap, not extra
+    # budget.
+    base_token_cap: int | None = None
+
+
 @dataclass
 class SubroutineResult:
     """What a spawned subroutine returns to mainline.

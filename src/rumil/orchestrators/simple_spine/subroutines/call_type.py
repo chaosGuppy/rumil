@@ -36,8 +36,8 @@ from rumil.calls.stages import CallRunner
 from rumil.database import DB
 from rumil.models import CallType, Page
 from rumil.orchestrators.simple_spine.subroutines.base import (
-    ConfigPrepDef,
     SpawnCtx,
+    SubroutineBase,
     SubroutineResult,
 )
 
@@ -46,16 +46,21 @@ def _sha8(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
 
 
-@dataclass(frozen=True)
-class CallTypeSubroutine:
-    name: str
-    description: str
+@dataclass(frozen=True, kw_only=True)
+class CallTypeSubroutine(SubroutineBase):
+    """Wrap an existing rumil CallRunner inside a staged sub-DB.
+
+    Inherits cross-cutting fields from :class:`SubroutineBase`. Doesn't
+    inherit :class:`LLMSubroutineBase` because the wrapped CallRunner
+    fires its own LLM calls with its own prompts/models — the
+    SubroutineDef just specifies which rumil CallType to wrap.
+    """
+
     call_type: CallType
     runner_cls: type[CallRunner]
     base_max_rounds: int = 5
     base_budget: int = 1
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "max_rounds"}))
-    config_prep: ConfigPrepDef | None = None
 
     def fingerprint(self) -> Mapping[str, Any]:
         out: dict[str, Any] = {

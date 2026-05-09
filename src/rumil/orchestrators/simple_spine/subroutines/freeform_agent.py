@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from rumil.model_config import ModelConfig
 from rumil.orchestrators.simple_spine.agent_loop import thin_agent_loop
 from rumil.orchestrators.simple_spine.subroutines.base import (
-    ConfigPrepDef,
+    LLMSubroutineBase,
     SpawnCtx,
     SubroutineResult,
     resolve_spawn_clock,
@@ -59,19 +59,16 @@ class FreeformAgentPreppedConfig(BaseModel):
     max_rounds: int | None = None
 
 
-@dataclass(frozen=True)
-class FreeformAgentSubroutine:
+@dataclass(frozen=True, kw_only=True)
+class FreeformAgentSubroutine(LLMSubroutineBase):
     """Configurable agent loop with arbitrary tools.
 
-    ``tool_factory`` is a callable that, given the SpawnCtx and the list
-    of enabled tool names, returns a list of :class:`rumil.llm.Tool`
-    instances. Decoupling tool wiring from the SubroutineDef keeps the
-    library plain-data and lets a single tool registry serve every
-    subroutine that opts into tools.
+    Inherits the cross-cutting fields (name, description, overridable,
+    config_prep, cost_hint, intent_description, additional_context_description,
+    inherit_assumptions, base_token_cap) from :class:`LLMSubroutineBase`.
+    Adds the FreeformAgent-specific fields below.
     """
 
-    name: str
-    description: str
     sys_prompt: str
     user_prompt_template: str
     model: str
@@ -82,28 +79,6 @@ class FreeformAgentSubroutine:
     overridable: frozenset[str] = field(
         default_factory=lambda: frozenset({"intent", "additional_context"})
     )
-    config_prep: ConfigPrepDef | None = None
-    # Optional per-spawn token cap. When set, the orchestrator carves a
-    # child BudgetClock from the parent so this spawn cannot spend more
-    # than ``base_token_cap`` tokens; mainline can override via the
-    # ``token_cap`` spawn arg if ``"token_cap" in overridable``. Tokens
-    # still flow up to the parent clock — this is a sub-cap, not extra
-    # budget. Without this, the spawn shares the unclamped parent clock.
-    base_token_cap: int | None = None
-    # Optional one-line cost hint shown in the spawn tool description so
-    # mainline can plan before its first spawn (after that, [spawn cost:
-    # …] feedback is real). Author-supplied; not auto-computed because
-    # input/output ratios vary too much for a worst-case bound to be
-    # useful.
-    cost_hint: str | None = None
-    # Per-subroutine overrides for the schema-level field descriptions.
-    # The kind-level defaults are intentionally generic ("Short statement
-    # of what you want this agent to do") because they have no role
-    # context; YAML authors can supply role-specific framing here so
-    # mainline knows what shape of text to put in each field for *this*
-    # subroutine (e.g. "A side label, 'A' or 'B'" for steelman).
-    intent_description: str | None = None
-    additional_context_description: str | None = None
     # Optional post-hoc validation on the final response text. When the
     # validator returns False, the subroutine appends ``retry_message``
     # to the conversation and re-runs the inner agent loop, up to
@@ -119,13 +94,6 @@ class FreeformAgentSubroutine:
     # ``response_validator`` is set so that two subroutines using
     # different validators don't fingerprint identically.
     response_validator_name: str | None = None
-    # When True, caller-supplied operating_assumptions (threaded via
-    # SpawnCtx) are appended to this subroutine's system prompt at run
-    # time. Default True so global rules (e.g. "judge blind") propagate
-    # without per-config wiring; opt out when bias would distort the
-    # subroutine's job (e.g. critics whose role is to push back on
-    # assumed framings).
-    inherit_assumptions: bool = True
 
     def __post_init__(self) -> None:
         if self.max_rounds < 1:

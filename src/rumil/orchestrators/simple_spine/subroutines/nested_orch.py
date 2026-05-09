@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from rumil.orchestrators.simple_spine.subroutines.base import (
-    ConfigPrepDef,
     SpawnCtx,
+    SubroutineBase,
     SubroutineResult,
 )
 
@@ -42,18 +42,25 @@ NestedOrchFactory = Callable[
 ]
 
 
-@dataclass(frozen=True)
-class NestedOrchSubroutine:
-    name: str
-    description: str
+@dataclass(frozen=True, kw_only=True)
+class NestedOrchSubroutine(SubroutineBase):
+    """Recurse into another orchestrator with a carved sub-budget.
+
+    Inherits cross-cutting fields (name, description, overridable,
+    config_prep, cost_hint) from :class:`SubroutineBase`. Doesn't
+    inherit :class:`LLMSubroutineBase` because it wraps another orch
+    rather than firing its own LLM call directly — the nested orch
+    handles its own assumption inheritance and per-call sys/user prompts.
+    """
+
     orch_kind: str  # "two_phase" | "draft_and_edit" | "simple_spine" | etc.
     factory: NestedOrchFactory
+    # Required (no default): nested orchs always need an explicit token
+    # sub-cap because they can recurse arbitrarily deep otherwise.
     base_token_cap: int
     overridable: frozenset[str] = field(
         default_factory=lambda: frozenset({"intent", "additional_context"})
     )
-    config_prep: ConfigPrepDef | None = None
-    cost_hint: str | None = None
 
     def fingerprint(self) -> Mapping[str, Any]:
         out: dict[str, Any] = {

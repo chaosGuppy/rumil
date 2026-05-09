@@ -3729,6 +3729,61 @@ class DB:
         results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         return results[:limit]
 
+    async def list_recent_runs(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return recent runs across all projects, newest first, with total count.
+
+        Skips the legacy-calls fallback used by list_runs_for_project — pre-runs-table
+        research is only visible in the per-project view.
+        """
+        end = offset + limit - 1
+        result = await self._execute(
+            self.client.table("runs")
+            .select(
+                "id, name, question_id, project_id, config, created_at, staged",
+                count=CountMethod.exact,
+            )
+            .order("created_at", desc=True)
+            .range(offset, end)
+        )
+        run_rows = _rows(result)
+        total = result.count or 0
+
+        page_ids = {r["question_id"] for r in run_rows if r.get("question_id")}
+        project_ids = {r["project_id"] for r in run_rows if r.get("project_id")}
+        pages_by_id = await self.get_pages_by_ids(list(page_ids)) if page_ids else {}
+
+        projects_by_id: dict[str, str] = {}
+        if project_ids:
+            proj_rows = _rows(
+                await self._execute(
+                    self.client.table("projects").select("id, name").in_("id", list(project_ids))
+                )
+            )
+            projects_by_id = {p["id"]: p["name"] for p in proj_rows}
+
+        results: list[dict[str, Any]] = []
+        for row in run_rows:
+            qid = row.get("question_id")
+            page = pages_by_id.get(qid) if qid else None
+            pid = row.get("project_id")
+            results.append(
+                {
+                    "run_id": row["id"],
+                    "created_at": row["created_at"],
+                    "name": row.get("name", ""),
+                    "config": row.get("config", {}),
+                    "question_summary": page.headline if page else None,
+                    "staged": row.get("staged", False),
+                    "project_id": pid,
+                    "project_name": projects_by_id.get(pid) if pid else None,
+                }
+            )
+        return results, total
+
     async def find_eval_gold_run(
         self,
         question_id: str,

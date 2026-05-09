@@ -628,12 +628,6 @@ class SpineConfigPrepEvent(BaseModel):
     prepped_config: dict[str, Any] = {}
 
 
-class SpineNoteAddedEvent(BaseModel):
-    event: Literal["spine_note_added"] = "spine_note_added"
-    round_idx: int
-    text: str
-
-
 class SpineFinalizedEvent(BaseModel):
     event: Literal["spine_finalized"] = "spine_finalized"
     round_idx: int
@@ -706,7 +700,6 @@ TraceEvent = Annotated[
     | SpineSpawnStartedEvent
     | SpineSpawnCompletedEvent
     | SpineConfigPrepEvent
-    | SpineNoteAddedEvent
     | SpineFinalizedEvent
     | SpineThrottledEvent,
     Field(discriminator="event"),

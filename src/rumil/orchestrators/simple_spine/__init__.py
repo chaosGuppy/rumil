@@ -49,7 +49,6 @@ from rumil.orchestrators.simple_spine.subroutines import (
 )
 from rumil.orchestrators.simple_spine.tools import (
     make_finalize_tool,
-    make_note_finding_tool,
     register_tool,
     resolve_tools,
 )
@@ -84,7 +83,6 @@ __all__ = (
     "list_validators",
     "load_simple_spine_config",
     "make_finalize_tool",
-    "make_note_finding_tool",
     "register_preset",
     "register_tool",
     "register_validator",

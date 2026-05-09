@@ -3,7 +3,7 @@
 Runs the mainline agent on a persistent thread:
 
 - One assistant turn per "round". Each turn may include reasoning text
-  + ``note_finding`` + ``finalize`` + N parallel spawn tool calls.
+  + ``finalize`` + N parallel spawn tool calls.
 - Spawn tool calls in the same turn are executed concurrently via
   ``asyncio.gather``; each spawn does its own internal config-prep step
   (when its ``SubroutineDef`` declares one) before running.
@@ -47,14 +47,10 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SubroutineDef,
     SubroutineResult,
 )
-from rumil.orchestrators.simple_spine.tools import (
-    make_finalize_tool,
-    make_note_finding_tool,
-)
+from rumil.orchestrators.simple_spine.tools import make_finalize_tool
 from rumil.orchestrators.simple_spine.trace_events import (
     SpineConfigPrepEvent,
     SpineFinalizedEvent,
-    SpineNoteAddedEvent,
     SpineRoundStartedEvent,
     SpineSpawnCompletedEvent,
     SpineSpawnStartedEvent,
@@ -146,36 +142,22 @@ class SimpleSpineOrchestrator:
         )
         messages: list[dict] = [{"role": "user", "content": initial_user}]
 
-        notes: list[str] = []
         finalize_state: dict[str, Any] = {
             "done": False,
             "answer": "",
             "reason": "",
             "synthesized": False,
         }
-        # Mutable holder so the note tool callback (defined here, called
-        # from inside the loop later) can stamp notes with the current
-        # round_idx instead of len(notes).
-        loop_state: dict[str, int] = {"round_idx": 0}
 
         async def on_finalize(answer: str) -> str:
             finalize_state["done"] = True
             finalize_state["answer"] = answer
             return "Finalized. The harness will return your answer."
 
-        async def on_note(text: str) -> str:
-            notes.append(text)
-            await trace.record(
-                SpineNoteAddedEvent(round_idx=loop_state["round_idx"], text=text[:2000])
-            )
-            return f"Recorded note ({len(notes)} total)."
-
         spawn_tools = self._build_spawn_tools(call.id, inputs.question_id, clock)
         all_tools: list[Tool] = list(spawn_tools)
         if self.config.enable_finalize_tool:
             all_tools.append(make_finalize_tool(on_finalize))
-        if self.config.enable_note_finding_tool:
-            all_tools.append(make_note_finding_tool(on_note))
 
         client = anthropic.AsyncAnthropic(api_key=get_settings().require_anthropic_key())
         tool_defs = [
@@ -192,7 +174,6 @@ class SimpleSpineOrchestrator:
         finalize_reason = ""
 
         for round_idx in range(_HARD_MAX_ROUNDS):
-            loop_state["round_idx"] = round_idx
             await trace.record(
                 SpineRoundStartedEvent(
                     round_idx=round_idx,
@@ -276,7 +257,7 @@ class SimpleSpineOrchestrator:
             tool_results: list[dict] = []
             spawn_uses: list[ToolUseBlock] = []
             for tu in tool_uses:
-                if tu.name == "finalize" or tu.name == "note_finding":
+                if tu.name == "finalize":
                     fn = tool_fn_map[tu.name]
                     try:
                         result_str = await fn(tu.input)
@@ -421,7 +402,7 @@ class SimpleSpineOrchestrator:
             summary=(
                 f"simple_spine: {last_status} "
                 f"(rounds={clock.rounds_used}, tokens={clock.tokens_used}, "
-                f"spawns={spawn_count}, notes={len(notes)})"
+                f"spawns={spawn_count})"
             ),
         )
 
@@ -430,7 +411,6 @@ class SimpleSpineOrchestrator:
             structured_answer=structured_answer,
             fingerprint=self.config.fingerprint,
             call_id=call.id,
-            notes=notes,
             spawn_count=spawn_count,
             rounds=clock.rounds_used,
             tokens_used=clock.tokens_used,

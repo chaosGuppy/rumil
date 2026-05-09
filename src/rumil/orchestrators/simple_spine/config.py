@@ -35,11 +35,6 @@ class SimpleSpineConfig:
     process_library: tuple[SubroutineDef, ...]
     main_system_prompt: str
     enable_finalize_tool: bool = True
-    # Default off: in observed runs the note tool was offered every turn
-    # but rarely used, and when used it didn't feed downstream stages —
-    # the persistent thread already carries reasoning between turns.
-    # Presets that want a scratchpad (with concrete consumer) opt in.
-    enable_note_finding_tool: bool = False
     # Soft cap on parallel spawn tool calls per turn. None = unlimited.
     # If mainline emits more than this many spawn tool calls in a single
     # turn, the excess get "throttled" tool results telling the agent to
@@ -59,7 +54,6 @@ class SimpleSpineConfig:
             "main_model": self.main_model,
             "main_system_prompt_hash": _sha8(self.main_system_prompt),
             "enable_finalize_tool": self.enable_finalize_tool,
-            "enable_note_finding_tool": self.enable_note_finding_tool,
             "max_parallel_spawns_per_turn": self.max_parallel_spawns_per_turn,
             "force_finalize_on_token_exhaustion": self.force_finalize_on_token_exhaustion,
             "subroutines": [s.fingerprint() for s in self.process_library],
@@ -77,7 +71,6 @@ class SimpleSpineConfig:
             "main_model": self.main_model,
             "main_system_prompt_hash": _sha8(self.main_system_prompt),
             "enable_finalize_tool": self.enable_finalize_tool,
-            "enable_note_finding_tool": self.enable_note_finding_tool,
             "max_parallel_spawns_per_turn": self.max_parallel_spawns_per_turn,
             "force_finalize_on_token_exhaustion": self.force_finalize_on_token_exhaustion,
             "subroutines": [s.fingerprint() for s in self.process_library],
@@ -109,7 +102,6 @@ class OrchResult:
     structured_answer: BaseModel | None
     fingerprint: str
     call_id: str
-    notes: list[str]
     spawn_count: int
     rounds: int
     tokens_used: int

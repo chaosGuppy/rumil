@@ -19,7 +19,6 @@ main_system_prompt_extra: |     # OR inline; appended to the base
   ...
 max_parallel_spawns_per_turn: 4 # optional
 enable_finalize_tool: true      # optional, default true
-enable_note_finding_tool: false # optional, default false
 
 subroutines:
   - kind: freeform_agent
@@ -148,8 +147,6 @@ def load_simple_spine_config(path: str | Path) -> SimpleSpineConfig:
         cfg_kwargs["max_parallel_spawns_per_turn"] = blob["max_parallel_spawns_per_turn"]
     if "enable_finalize_tool" in blob:
         cfg_kwargs["enable_finalize_tool"] = bool(blob["enable_finalize_tool"])
-    if "enable_note_finding_tool" in blob:
-        cfg_kwargs["enable_note_finding_tool"] = bool(blob["enable_note_finding_tool"])
     if "force_finalize_on_token_exhaustion" in blob:
         cfg_kwargs["force_finalize_on_token_exhaustion"] = bool(
             blob["force_finalize_on_token_exhaustion"]

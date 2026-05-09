@@ -9,7 +9,6 @@ of the SimpleSpine package can import them locally.
 from rumil.tracing.trace_events import (
     SpineConfigPrepEvent,
     SpineFinalizedEvent,
-    SpineNoteAddedEvent,
     SpineRoundStartedEvent,
     SpineSpawnCompletedEvent,
     SpineSpawnStartedEvent,
@@ -19,7 +18,6 @@ from rumil.tracing.trace_events import (
 __all__ = (
     "SpineConfigPrepEvent",
     "SpineFinalizedEvent",
-    "SpineNoteAddedEvent",
     "SpineRoundStartedEvent",
     "SpineSpawnCompletedEvent",
     "SpineSpawnStartedEvent",

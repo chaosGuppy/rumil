@@ -54,6 +54,19 @@ def _hash_artifacts(artifacts: Mapping[str, str]) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
+def _model_supports_compaction(model: str) -> bool:
+    """Whether ``model`` accepts the ``compact_20260112`` context strategy.
+
+    Anthropic gates server-side compaction on Opus 4.x / Sonnet 4.x.
+    Haiku 4.5 returns a 400 ("does not support the 'compact_20260112'
+    context management strategy") if compaction is enabled on the
+    request, even when the trigger threshold is never crossed. We
+    blacklist by name substring rather than whitelist so future Sonnet
+    / Opus point releases keep working without an edit here.
+    """
+    return "haiku" not in model.lower()
+
+
 def _apply_model_override(config: SimpleSpineConfig, model: str) -> SimpleSpineConfig:
     """Return a copy of ``config`` with every role-model replaced by ``model``.
 
@@ -188,6 +201,10 @@ class SimpleSpineWorkflow:
         # override is applied as a one-knob global.
         rmo = get_settings().rumil_model_override
         effective_config = _apply_model_override(self.config, rmo) if rmo else self.config
+        if effective_config.enable_server_compaction and not _model_supports_compaction(
+            effective_config.main_model
+        ):
+            effective_config = dataclasses.replace(effective_config, enable_server_compaction=False)
         inputs = OrchInputs(
             question_id=question_id,
             additional_context=self.additional_context,

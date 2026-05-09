@@ -165,8 +165,8 @@ async def main() -> None:
     )
     ap.add_argument(
         "--task-name",
-        default="general_quality",
-        help="Dimension name for the task body (default: general_quality).",
+        default="would_recommend",
+        help="Dimension name for the task body (default: would_recommend).",
     )
     ap.add_argument(
         "--render-variant",

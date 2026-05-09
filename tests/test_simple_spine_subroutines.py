@@ -170,15 +170,12 @@ def test_nested_orch_overridable_opt_out_hides_output_fields():
     assert "output_schema" not in props
 
 
-@pytest.mark.asyncio
-async def test_simple_spine_recurse_threads_output_overrides_into_orch_inputs(mocker):
-    """`_simple_spine_recurse` must forward `output_guidance` and
-    `output_schema` overrides onto the child OrchInputs so the nested
-    orch's first user turn carries them.
-    """
-    from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
+def _patch_recurse_deps(mocker, captured: dict):
+    """Patch out external deps for `_simple_spine_recurse` tests.
 
-    captured: dict = {}
+    Captures the OrchInputs the fake child orch would receive so the
+    test can assert on what the recurse threaded through.
+    """
 
     class _FakeOrch:
         def __init__(self, *args, **kwargs):
@@ -196,13 +193,51 @@ async def test_simple_spine_recurse_threads_output_overrides_into_orch_inputs(mo
         "rumil.orchestrators.simple_spine.presets.get_preset",
         return_value=MagicMock(),
     )
+    mocker.patch(
+        "rumil.embeddings.embed_and_store_page",
+        new=AsyncMock(),
+    )
 
-    ctx = _spawn_ctx(db=MagicMock())
+
+def _recurse_db_mock(mocker):
+    """Build a SpawnCtx db mock that satisfies the recurse path —
+    parent question lookup, parent call lookup, save_page / save_link.
+    Captures created pages/links for assertions.
+    """
+    from rumil.models import PageType, Workspace
+
+    db = MagicMock()
+    parent_question = MagicMock()
+    parent_question.workspace = Workspace.RESEARCH
+    parent_question.page_type = PageType.QUESTION
+    db.get_page = AsyncMock(return_value=parent_question)
+    parent_call = MagicMock()
+    parent_call.call_type = MagicMock(value="claude_code_direct")
+    db.get_call = AsyncMock(return_value=parent_call)
+    db.save_page = AsyncMock()
+    db.save_link = AsyncMock()
+    return db
+
+
+@pytest.mark.asyncio
+async def test_simple_spine_recurse_threads_output_overrides_into_orch_inputs(mocker):
+    """`_simple_spine_recurse` must forward `output_guidance` and
+    `output_schema` overrides onto the child OrchInputs so the nested
+    orch's first user turn carries them.
+    """
+    from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
+
+    captured: dict = {}
+    _patch_recurse_deps(mocker, captured)
+
+    db = _recurse_db_mock(mocker)
+    ctx = _spawn_ctx(db=db)
     schema = {"type": "object", "properties": {"verdict": {"type": "string"}}}
     out = await nested_mod._simple_spine_recurse(
         ctx,
         sub_token_cap=5000,
         overrides={
+            "question_headline": "Does X imply Y?",
             "intent": "investigate the claim",
             "output_guidance": "Return a verdict with reasoning.",
             "output_schema": schema,
@@ -213,6 +248,47 @@ async def test_simple_spine_recurse_threads_output_overrides_into_orch_inputs(mo
     sub_inputs = captured["sub_inputs"]
     assert sub_inputs.output_guidance == "Return a verdict with reasoning."
     assert sub_inputs.output_schema == schema
+    # Child OrchInputs must scope to the NEW child question, not the parent.
+    assert sub_inputs.question_id != ctx.question_id
+
+
+@pytest.mark.asyncio
+async def test_simple_spine_recurse_creates_and_links_child_question(mocker):
+    """Recurse creates a Question page and a CHILD_QUESTION link from
+    the parent. Staging is implicit via the db's run_id/staged flags
+    (save_page reads them at write time)."""
+    from rumil.models import LinkType, PageType
+    from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
+
+    captured: dict = {}
+    _patch_recurse_deps(mocker, captured)
+
+    db = _recurse_db_mock(mocker)
+    ctx = _spawn_ctx(db=db)
+    await nested_mod._simple_spine_recurse(
+        ctx,
+        sub_token_cap=5000,
+        overrides={
+            "question_headline": "How does the X mechanism scale?",
+            "question_content": "Focus on regimes above 10^6 tokens.",
+            "intent": "drill into scaling behavior",
+        },
+    )
+
+    db.save_page.assert_awaited_once()
+    saved_page = db.save_page.call_args.args[0]
+    assert saved_page.page_type == PageType.QUESTION
+    assert saved_page.headline == "How does the X mechanism scale?"
+    assert saved_page.content == "Focus on regimes above 10^6 tokens."
+
+    db.save_link.assert_awaited_once()
+    saved_link = db.save_link.call_args.args[0]
+    assert saved_link.link_type == LinkType.CHILD_QUESTION
+    assert saved_link.from_page_id == ctx.question_id
+    assert saved_link.to_page_id == saved_page.id
+
+    # The fake orch saw the new child question's id, not the parent's.
+    assert captured["sub_inputs"].question_id == saved_page.id
 
 
 @pytest.mark.asyncio
@@ -223,53 +299,50 @@ async def test_simple_spine_recurse_falls_back_intent_to_output_guidance(mocker)
     from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
 
     captured: dict = {}
+    _patch_recurse_deps(mocker, captured)
 
-    class _FakeOrch:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def run(self, sub_inputs, *, call_type, parent_call_id, budget_clock):
-            captured["sub_inputs"] = sub_inputs
-            return MagicMock(answer_text="ok")
-
-    mocker.patch(
-        "rumil.orchestrators.simple_spine.orchestrator.SimpleSpineOrchestrator",
-        _FakeOrch,
-    )
-    mocker.patch(
-        "rumil.orchestrators.simple_spine.presets.get_preset",
-        return_value=MagicMock(),
-    )
-
-    ctx = _spawn_ctx(db=MagicMock())
+    db = _recurse_db_mock(mocker)
+    ctx = _spawn_ctx(db=db)
     await nested_mod._simple_spine_recurse(
         ctx,
         sub_token_cap=5000,
-        overrides={"intent": "go deep"},
+        overrides={"question_headline": "q?", "intent": "go deep"},
     )
     assert captured["sub_inputs"].output_guidance == "go deep"
     assert captured["sub_inputs"].output_schema is None
 
 
 @pytest.mark.asyncio
+async def test_simple_spine_recurse_requires_question_headline(mocker):
+    from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
+
+    captured: dict = {}
+    _patch_recurse_deps(mocker, captured)
+
+    db = _recurse_db_mock(mocker)
+    ctx = _spawn_ctx(db=db)
+    with pytest.raises(ValueError, match=r"question_headline.*required"):
+        await nested_mod._simple_spine_recurse(ctx, sub_token_cap=5000, overrides={"intent": "x"})
+
+
+@pytest.mark.asyncio
 async def test_simple_spine_recurse_rejects_non_dict_output_schema(mocker):
     from rumil.orchestrators.simple_spine import nested_orchs as nested_mod
 
-    mocker.patch(
-        "rumil.orchestrators.simple_spine.orchestrator.SimpleSpineOrchestrator",
-        MagicMock(),
-    )
-    mocker.patch(
-        "rumil.orchestrators.simple_spine.presets.get_preset",
-        return_value=MagicMock(),
-    )
+    captured: dict = {}
+    _patch_recurse_deps(mocker, captured)
 
-    ctx = _spawn_ctx(db=MagicMock())
+    db = _recurse_db_mock(mocker)
+    ctx = _spawn_ctx(db=db)
     with pytest.raises(ValueError, match=r"output_schema.*must be a JSON Schema dict"):
         await nested_mod._simple_spine_recurse(
             ctx,
             sub_token_cap=5000,
-            overrides={"intent": "x", "output_schema": "not-a-dict"},
+            overrides={
+                "question_headline": "q?",
+                "intent": "x",
+                "output_schema": "not-a-dict",
+            },
         )
 
 

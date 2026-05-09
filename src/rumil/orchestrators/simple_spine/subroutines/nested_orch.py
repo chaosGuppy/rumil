@@ -52,7 +52,15 @@ class NestedOrchSubroutine(SubroutineBase):
     factory: NestedOrchFactory
     overridable: frozenset[str] = field(
         default_factory=lambda: frozenset(
-            {"intent", "additional_context", "output_guidance", "output_schema"}
+            {
+                "intent",
+                "additional_context",
+                "output_guidance",
+                "output_schema",
+                "token_cap",
+                "question_headline",
+                "question_content",
+            }
         )
     )
 
@@ -99,6 +107,27 @@ class NestedOrchSubroutine(SubroutineBase):
 
     def _extra_schema_properties(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
+        if "question_headline" in self.overridable:
+            out["question_headline"] = {
+                "type": "string",
+                "description": (
+                    "Headline for a NEW child question created for this "
+                    "nested orch run. The child orch scopes to this new "
+                    "question (not the parent's). The new question is "
+                    "linked as a CHILD_QUESTION of the parent and inherits "
+                    "the parent run's staging."
+                ),
+            }
+        if "question_content" in self.overridable:
+            out["question_content"] = {
+                "type": "string",
+                "description": (
+                    "Optional clarifying content for the new child "
+                    "question — scope, what counts as an answer, units / "
+                    "thresholds. Use only when the headline alone is "
+                    "ambiguous; investigative steering belongs in `intent`."
+                ),
+            }
         if "output_guidance" in self.overridable:
             out["output_guidance"] = {
                 "type": "string",
@@ -125,6 +154,12 @@ class NestedOrchSubroutine(SubroutineBase):
                 ),
             }
         return out
+
+    def _extra_required_fields(self) -> list[str]:
+        # Nested orchs operate on a NEW child question, so the caller
+        # must supply its headline. Optional only when the YAML opts out
+        # via `overridable`.
+        return ["question_headline"] if "question_headline" in self.overridable else []
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:
         cap_override = overrides.get("token_cap")

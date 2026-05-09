@@ -368,10 +368,11 @@ class SubroutineBase:
         """
         properties = self._build_common_schema_properties()
         properties.update(self._extra_schema_properties())
+        required = ["intent", *self._extra_required_fields()]
         return {
             "type": "object",
             "properties": properties,
-            "required": ["intent"],
+            "required": required,
             "additionalProperties": False,
         }
 
@@ -450,6 +451,16 @@ class SubroutineBase:
         spawn-tool fields (``max_rounds``, ``n``, etc.) override this.
         """
         return {}
+
+    def _extra_required_fields(self) -> list[str]:
+        """Subclass hook: extra required fields beyond ``intent``.
+
+        Default returns an empty list. Subclasses with required
+        kind-specific properties (e.g. nested_orch's ``question_headline``)
+        override this. Returned names must appear in
+        ``_extra_schema_properties()`` keys.
+        """
+        return []
 
 
 @dataclass

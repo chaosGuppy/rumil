@@ -81,6 +81,30 @@ subroutines:
       Optional framing, e.g. "rule out X as already-covered" or "focus
       on pages that bear on Y". Spliced under {additional_context}.
 
+  - kind: nested_orch
+    name: deep_dive
+    description: |
+      Spawn a child SimpleSpine run on a NEW sub-question with its own
+      carved token budget. Creates a question page (linked CHILD_QUESTION
+      under the parent) and runs a fresh research orch against it; the
+      child has its own workspace_lookup / web_research / deep_dive
+      library and finalizes a single deliverable back to mainline.
+      Inputs: `question_headline` (required — headline for the new
+      child question); optional `question_content` (clarifying scope);
+      `intent` for the investigative steer; optional `output_guidance`
+      / `output_schema` to shape the deliverable; optional `token_cap`
+      to override the budget.
+      Output: the child orch's freeform finalize answer (or coerced
+      JSON if output_schema was set), plus a new persisted child
+      question in the workspace.
+      Use when a sub-question deserves its own multi-round loop —
+      heavier than a single workspace_lookup / web_research spawn.
+      Avoid recursing for narrow lookups; reach for it when the work
+      itself plausibly needs spawns of its own.
+    orch_factory_key: simple_spine_recurse
+    base_token_cap: 100000
+    cost_hint: "≈ a full SimpleSpine sub-run within its sub-cap (~30–100k tokens)"
+
   - kind: web_research
     name: web_research
     description: |

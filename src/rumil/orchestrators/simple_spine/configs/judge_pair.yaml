@@ -1,29 +1,28 @@
 # judge_pair — SimpleSpine preset for versus pairwise-judging runs.
 #
-# Library: pair_notes (FreeformAgent) → steelman (SampleN n=2) → verdict
-# (FreeformAgent). Mainline + role models all default to opus; versus's
-# --model flag uniformly overrides via _apply_model_override.
+# Library: pair_notes (FreeformAgent) → steelman (SampleN n=2). Mainline
+# itself produces the verdict + canonical label via `finalize` after
+# reading both stages' outputs (pair_text + rubric are in mainline's
+# initial user message; pair_notes / steelman outputs land as tool_results).
+# Mainline + role models default to opus; versus's --model flag uniformly
+# overrides via _apply_model_override.
 #
 # Context flow uses the artifact channel (k,v store on the run):
 # - The bridge seeds `pair_text` (prefix + both continuations with display
 #   labels) and `rubric` (the dimension body) into OrchInputs.artifacts.
-# - Every subroutine declares `consumes: [pair_text, rubric]` so they're
+# - Both subroutines declare `consumes: [pair_text, rubric]` so they're
 #   spliced into each spawn's user prompt under "## Artifacts" without
-#   mainline having to forward content. Mainline only chooses *when* to
-#   spawn and *which earlier outputs* (e.g. pair_notes/<spawn_id>,
-#   steelman/<spawn_id>) to pass via `include_artifacts`.
+#   mainline having to forward content. Mainline chooses *when* to spawn
+#   and *which earlier outputs* (e.g. `pair_notes/<spawn_id>`) to pass
+#   via `include_artifacts` on the next spawn.
 #
 # Mainline system prompt extends the default with an explicit
-# wire-format constraint listing the seven canonical preference labels.
-# Without this, mainline opus rewrites the verdict's correct label into
-# non-canonical phrasing on borderline pairs (e.g. "A clearly better"
-# instead of "A somewhat preferred"), breaking parse.
-#
-# Verdict subroutine carries a response_validator that retries when the
-# response doesn't end with a canonical label — defends against the
-# orthogonal failure mode where the verdict subroutine itself emits a
-# numeric scale ("Preference: -2") despite the 7-pt block being in its
-# own system prompt.
+# wire-format constraint (judge_pair_wire_format.md) requiring the
+# `finalize.answer` to end with one of the seven canonical preference
+# labels verbatim, on its own line. The harness parses the label out of
+# `finalize.answer` via `extract_preference` (rfind on the label set),
+# so mainline can reason freely above the line as long as the trailing
+# label is canonical.
 
 name: judge_pair
 main_model: claude-opus-4-7
@@ -54,13 +53,14 @@ subroutines:
   - kind: freeform_agent
     name: pair_notes
     description: |
-      Stage 1 of 3 (pair_notes → steelman → verdict).
+      Stage 1 of 2 (pair_notes → steelman → mainline finalize).
       Auto-spliced inputs (via consumes): `pair_text` (prefix + both
       continuations with display labels) and `rubric` (dimension body).
       Output: structured initial reading — what each continuation is doing,
       divergence points, evidence against rubric. NO preference label.
       Auto-keyed as `pair_notes/<spawn_id>` in the artifact store; pass
-      that key in subsequent spawns' `include_artifacts` to feed it forward.
+      that key in subsequent steelman spawns' `include_artifacts` to feed
+      it forward.
     sys_prompt_path: ../prompts/pair_notes_sys.md
     user_prompt_template: |
       ## Intent
@@ -97,14 +97,15 @@ subroutines:
   - kind: sample_n
     name: steelman
     description: |
-      Stage 2 of 3 (pair_notes → steelman → verdict).
+      Stage 2 of 2 (pair_notes → steelman → mainline finalize).
       Auto-spliced inputs (via consumes): `pair_text`, `rubric`.
       Pass the pair_notes output via `include_artifacts: ["pair_notes/<spawn_id>"]`
-      so steelmans see the same context the verdict will.
+      so steelmans see the same context mainline will when finalizing.
       Intent: side label ('A' or 'B') indicating which to steelman.
       Output: N independent steelmans for the chosen side, delimited
       under "## Sample 1", "## Sample 2", … Auto-keyed as
-      `steelman/<spawn_id>` for verdict to consume.
+      `steelman/<spawn_id>`. Mainline reads them as tool_results and
+      composes the final verdict directly in `finalize.answer`.
     sys_prompt_path: ../prompts/steelman_judge_sys.md
     user_prompt_template: |
       ## Intent (which side to steelman)
@@ -146,49 +147,3 @@ subroutines:
     # operating_assumptions like "be neutral" would distort that role.
     # Same logic the SubroutineBase docstring flags for critics.
     inherit_assumptions: false
-
-  - kind: freeform_agent
-    name: verdict
-    description: |
-      Stage 3 of 3 (pair_notes → steelman → verdict).
-      Auto-spliced inputs (via consumes): `pair_text`, `rubric`.
-      Pass the prior outputs via `include_artifacts: ["pair_notes/<spawn_id>",
-      "steelman/<spawn_id_a>", "steelman/<spawn_id_b>"]` (one steelman key
-      per side label).
-      Output: verdict text ending with one of the 7 canonical preference
-      labels on its own line (validator retries on non-canonical labels).
-      Use after: this is the deliverable; pass through finalize.
-    sys_prompt_path: ../prompts/verdict_judge_sys.md
-    user_prompt_template: |
-      ## Intent
-      {intent}
-
-      ## Notes from mainline
-      {additional_context}
-
-      Produce the verdict and the 7-point label now, grounding it in the
-      pair_text, rubric, and the prior-stage outputs provided in the
-      Artifacts block above.
-    model: claude-opus-4-7
-    max_rounds: 1
-    max_tokens: 4096
-    overridable: [intent, additional_context, token_cap]
-    consumes: [pair_text, rubric]
-    # 80k floor: per-call worst-case ≈ input(pair_text + rubric +
-    # pair_notes + 2× steelman ≈ 50k) + max_tokens(4k) + 1 validator
-    # retry. 12k consistently over-fit the cap; 80k matches the
-    # cross-preset floor and absorbs retries cleanly.
-    base_token_cap: 80000
-    cost_hint: "≈ 1 turn @ 4k out, +1 retry on label miss (~6–14k tokens)"
-    intent_description: >
-      Optional steering for the verdict (e.g. "weight clarity over
-      ambition"). Usually empty — the rubric already specifies criteria.
-    additional_context_description: >
-      Optional freeform notes synthesizing the prior stages — e.g.
-      "pair_notes flagged X; both steelmans converged on Y". Pair +
-      rubric + the prior-stage outputs are spliced via consumes /
-      include_artifacts — do NOT paste them.
-    # Retry if the verdict response doesn't end with a canonical label.
-    response_validator: extract_preference_not_none
-    retry_message_path: ../prompts/verdict_judge_retry.md
-    response_max_retries: 2

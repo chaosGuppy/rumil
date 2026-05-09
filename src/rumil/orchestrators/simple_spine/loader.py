@@ -43,7 +43,7 @@ subroutines:
     inherit_assumptions: true   # optional, default true; opt out for roles
                                  # whose job is to challenge framings
     response_validator: extract_preference_not_none   # optional, registry key
-    retry_message_path: prompts/verdict_judge_retry.md  # required if validator set
+    retry_message_path: prompts/<retry-message>.md  # required if validator set
     response_max_retries: 2     # optional, default 1
     base_token_cap: 8000        # optional; enables `token_cap` override on
                                  # the spawn schema (when `token_cap` is in

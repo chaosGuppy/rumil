@@ -319,6 +319,7 @@ def _load_freeform_agent(
         "max_rounds": int(entry.get("max_rounds", 5)),
         "max_tokens": int(entry.get("max_tokens", 4096)),
         "allowed_tool_names": tuple(entry.get("allowed_tool_names") or ()),
+        "cache": bool(entry["cache"]) if "cache" in entry else True,
         **_base_field_kwargs(entry),
     }
 
@@ -359,6 +360,7 @@ def _load_sample_n(entry: dict[str, Any], base_dir: Path, source: Path) -> Sampl
         "n": int(entry.get("n", 3)),
         "temperature": float(entry.get("temperature", 1.0)),
         "max_tokens": int(entry.get("max_tokens", 4096)),
+        "cache": bool(entry["cache"]) if "cache" in entry else True,
         **_base_field_kwargs(entry),
     }
     return SampleNSubroutine(**kwargs)  # type: ignore[return-value]
@@ -445,6 +447,7 @@ def _load_web_research(
         "max_tokens": int(entry.get("max_tokens", 4096)),
         "web_search_max_uses": int(entry.get("web_search_max_uses", 5)),
         "allowed_domains": tuple(allowed_domains),
+        "cache": bool(entry["cache"]) if "cache" in entry else True,
         **_base_field_kwargs(entry),
     }
     return WebResearchSubroutine(**kwargs)

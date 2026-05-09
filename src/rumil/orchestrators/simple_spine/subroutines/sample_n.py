@@ -80,6 +80,13 @@ class SampleNSubroutine(SubroutineBase):
     n: int = 3
     temperature: float = 1.0
     max_tokens: int = 4096
+    # Anthropic prompt caching. Default True when ``n > 1`` is meaningful
+    # because the N samples share the same sys_prompt + user_message
+    # prefix — the first sample to land writes the cache, subsequent
+    # samples read at ~10x cheaper input rates. With ``n == 1`` the cache
+    # write is wasted; YAML authors should set ``cache: false`` explicitly
+    # in that case (or equivalently use a freeform_agent with max_rounds=1).
+    cache: bool = True
     sys_prompt_path: str | Path | None = None
     overridable: frozenset[str] = field(default_factory=lambda: frozenset({"intent", "n"}))
 
@@ -101,6 +108,7 @@ class SampleNSubroutine(SubroutineBase):
         out["n"] = self.n
         out["temperature"] = self.temperature
         out["max_tokens"] = self.max_tokens
+        out["cache"] = self.cache
         return out
 
     def _default_intent_description(self) -> str:
@@ -186,7 +194,7 @@ class SampleNSubroutine(SubroutineBase):
                     phase=f"spawn:{self.name}:sample{idx}",
                 ),
                 db=ctx.db,
-                cache=False,
+                cache=self.cache,
                 model_config=cfg,
             )
             usage = api_resp.message.usage

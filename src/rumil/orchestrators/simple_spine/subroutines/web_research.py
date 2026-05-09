@@ -227,6 +227,10 @@ class WebResearchSubroutine(SubroutineBase):
     max_tokens: int = 4096
     web_search_max_uses: int = 5
     allowed_domains: tuple[str, ...] = ()
+    # Anthropic prompt caching. Default True — web_research is multi-round
+    # by nature (search → fetch → re-search), so the system prompt + early
+    # turns get reused across rounds at cache_read rates.
+    cache: bool = True
     sys_prompt_path: str | Path | None = None
     overridable: frozenset[str] = field(
         default_factory=lambda: frozenset({"intent", "additional_context"})
@@ -254,6 +258,7 @@ class WebResearchSubroutine(SubroutineBase):
         out["max_tokens"] = self.max_tokens
         out["web_search_max_uses"] = self.web_search_max_uses
         out["allowed_domains"] = sorted(self.allowed_domains)
+        out["cache"] = self.cache
         return out
 
     def _default_intent_description(self) -> str:
@@ -335,7 +340,7 @@ class WebResearchSubroutine(SubroutineBase):
             phase=f"spawn:{self.name}",
             budget_clock=spawn_clock,
             max_rounds=max_rounds,
-            cache=True,
+            cache=self.cache,
             server_tool_defs=server_tool_defs,
         )
 

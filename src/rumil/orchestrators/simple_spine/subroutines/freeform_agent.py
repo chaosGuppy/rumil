@@ -62,6 +62,14 @@ class FreeformAgentSubroutine(SubroutineBase):
     max_rounds: int = 5
     max_tokens: int = 4096
     allowed_tool_names: tuple[str, ...] = ()
+    # Anthropic prompt caching toggle. Default True (multi-round agents
+    # amortise the cache write across rounds). Single-shot drafters
+    # (``max_rounds=1``) should set ``cache: false`` in YAML — cache
+    # writes cost ~25% more than regular input and never get read back,
+    # so caching on a single call is a net loss. Multi-spawn parallel
+    # agents that share a prefix benefit even without multiple rounds
+    # since later spawns hit the cache the first one wrote.
+    cache: bool = True
     sys_prompt_path: str | Path | None = None
     overridable: frozenset[str] = field(
         default_factory=lambda: frozenset({"intent", "additional_context"})
@@ -113,6 +121,7 @@ class FreeformAgentSubroutine(SubroutineBase):
         out["max_rounds"] = self.max_rounds
         out["max_tokens"] = self.max_tokens
         out["allowed_tool_names"] = sorted(self.allowed_tool_names)
+        out["cache"] = self.cache
         if self.response_validator is not None:
             out["response_validator_name"] = self.response_validator_name
             out["retry_message_hash"] = sha8(self.retry_message)
@@ -204,7 +213,7 @@ class FreeformAgentSubroutine(SubroutineBase):
             phase=f"spawn:{self.name}",
             budget_clock=spawn_clock,
             max_rounds=max_rounds,
-            cache=True,
+            cache=self.cache,
         )
 
         retries_used = 0
@@ -237,7 +246,7 @@ class FreeformAgentSubroutine(SubroutineBase):
                     phase=f"spawn:{self.name}:retry{attempt}",
                     budget_clock=spawn_clock,
                     max_rounds=max_rounds,
-                    cache=True,
+                    cache=self.cache,
                 )
                 retries_used = attempt
 

@@ -14,6 +14,20 @@ name: research
 main_model: claude-opus-4-7
 main_system_prompt_path: ../prompts/main_default.md
 max_parallel_spawns_per_turn: 4
+# Server-side compaction (compact_20260112). Once mainline input
+# crosses `compaction_trigger_tokens`, the API summarises the prefix
+# in a `compaction` block and drops every prior message on subsequent
+# turns — system prompt is preserved (cached separately); the original
+# first user message is NOT preserved automatically. The default
+# instructions prompt (prompts/compaction_default.md, auto-loaded when
+# no explicit instructions are set) tells the summariser to preserve
+# the scope question, operating_assumptions, durable findings, and any
+# in-progress deliverable content verbatim — soft preservation only.
+# 400k trigger sized for Opus 4.7's 1M-context window: late enough to
+# avoid summarising actively-relevant context, with ~150k headroom
+# for compaction overhead + remaining work.
+enable_server_compaction: true
+compaction_trigger_tokens: 400000
 
 subroutines:
   - kind: freeform_agent
@@ -42,7 +56,7 @@ subroutines:
     allowed_tool_names: [workspace_search]
     overridable: [intent, additional_context, token_cap, max_rounds]
     base_token_cap: 8000
-    cost_hint: "≈ 1–4 sonnet turns @ 4k out (~2–10k tokens; depends on how much it searches)"
+    cost_hint: "≈ 1–4 turns @ 4k out (~2–10k tokens; depends on how much it searches)"
     intent_description: >
       The topic, question, or claim to search for. Free-form; the agent
       converts it to 1–3 embedding queries.

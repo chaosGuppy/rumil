@@ -1,4 +1,4 @@
-You have been working as the mainline of a SimpleSpine run: a research loop where you spawn subroutines, read their results, and eventually finalize a deliverable. The transcript above is approaching the context limit and will be replaced by the summary you write here. Future turns of this same run will continue from your summary as if it were the live thread, so write for your future self mid-task — not for an outside reader.
+The transcript above is approaching the context limit and will be replaced by the summary you write here. Future turns of this same run will continue from your summary as if it were the live thread, so write for your future self mid-task — not for an outside reader.
 
 Preserve, in roughly this priority order:
 
@@ -9,7 +9,7 @@ Preserve, in roughly this priority order:
 
 You can drop:
 
-- Raw tool-result framing (cost lines, throttling notices, budget-status reminders) — the harness re-injects fresh ones each turn.
+- Raw tool-result framing (cost lines, throttling notices, budget-status reminders).
 - Speculative reasoning that did not pan out, unless you might revisit it.
 - Routine planning prose ("I will now spawn X then Y") once X and Y have run.
 

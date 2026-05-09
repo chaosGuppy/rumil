@@ -205,6 +205,7 @@ class SampleNSubroutine(SubroutineBase):
         # comfortable (one big batch); falls back to smaller batches as
         # the cap tightens, instead of overshooting it.
         per_sample_worst = _estimate_per_sample_worst(sys_prompt, user_message, self.max_tokens)
+        cap_at_launch = spawn_clock.tokens_remaining
         completions: list[str] = []
         launched = 0
         while launched < n:
@@ -229,6 +230,23 @@ class SampleNSubroutine(SubroutineBase):
             parts.append(sample_block)
             parts.append("")
             body_parts.append(sample_block)
+        if skipped:
+            # Surface the cap math so mainline can compute a sufficient
+            # ``token_cap`` override on retry instead of triangulating via
+            # repeated guesses. ``per_sample_worst`` is the conservative
+            # estimate that drove the affordability check; the suggested
+            # cap is ``n * per_sample_worst`` to fit all samples in one
+            # spawn (mainline can still drop n if that's too expensive).
+            suggested = n * per_sample_worst
+            parts.append(
+                f"[budget] Affordability skip: per-sample worst-case "
+                f"≈ {per_sample_worst:,} tokens; spawn cap had "
+                f"{cap_at_launch:,} tokens at launch (so "
+                f"{cap_at_launch // per_sample_worst} of {n} samples fit). "
+                f"To run all {n} samples on retry, pass "
+                f"`token_cap` ≥ {suggested:,} (or reduce `n`)."
+            )
+            parts.append("")
         text_summary = "\n".join(parts)
         # Default artifact: the joined samples body (no metadata header).
         # Orchestrator namespaces under <name>/<spawn_id_short>. Multi-key
@@ -240,6 +258,12 @@ class SampleNSubroutine(SubroutineBase):
             produces[""] = "\n\n".join(body_parts)
         return SubroutineResult(
             text_summary=text_summary,
-            extra={"n": n, "samples_run": len(completions), "samples_skipped": skipped},
+            extra={
+                "n": n,
+                "samples_run": len(completions),
+                "samples_skipped": skipped,
+                "per_sample_worst_tokens": per_sample_worst,
+                "spawn_cap_at_launch": cap_at_launch,
+            },
             produces=produces,
         )

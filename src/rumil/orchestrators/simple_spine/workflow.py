@@ -73,7 +73,7 @@ class SimpleSpineWorkflow:
         budget: int,
         config_name: str = "default",
         call_type: str = "complete",
-        tokens_per_round: int = 25_000,
+        tokens_per_round: int = 40_000,
         wall_clock_soft_s: float | None = None,
         operating_assumptions: str = "",
         output_guidance: str = "",
@@ -81,19 +81,20 @@ class SimpleSpineWorkflow:
     ) -> None:
         """Construct a SimpleSpine workflow.
 
-        ``budget`` is the **soft round cap** — a small integer matching
-        the rumil convention. ``--budget 4`` gives the agent ~4 mainline
-        rounds. The hard token cap is derived as
-        ``budget * tokens_per_round`` (default ~25k tokens/round) and
-        is what actually terminates the run when crossed; the round
-        count is just surfaced to the agent as a soft signal.
+        ``budget`` is a small integer matching the rumil convention; the
+        hard token cap is derived as ``budget * tokens_per_round`` and
+        is the only thing that terminates the run. Rule of thumb: with
+        the default ``tokens_per_round=40_000``, **1 budget unit ≈ $1
+        of opus tokens (uncached)** — opus 4.x at $15/Mtok input +
+        $75/Mtok output blends to roughly $25/Mtok in agent loops with
+        a ~5:1 input:output mix.
 
         ``config_name`` resolves a named :class:`SimpleSpineConfig` via
         :func:`rumil.orchestrators.simple_spine.presets.get_preset`.
         ``call_type`` is one of ``"complete"`` / ``"judge"`` and selects
         the rumil ``CallType`` recorded on the orch's call row.
         ``tokens_per_round`` lets per-config variants tune the
-        round→tokens conversion (longer-context configs need more).
+        budget→tokens conversion (longer-context configs need more).
         """
         from rumil.orchestrators.simple_spine.presets import get_preset
 
@@ -164,7 +165,6 @@ class SimpleSpineWorkflow:
             budget=BudgetSpec(
                 max_tokens=self.max_tokens,
                 wall_clock_soft_s=self.wall_clock_soft_s,
-                max_rounds_soft=self.budget,
             ),
         )
         orch = SimpleSpineOrchestrator(db, effective_config, broadcaster=broadcaster)

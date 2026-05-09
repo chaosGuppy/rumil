@@ -112,7 +112,6 @@ class SimpleSpineOrchestrator:
                 "fingerprint_full": self.config.fingerprint,
                 "max_tokens": clock.spec.max_tokens,
                 "wall_clock_soft_s": clock.spec.wall_clock_soft_s,
-                "max_rounds_soft": clock.spec.max_rounds_soft,
                 "library": [s.name for s in self.config.process_library],
             },
         )
@@ -174,6 +173,7 @@ class SimpleSpineOrchestrator:
         last_status = "complete"
         spawn_count = 0
         finalize_reason = ""
+        round_idx = 0
 
         compaction_kwargs: dict = {}
         if self.config.enable_server_compaction:
@@ -238,7 +238,6 @@ class SimpleSpineOrchestrator:
             usage = response.usage
             if usage is not None:
                 clock.record_tokens((usage.input_tokens or 0) + (usage.output_tokens or 0))
-            clock.record_round()
 
             assistant_text = ""
             tool_uses: list[ToolUseBlock] = []
@@ -407,7 +406,7 @@ class SimpleSpineOrchestrator:
 
         await trace.record(
             SpineFinalizedEvent(
-                round_idx=clock.rounds_used,
+                round_idx=round_idx,
                 answer_chars=len(finalize_state["answer"]),
                 reason=finalize_reason,
                 synthesized=bool(finalize_state["synthesized"]),
@@ -428,9 +427,7 @@ class SimpleSpineOrchestrator:
             call,
             self.db,
             summary=(
-                f"simple_spine: {last_status} "
-                f"(rounds={clock.rounds_used}, tokens={clock.tokens_used}, "
-                f"spawns={spawn_count})"
+                f"simple_spine: {last_status} (tokens={clock.tokens_used}, spawns={spawn_count})"
             ),
         )
 
@@ -440,7 +437,6 @@ class SimpleSpineOrchestrator:
             fingerprint=self.config.fingerprint,
             call_id=call.id,
             spawn_count=spawn_count,
-            rounds=clock.rounds_used,
             tokens_used=clock.tokens_used,
             elapsed_s=clock.elapsed_s,
             finalize_reason=finalize_reason,

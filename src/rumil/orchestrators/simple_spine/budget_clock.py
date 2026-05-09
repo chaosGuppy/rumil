@@ -19,14 +19,13 @@ class BudgetSpec:
     ``max_tokens`` is the only hard cap — when crossed, no further spawns
     are allowed and the next mainline turn is nudged to finalize.
 
-    ``wall_clock_soft_s`` and ``max_rounds_soft`` are surfaced to the
-    agent as remaining-time / remaining-rounds signals but never trigger
-    automatic abort. The agent decides what to do with the budget.
+    ``wall_clock_soft_s`` is surfaced to the agent as a remaining-time
+    signal but never triggers automatic abort. The agent decides what to
+    do with the budget.
     """
 
     max_tokens: int
     wall_clock_soft_s: float | None = None
-    max_rounds_soft: int | None = None
 
 
 @dataclass
@@ -37,8 +36,6 @@ class BudgetSnapshot:
     tokens_remaining: int
     elapsed_s: float
     wall_clock_soft_s: float | None
-    rounds_used: int
-    max_rounds_soft: int | None
     tokens_exhausted: bool
 
 
@@ -49,12 +46,11 @@ class BudgetClock:
     Carve-from-parent recursion is supported via :meth:`carve_child`,
     which returns a child clock backed by this clock's accounting plus
     its own sub-cap. The child's spend debits both itself and the parent;
-    the parent never sees the child's wall-clock or round counter.
+    the parent never sees the child's wall-clock.
     """
 
     spec: BudgetSpec
     tokens_used: int = 0
-    rounds_used: int = 0
     started_at: float = field(default_factory=time.monotonic)
     _parent: BudgetClock | None = None
 
@@ -65,9 +61,6 @@ class BudgetClock:
         self.tokens_used += n
         if self._parent is not None:
             self._parent.record_tokens(n)
-
-    def record_round(self) -> None:
-        self.rounds_used += 1
 
     @property
     def tokens_remaining(self) -> int:
@@ -87,8 +80,6 @@ class BudgetClock:
             tokens_remaining=self.tokens_remaining,
             elapsed_s=self.elapsed_s,
             wall_clock_soft_s=self.spec.wall_clock_soft_s,
-            rounds_used=self.rounds_used,
-            max_rounds_soft=self.spec.max_rounds_soft,
             tokens_exhausted=self.tokens_exhausted,
         )
 
@@ -114,8 +105,6 @@ class BudgetClock:
         parts = [
             f"tokens: {s.tokens_used:,} / {self.spec.max_tokens:,} "
             f"(remaining {s.tokens_remaining:,})",
-            f"rounds: {s.rounds_used}"
-            + (f" / {s.max_rounds_soft} soft" if s.max_rounds_soft else ""),
         ]
         if s.wall_clock_soft_s is not None:
             parts.append(f"wall-clock: {s.elapsed_s:.0f}s / {s.wall_clock_soft_s:.0f}s soft")

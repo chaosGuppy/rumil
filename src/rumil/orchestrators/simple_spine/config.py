@@ -123,7 +123,6 @@ class OrchResult:
     fingerprint: str
     call_id: str
     spawn_count: int
-    rounds: int
     tokens_used: int
     elapsed_s: float
     finalize_reason: str

@@ -40,7 +40,7 @@ Design notes:
   This is the iterate skill's primary lever for A/B-ing prompt-text
   variants without forking the workflow file.
 - **Dimension body** (the rubric for the dimension being judged —
-  e.g. ``versus-general_quality.md``) is shared with the orch and
+  e.g. ``versus-would_recommend.md``) is shared with the orch and
   blind paths intentionally. The rubric is what the dimension *is*;
   it's not workflow-specific. The workflow's iteration surface is the
   three stage prompts, not the rubric.

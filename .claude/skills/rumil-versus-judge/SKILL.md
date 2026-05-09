@@ -33,7 +33,7 @@ workspace-exploration tools, no orchestrator) was removed; for an
 agentic-baseline run, use `--variant orch --budget 4` (the minimum).
 Historical `rumil:ws:*` rows in `versus_judgments` are preserved.
 
-The dimension (`general_quality`, `grounding`, ...) is selected via
+The dimension (`would_recommend`, `general_quality`, `grounding`, ...) is selected via
 `--dimension` and lives in the structured `judge_inputs.task.dimension`
 field. It's no longer embedded in the display string —
 post-#424 rows use `judge_pair/<workflow>:<model>:c<hash8>`. Historical
@@ -219,7 +219,7 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 - `--variant orch --workspace versus --dry-run` — list pending orch judgments
 - `--variant orch --workspace versus --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
 - `--variant orch --workspace versus --budget 4 --model sonnet --limit 5` — run on sonnet instead of opus
-- `--variant orch --workspace versus --budget 4 --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
+- `--variant orch --workspace versus --budget 4 --dimension would_recommend --dimension grounding --limit 5` — run multiple dimensions
 - `--variant simple_spine --workspace versus --simple-spine-budget-tokens 200000 --model sonnet --limit 3` — 3 spine judgments with a 200k-token cap (use `--simple-spine-budget-tokens`, not `--budget`)
 
 ## What to surface

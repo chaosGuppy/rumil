@@ -252,7 +252,7 @@ def _resolve_task_body(task_name: str, is_versus_criterion: bool) -> str:
         raise ValueError(
             f"versus-criterion task bodies have been removed; "
             f"got task_name={task_name!r}. Pass the rumil dimension name instead "
-            f"(e.g. 'general_quality')."
+            f"(e.g. 'would_recommend')."
         )
     from rumil.versus_bridge import get_rumil_dimension_body
 

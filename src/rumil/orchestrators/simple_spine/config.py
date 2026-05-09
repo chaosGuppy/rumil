@@ -47,6 +47,15 @@ class SimpleSpineConfig:
     # last assistant text. Set False to let the run end without a finalize
     # (return value will carry an empty answer).
     force_finalize_on_token_exhaustion: bool = True
+    # Anthropic server-side compaction (compact_20260112). When enabled,
+    # the API auto-summarizes the mainline thread once input tokens cross
+    # ``compaction_trigger_tokens``; subsequent turns continue from the
+    # summary with the prefix dropped. ``compaction_instructions`` fully
+    # replaces the default summarization prompt when set — see
+    # https://platform.claude.com/docs/en/build-with-claude/compaction.
+    enable_server_compaction: bool = False
+    compaction_trigger_tokens: int = 150_000
+    compaction_instructions: str | None = None
 
     @cached_property
     def fingerprint(self) -> str:
@@ -57,6 +66,11 @@ class SimpleSpineConfig:
             "enable_finalize_tool": self.enable_finalize_tool,
             "max_parallel_spawns_per_turn": self.max_parallel_spawns_per_turn,
             "force_finalize_on_token_exhaustion": self.force_finalize_on_token_exhaustion,
+            "enable_server_compaction": self.enable_server_compaction,
+            "compaction_trigger_tokens": self.compaction_trigger_tokens,
+            "compaction_instructions_hash": (
+                sha8(self.compaction_instructions) if self.compaction_instructions else None
+            ),
             "subroutines": [s.fingerprint() for s in self.process_library],
         }
         canonical = json.dumps(blob, sort_keys=True, separators=(",", ":"))
@@ -74,6 +88,11 @@ class SimpleSpineConfig:
             "enable_finalize_tool": self.enable_finalize_tool,
             "max_parallel_spawns_per_turn": self.max_parallel_spawns_per_turn,
             "force_finalize_on_token_exhaustion": self.force_finalize_on_token_exhaustion,
+            "enable_server_compaction": self.enable_server_compaction,
+            "compaction_trigger_tokens": self.compaction_trigger_tokens,
+            "compaction_instructions_hash": (
+                sha8(self.compaction_instructions) if self.compaction_instructions else None
+            ),
             "subroutines": [s.fingerprint() for s in self.process_library],
             "fingerprint": self.fingerprint,
         }

@@ -151,6 +151,20 @@ def load_simple_spine_config(path: str | Path) -> SimpleSpineConfig:
         cfg_kwargs["force_finalize_on_token_exhaustion"] = bool(
             blob["force_finalize_on_token_exhaustion"]
         )
+    if "enable_server_compaction" in blob:
+        cfg_kwargs["enable_server_compaction"] = bool(blob["enable_server_compaction"])
+    if "compaction_trigger_tokens" in blob:
+        cfg_kwargs["compaction_trigger_tokens"] = int(blob["compaction_trigger_tokens"])
+    instructions = _resolve_prompt(
+        blob, "compaction_instructions", "compaction_instructions_path", base_dir
+    )
+    if instructions is None and cfg_kwargs.get("enable_server_compaction"):
+        # Default to the canonical spine compaction prompt living next to
+        # this package, so configs can flip compaction on with one line.
+        default_path = Path(__file__).parent / "prompts" / "compaction_default.md"
+        instructions = default_path.read_text(encoding="utf-8")
+    if instructions is not None:
+        cfg_kwargs["compaction_instructions"] = instructions
     return SimpleSpineConfig(**cfg_kwargs)
 
 

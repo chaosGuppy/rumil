@@ -993,6 +993,8 @@ async def call_anthropic_api(
     effort: str | None = None,
     model_config: ModelConfig | None = None,
     response_schema: dict | None = None,
+    context_management: dict | None = None,
+    betas: Sequence[str] | None = None,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
@@ -1004,6 +1006,12 @@ async def call_anthropic_api(
     effort). The legacy ``effort`` kwarg is honored only when
     ``model_config`` is None — pass effort via ``model_config.effort``
     in new code.
+
+    ``context_management`` / ``betas`` route the request through
+    ``client.beta.messages.stream`` instead of ``client.messages.stream``
+    so features like ``compact_20260112`` work. Passing either alone is
+    enough to flip the route — typically the caller passes both (the beta
+    header that gates the strategy + the strategy itself).
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
@@ -1027,6 +1035,11 @@ async def call_anthropic_api(
     }
     if tools:
         kwargs["tools"] = tools
+    use_beta = context_management is not None or betas
+    if context_management is not None:
+        kwargs["context_management"] = context_management
+    if betas:
+        kwargs["betas"] = list(betas)
 
     n_tools = len(tools) if tools else 0
     log.debug(
@@ -1049,7 +1062,10 @@ async def call_anthropic_api(
         # exceeds 10 minutes (Anthropic#long-requests), which breaks any
         # call with large context + high max_tokens — e.g. d&e's editor
         # stage on a long essay.
-        async with client.messages.stream(**kwargs) as stream:
+        stream_ctx = (
+            client.beta.messages.stream(**kwargs) if use_beta else client.messages.stream(**kwargs)
+        )
+        async with stream_ctx as stream:
             try:
                 response = await stream.get_final_message()
             except Exception:
@@ -1068,7 +1084,9 @@ async def call_anthropic_api(
                 raise
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
-        return response
+        # ParsedBetaMessage is structurally compatible with Message for
+        # the fields we touch (content, usage, stop_reason). Treat as one.
+        return response  # type: ignore[return-value]
 
     try:
         response = await _do_api_call()

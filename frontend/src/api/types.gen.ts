@@ -4443,6 +4443,36 @@ export type SourceSummary = {
 };
 
 /**
+ * SpineCompactedEventOut
+ */
+export type SpineCompactedEventOut = {
+    /**
+     * Ts
+     */
+    ts: string;
+    /**
+     * Call Id
+     */
+    call_id: string;
+    /**
+     * Event
+     */
+    event: 'spine_compacted';
+    /**
+     * Round Idx
+     */
+    round_idx: number;
+    /**
+     * Summary Chars
+     */
+    summary_chars: number;
+    /**
+     * Summary Text
+     */
+    summary_text: string;
+};
+
+/**
  * SubagentCompletedEventOut
  */
 export type SubagentCompletedEventOut = {
@@ -6514,7 +6544,9 @@ export type GetCallEventsApiCallsCallIdEventsGetResponses = {
         event: 'scout_pass_started';
     } & ScoutPassStartedEventOut) | ({
         event: 'scout_pass';
-    } & ScoutPassEventOut)>;
+    } & ScoutPassEventOut) | ({
+        event: 'spine_compacted';
+    } & SpineCompactedEventOut)>;
 };
 
 export type GetCallEventsApiCallsCallIdEventsGetResponse = GetCallEventsApiCallsCallIdEventsGetResponses[keyof GetCallEventsApiCallsCallIdEventsGetResponses];

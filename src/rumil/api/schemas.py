@@ -56,6 +56,7 @@ from rumil.tracing.trace_events import (
     ScoringCompletedEvent,
     ScoutPassEvent,
     ScoutPassStartedEvent,
+    SpineCompactedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
     ToolCallEvent,
@@ -307,6 +308,10 @@ class ScoutPassEventOut(ScoutPassEvent, _TraceEnvelopeMixin):
     pass
 
 
+class SpineCompactedEventOut(SpineCompactedEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -359,7 +364,8 @@ TraceEventOut = Annotated[
     | BriefAuditStartedEventOut
     | BriefAuditEventOut
     | ScoutPassStartedEventOut
-    | ScoutPassEventOut,
+    | ScoutPassEventOut
+    | SpineCompactedEventOut,
     Field(discriminator="event"),
 ]
 

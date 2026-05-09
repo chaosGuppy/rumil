@@ -643,6 +643,19 @@ class SpineThrottledEvent(BaseModel):
     kept: int
 
 
+class SpineCompactedEvent(BaseModel):
+    """Anthropic server-side compaction fired during a mainline turn.
+
+    The API summarizes the prior thread into a ``compaction`` block; on
+    the next request the prefix before that block is dropped server-side.
+    """
+
+    event: Literal["spine_compacted"] = "spine_compacted"
+    round_idx: int
+    summary_chars: int
+    summary_text: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -701,6 +714,7 @@ TraceEvent = Annotated[
     | SpineSpawnCompletedEvent
     | SpineConfigPrepEvent
     | SpineFinalizedEvent
-    | SpineThrottledEvent,
+    | SpineThrottledEvent
+    | SpineCompactedEvent,
     Field(discriminator="event"),
 ]

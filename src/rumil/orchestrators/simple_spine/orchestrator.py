@@ -50,6 +50,7 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
 )
 from rumil.orchestrators.simple_spine.tools import make_finalize_tool
 from rumil.orchestrators.simple_spine.trace_events import (
+    SpineCompactedEvent,
     SpineConfigPrepEvent,
     SpineFinalizedEvent,
     SpineRoundStartedEvent,
@@ -174,6 +175,22 @@ class SimpleSpineOrchestrator:
         spawn_count = 0
         finalize_reason = ""
 
+        compaction_kwargs: dict = {}
+        if self.config.enable_server_compaction:
+            edit: dict[str, Any] = {
+                "type": "compact_20260112",
+                "trigger": {
+                    "type": "input_tokens",
+                    "value": self.config.compaction_trigger_tokens,
+                },
+            }
+            if self.config.compaction_instructions:
+                edit["instructions"] = self.config.compaction_instructions
+            compaction_kwargs = {
+                "context_management": {"edits": [edit]},
+                "betas": ["compact-2026-01-12"],
+            }
+
         for round_idx in range(_HARD_MAX_ROUNDS):
             await trace.record(
                 SpineRoundStartedEvent(
@@ -215,6 +232,7 @@ class SimpleSpineOrchestrator:
                 db=self.db,
                 cache=True,
                 model_config=cfg,
+                **compaction_kwargs,
             )
             response = api_resp.message
             usage = response.usage
@@ -229,6 +247,15 @@ class SimpleSpineOrchestrator:
                     assistant_text += block.text
                 elif isinstance(block, ToolUseBlock):
                     tool_uses.append(block)
+                elif getattr(block, "type", None) == "compaction":
+                    summary = getattr(block, "content", None) or ""
+                    await trace.record(
+                        SpineCompactedEvent(
+                            round_idx=round_idx,
+                            summary_chars=len(summary),
+                            summary_text=summary,
+                        )
+                    )
             messages.append({"role": "assistant", "content": response.content})
 
             if not tool_uses:

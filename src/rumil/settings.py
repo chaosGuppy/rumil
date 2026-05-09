@@ -227,6 +227,20 @@ class Settings(BaseSettings):
     big_assess_abstract_page_similarity_floor: float | None = _capture_field(default=None)
     document_floor_delta: float = _capture_field(default=0.25)
 
+    # When set, SimpleSpine replaces every model reference in a loaded
+    # config — main_model AND each subroutine's `model` AND nested-orch
+    # presets' main_model — with this value at run time. Smoke-test
+    # convenience: pass once, get a single-model run end-to-end. Wired
+    # by ``run_orchestrator``'s ``--model`` flag (when ``--orchestrator
+    # simple_spine``); read by ``simple_spine.config.apply_model_override``
+    # and ``simple_spine.nested_orchs._simple_spine_recurse``.
+    simple_spine_model_override: str | None = _capture_field(default=None)
+    # When True, SimpleSpine forces ``enable_server_compaction=False`` on
+    # every loaded config (top-level AND nested-orch presets). Smoke-test
+    # convenience for running with models that don't support
+    # ``compact_20260112`` (Haiku, Sonnet 4.6). Set by
+    # ``run_orchestrator``'s ``--no-compaction`` flag.
+    simple_spine_disable_compaction: bool = _capture_field(default=False)
     impact_filter_scoring_model: str = _capture_field(default="claude-sonnet-4-6")
     impact_filter_pare_model: str = _capture_field(default="claude-opus-4-7")
     impact_filter_token_budget: int = _capture_field(default=200_000)

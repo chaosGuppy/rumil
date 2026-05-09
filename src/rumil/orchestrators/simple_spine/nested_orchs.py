@@ -142,8 +142,18 @@ async def _simple_spine_recurse(
         ctx.question_id[:8],
     )
 
+    from rumil.orchestrators.simple_spine.config import apply_model_override
+    from rumil.settings import get_settings
+
     preset_name = str(overrides.get("preset_name", "")) or "default"
     sub_cfg = get_preset(preset_name)
+    # Honor a process-wide single-model override (smoke-test convenience —
+    # see Settings.simple_spine_model_override). Applied to the sub-config
+    # so this child's mainline AND its subroutines AND any further nested
+    # children all use the override.
+    model_override = get_settings().simple_spine_model_override
+    if model_override:
+        sub_cfg = apply_model_override(sub_cfg, model_override)
     sub_clock = ctx.budget_clock.carve_child(sub_token_cap)
     # Explicit `output_guidance` wins; fall back to `intent` for the
     # historical "intent doubles as guidance" behavior so callers that

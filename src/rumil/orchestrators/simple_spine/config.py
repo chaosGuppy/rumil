@@ -151,6 +151,55 @@ class SimpleSpineConfig:
         }
 
 
+# Per https://platform.claude.com/docs/en/build-with-claude/compaction,
+# Anthropic's ``compact_20260112`` server-side strategy is supported on
+# Opus 4.7, Opus 4.6, and Sonnet 4.6. Haiku 4.5 is not — the API returns
+# 400 ``does not support the 'compact_20260112' context management
+# strategy``. Conservative list (known-unsupported, default to assuming
+# support) so a new compaction-capable model lands working out of the
+# box; if a future model is also unsupported, append its prefix here.
+_MODELS_WITHOUT_COMPACTION_PREFIXES: tuple[str, ...] = ("claude-haiku-",)
+
+
+def model_supports_compaction(model: str) -> bool:
+    """True if ``model`` supports Anthropic's ``compact_20260112`` strategy."""
+    return not model.startswith(_MODELS_WITHOUT_COMPACTION_PREFIXES)
+
+
+def apply_model_override(cfg: SimpleSpineConfig, model: str) -> SimpleSpineConfig:
+    """Return a copy of ``cfg`` with every model reference set to ``model``.
+
+    Replaces ``main_model`` plus every ``.model`` field on subroutines in
+    ``process_library``. Subroutines without a ``.model`` field (currently
+    ``CallTypeSubroutine`` and ``NestedOrchSubroutine`` — they delegate to
+    other configs / preset names) pass through unchanged. Nested-orch
+    children pick up the same override at run time via the
+    ``simple_spine_model_override`` setting (read by ``_simple_spine_recurse``).
+
+    Also force-disables ``enable_server_compaction`` when the override
+    targets a model that doesn't support ``compact_20260112`` (currently
+    Haiku) — sending the beta header to such models 400s. Models that do
+    support compaction (Opus 4.6/4.7, Sonnet 4.6) keep the YAML setting.
+
+    Smoke-test convenience: lets ``--model claude-haiku-4-5-...`` produce
+    a single-model run end-to-end without touching the YAML.
+    """
+    from dataclasses import replace as _dc_replace
+
+    new_subs: list[SubroutineDef] = []
+    for sub in cfg.process_library:
+        # Only kinds that own an LLM call have a .model attr; nested_orch
+        # / call_type point at preset names / external runners.
+        if hasattr(sub, "model"):
+            new_subs.append(_dc_replace(sub, model=model))  # pyright: ignore[reportArgumentType, reportCallIssue]
+        else:
+            new_subs.append(sub)
+    new_cfg = _dc_replace(cfg, main_model=model, process_library=tuple(new_subs))
+    if cfg.enable_server_compaction and not model_supports_compaction(model):
+        new_cfg = _dc_replace(new_cfg, enable_server_compaction=False)
+    return new_cfg
+
+
 @dataclass
 class OrchInputs:
     """Per-invocation inputs for one SimpleSpine run.

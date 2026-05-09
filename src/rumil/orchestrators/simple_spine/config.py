@@ -67,6 +67,14 @@ class SimpleSpineConfig:
     enable_server_compaction: bool = False
     compaction_trigger_tokens: int = 150_000
     compaction_instructions: str | None = None
+    # When True, the orchestrator wires `read_artifact` and
+    # `search_artifacts` tools onto the mainline agent so it can pull
+    # a fetched source's full text into context or scan across the
+    # run's accumulated artifacts. Off by default — versus configs are
+    # blind/scoped and don't want extra surfaces; research-style configs
+    # flip this on so mainline can browse what its spawns produced
+    # (e.g. web_research's per-source artifacts).
+    expose_artifact_tools: bool = False
 
     @cached_property
     def fingerprint(self) -> str:
@@ -84,6 +92,7 @@ class SimpleSpineConfig:
             "compaction_instructions_hash": (
                 sha8(self.compaction_instructions) if self.compaction_instructions else None
             ),
+            "expose_artifact_tools": self.expose_artifact_tools,
             "subroutines": [s.fingerprint() for s in self.process_library],
         }
         canonical = json.dumps(blob, sort_keys=True, separators=(",", ":"))
@@ -108,6 +117,7 @@ class SimpleSpineConfig:
             "compaction_instructions_hash": (
                 sha8(self.compaction_instructions) if self.compaction_instructions else None
             ),
+            "expose_artifact_tools": self.expose_artifact_tools,
             "subroutines": [s.fingerprint() for s in self.process_library],
             "fingerprint": self.fingerprint,
         }

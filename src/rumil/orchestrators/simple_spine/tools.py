@@ -19,6 +19,7 @@ from rumil.context import build_embedding_based_context
 from rumil.llm import Tool
 
 if TYPE_CHECKING:
+    from rumil.orchestrators.simple_spine.artifacts import ArtifactStore
     from rumil.orchestrators.simple_spine.subroutines.base import SpawnCtx
 
 log = logging.getLogger(__name__)
@@ -150,3 +151,172 @@ def make_workspace_search_tool(ctx: SpawnCtx) -> Tool:
 
 
 register_tool("workspace_search", make_workspace_search_tool)
+
+
+_READ_ARTIFACT_MAX_CHARS = 30_000
+_SEARCH_ARTIFACTS_TOP_K = 5
+_SEARCH_ARTIFACTS_SNIPPET_CHARS = 400
+
+
+def make_read_artifact_tool(store: ArtifactStore) -> Tool:
+    """Mainline tool: pull a single artifact's full text into context.
+
+    Caps the returned content at ``_READ_ARTIFACT_MAX_CHARS`` to keep one
+    accidental ``read_artifact`` on a 50k-char scrape from blowing out
+    the persistent thread. The cap notes how many chars were truncated
+    so the model can decide whether to ask for a different artifact or a
+    re-scrape via web_research.
+    """
+
+    async def fn(args: dict) -> str:
+        key = str(args.get("key", "")).strip()
+        if not key:
+            return "Error: read_artifact requires `key`."
+        art = store.get(key)
+        if art is None:
+            available = store.list_keys()
+            preview = available[:30]
+            tail = "" if len(available) <= 30 else f"\n…and {len(available) - 30} more"
+            return (
+                f"Error: no artifact at key {key!r}. "
+                f"Available keys ({len(available)}):\n- " + "\n- ".join(preview) + tail
+            )
+        body = art.text
+        truncated_note = ""
+        if len(body) > _READ_ARTIFACT_MAX_CHARS:
+            head = body[:_READ_ARTIFACT_MAX_CHARS]
+            truncated_note = (
+                f"\n\n[truncated: showed {_READ_ARTIFACT_MAX_CHARS:,} of {len(body):,} chars]"
+            )
+            body = head
+        provenance = (
+            "input"
+            if art.produced_by == "input"
+            else f"spawn:{art.produced_by}"
+            + (f" round {art.round_idx}" if art.round_idx is not None else "")
+        )
+        return (
+            f"artifact `{art.key}` ({len(art.text):,} chars, from {provenance})\n\n"
+            f"{body}{truncated_note}"
+        )
+
+    return Tool(
+        name="read_artifact",
+        description=(
+            "Return the full text of a named artifact. Use to pull a "
+            "scraped source, a prior spawn's output, or a caller-seeded "
+            "blob into your context when you need to read it directly. "
+            f"Capped at {_READ_ARTIFACT_MAX_CHARS:,} chars; longer "
+            "artifacts are truncated with a note."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": (
+                        "Artifact key (announced in tool_result messages "
+                        "as spawns produce them; format "
+                        "`<sub_name>/<spawn_id>[/<sub_key>]`)."
+                    ),
+                },
+            },
+            "required": ["key"],
+            "additionalProperties": False,
+        },
+        fn=fn,
+    )
+
+
+def _score_artifact(text: str, terms: Sequence[str]) -> int:
+    if not terms:
+        return 0
+    lowered = text.lower()
+    return sum(lowered.count(t) for t in terms)
+
+
+def _find_snippet(text: str, terms: Sequence[str], window: int) -> str:
+    lowered = text.lower()
+    best_idx = -1
+    for t in terms:
+        idx = lowered.find(t)
+        if idx != -1 and (best_idx == -1 or idx < best_idx):
+            best_idx = idx
+    if best_idx == -1:
+        return text[:window]
+    half = window // 2
+    start = max(best_idx - half, 0)
+    end = min(start + window, len(text))
+    snippet = text[start:end]
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return f"{prefix}{snippet}{suffix}"
+
+
+def make_search_artifacts_tool(store: ArtifactStore) -> Tool:
+    """Mainline tool: keyword-rank artifacts and return top-K snippets.
+
+    Tokenises the query into whitespace-separated terms (lowercased),
+    scores each artifact by sum of term occurrences, returns the top
+    ``_SEARCH_ARTIFACTS_TOP_K`` with a windowed snippet around the
+    first matched term. Substring v1 because per-run artifact counts
+    are small (≤ ~50) and embedding lookups would add a DB roundtrip
+    per call. If artifact volume grows, swap for embedding similarity.
+    """
+
+    async def fn(args: dict) -> str:
+        query = str(args.get("query", "")).strip()
+        if not query:
+            return "Error: search_artifacts requires a non-empty `query`."
+        terms = [t.lower() for t in query.split() if t.strip()]
+        if not terms:
+            return "Error: query has no usable terms after tokenisation."
+        keys = store.list_keys()
+        if not keys:
+            return "[no artifacts in this run yet]"
+        scored: list[tuple[int, str]] = []
+        for k in keys:
+            art = store.get(k)
+            if art is None:
+                continue
+            score = _score_artifact(art.text, terms)
+            if score > 0:
+                scored.append((score, k))
+        scored.sort(key=lambda p: -p[0])
+        if not scored:
+            return f"[no artifact matched terms: {terms}]"
+        top = scored[:_SEARCH_ARTIFACTS_TOP_K]
+        lines: list[str] = [f"## search_artifacts: {len(top)} of {len(scored)} matches"]
+        for score, k in top:
+            art = store.get(k)
+            if art is None:
+                continue
+            snippet = _find_snippet(art.text, terms, _SEARCH_ARTIFACTS_SNIPPET_CHARS)
+            lines.append(f"\n### `{k}` (score={score}, {len(art.text):,} chars)\n{snippet}")
+        return "\n".join(lines)
+
+    return Tool(
+        name="search_artifacts",
+        description=(
+            "Keyword-rank artifacts in this run by total term occurrences "
+            "and return the top matches with windowed snippets around the "
+            "first hit. Cheap; substring-based, not embedding. Use to find "
+            "which fetched source / prior spawn output mentions a term "
+            "before deciding what to `read_artifact`."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Whitespace-separated keywords. Lowercased and "
+                        "scored by sum of occurrences across artifacts."
+                    ),
+                },
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        fn=fn,
+    )

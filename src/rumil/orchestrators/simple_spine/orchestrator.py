@@ -57,7 +57,11 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SubroutineResult,
     splice_assumptions,
 )
-from rumil.orchestrators.simple_spine.tools import make_finalize_tool
+from rumil.orchestrators.simple_spine.tools import (
+    make_finalize_tool,
+    make_read_artifact_tool,
+    make_search_artifacts_tool,
+)
 from rumil.orchestrators.simple_spine.trace_events import (
     SpineCompactedEvent,
     SpineConfigPrepEvent,
@@ -175,6 +179,9 @@ class SimpleSpineOrchestrator:
         all_tools: list[Tool] = list(spawn_tools)
         if self.config.enable_finalize_tool:
             all_tools.append(make_finalize_tool(on_finalize))
+        if self.config.expose_artifact_tools:
+            all_tools.append(make_read_artifact_tool(artifact_store))
+            all_tools.append(make_search_artifacts_tool(artifact_store))
 
         client = anthropic.AsyncAnthropic(api_key=get_settings().require_anthropic_key())
         tool_defs = [

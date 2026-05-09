@@ -83,9 +83,17 @@ subroutines:
     # additional_context_description — same as freeform_agent above.
 ```
 
-All four subroutine kinds are supported via ``kind`` discriminator:
+All five subroutine kinds are supported via ``kind`` discriminator:
 ``freeform_agent``, ``sample_n``, ``call_type`` (resolved through
-:mod:`runners`), ``nested_orch`` (resolved through :mod:`nested_orchs`).
+:mod:`runners`), ``nested_orch`` (resolved through :mod:`nested_orchs`),
+and ``web_research`` (search + scrape; see
+:mod:`subroutines.web_research`).
+
+Top-level config additionally honors ``expose_artifact_tools`` (bool):
+when True, the orchestrator wires ``read_artifact`` / ``search_artifacts``
+tools onto the mainline agent so it can browse the run's accumulated
+artifacts directly. Default False (versus configs prefer minimal tool
+surface; research configs flip it on).
 """
 
 from __future__ import annotations
@@ -104,6 +112,7 @@ from rumil.orchestrators.simple_spine.subroutines import (
     NestedOrchSubroutine,
     SampleNSubroutine,
     SubroutineDef,
+    WebResearchSubroutine,
 )
 from rumil.orchestrators.simple_spine.validators import get_validator
 
@@ -173,6 +182,8 @@ def load_simple_spine_config(path: str | Path) -> SimpleSpineConfig:
         cfg_kwargs["enable_server_compaction"] = bool(blob["enable_server_compaction"])
     if "compaction_trigger_tokens" in blob:
         cfg_kwargs["compaction_trigger_tokens"] = int(blob["compaction_trigger_tokens"])
+    if "expose_artifact_tools" in blob:
+        cfg_kwargs["expose_artifact_tools"] = bool(blob["expose_artifact_tools"])
     instructions = _resolve_prompt(
         blob, "compaction_instructions", "compaction_instructions_path", base_dir
     )
@@ -224,9 +235,11 @@ def _load_subroutine(entry: dict[str, Any], base_dir: Path, *, source: Path) -> 
         return _load_call_type(entry, source)  # type: ignore[return-value]
     if kind == "nested_orch":
         return _load_nested_orch(entry, source)  # type: ignore[return-value]
+    if kind == "web_research":
+        return _load_web_research(entry, base_dir, source)  # type: ignore[return-value]
     raise ValueError(
         f"{source}: subroutine {name!r} has unknown kind {kind!r}; "
-        "supported kinds: freeform_agent, sample_n, call_type, nested_orch"
+        "supported kinds: freeform_agent, sample_n, call_type, nested_orch, web_research"
     )
 
 
@@ -378,6 +391,44 @@ def _load_nested_orch(entry: dict[str, Any], source: Path) -> NestedOrchSubrouti
         "base_token_cap": int(base_token_cap),
     }
     return NestedOrchSubroutine(**kwargs)
+
+
+def _load_web_research(
+    entry: dict[str, Any], base_dir: Path, source: Path
+) -> WebResearchSubroutine:
+    sys_prompt = _resolve_prompt(entry, "sys_prompt", "sys_prompt_path", base_dir)
+    if sys_prompt is None:
+        raise ValueError(
+            f"{source}: web_research {entry.get('name')!r} must set sys_prompt or sys_prompt_path"
+        )
+    user_template = _resolve_prompt(
+        entry, "user_prompt_template", "user_prompt_template_path", base_dir
+    )
+    if user_template is None:
+        raise ValueError(
+            f"{source}: web_research {entry.get('name')!r} must set user_prompt_template"
+        )
+    allowed_domains = entry.get("allowed_domains") or ()
+    if not isinstance(allowed_domains, (list, tuple)) or not all(
+        isinstance(d, str) for d in allowed_domains
+    ):
+        raise ValueError(
+            f"{source}: web_research {entry.get('name')!r}: `allowed_domains` "
+            "must be a list of strings"
+        )
+    kwargs: dict[str, Any] = {
+        "name": entry["name"],
+        "description": entry.get("description", ""),
+        "sys_prompt": sys_prompt,
+        "user_prompt_template": user_template,
+        "model": entry["model"],
+        "max_rounds": int(entry.get("max_rounds", 6)),
+        "max_tokens": int(entry.get("max_tokens", 4096)),
+        "web_search_max_uses": int(entry.get("web_search_max_uses", 5)),
+        "allowed_domains": tuple(allowed_domains),
+        **_base_field_kwargs(entry),
+    }
+    return WebResearchSubroutine(**kwargs)
 
 
 def discover_configs(directory: str | Path) -> list[Path]:

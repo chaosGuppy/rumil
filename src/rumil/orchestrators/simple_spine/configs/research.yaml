@@ -1,14 +1,21 @@
 # research — SimpleSpine preset for general workspace-grounded research.
 #
-# Library: workspace_lookup (FreeformAgent with the workspace_search
-# tool). Mainline no longer gets a workspace context block in its first
-# user turn — it must spawn workspace_lookup when it wants context. This
+# Library:
+# - workspace_lookup — embedding search over the workspace (FreeformAgent
+#   with the workspace_search tool).
+# - web_research — Anthropic web_search server tool + our scraper for
+#   full-text fetch. Each fetched page lands as its own artifact in the
+#   run store; mainline pulls them via read_artifact / search_artifacts.
+#
+# Mainline no longer gets a workspace context block in its first user
+# turn — it must spawn workspace_lookup when it wants context. This
 # keeps the mainline thread compact and lets the lookup curate to what's
 # actually relevant.
 #
 # This is the default preset for non-versus SimpleSpine usage. The
 # versus configs (essay_continuation, judge_pair) intentionally omit
-# workspace_lookup — versus runs are blind/scoped to the pair or prefix.
+# workspace_lookup / web_research — versus runs are blind/scoped to the
+# pair or prefix.
 
 name: research
 main_model: claude-opus-4-7
@@ -28,6 +35,11 @@ max_parallel_spawns_per_turn: 4
 # for compaction overhead + remaining work.
 enable_server_compaction: true
 compaction_trigger_tokens: 400000
+# Mainline gets `read_artifact` / `search_artifacts` so it can pull a
+# fetched web source's full text into context, or scan across the
+# accumulated artifacts (workspace_lookup outputs, web_research scrapes,
+# prior spawn syntheses) without re-running spawns.
+expose_artifact_tools: true
 
 subroutines:
   - kind: freeform_agent
@@ -68,3 +80,45 @@ subroutines:
     additional_context_description: >
       Optional framing, e.g. "rule out X as already-covered" or "focus
       on pages that bear on Y". Spliced under {additional_context}.
+
+  - kind: web_research
+    name: web_research
+    description: |
+      Search the web and scrape promising URLs for evidence on a topic.
+      Inputs: focused question / claim / topic in intent; optional
+      framing in additional_context (recency, domain hints, what's
+      already covered).
+      Output: a synthesis citing source_ids, plus one artifact per
+      fetched page (key `web_research/<spawn_id>/source/<source_id>`).
+      Mainline can `read_artifact` any source for full text or
+      `search_artifacts` to find which source mentioned a term.
+      Use when the workspace is thin on a topic, when a claim needs
+      external grounding, or for recent/empirical questions. Heavier
+      than workspace_lookup — prefer workspace_lookup first when the
+      answer plausibly lives in the workspace.
+    sys_prompt_path: ../prompts/web_research_sys.md
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Additional context
+      {additional_context}
+
+      Research and return your synthesis with source_id citations now.
+    model: claude-sonnet-4-6
+    max_rounds: 6
+    max_tokens: 4096
+    web_search_max_uses: 5
+    overridable: [intent, additional_context, token_cap, max_rounds]
+    # ≈ 6 rounds × (input ~10–20k after a couple fetches + 4k out) ≈
+    # 80–140k worst case before fetches stop returning. Floor at 120k
+    # so a SR isn't terminated mid-synthesis after fetching a long page.
+    base_token_cap: 120000
+    cost_hint: "≈ 3–6 turns + ≤5 web_searches + 1–4 scrapes (~30–80k tokens)"
+    intent_description: >
+      Focused topic / question / claim to research externally. The agent
+      issues 1–3 web_search queries, scrapes 1–4 promising URLs, and
+      returns a synthesis citing the fetched source_ids.
+    additional_context_description: >
+      Optional framing — recency requirements, preferred domains, things
+      already covered to skip. Spliced under {additional_context}.

@@ -31,6 +31,7 @@ from rumil.orchestrators.simple_spine.subroutines.nested_orch import (
     NestedOrchSubroutine,
 )
 from rumil.orchestrators.simple_spine.subroutines.sample_n import SampleNSubroutine
+from rumil.orchestrators.simple_spine.subroutines.web_research import WebResearchSubroutine
 
 __all__ = (
     "CallTypeSubroutine",
@@ -43,4 +44,5 @@ __all__ = (
     "SpawnCtx",
     "SubroutineDef",
     "SubroutineResult",
+    "WebResearchSubroutine",
 )

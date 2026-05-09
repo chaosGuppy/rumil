@@ -55,6 +55,7 @@ async def thin_agent_loop(
     max_rounds: int,
     cache: bool = True,
     on_assistant_message: Callable[[int, str, list[ToolUseBlock]], Awaitable[None]] | None = None,
+    server_tool_defs: Sequence[dict] = (),
 ) -> ThinLoopResult:
     """Run the tool-using loop until termination.
 
@@ -62,12 +63,20 @@ async def thin_agent_loop(
     and observe the appended assistant + tool_result turns. Each
     assistant message lands as one element; each batch of tool_results
     lands as one user-role element grouping all results from that round.
+
+    ``server_tool_defs`` are raw Anthropic-side tool dicts
+    (e.g. ``{"type": "web_search_20250305", "name": "web_search", ...}``)
+    that Anthropic executes server-side inside a single assistant turn —
+    their ``server_tool_use`` + result blocks land in the same response's
+    ``content`` and need no follow-up tool_result. We just splice them
+    onto the API call's ``tools`` arg.
     """
     if max_rounds < 1:
         raise ValueError(f"max_rounds must be >= 1, got {max_rounds}")
     settings = get_settings()
     client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
     tool_defs, tool_fns = prepare_tools(tools) if tools else ([], {})
+    combined_tool_defs: list[dict] = [*server_tool_defs, *tool_defs]
 
     final_text = ""
     all_tool_calls: list[ToolCall] = []
@@ -85,7 +94,7 @@ async def thin_agent_loop(
             model,
             system_prompt,
             messages,
-            tool_defs or None,
+            combined_tool_defs or None,
             metadata=meta,
             db=db,
             cache=cache,

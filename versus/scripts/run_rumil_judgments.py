@@ -120,10 +120,11 @@ def main() -> None:
     ap.add_argument(
         "--budget",
         type=int,
-        default=4,
+        default=None,
         help=(
             "Orchestrator research-call budget per pair (orch variant only). "
-            "TwoPhaseOrchestrator requires a minimum of 4. Default: 4."
+            "TwoPhaseOrchestrator requires a minimum of 4. Required for "
+            "--variant orch; rejected for simple_spine (use --simple-spine-budget-tokens)."
         ),
     )
     ap.add_argument(
@@ -263,13 +264,14 @@ def main() -> None:
         ),
     )
     ap.add_argument(
-        "--simple-spine-tokens-per-round",
+        "--simple-spine-budget-tokens",
         type=int,
         default=None,
         help=(
-            "simple_spine: override the budget→tokens multiplier "
-            "(default 25 000 in the workflow). Token hard cap = "
-            "budget × tokens_per_round."
+            "simple_spine: raw token cap on the run (the only hard "
+            "terminator). Required for --variant simple_spine. "
+            "SimpleSpine has no budget-unit primitive, so this is the "
+            "direct token count — pass e.g. 200000."
         ),
     )
     args = ap.parse_args()
@@ -361,6 +363,21 @@ def main() -> None:
             if value is not None:
                 ap.error(f"{flag} is only valid with --variant reflective")
 
+    if args.variant == "simple_spine":
+        if args.budget is not None:
+            ap.error(
+                "--variant simple_spine uses raw tokens; pass "
+                "--simple-spine-budget-tokens (not --budget). SimpleSpine "
+                "has no budget-unit primitive."
+            )
+        if args.simple_spine_budget_tokens is None:
+            ap.error("--variant simple_spine requires --simple-spine-budget-tokens <int>")
+    elif args.variant == "orch":
+        if args.simple_spine_budget_tokens is not None:
+            ap.error("--simple-spine-budget-tokens is only valid with --variant simple_spine")
+        if args.budget is None:
+            ap.error("--variant orch requires --budget <int>")
+
     reader_model = resolve_model_alias(args.reader_model) if args.reader_model else None
     reflector_model = resolve_model_alias(args.reflector_model) if args.reflector_model else None
     verdict_model = resolve_model_alias(args.verdict_model) if args.verdict_model else None
@@ -390,7 +407,7 @@ def main() -> None:
             reflect_prompt_path=args.reflect_prompt_path,
             verdict_prompt_path=args.verdict_prompt_path,
             simple_spine_config_name=args.simple_spine_config_name,
-            simple_spine_tokens_per_round=args.simple_spine_tokens_per_round,
+            simple_spine_budget_tokens=args.simple_spine_budget_tokens,
         )
     )
 

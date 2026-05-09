@@ -22,7 +22,6 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from versus.tasks.judge_pair import (  # noqa: F401
     JudgeArtifact,
@@ -289,8 +288,7 @@ async def judge_pair_simple_spine(
     task_body: str,
     model: str,
     config_name: str,
-    budget: int,
-    tokens_per_round: int | None = None,
+    budget_tokens: int,
     operating_assumptions: str = "",
     output_guidance: str = "",
     additional_context: str = "",
@@ -306,10 +304,10 @@ async def judge_pair_simple_spine(
     preference labels — to ``question.content``; the runner reads it
     and parses the label via :func:`extract_preference`.
 
-    ``budget`` is a small int matching the rumil convention; the only
-    hard cap is the token budget = ``budget * tokens_per_round``
-    (default 40k tokens/unit; ~$1 of opus uncached per unit). Pass
-    ``tokens_per_round`` to override for long-context configs.
+    ``budget_tokens`` is the raw token cap on the run — SimpleSpine's
+    only hard terminator. Distinct from other orchs' ``budget`` (which
+    counts research calls): SimpleSpine has no call-unit primitive, so
+    it accepts tokens directly to keep the units unambiguous.
 
     The ``task_body`` (dimension rubric) is spliced into the workflow's
     ``additional_context`` so mainline + every spawn can read the actual
@@ -337,19 +335,16 @@ async def judge_pair_simple_spine(
         "pair_text": pair_text,
         "rubric": task_body.strip() + "\n",
     }
-    ws_kwargs: dict[str, Any] = {
-        "budget": budget,
-        "config_name": config_name,
-        "call_type": "judge",
-        "wall_clock_soft_s": wall_clock_soft_s,
-        "operating_assumptions": operating_assumptions,
-        "output_guidance": output_guidance,
-        "additional_context": additional_context,
-        "artifacts": artifacts,
-    }
-    if tokens_per_round is not None:
-        ws_kwargs["tokens_per_round"] = tokens_per_round
-    workflow = SimpleSpineWorkflow(**ws_kwargs)
+    workflow = SimpleSpineWorkflow(
+        budget_tokens=budget_tokens,
+        config_name=config_name,
+        call_type="judge",
+        wall_clock_soft_s=wall_clock_soft_s,
+        operating_assumptions=operating_assumptions,
+        output_guidance=output_guidance,
+        additional_context=additional_context,
+        artifacts=artifacts,
+    )
     task = JudgePairTask(dimension=pair.task_name, dimension_body=task_body)
     try:
         result = await run_versus(

@@ -23,9 +23,10 @@ editing config.yaml:
   --essay <id>    (repeatable)  restrict to specific essays
   --include-stale               run over all fetched essays, not just the active set
   --prefix-label <id>           target a specific prefix variant (default: canonical)
-  --orch <workflow_name>        switch to the orch path (requires --workspace, --budget)
+  --orch <workflow_name>        switch to the orch path (requires --workspace + budget)
   --workspace <name>            rumil workspace (orch only; default: versus)
-  --budget N                    orch budget per essay (orch only)
+  --budget N                    research-call budget (orch only; non-spine workflows)
+  --budget-tokens N             raw token cap (orch only; spine workflows — mutually exclusive with --budget)
   --persist                     orch only — disable staging
   --concurrency N               orch only — concurrent runs
   --limit N                     cap planned essays (orch only; honored before firing)
@@ -160,7 +161,8 @@ def main() -> None:
         help=(
             "Switch to orch-driven completions: run the named workflow "
             "(e.g. 'two_phase') against a per-essay Question, then a closing "
-            "call emits a continuation. Requires --workspace and --budget. "
+            "call emits a continuation. Requires --workspace and either "
+            "--budget (non-spine) or --budget-tokens (spine). "
             "When omitted, falls through to the single-shot completion path. "
             "Output rows are tagged source_id=orch:<workflow>:<model>:c<hash8>."
         ),
@@ -173,10 +175,22 @@ def main() -> None:
     ap.add_argument(
         "--budget",
         type=int,
-        default=4,
+        default=None,
         help=(
             "Orch only: research-call budget per essay. TwoPhaseOrchestrator "
-            "requires a minimum of 4. Default: 4."
+            "requires a minimum of 4. Required for non-token-budget workflows "
+            "(e.g. two_phase, draft_and_edit). Mutually exclusive with "
+            "--budget-tokens; rejected for simple_spine."
+        ),
+    )
+    ap.add_argument(
+        "--budget-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Orch only: raw token cap (no unit conversion). Required for "
+            "token-budget workflows (currently: simple_spine). Mutually "
+            "exclusive with --budget. Pass e.g. 200000 for a 200k-token cap."
         ),
     )
     ap.add_argument(
@@ -304,6 +318,24 @@ def main() -> None:
         except ValueError as e:
             ap.error(str(e))
 
+        uses_token_budget = args.orch in rumil_completion.TOKEN_BUDGET_WORKFLOWS
+        if uses_token_budget:
+            if args.budget is not None:
+                ap.error(
+                    f"--orch {args.orch!r} uses raw tokens; pass --budget-tokens "
+                    f"(not --budget). SimpleSpine has no budget-unit primitive."
+                )
+            if args.budget_tokens is None:
+                ap.error(f"--orch {args.orch!r} requires --budget-tokens <int>")
+        else:
+            if args.budget_tokens is not None:
+                ap.error(
+                    f"--orch {args.orch!r} does not accept --budget-tokens; "
+                    f"pass --budget <int> (research-call count)."
+                )
+            if args.budget is None:
+                ap.error(f"--orch {args.orch!r} requires --budget <int>")
+
         for prefix_cfg in prefix_cfgs:
             print(f"[prefix] using variant {prefix_cfg.id!r} (db={target}, orch={args.orch!r})")
             asyncio.run(
@@ -314,6 +346,7 @@ def main() -> None:
                     workflow_name=args.orch,
                     model=model_id,
                     budget=args.budget,
+                    budget_tokens=args.budget_tokens,
                     prefix_cfg=prefix_cfg,
                     limit=args.limit,
                     dry_run=args.dry_run,

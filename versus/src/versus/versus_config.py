@@ -446,11 +446,12 @@ def make_judge_config(
     verdict_prompt_path: Any = None,
     # SimpleSpine-variant only. ``config_name`` resolves a
     # SimpleSpineConfig preset whose fingerprint is folded into the
-    # workflow fingerprint. ``budget`` is reused (small int round cap)
-    # since the existing kwarg shape already passes it through; a
-    # different ``budget`` forks the dedup hash naturally.
+    # workflow fingerprint. ``simple_spine_budget_tokens`` is the raw
+    # token cap; SimpleSpine's budget primitive is tokens, so we keep
+    # it distinct from the ``budget`` kwarg above (which counts
+    # research calls for the orch variant).
     simple_spine_config_name: str | None = None,
-    simple_spine_tokens_per_round: int | None = None,
+    simple_spine_budget_tokens: int | None = None,
 ) -> tuple[dict[str, Any], str, str]:
     """Back-compat shim — translates old kwargs into ``make_versus_config``.
 
@@ -570,23 +571,21 @@ def make_judge_config(
                 "variant='simple_spine' requires simple_spine_config_name "
                 "(the preset to instantiate via SimpleSpine's preset registry)"
             )
-        if budget is None:
+        if simple_spine_budget_tokens is None:
             raise ValueError(
-                "variant='simple_spine' requires budget (the soft round cap; "
-                "tokens hard cap is derived as budget * tokens_per_round)"
+                "variant='simple_spine' requires simple_spine_budget_tokens "
+                "(raw token cap; SimpleSpine has no budget-unit primitive — "
+                "pass tokens directly, e.g. 200_000)"
             )
         # Local import to avoid circular: simple_spine pulls in the
         # whole SDK + tracing graph.
         from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
 
-        ss_kwargs: dict[str, Any] = {
-            "budget": budget,
-            "config_name": simple_spine_config_name,
-            "call_type": "judge",
-        }
-        if simple_spine_tokens_per_round is not None:
-            ss_kwargs["tokens_per_round"] = simple_spine_tokens_per_round
-        ss_workflow = SimpleSpineWorkflow(**ss_kwargs)
+        ss_workflow = SimpleSpineWorkflow(
+            budget_tokens=simple_spine_budget_tokens,
+            config_name=simple_spine_config_name,
+            call_type="judge",
+        )
         ss_task = _ShimJudgePairTaskSimpleSpine(
             dimension=dimension,
             prompt_hash=prompt_hash,

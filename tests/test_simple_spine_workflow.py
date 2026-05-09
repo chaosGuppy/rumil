@@ -58,7 +58,7 @@ def _wf(*, artifacts: dict[str, str] | None = None) -> SimpleSpineWorkflow:
     # config attr with the fake one so the fingerprint test doesn't depend
     # on the real preset's contents.
     wf = SimpleSpineWorkflow(
-        budget=1, config_name="research", call_type="judge", artifacts=artifacts
+        budget_tokens=40_000, config_name="research", call_type="judge", artifacts=artifacts
     )
     object.__setattr__(wf, "config", _fake_config())
     return wf
@@ -103,7 +103,7 @@ def test_fingerprint_artifact_order_independent():
 
 def test_constructor_accepts_artifacts_kwarg():
     wf = SimpleSpineWorkflow(
-        budget=1,
+        budget_tokens=40_000,
         config_name="research",
         call_type="judge",
         artifacts={"foo": "bar"},
@@ -112,7 +112,7 @@ def test_constructor_accepts_artifacts_kwarg():
 
 
 def test_constructor_default_artifacts_empty():
-    wf = SimpleSpineWorkflow(budget=1, config_name="research", call_type="judge")
+    wf = SimpleSpineWorkflow(budget_tokens=40_000, config_name="research", call_type="judge")
     assert wf.artifacts == {}
 
 

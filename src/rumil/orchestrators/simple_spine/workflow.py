@@ -89,44 +89,47 @@ class SimpleSpineWorkflow:
     def __init__(
         self,
         *,
-        budget: int,
+        budget_tokens: int,
         config_name: str = "default",
         call_type: str = "complete",
-        tokens_per_round: int = 40_000,
         wall_clock_soft_s: float | None = None,
         operating_assumptions: str = "",
         output_guidance: str = "",
         additional_context: str = "",
         artifacts: Mapping[str, str] | None = None,
+        **deprecated_kwargs: object,
     ) -> None:
         """Construct a SimpleSpine workflow.
 
-        ``budget`` is a small integer matching the rumil convention; the
-        hard token cap is derived as ``budget * tokens_per_round`` and
-        is the only thing that terminates the run. Rule of thumb: with
-        the default ``tokens_per_round=40_000``, **1 budget unit ≈ $1
-        of opus tokens (uncached)** — opus 4.x at $15/Mtok input +
-        $75/Mtok output blends to roughly $25/Mtok in agent loops with
-        a ~5:1 input:output mix.
+        ``budget_tokens`` is the raw token cap on the run — the only
+        thing that terminates it. SimpleSpine's budget primitive is
+        tokens, not the rumil "budget unit" used by other orchs (one
+        rumil call vs. one shared token pool), so we keep the names
+        distinct: pass `budget_tokens=200_000` for a 200k-token cap.
 
         ``config_name`` resolves a named :class:`SimpleSpineConfig` via
         :func:`rumil.orchestrators.simple_spine.presets.get_preset`.
         ``call_type`` is one of ``"complete"`` / ``"judge"`` and selects
         the rumil ``CallType`` recorded on the orch's call row.
-        ``tokens_per_round`` lets per-config variants tune the
-        budget→tokens conversion (longer-context configs need more).
         """
         from rumil.orchestrators.simple_spine.presets import get_preset
 
-        if budget < 1:
-            raise ValueError(f"budget must be >= 1, got {budget}")
-        if tokens_per_round < 1000:
-            raise ValueError(f"tokens_per_round must be >= 1000, got {tokens_per_round}")
+        if "budget" in deprecated_kwargs or "tokens_per_round" in deprecated_kwargs:
+            raise TypeError(
+                "SimpleSpineWorkflow no longer accepts `budget` / "
+                "`tokens_per_round`; pass `budget_tokens=<int>` directly. "
+                "The unit-based budget (budget × tokens_per_round) was "
+                "removed because SimpleSpine's hard cap is a token count, "
+                "unlike other orchs whose `budget` counts research calls."
+            )
+        if deprecated_kwargs:
+            raise TypeError(f"unexpected kwargs: {sorted(deprecated_kwargs)}")
+        if budget_tokens < 1000:
+            raise ValueError(f"budget_tokens must be >= 1000, got {budget_tokens}")
         if call_type not in ("complete", "judge"):
             raise ValueError(f"call_type must be 'complete' or 'judge', got {call_type!r}")
-        self.budget = budget
-        self.tokens_per_round = tokens_per_round
-        self.max_tokens = budget * tokens_per_round
+        self.budget_tokens = budget_tokens
+        self.max_tokens = budget_tokens
         self.config_name = config_name
         self.config = get_preset(config_name)
         self.call_type_str = call_type
@@ -149,8 +152,7 @@ class SimpleSpineWorkflow:
             "call_type": self.call_type_str,
             "config_name": self.config_name,
             "config_fingerprint": self.config.fingerprint,
-            "budget": self.budget,
-            "tokens_per_round": self.tokens_per_round,
+            "budget_tokens": self.budget_tokens,
             "wall_clock_soft_s": (int(self.wall_clock_soft_s) if self.wall_clock_soft_s else None),
             "operating_assumptions_hash": sha8(self.operating_assumptions),
             "output_guidance_hash": sha8(self.output_guidance),

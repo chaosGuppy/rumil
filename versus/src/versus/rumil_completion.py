@@ -216,17 +216,26 @@ def _parse_workflow_args(pairs: Sequence[str], cls: type) -> dict[str, Any]:
     return out
 
 
+# Workflows whose "budget" primitive is raw tokens, not research-call
+# units. The CLI requires --budget-tokens (and rejects --budget) for
+# these; other workflows use --budget.
+TOKEN_BUDGET_WORKFLOWS: frozenset[str] = frozenset({"simple_spine"})
+
+
 def _make_workflow_and_task(
     workflow_name: str,
     *,
-    budget: int,
+    budget: int | None = None,
+    budget_tokens: int | None = None,
     extra_kwargs: dict[str, Any] | None = None,
 ) -> tuple[Any, CompleteEssayTask]:
     """Instantiate the workflow + task pair for a given run.
 
     Pulls the registered workflow class + defaults from
-    :data:`WORKFLOW_REGISTRY` and merges the runtime ``budget`` plus
+    :data:`WORKFLOW_REGISTRY` and merges the runtime budget arg plus
     any caller-supplied ``extra_kwargs`` (e.g. from ``--workflow-arg``).
+    Routes to ``budget_tokens=`` for token-budget workflows
+    (:data:`TOKEN_BUDGET_WORKFLOWS`) and to ``budget=`` for the rest.
     Raises ``KeyError`` (with a list of registered names) if
     ``workflow_name`` isn't registered.
     """
@@ -234,7 +243,15 @@ def _make_workflow_and_task(
         valid = sorted(WORKFLOW_REGISTRY.keys())
         raise KeyError(f"unknown workflow {workflow_name!r}; registered: {valid}")
     cls, defaults = WORKFLOW_REGISTRY[workflow_name]
-    kwargs: dict[str, Any] = {**defaults, **(extra_kwargs or {}), "budget": budget}
+    if workflow_name in TOKEN_BUDGET_WORKFLOWS:
+        if budget_tokens is None:
+            raise ValueError(f"workflow {workflow_name!r} requires budget_tokens (raw token cap)")
+        budget_kwarg = {"budget_tokens": budget_tokens}
+    else:
+        if budget is None:
+            raise ValueError(f"workflow {workflow_name!r} requires budget (research-call count)")
+        budget_kwarg = {"budget": budget}
+    kwargs: dict[str, Any] = {**defaults, **(extra_kwargs or {}), **budget_kwarg}
     workflow = cls(**kwargs)
     task = CompleteEssayTask()
     return workflow, task
@@ -287,7 +304,8 @@ def _plan_pending(
     *,
     workflow_name: str,
     model: str,
-    budget: int,
+    budget: int | None,
+    budget_tokens: int | None,
     prefix_cfg: config.PrefixCfg,
     workspace_id: str,
     workspace_state_hash: str,
@@ -305,7 +323,10 @@ def _plan_pending(
     from versus.versus_config import make_versus_config
 
     workflow, task = _make_workflow_and_task(
-        workflow_name, budget=budget, extra_kwargs=workflow_kwargs
+        workflow_name,
+        budget=budget,
+        budget_tokens=budget_tokens,
+        extra_kwargs=workflow_kwargs,
     )
     mc = get_model_config(model, cfg=cfg)
     db = versus_db.get_client(prod=prod)
@@ -360,7 +381,8 @@ async def run_orch_completion(
     workspace: str,
     workflow_name: str,
     model: str,
-    budget: int,
+    budget: int | None = None,
+    budget_tokens: int | None = None,
     prefix_cfg: config.PrefixCfg,
     limit: int | None = None,
     dry_run: bool = False,
@@ -406,6 +428,7 @@ async def run_orch_completion(
         workflow_name=workflow_name,
         model=model,
         budget=budget,
+        budget_tokens=budget_tokens,
         prefix_cfg=prefix_cfg,
         workspace_id=ws_short,
         workspace_state_hash=workspace_state_hash,
@@ -419,10 +442,15 @@ async def run_orch_completion(
         return
 
     effective_concurrency = concurrency if concurrency is not None else 1
+    budget_label = (
+        f"budget_tokens={budget_tokens}"
+        if workflow_name in TOKEN_BUDGET_WORKFLOWS
+        else f"budget={budget}"
+    )
     print(
         f"[plan] {len(pending)} orch completions "
         f"(workflow={workflow_name}, model={model}, workspace={workspace}, "
-        f"budget={budget}, concurrency={effective_concurrency})"
+        f"{budget_label}, concurrency={effective_concurrency})"
     )
     if dry_run:
         for pc in pending[:20]:
@@ -448,7 +476,10 @@ async def run_orch_completion(
             )
             try:
                 workflow, task = _make_workflow_and_task(
-                    workflow_name, budget=budget, extra_kwargs=workflow_kwargs
+                    workflow_name,
+                    budget=budget,
+                    budget_tokens=budget_tokens,
+                    extra_kwargs=workflow_kwargs,
                 )
                 ctx = EssayPrefixContext(
                     essay_id=pc.task.essay_id,
@@ -463,9 +494,14 @@ async def run_orch_completion(
                 # prefix variants / workflows / models / budgets and
                 # made the traces list useless for picking out a
                 # specific run.
+                budget_slug = (
+                    f"bt{budget_tokens}"
+                    if workflow_name in TOKEN_BUDGET_WORKFLOWS
+                    else f"b{budget}"
+                )
                 run_name = (
                     f"versus-orch-completion:{workspace}:{pc.task.essay_id}"
-                    f"@{prefix_cfg.id}:{workflow_name}/{short_model(model)}/b{budget}"
+                    f"@{prefix_cfg.id}:{workflow_name}/{short_model(model)}/{budget_slug}"
                 )
                 await db.create_run(
                     name=run_name,
@@ -503,6 +539,7 @@ async def run_orch_completion(
                 "provider": "rumil-orch",
                 "workflow": workflow_name,
                 "budget": budget,
+                "budget_tokens": budget_tokens,
                 "model_config": mc.to_record_dict(),
                 "rumil_run_id": run_id,
                 "rumil_call_id": result.call_id,

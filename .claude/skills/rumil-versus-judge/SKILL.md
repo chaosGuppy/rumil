@@ -2,7 +2,7 @@
 name: rumil-versus-judge
 description: Run pairwise judgments on versus essay-continuation pairs. Default mode is the unified blind path (single-turn LLM call, no tools, no DB) — claude-* models route direct to Anthropic, others through OpenRouter. --variant orch fires a full TwoPhaseOrchestrator run per pair. Use when the user wants to measure how rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare blind judges against workspace-aware ones, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "[--variant orch] [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
+argument-hint: "[--variant orch|reflective|simple_spine] [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N | --simple-spine-budget-tokens N] [--simple-spine-config-name <name>] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -15,10 +15,18 @@ rumil paths also store project_id / run_id / rumil_call_id so the
 
 ## Two modes
 
-| Mode | What it does | judge_model format | Needs supabase? |
-|---|---|---|---|
-| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `judge_pair/blind:<model>:c<hash8>` | no |
-| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `judge_pair/two_phase:<model>:c<hash8>` | **yes** |
+| Mode | What it does | judge_model format | Needs supabase? | Budget flag |
+|---|---|---|---|---|
+| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `judge_pair/blind:<model>:c<hash8>` | no | n/a |
+| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `judge_pair/two_phase:<model>:c<hash8>` | **yes** | `--budget N` (research-call count) |
+| `reflective` | Read → reflect → verdict (3 LLM calls; `--budget` ignored). | `judge_pair/reflective:<model>:c<hash8>` | yes | n/a |
+| `simple_spine` | Per-pair: SimpleSpine workflow under `judge_pair` preset (mainline + subroutines, self-paced against the token clock). | `judge_pair/simple_spine:<model>:c<hash8>` | yes | `--simple-spine-budget-tokens N` (raw token cap) |
+
+**Budget flags are mutually exclusive per variant.** `--variant orch`
+requires `--budget`; `--variant simple_spine` requires
+`--simple-spine-budget-tokens` (SimpleSpine has no budget-unit
+primitive, so it accepts tokens directly to keep units unambiguous).
+The CLI rejects the wrong flag for the chosen variant.
 
 The earlier `--variant ws` path (one SDK agent call with
 workspace-exploration tools, no orchestrator) was removed; for an
@@ -212,6 +220,7 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 - `--variant orch --workspace versus --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
 - `--variant orch --workspace versus --budget 4 --model sonnet --limit 5` — run on sonnet instead of opus
 - `--variant orch --workspace versus --budget 4 --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
+- `--variant simple_spine --workspace versus --simple-spine-budget-tokens 200000 --model sonnet --limit 3` — 3 spine judgments with a 200k-token cap (use `--simple-spine-budget-tokens`, not `--budget`)
 
 ## What to surface
 

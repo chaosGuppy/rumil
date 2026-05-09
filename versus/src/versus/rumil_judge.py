@@ -284,7 +284,7 @@ async def run_orch(
     reflect_prompt_path: str | None = None,
     verdict_prompt_path: str | None = None,
     simple_spine_config_name: str | None = None,
-    simple_spine_tokens_per_round: int | None = None,
+    simple_spine_budget_tokens: int | None = None,
 ) -> None:
     """Run a workspace-aware rumil judge variant against pending pairs.
 
@@ -296,9 +296,10 @@ async def run_orch(
       ``reader_model`` / ``reflector_model`` / ``verdict_model`` and
       ``*_prompt_path`` kwargs are this variant's iteration knobs.
     - ``"simple_spine"``: :class:`SimpleSpineWorkflow` with
-      ``call_type='judge'``. The token cap (the only hard cap) is
-      ``budget * tokens_per_round``. ``simple_spine_config_name``
-      selects a preset (default ``"judge_pair"``).
+      ``call_type='judge'``. The hard cap is ``simple_spine_budget_tokens``
+      (raw tokens; SimpleSpine has no budget-unit primitive — distinct
+      from the ``budget`` arg, which is ignored in this variant).
+      ``simple_spine_config_name`` selects a preset (default ``"judge_pair"``).
 
     ``model`` is the Anthropic model id the bridge (and the workflow's
     internal LLM calls) runs on; passed explicitly so versus controls
@@ -391,8 +392,8 @@ async def run_orch(
             # simple_spine: produces_artifact=True so no closer + no
             # tools (same as reflective). Workflow fingerprint folds in
             # config_fingerprint (full preset hash including subroutine
-            # prompts/models) + budget/tokens_per_round, so a different
-            # config_name or budget naturally forks the dedup hash.
+            # prompts/models) + budget_tokens, so a different config_name
+            # or budget_tokens naturally forks the dedup hash.
             return make_judge_config(
                 "simple_spine",
                 model=model,
@@ -402,9 +403,8 @@ async def run_orch(
                 pair_surface_hash=qhash,
                 workspace_id=ws_short,
                 workspace_state_hash=workspace_state_hash,
-                budget=budget,
                 simple_spine_config_name=simple_spine_config_name or "judge_pair",
-                simple_spine_tokens_per_round=simple_spine_tokens_per_round,
+                simple_spine_budget_tokens=simple_spine_budget_tokens,
             )
         # reflective: no closer, no tools — drop those fingerprint inputs.
         # Per-role models and prompt path overrides are threaded into
@@ -567,14 +567,18 @@ async def run_orch(
                         model_config=mc,
                     )
                 elif variant == "simple_spine":
+                    if simple_spine_budget_tokens is None:
+                        raise ValueError(
+                            "variant='simple_spine' requires "
+                            "simple_spine_budget_tokens (raw token cap)"
+                        )
                     result = await judge_pair_simple_spine(
                         db,
                         pair_ctx,
                         task_body=task_body,
                         model=model,
                         config_name=simple_spine_config_name or "judge_pair",
-                        budget=budget,
-                        tokens_per_round=simple_spine_tokens_per_round,
+                        budget_tokens=simple_spine_budget_tokens,
                         model_config=mc,
                     )
                 else:

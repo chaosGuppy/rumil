@@ -153,7 +153,23 @@ async def thin_agent_loop(
                         }
                     )
             all_tool_calls.append(ToolCall(name=tu.name, input=tu.input, result=result_str))
-        messages.append({"role": "user", "content": tool_results})
+        # Mirror mainline's pattern (orchestrator.py): append a budget
+        # telemetry block alongside tool_results so the spawn agent sees
+        # up-to-date counters each round and can wind down before the
+        # cap is hit. Single-round spawns (max_rounds=1) never reach
+        # this point because they break out on `no_tool_calls` first.
+        budget_block = {
+            "type": "text",
+            "text": (
+                f"[budget] {budget_clock.render_for_prompt()}"
+                + (
+                    "\n[budget] Token cap exhausted — produce your final output now."
+                    if budget_clock.tokens_exhausted
+                    else ""
+                )
+            ),
+        }
+        messages.append({"role": "user", "content": [*tool_results, budget_block]})
 
         if budget_clock.tokens_exhausted:
             stopped_because = "tokens_exhausted"

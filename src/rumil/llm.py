@@ -35,6 +35,14 @@ from anthropic.types import (
     ToolUseBlock,
     WebSearchToolResultBlock,
 )
+from anthropic.types.beta import (
+    BetaRedactedThinkingBlock,
+    BetaServerToolUseBlock,
+    BetaTextBlock,
+    BetaThinkingBlock,
+    BetaToolUseBlock,
+    BetaWebSearchToolResultBlock,
+)
 from google import genai
 from google.genai import types as genai_types
 from pydantic import BaseModel, ValidationError
@@ -60,6 +68,21 @@ from rumil.tracing.tracer import get_trace
 
 if TYPE_CHECKING:
     from rumil.database import DB
+
+# Anthropic SDK returns Beta* block subclasses when the request hits a beta
+# endpoint (e.g. with `betas=["compact-2026-01-12"]`). They are NOT subclasses
+# of the regular blocks, so a plain `isinstance(block, ToolUseBlock)` check
+# silently misses tool_uses on beta responses — which then leaves them
+# unpaired in the next request and the API rejects with "tool_use ids ...
+# without tool_result blocks". Use these unions everywhere we dispatch on
+# block type.
+TEXT_BLOCKS = (TextBlock, BetaTextBlock)
+TOOL_USE_BLOCKS = (ToolUseBlock, BetaToolUseBlock)
+SERVER_TOOL_USE_BLOCKS = (ServerToolUseBlock, BetaServerToolUseBlock)
+WEB_SEARCH_TOOL_RESULT_BLOCKS = (WebSearchToolResultBlock, BetaWebSearchToolResultBlock)
+THINKING_BLOCKS = (ThinkingBlock, BetaThinkingBlock)
+REDACTED_THINKING_BLOCKS = (RedactedThinkingBlock, BetaRedactedThinkingBlock)
+
 
 DEFAULT_MAX_TOKENS = 20_000
 DEFAULT_TEMPERATURE = 0.15
@@ -569,11 +592,19 @@ def parse_anthropic_response(content: Sequence[Any]) -> ParsedAnthropicResponse:
     thinking: list[dict] = []
     redacted_thinking: list[dict] = []
     for block in content:
-        if isinstance(block, TextBlock):
+        if isinstance(block, (TextBlock, BetaTextBlock)):
             text_parts.append(block.text)
-        elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
+        elif isinstance(
+            block,
+            (
+                ToolUseBlock,
+                BetaToolUseBlock,
+                ServerToolUseBlock,
+                BetaServerToolUseBlock,
+            ),
+        ):
             tool_calls.append({"name": block.name, "input": block.input})
-        elif isinstance(block, WebSearchToolResultBlock):
+        elif isinstance(block, (WebSearchToolResultBlock, BetaWebSearchToolResultBlock)):
             tool_calls.append(
                 {
                     "type": "web_search_tool_result",
@@ -581,9 +612,9 @@ def parse_anthropic_response(content: Sequence[Any]) -> ParsedAnthropicResponse:
                     "content": block.model_dump(mode="json")["content"],
                 }
             )
-        elif isinstance(block, ThinkingBlock):
+        elif isinstance(block, (ThinkingBlock, BetaThinkingBlock)):
             thinking.append({"content": block.thinking, "signature": block.signature})
-        elif isinstance(block, RedactedThinkingBlock):
+        elif isinstance(block, (RedactedThinkingBlock, BetaRedactedThinkingBlock)):
             redacted_thinking.append({"data": block.data})
     return ParsedAnthropicResponse(
         text_parts=text_parts,

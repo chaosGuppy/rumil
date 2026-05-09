@@ -20,6 +20,7 @@ from typing import Any
 
 import anthropic
 from anthropic.types import TextBlock
+from anthropic.types.beta import BetaTextBlock
 
 from rumil.llm import LLMExchangeMetadata, call_anthropic_api
 from rumil.model_config import ModelConfig
@@ -190,7 +191,7 @@ class SampleNSubroutine(SubroutineBase):
             if usage is not None:
                 spawn_clock.record_tokens((usage.input_tokens or 0) + (usage.output_tokens or 0))
             for block in api_resp.message.content:
-                if isinstance(block, TextBlock):
+                if isinstance(block, (TextBlock, BetaTextBlock)):
                     return block.text
             return ""
 

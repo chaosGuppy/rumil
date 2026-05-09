@@ -31,6 +31,7 @@ from typing import Any
 
 import anthropic
 from anthropic.types import TextBlock, ToolUseBlock
+from anthropic.types.beta import BetaTextBlock, BetaToolUseBlock
 from pydantic import BaseModel, ValidationError
 
 from rumil.calls.common import mark_call_completed
@@ -45,6 +46,7 @@ from rumil.llm import (
 )
 from rumil.model_config import ModelConfig
 from rumil.models import Call, CallStatus, CallType
+from rumil.orchestrators.simple_spine.agent_loop import strip_orphaned_server_tool_uses
 from rumil.orchestrators.simple_spine.artifacts import ArtifactStore
 from rumil.orchestrators.simple_spine.budget_clock import BudgetClock
 from rumil.orchestrators.simple_spine.config import (
@@ -333,10 +335,10 @@ class SimpleSpineOrchestrator:
                 assistant_text = ""
                 tool_uses: list[ToolUseBlock] = []
                 for block in response.content:
-                    if isinstance(block, TextBlock):
+                    if isinstance(block, (TextBlock, BetaTextBlock)):
                         assistant_text += block.text
-                    elif isinstance(block, ToolUseBlock):
-                        tool_uses.append(block)
+                    elif isinstance(block, (ToolUseBlock, BetaToolUseBlock)):
+                        tool_uses.append(block)  # pyright: ignore[reportArgumentType]
                     elif getattr(block, "type", None) == "compaction":
                         summary = getattr(block, "content", None) or ""
                         await trace.record(
@@ -346,7 +348,12 @@ class SimpleSpineOrchestrator:
                                 summary_text=summary,
                             )
                         )
-                messages.append({"role": "assistant", "content": response.content})
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": strip_orphaned_server_tool_uses(response.content),
+                    }
+                )
 
                 if not tool_uses:
                     if clock.tokens_exhausted and self.config.force_finalize_on_token_exhaustion:

@@ -18,9 +18,21 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import anthropic
-from anthropic.types import TextBlock, ToolUseBlock
+from anthropic.types import (
+    ServerToolUseBlock,
+    TextBlock,
+    ToolUseBlock,
+    WebSearchToolResultBlock,
+)
+from anthropic.types.beta import (
+    BetaServerToolUseBlock,
+    BetaTextBlock,
+    BetaToolUseBlock,
+    BetaWebSearchToolResultBlock,
+)
 
 from rumil.calls.common import prepare_tools
 from rumil.database import DB
@@ -30,6 +42,44 @@ from rumil.orchestrators.simple_spine.budget_clock import BudgetClock
 from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
+
+
+def strip_orphaned_server_tool_uses(content: Sequence[Any]) -> list[Any]:
+    """Drop server_tool_use blocks that lack a matching tool_result.
+
+    Anthropic server tools (e.g. ``web_search``) execute server-side and
+    normally land paired blocks in the same assistant response —
+    ``server_tool_use`` followed by its ``*_tool_result``. When the
+    response is cut short (max_tokens hit mid-tool, transient API
+    failure), the result block can be missing. Sending the unpaired
+    ``server_tool_use`` back on the next turn makes the API reject the
+    request with ``server_tool_use ... was found without a corresponding
+    *_tool_result block``.
+
+    Strip orphaned ``server_tool_use`` blocks so the assistant message
+    we re-send is well-formed. Logs each drop — frequent drops are a
+    signal that ``max_tokens`` is too small for the surfaced result.
+    """
+    server_use_blocks: list[tuple[int, Any]] = []
+    matched_result_ids: set[str] = set()
+    for i, block in enumerate(content):
+        if isinstance(block, (ServerToolUseBlock, BetaServerToolUseBlock)):
+            server_use_blocks.append((i, block))
+        elif isinstance(block, (WebSearchToolResultBlock, BetaWebSearchToolResultBlock)):
+            matched_result_ids.add(block.tool_use_id)
+    drop_indexes: set[int] = set()
+    for i, block in server_use_blocks:
+        if block.id not in matched_result_ids:
+            log.warning(
+                "Dropping orphaned server_tool_use id=%s name=%s — no matching "
+                "tool_result block in this response (likely max_tokens cutoff).",
+                block.id,
+                getattr(block, "name", "?"),
+            )
+            drop_indexes.add(i)
+    if not drop_indexes:
+        return list(content)
+    return [b for i, b in enumerate(content) if i not in drop_indexes]
 
 
 @dataclass
@@ -109,15 +159,23 @@ async def thin_agent_loop(
         text_parts: list[str] = []
         tool_uses: list[ToolUseBlock] = []
         for block in response.content:
-            if isinstance(block, TextBlock):
+            if isinstance(block, (TextBlock, BetaTextBlock)):
                 text_parts.append(block.text)
-            elif isinstance(block, ToolUseBlock):
-                tool_uses.append(block)
+            elif isinstance(block, (ToolUseBlock, BetaToolUseBlock)):
+                tool_uses.append(block)  # pyright: ignore[reportArgumentType]
         round_text = "\n".join(text_parts)
         final_text = round_text
 
-        # Append the assistant message verbatim (preserve thinking + tool_use blocks).
-        messages.append({"role": "assistant", "content": response.content})
+        # Append the assistant message preserving thinking + tool_use
+        # blocks. Sanitize first: orphaned server_tool_use blocks (no
+        # matching tool_result, e.g. from max_tokens mid-execution) are
+        # dropped so the next API turn isn't rejected for unpaired ids.
+        messages.append(
+            {
+                "role": "assistant",
+                "content": strip_orphaned_server_tool_uses(response.content),
+            }
+        )
 
         if on_assistant_message is not None:
             await on_assistant_message(round_idx, round_text, tool_uses)

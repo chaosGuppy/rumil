@@ -62,7 +62,7 @@ envcascade.apply(
 from rumil.settings import RUMIL_MODEL_ALIASES, resolve_model_alias  # noqa: E402
 from versus import config, judge, prepare, rumil_judge, versus_db  # noqa: E402
 
-DEFAULT_DIMENSIONS = ("general_quality",)
+DEFAULT_DIMENSIONS = ("would_recommend",)
 
 
 def main() -> None:
@@ -113,7 +113,7 @@ def main() -> None:
         default=None,
         help=(
             "Essay-adapted rumil dimension name, repeatable "
-            "(default: general_quality). Requires a prompt at "
+            "(default: would_recommend). Requires a prompt at "
             "src/rumil/prompts/versus-<name>.md."
         ),
     )

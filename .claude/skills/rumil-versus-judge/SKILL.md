@@ -127,11 +127,11 @@ on in the UI, so `status.py`'s numbers should match what you see there.
   part of the judge identity.
 - New aliases land via `RUMIL_MODEL_ALIASES` in `src/rumil/settings.py`;
   the script imports the dict from there.
-- Dimensions default to `general_quality`. Each dimension needs a
+- Dimensions default to `would_recommend`. Each dimension needs a
   prompt at `prompts/versus-<name>.md`. Currently available:
-  `general_quality`, `grounding`. Adding more = drop a new prompt file
-  following the existing adapted-for-essays shape — no code changes
-  needed.
+  `would_recommend`, `general_quality`, `grounding`, `identify_human`.
+  Adding more = drop a new prompt file following the existing
+  adapted-for-essays shape — no code changes needed.
 - `--current-only` — skip groups whose `prefix_config_hash` isn't the
   current one for the essay. Protects against judging stale rows after
   an essay re-import; pair with `scripts/status.py` to detect staleness.

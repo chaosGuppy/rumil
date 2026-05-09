@@ -38,6 +38,7 @@ from rumil.database import DB
 from rumil.llm import LLMExchangeMetadata, Tool, call_anthropic_api, structured_call
 from rumil.model_config import ModelConfig
 from rumil.models import Call, CallStatus, CallType
+from rumil.orchestrators.simple_spine.artifacts import ArtifactStore
 from rumil.orchestrators.simple_spine.budget_clock import BudgetClock
 from rumil.orchestrators.simple_spine.config import (
     OrchInputs,
@@ -137,12 +138,18 @@ class SimpleSpineOrchestrator:
         if question is None:
             raise RuntimeError(f"SimpleSpine: question {inputs.question_id} not found")
 
+        # Caller-seeded k,v store; spawn outputs are folded in
+        # post-spawn under <name>/<spawn_id>[/<sub_key>] keys. Lazy
+        # announcements (seeds in initial user message, spawn outputs
+        # appended to tool_result content) keep token cost low.
+        artifact_store = ArtifactStore(seed=dict(inputs.artifacts))
         initial_user = _build_initial_user_message(
             question_id=inputs.question_id,
             question_headline=question.headline,
             question_content=question.content,
             inputs=inputs,
             clock=clock,
+            artifact_store=artifact_store,
         )
         messages: list[dict] = [{"role": "user", "content": initial_user}]
 
@@ -346,6 +353,7 @@ class SimpleSpineOrchestrator:
                             round_idx=round_idx,
                             trace=trace,
                             operating_assumptions=inputs.operating_assumptions,
+                            artifact_store=artifact_store,
                         )
                         for tu in kept_spawn_uses
                     ],
@@ -501,12 +509,21 @@ class SimpleSpineOrchestrator:
         round_idx: int,
         trace: CallTrace,
         operating_assumptions: str = "",
+        artifact_store: ArtifactStore,
     ) -> SubroutineResult:
         """Resolve the spawn tool by name → SubroutineDef and run it.
 
         Bypasses the Tool.fn path so we can record per-spawn trace events
         and run the optional config-prep call before delegating to
         ``SubroutineDef.run``.
+
+        Validates ``include_artifacts`` against the run's
+        :class:`ArtifactStore` before running the spawn — invalid keys
+        raise (and become an ``is_error`` tool_result via the outer
+        gather). After the spawn returns, folds ``result.produces`` into
+        the store under ``<sub_name>/<spawn_id_short>[/<sub_key>]`` keys
+        and appends per-key announcements to the spawn's ``text_summary``
+        so mainline sees the new keys in its next turn.
         """
         if not tu.name.startswith("spawn_"):
             raise RuntimeError(f"_run_spawn called with non-spawn tool {tu.name}")
@@ -518,6 +535,20 @@ class SimpleSpineOrchestrator:
         if sub is None:
             raise KeyError(f"Unknown subroutine: {sub_name}")
         spawn_id = str(uuid.uuid4())
+        raw_include = tu.input.get("include_artifacts") or ()
+        if not isinstance(raw_include, (list, tuple)):
+            raise ValueError(
+                f"spawn {sub.name!r}: include_artifacts must be a list of "
+                f"artifact keys (strings), got {type(raw_include).__name__}"
+            )
+        include_artifacts = tuple(str(k) for k in raw_include)
+        missing_keys = artifact_store.require_keys(include_artifacts)
+        if missing_keys:
+            raise ValueError(
+                f"spawn {sub.name!r}: unknown artifact key(s) in "
+                f"include_artifacts: {missing_keys}. Available keys: "
+                f"{artifact_store.list_keys()}"
+            )
         await trace.record(
             SpineSpawnStartedEvent(
                 round_idx=round_idx,
@@ -534,6 +565,8 @@ class SimpleSpineOrchestrator:
             question_id=question_id,
             spawn_id=spawn_id,
             operating_assumptions=operating_assumptions,
+            artifacts=artifact_store,
+            include_artifacts=include_artifacts,
         )
         if sub.config_prep is not None:
             ctx.prepped_config = await self._run_config_prep(
@@ -560,10 +593,37 @@ class SimpleSpineOrchestrator:
             )
             raise
         tokens_consumed = max(clock.tokens_used - tokens_before, 0)
+        # Fold produces into the store. Empty sub-key → <name>/<spawn_id_short>;
+        # non-empty sub-key → <name>/<spawn_id_short>/<sub_key>. Skip
+        # empty-text entries (no point announcing a key with no content).
+        new_keys: list[str] = []
+        for sub_key, text in result.produces.items():
+            if not text:
+                continue
+            full_key = _make_artifact_key(sub.name, spawn_id, sub_key)
+            artifact_store.add(
+                full_key,
+                text,
+                produced_by=sub.name,
+                spawn_id=spawn_id,
+                round_idx=round_idx,
+            )
+            new_keys.append(full_key)
+        announcement_block = (
+            "\n\n" + "\n".join(artifact_store.announce(k) for k in new_keys) if new_keys else ""
+        )
         result = SubroutineResult(
-            text_summary=f"[spawn cost: {tokens_consumed:,} tokens]\n{result.text_summary}",
+            text_summary=(
+                f"[spawn cost: {tokens_consumed:,} tokens]\n"
+                f"{result.text_summary}{announcement_block}"
+            ),
             tokens_used=result.tokens_used,
-            extra={**dict(result.extra), "tokens_consumed": tokens_consumed},
+            extra={
+                **dict(result.extra),
+                "tokens_consumed": tokens_consumed,
+                "produced_artifact_keys": new_keys,
+            },
+            produces=dict(result.produces),
         )
         await trace.record(
             SpineSpawnCompletedEvent(
@@ -635,6 +695,21 @@ class SimpleSpineOrchestrator:
         return prepped
 
 
+def _make_artifact_key(sub_name: str, spawn_id: str, sub_key: str) -> str:
+    """Build the namespaced ArtifactStore key for a spawn-produced entry.
+
+    Empty ``sub_key`` (the default produces shape ``{"": text}``) becomes
+    ``<sub_name>/<spawn_id_short>``; non-empty sub-keys become
+    ``<sub_name>/<spawn_id_short>/<sub_key>``. The 8-char spawn-id
+    suffix is enough to disambiguate concurrent spawns within a run; the
+    full uuid lives on the trace event for forensics.
+    """
+    short = spawn_id[:8]
+    if sub_key:
+        return f"{sub_name}/{short}/{sub_key}"
+    return f"{sub_name}/{short}"
+
+
 def _format_tool_description(sub: SubroutineDef) -> str:
     """Compose the spawn tool description shown to mainline.
 
@@ -692,14 +767,25 @@ def _build_initial_user_message(
     question_content: str,
     inputs: OrchInputs,
     clock: BudgetClock,
+    artifact_store: ArtifactStore,
 ) -> str:
+    # When the caller seeds artifacts, treat the artifact channel as
+    # the canonical surface for content and skip question.content in
+    # the initial mainline prompt — otherwise pair / rubric / etc.
+    # would render twice (once raw via question.content, once
+    # XML-fenced via render_seed_block). The question_id + headline
+    # still render as a workspace anchor. Callers without artifacts
+    # (research, essay_continuation today) get the existing behavior:
+    # question.content is the primary surface and renders verbatim.
+    has_artifacts = bool(inputs.artifacts)
     sections: list[str] = [
         "## Scope question",
         f"`{question_id}` — {question_headline}",
         "",
-        question_content.strip(),
-        "",
     ]
+    if not has_artifacts:
+        sections.append(question_content.strip())
+        sections.append("")
     if inputs.additional_context.strip():
         sections.append("## Additional context (from caller)")
         sections.append(inputs.additional_context.strip())
@@ -712,6 +798,24 @@ def _build_initial_user_message(
         sections.append("## Output schema (your finalize answer will be parsed against this)")
         sections.append(
             f"```json\n{json.dumps(inputs.output_schema.model_json_schema(), indent=2)}\n```"
+        )
+        sections.append("")
+    seed_block = artifact_store.render_seed_block()
+    if seed_block:
+        # Render input-seeded artifacts with content (XML-fenced) so
+        # mainline sees keys + bodies together on its first turn — same
+        # demarcation subroutines see when consumes / include_artifacts
+        # splices them in. Spawn-produced artifacts get announced
+        # lazily one-line in tool_result messages as they're created;
+        # no persistent registry block per round.
+        sections.append(seed_block.rstrip())
+        sections.append("")
+        sections.append(
+            "Reference these artifact keys (and any new keys announced "
+            "in tool_result messages) by passing `include_artifacts: "
+            "[<key>, ...]` on future spawn calls. Subroutines also have "
+            "a static `consumes` declaration that's always spliced "
+            "regardless."
         )
         sections.append("")
     sections.append("## Budget status")

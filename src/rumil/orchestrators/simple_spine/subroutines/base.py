@@ -33,6 +33,7 @@ from rumil.database import DB
 from rumil.tracing.broadcast import Broadcaster
 
 if TYPE_CHECKING:
+    from rumil.orchestrators.simple_spine.artifacts import ArtifactStore
     from rumil.orchestrators.simple_spine.budget_clock import BudgetClock
 
 
@@ -155,6 +156,17 @@ class SpawnCtx:
     # Subroutines that opt in via ``inherit_assumptions`` append this to
     # their own system prompt at run time.
     operating_assumptions: str = ""
+    # Shared artifact store threaded through the run. Subroutines splice
+    # entries via ``SubroutineBase.consumes`` (static, declared) and
+    # mainline-supplied ``include_artifacts`` (dynamic, per-spawn). None
+    # in unit-test paths that don't exercise the artifact channel; the
+    # FreeformAgent / SampleN run loops fall back to no-op when None.
+    artifacts: ArtifactStore | None = None
+    # Mainline-chosen artifact keys to include in this spawn's user
+    # prompt, on top of the subroutine's static ``consumes``. Validated
+    # by the orchestrator before this ``SpawnCtx`` is built — invalid
+    # keys never reach a subroutine's ``run``.
+    include_artifacts: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -218,6 +230,56 @@ class SubroutineBase:
     # Optional per-spawn token cap. See class docstring — different
     # kinds enforce this differently; CallType ignores it entirely.
     base_token_cap: int | None = None
+    # Static artifact keys the subroutine always wants spliced into
+    # its user prompt. Resolved against the run's ArtifactStore at
+    # spawn time; missing keys raise loudly (a typo would silently
+    # produce thin context). FreeformAgent and SampleN honor this;
+    # CallType and NestedOrch raise in __post_init__ if non-empty
+    # because their LLM-call paths don't go through the spine's
+    # spawn-prompt rendering — artifact integration there needs a
+    # separate design and is out of MVP scope.
+    consumes: tuple[str, ...] = ()
+
+    def render_artifact_block(self, ctx: SpawnCtx) -> str:
+        """Build the artifact block to prepend to the spawn's user prompt.
+
+        Combines static ``consumes`` (declared on this subroutine) with
+        mainline-supplied ``include_artifacts`` (dynamic, per-spawn) — order
+        preserved, duplicates removed. Returns empty string when nothing
+        applies (no consumes, no include, or no store).
+
+        The orchestrator validates ``include_artifacts`` keys before this
+        runs (invalid keys land an ``is_error`` tool_result instead of
+        executing the spawn), but ``consumes`` keys are validated here at
+        spawn time — a typo'd YAML config raises rather than silently
+        producing thin context.
+        """
+        if ctx.artifacts is None:
+            if self.consumes:
+                raise ValueError(
+                    f"subroutine {self.name!r} declares consumes={list(self.consumes)} "
+                    "but ctx.artifacts is None — orchestrator must thread an "
+                    "ArtifactStore through SpawnCtx for kinds that consume artifacts"
+                )
+            return ""
+        keys: list[str] = []
+        seen: set[str] = set()
+        for k in (*self.consumes, *ctx.include_artifacts):
+            if k in seen:
+                continue
+            seen.add(k)
+            keys.append(k)
+        if not keys:
+            return ""
+        missing = ctx.artifacts.require_keys(self.consumes)
+        if missing:
+            raise ValueError(
+                f"subroutine {self.name!r} declares consumes={list(self.consumes)} "
+                f"but the run's ArtifactStore lacks key(s): {missing}. "
+                "Caller must seed these via OrchInputs.artifacts, or an "
+                "earlier subroutine must produce them."
+            )
+        return ctx.artifacts.render_block(keys)
 
     def apply_assumptions(self, text: str, ctx: SpawnCtx) -> str:
         """Splice ctx.operating_assumptions into ``text`` when honoring is on.
@@ -251,6 +313,7 @@ class SubroutineBase:
             "overridable": sorted(self.overridable),
             "inherit_assumptions": self.inherit_assumptions,
             "base_token_cap": self.base_token_cap,
+            "consumes": list(self.consumes),
         }
         if self.cost_hint is not None:
             out["cost_hint_hash"] = sha8(self.cost_hint)
@@ -297,7 +360,32 @@ class SubroutineBase:
             }
         if "token_cap" in self.overridable and self.base_token_cap is not None:
             out["token_cap"] = self._token_cap_property()
+        # ``include_artifacts`` is always available on FreeformAgent /
+        # SampleN spawn schemas — it's the dynamic counterpart to the
+        # static ``consumes`` declaration. Mainline picks earlier-spawned
+        # artifact keys (announced in tool_result messages as they're
+        # produced) to splice into this spawn's user prompt. Empty list
+        # = nothing dynamic; static ``consumes`` still applies.
+        if self._supports_include_artifacts():
+            out["include_artifacts"] = {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional list of artifact keys to splice into this "
+                    "spawn's user prompt under '## Artifacts'. Pick from "
+                    "keys announced in earlier tool_result messages "
+                    "(format: `<sub_name>/<spawn_id_short>` or "
+                    "`<name>/<spawn_id>/<sub_key>`) plus any input-seeded "
+                    "keys announced at run start. The subroutine's "
+                    "static `consumes` declaration is always spliced "
+                    "regardless — this field is purely additive."
+                ),
+            }
         return out
+
+    def _supports_include_artifacts(self) -> bool:
+        """Override in CallType / NestedOrch kinds where artifact splicing isn't wired."""
+        return True
 
     def _default_intent_description(self) -> str:
         """Subclass hook: kind-specific default for the ``intent`` schema field."""
@@ -347,11 +435,18 @@ class SubroutineResult:
     use ``rumil.llm`` text/structured-call helpers should pass the
     BudgetClock through and leave this at 0; subroutines that bypass
     helpers must report their own count here.
+
+    ``produces`` is folded into the run's :class:`ArtifactStore` after
+    the spawn returns. The empty-key entry ``{"": text}`` is keyed as
+    ``<sub_name>/<spawn_id_short>``; non-empty sub-keys become
+    ``<sub_name>/<spawn_id_short>/<sub_key>``. Multi-output spawns
+    (e.g. SampleN producing per-sample) use distinct sub-keys.
     """
 
     text_summary: str
     tokens_used: int = 0
     extra: Mapping[str, Any] = field(default_factory=dict)
+    produces: Mapping[str, str] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -362,6 +457,7 @@ class SubroutineDef(Protocol):
     description: str
     overridable: frozenset[str]
     config_prep: ConfigPrepDef | None
+    consumes: tuple[str, ...]
 
     def spawn_tool_schema(self) -> dict[str, Any]:
         """Return the JSON schema for the spawn tool's ``input_schema``.

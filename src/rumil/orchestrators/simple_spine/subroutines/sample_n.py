@@ -158,6 +158,10 @@ class SampleNSubroutine(SubroutineBase):
                 f"{sorted(format_kwargs)}"
             ) from e
 
+        artifact_block = self.render_artifact_block(ctx)
+        if artifact_block:
+            user_message = artifact_block + "\n" + user_message
+
         sys_prompt = self.apply_assumptions(self.sys_prompt, ctx)
 
         spawn_clock = resolve_spawn_clock(
@@ -219,12 +223,23 @@ class SampleNSubroutine(SubroutineBase):
         if skipped:
             header += f" — {skipped} skipped (token cap)"
         parts: list[str] = [header, ""]
+        body_parts: list[str] = []
         for i, c in enumerate(completions):
-            parts.append(f"## Sample {i + 1}")
-            parts.append(c.strip())
+            sample_block = f"## Sample {i + 1}\n{c.strip()}"
+            parts.append(sample_block)
             parts.append("")
+            body_parts.append(sample_block)
         text_summary = "\n".join(parts)
+        # Default artifact: the joined samples body (no metadata header).
+        # Orchestrator namespaces under <name>/<spawn_id_short>. Multi-key
+        # produces would need a steering signal (e.g. one key per sample);
+        # the single-key shape composes cleanly with the verdict
+        # subroutine consuming "all of side A's steelmen" as one blob.
+        produces: dict[str, str] = {}
+        if body_parts:
+            produces[""] = "\n\n".join(body_parts)
         return SubroutineResult(
             text_summary=text_summary,
             extra={"n": n, "samples_run": len(completions), "samples_skipped": skipped},
+            produces=produces,
         )

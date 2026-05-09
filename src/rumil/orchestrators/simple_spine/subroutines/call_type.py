@@ -71,6 +71,17 @@ class CallTypeSubroutine(SubroutineBase):
                 f"CallTypeSubroutine {self.name!r}: 'token_cap' in "
                 "overridable is inert (see base_token_cap). Drop it."
             )
+        if self.consumes:
+            raise ValueError(
+                f"CallTypeSubroutine {self.name!r}: consumes is not yet "
+                "supported on call_type kinds — the wrapped CallRunner "
+                "uses its own context-builder, not the spine's spawn "
+                "user-prompt rendering. Artifact integration here needs "
+                "a separate design and is out of MVP scope."
+            )
+
+    def _supports_include_artifacts(self) -> bool:
+        return False
 
     def fingerprint(self) -> Mapping[str, Any]:
         out = dict(super().fingerprint())

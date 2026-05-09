@@ -319,13 +319,24 @@ async def judge_pair_simple_spine(
     piece without this splice.
 
     Returned :class:`JudgeResult` mirrors :func:`judge_pair_orch`.
-    """
-    rubric_block = f"## Dimension rubric (`{pair.task_name}`)\n\n{task_body.strip()}"
-    if additional_context.strip():
-        merged_context = f"{rubric_block}\n\n---\n\n{additional_context.strip()}"
-    else:
-        merged_context = rubric_block
 
+    Pair surface (prefix + both continuations with display labels) and
+    rubric body land in ``artifacts={"pair_text": ..., "rubric": ...}``.
+    The judge_pair preset's subroutines declare ``consumes: [pair_text,
+    rubric]`` so every spawn gets the full content via the artifact
+    channel without mainline having to forward it. ``additional_context``
+    stays as a freeform mainline-supplied notes channel — separate from
+    artifacts; do NOT use it to splice pair / rubric.
+    """
+    pair_text = (
+        f"## Essay opening\n\n{pair.prefix_text}\n\n"
+        f"## Continuation A\n\n{pair.continuation_a_text}\n\n"
+        f"## Continuation B\n\n{pair.continuation_b_text}\n"
+    )
+    artifacts = {
+        "pair_text": pair_text,
+        "rubric": task_body.strip() + "\n",
+    }
     ws_kwargs: dict[str, Any] = {
         "budget": budget,
         "config_name": config_name,
@@ -333,7 +344,8 @@ async def judge_pair_simple_spine(
         "wall_clock_soft_s": wall_clock_soft_s,
         "operating_assumptions": operating_assumptions,
         "output_guidance": output_guidance,
-        "additional_context": merged_context,
+        "additional_context": additional_context,
+        "artifacts": artifacts,
     }
     if tokens_per_round is not None:
         ws_kwargs["tokens_per_round"] = tokens_per_round

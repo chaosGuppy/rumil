@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any
@@ -118,6 +119,14 @@ class OrchInputs:
 
     These are NOT folded into the config fingerprint — different inputs
     against the same config are different runs of the same variant.
+
+    ``artifacts`` is a caller-seeded k,v map of named text blobs (pair
+    surface, rubric, scoped question text, etc.). Subroutines reference
+    entries by key via static :class:`SubroutineBase.consumes` or via
+    mainline-supplied ``include_artifacts`` on the spawn tool — see
+    :mod:`rumil.orchestrators.simple_spine.artifacts`. The store also
+    accumulates outputs from spawns under
+    ``<sub_name>/<spawn_id>[/<sub_key>]`` keys at run time.
     """
 
     question_id: str
@@ -126,6 +135,7 @@ class OrchInputs:
     output_guidance: str = ""
     output_schema: type[BaseModel] | None = None
     budget: BudgetSpec = field(default_factory=lambda: BudgetSpec(max_tokens=200_000))
+    artifacts: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass

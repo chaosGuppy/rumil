@@ -61,6 +61,17 @@ class NestedOrchSubroutine(SubroutineBase):
                 "required (nested orchs always need an explicit token "
                 "sub-cap because they can recurse arbitrarily deep)"
             )
+        if self.consumes:
+            raise ValueError(
+                f"NestedOrchSubroutine {self.name!r}: consumes is not yet "
+                "supported on nested_orch kinds — artifact pass-through to "
+                "a child orch needs an explicit forwarding contract that "
+                "is out of MVP scope. Track which keys the child orch "
+                "needs via its own OrchInputs.artifacts at factory time."
+            )
+
+    def _supports_include_artifacts(self) -> bool:
+        return False
 
     def fingerprint(self) -> Mapping[str, Any]:
         out = dict(super().fingerprint())

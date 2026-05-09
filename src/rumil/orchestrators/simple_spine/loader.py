@@ -59,6 +59,13 @@ subroutines:
                                  # framing (e.g. "A side label, 'A' or 'B'").
     additional_context_description: ...  # optional; same idea for
                                           # `additional_context`.
+    consumes: [pair_text, rubric]  # optional; static artifact keys this
+                                    # subroutine always wants spliced into
+                                    # its user prompt. Resolved against the
+                                    # run's ArtifactStore at spawn time;
+                                    # missing keys raise loudly.
+                                    # CallType / NestedOrch reject non-empty
+                                    # consumes (out of MVP scope).
 
   - kind: sample_n
     name: critique
@@ -245,6 +252,14 @@ def _base_field_kwargs(entry: dict[str, Any]) -> dict[str, Any]:
         out["intent_description"] = str(entry["intent_description"])
     if "additional_context_description" in entry:
         out["additional_context_description"] = str(entry["additional_context_description"])
+    if "consumes" in entry:
+        raw = entry["consumes"]
+        if not isinstance(raw, list) or not all(isinstance(k, str) for k in raw):
+            raise ValueError(
+                f"subroutine {entry.get('name')!r}: `consumes` must be a list "
+                f"of artifact key strings, got {raw!r}"
+            )
+        out["consumes"] = tuple(raw)
     return out
 
 

@@ -172,6 +172,10 @@ class FreeformAgentSubroutine(SubroutineBase):
                     f"freeform_agent {self.name!r}: user_prompt_template references unknown key {e}"
                 ) from e
 
+        artifact_block = self.render_artifact_block(ctx)
+        if artifact_block:
+            user_message = artifact_block + "\n" + user_message
+
         enabled_tool_names: Sequence[str] = (
             prepped.enabled_tools
             if prepped and prepped.enabled_tools is not None
@@ -244,6 +248,11 @@ class FreeformAgentSubroutine(SubroutineBase):
             f"{f', validator_retries={retries_used}' if retries_used else ''})_\n\n"
             f"{result.final_text}"
         )
+        # Default artifact: the agent's final_text (body only, no header).
+        # Orchestrator namespaces this under <name>/<spawn_id_short>.
+        # Subroutines wanting multi-key outputs can override produces with
+        # {"key1": ..., "key2": ...}; an empty produces means "no
+        # artifact contributed" (rare for FreeformAgent).
         return SubroutineResult(
             text_summary=text_summary,
             extra={
@@ -252,4 +261,5 @@ class FreeformAgentSubroutine(SubroutineBase):
                 "tool_call_count": len(result.tool_calls),
                 "validator_retries": retries_used,
             },
+            produces={"": result.final_text},
         )

@@ -23,6 +23,8 @@ key — no manual version bump.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
 
 from rumil.database import DB
@@ -34,6 +36,22 @@ from rumil.orchestrators.simple_spine.orchestrator import SimpleSpineOrchestrato
 from rumil.orchestrators.simple_spine.subroutines.base import sha8
 from rumil.settings import get_settings
 from rumil.tracing.broadcast import Broadcaster
+
+
+def _hash_artifacts(artifacts: Mapping[str, str]) -> str:
+    """Stable hash of (key, sha8(text)) pairs sorted by key.
+
+    Used to fold caller-seeded ``OrchInputs.artifacts`` into the
+    workflow fingerprint so an edit to pair surface / rubric forks the
+    versus dedup hash. Keys and content-hashes both go in — a renamed
+    key with the same body forks; a same-named key with a different
+    body forks too.
+    """
+    blob = json.dumps(
+        sorted((k, sha8(v)) for k, v in artifacts.items()),
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
 def _apply_model_override(config: SimpleSpineConfig, model: str) -> SimpleSpineConfig:
@@ -79,6 +97,7 @@ class SimpleSpineWorkflow:
         operating_assumptions: str = "",
         output_guidance: str = "",
         additional_context: str = "",
+        artifacts: Mapping[str, str] | None = None,
     ) -> None:
         """Construct a SimpleSpine workflow.
 
@@ -118,6 +137,7 @@ class SimpleSpineWorkflow:
         self.operating_assumptions = operating_assumptions
         self.output_guidance = output_guidance
         self.additional_context = additional_context
+        self.artifacts: Mapping[str, str] = dict(artifacts) if artifacts else {}
         self.last_status: str = "complete"
         # Set in run() to the orch's answer_text; the versus runner reads
         # this directly when produces_artifact=True.
@@ -135,6 +155,12 @@ class SimpleSpineWorkflow:
             "operating_assumptions_hash": sha8(self.operating_assumptions),
             "output_guidance_hash": sha8(self.output_guidance),
             "additional_context_hash": sha8(self.additional_context),
+            # Caller-seeded artifacts are inputs (per-pair pair_text /
+            # rubric for versus, etc.). Folding key+content hashes into
+            # the workflow fingerprint means an edit to pair surface or
+            # rubric naturally forks the dedup hash; not folding them
+            # would let two judgments at different rubrics collide.
+            "artifacts_hash": _hash_artifacts(self.artifacts),
         }
 
     async def setup(self, db: DB, question_id: str) -> None:
@@ -170,6 +196,7 @@ class SimpleSpineWorkflow:
                 max_tokens=self.max_tokens,
                 wall_clock_soft_s=self.wall_clock_soft_s,
             ),
+            artifacts=dict(self.artifacts),
         )
         orch = SimpleSpineOrchestrator(db, effective_config, broadcaster=broadcaster)
         result = await orch.run(inputs, call_type=self.call_type_enum)

@@ -315,23 +315,38 @@ class SimpleSpineOrchestrator:
             tool_results: list[dict] = []
             spawn_uses: list[ToolUseBlock] = []
             for tu in tool_uses:
-                if tu.name == "finalize":
-                    fn = tool_fn_map[tu.name]
-                    try:
-                        result_str = await fn(tu.input)
-                    except Exception as e:
-                        result_str = f"Error: {e}"
-                        log.exception("Tool %s raised", tu.name)
+                if tu.name.startswith("spawn_"):
+                    spawn_uses.append(tu)
+                    continue
+                # Non-spawn tools (finalize, read_artifact, search_artifacts,
+                # any future first-class mainline tool) execute locally via
+                # tool_fn_map. Routing them through _run_spawn would treat
+                # them as subroutine kinds and fail.
+                fn = tool_fn_map.get(tu.name)
+                if fn is None:
                     tool_results.append(
                         {
                             "type": "tool_result",
                             "tool_use_id": tu.id,
-                            "content": result_str,
+                            "content": f"Unknown tool: {tu.name}",
+                            "is_error": True,
                         }
                     )
+                    continue
+                try:
+                    result_str = await fn(tu.input)
+                except Exception as e:
+                    result_str = f"Error: {e}"
+                    log.exception("Tool %s raised", tu.name)
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": result_str,
+                    }
+                )
+                if tu.name == "finalize":
                     finalize_reason = str(tu.input.get("reason", "")) or "model_finalize"
-                else:
-                    spawn_uses.append(tu)
 
             kept_spawn_uses = spawn_uses
             cap = self.config.max_parallel_spawns_per_turn

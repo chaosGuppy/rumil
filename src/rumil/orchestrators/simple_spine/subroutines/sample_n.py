@@ -34,20 +34,22 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
 from rumil.settings import get_settings
 
 
-def _estimate_per_sample_worst(sys_prompt: str, user_message: str, max_tokens: int) -> int:
-    """Conservative upper bound on tokens one sample will consume.
+def _estimate_per_sample_worst_cost_usd(
+    sys_prompt: str, user_message: str, max_tokens: int, model: str
+) -> float:
+    """Conservative upper bound on USD cost of one sample.
 
-    Input is estimated via a ~4-chars-per-token heuristic (rough but
-    sufficient — the dominant term is usually max_tokens, and we already
-    use the *worst-case* output here). Output is bounded by ``max_tokens``.
-
-    The estimate is used to decide how many samples can be safely
-    launched in parallel without overshooting a token cap. Underestimating
-    input tokens by 2× still leaves a substantial safety margin because
-    real outputs are typically well below max_tokens.
+    Input tokens are estimated via a ~4-chars-per-token heuristic; output
+    is bounded by ``max_tokens``; cost is derived from per-model pricing
+    via :func:`rumil.pricing.compute_cost`. Used to decide how many
+    samples can fit in the remaining clock without overshooting.
+    Underestimating input by 2× still leaves a substantial safety margin
+    because real outputs are typically well below ``max_tokens``.
     """
+    from rumil.pricing import compute_cost
+
     input_estimate = (len(sys_prompt) + len(user_message)) // 4
-    return input_estimate + max_tokens
+    return compute_cost(model, input_estimate, max_tokens)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -59,7 +61,7 @@ class SampleNSubroutine(SubroutineBase):
     ``.format(**overrides)`` plus the keys ``additional_context`` and
     ``operating_assumptions`` that the orchestrator always passes through.
 
-    ``base_token_cap`` enforcement here is affordability-aware: the run
+    ``base_cost_cap_usd`` enforcement here is affordability-aware: the run
     loop estimates a worst-case per-sample token cost (rough input
     estimate + max_tokens) and only launches as many samples per batch as
     fit in the carved clock's remaining budget. After each batch, the
@@ -111,13 +113,13 @@ class SampleNSubroutine(SubroutineBase):
     def _default_additional_context_description(self) -> str:
         return "Extra context to splice into the user prompt under {additional_context}."
 
-    def _token_cap_property(self) -> dict[str, Any]:
+    def _cost_cap_usd_property(self) -> dict[str, Any]:
         return {
             "type": "integer",
             "minimum": 500,
             "description": (
                 f"Per-spawn token budget covering all N samples "
-                f"(default {self.base_token_cap}). Samples are launched "
+                f"(default {self.base_cost_cap_usd}). Samples are launched "
                 "in batches sized to fit the remaining cap; if the cap "
                 "is too tight for all N, some samples are skipped (the "
                 "text_summary reports run/total). Tokens still debit "
@@ -189,32 +191,34 @@ class SampleNSubroutine(SubroutineBase):
             )
             usage = api_resp.message.usage
             if usage is not None:
-                spawn_clock.record_tokens((usage.input_tokens or 0) + (usage.output_tokens or 0))
+                spawn_clock.record_exchange(usage, self.model)
             for block in api_resp.message.content:
                 if isinstance(block, (TextBlock, BetaTextBlock)):
                     return block.text
             return ""
 
-        # Affordability-aware launching. Pick a worst-case per-sample size
-        # (rough input estimate + max_tokens), then in each iteration
-        # launch as many samples as fit in the remaining clock and await
-        # them. After they finish, the clock has updated to reflect actual
-        # (typically lower-than-worst-case) spend, so we may have room
-        # for more. Stops when all N have run or the clock can't fit one
-        # more worst-case sample. Yields full parallelism when budget is
-        # comfortable (one big batch); falls back to smaller batches as
-        # the cap tightens, instead of overshooting it.
-        per_sample_worst = _estimate_per_sample_worst(sys_prompt, user_message, self.max_tokens)
-        cap_at_launch = spawn_clock.tokens_remaining
+        # Affordability-aware launching. Pick a worst-case per-sample USD
+        # cost (rough input estimate + max_tokens at the model's per-token
+        # rate), then in each iteration launch as many samples as fit in
+        # the remaining clock and await them. After they finish, the clock
+        # has updated to reflect actual (typically lower-than-worst-case)
+        # spend, so we may have room for more. Stops when all N have run
+        # or the clock can't fit one more worst-case sample.
+        per_sample_worst_usd = _estimate_per_sample_worst_cost_usd(
+            sys_prompt, user_message, self.max_tokens, self.model
+        )
+        cap_at_launch_usd = spawn_clock.cost_usd_remaining
         completions: list[str] = []
         launched = 0
         while launched < n:
             affordable = (
-                spawn_clock.tokens_remaining // per_sample_worst if per_sample_worst > 0 else n
+                int(spawn_clock.cost_usd_remaining // per_sample_worst_usd)
+                if per_sample_worst_usd > 0
+                else n
             )
             if affordable <= 0:
                 break
-            batch_size = min(int(affordable), n - launched)
+            batch_size = min(affordable, n - launched)
             batch = await asyncio.gather(*[_one(launched + i) for i in range(batch_size)])
             completions.extend(batch)
             launched += batch_size
@@ -222,7 +226,7 @@ class SampleNSubroutine(SubroutineBase):
 
         header = f"# {self.name} — {len(completions)}/{n} samples (intent: {intent[:120]})"
         if skipped:
-            header += f" — {skipped} skipped (token cap)"
+            header += f" — {skipped} skipped (cost cap)"
         parts: list[str] = [header, ""]
         body_parts: list[str] = []
         for i, c in enumerate(completions):
@@ -232,27 +236,21 @@ class SampleNSubroutine(SubroutineBase):
             body_parts.append(sample_block)
         if skipped:
             # Surface the cap math so mainline can compute a sufficient
-            # ``token_cap`` override on retry instead of triangulating via
-            # repeated guesses. ``per_sample_worst`` is the conservative
-            # estimate that drove the affordability check; the suggested
-            # cap is ``n * per_sample_worst`` to fit all samples in one
-            # spawn (mainline can still drop n if that's too expensive).
-            suggested = n * per_sample_worst
+            # ``cost_cap_usd`` override on retry instead of triangulating
+            # via repeated guesses.
+            suggested_usd = n * per_sample_worst_usd
+            fit_count = (
+                int(cap_at_launch_usd // per_sample_worst_usd) if per_sample_worst_usd > 0 else n
+            )
             parts.append(
                 f"[budget] Affordability skip: per-sample worst-case "
-                f"≈ {per_sample_worst:,} tokens; spawn cap had "
-                f"{cap_at_launch:,} tokens at launch (so "
-                f"{cap_at_launch // per_sample_worst} of {n} samples fit). "
-                f"To run all {n} samples on retry, pass "
-                f"`token_cap` ≥ {suggested:,} (or reduce `n`)."
+                f"≈ ${per_sample_worst_usd:.3f}; spawn cap had "
+                f"${cap_at_launch_usd:.2f} at launch (so {fit_count} of "
+                f"{n} samples fit). To run all {n} samples on retry, pass "
+                f"`cost_cap_usd` ≥ ${suggested_usd:.2f} (or reduce `n`)."
             )
             parts.append("")
         text_summary = "\n".join(parts)
-        # Default artifact: the joined samples body (no metadata header).
-        # Orchestrator namespaces under <name>/<spawn_id_short>. Multi-key
-        # produces would need a steering signal (e.g. one key per sample);
-        # the single-key shape composes cleanly with the verdict
-        # subroutine consuming "all of side A's steelmen" as one blob.
         produces: dict[str, str] = {}
         if body_parts:
             produces[""] = "\n\n".join(body_parts)
@@ -262,8 +260,8 @@ class SampleNSubroutine(SubroutineBase):
                 "n": n,
                 "samples_run": len(completions),
                 "samples_skipped": skipped,
-                "per_sample_worst_tokens": per_sample_worst,
-                "spawn_cap_at_launch": cap_at_launch,
+                "per_sample_worst_cost_usd": per_sample_worst_usd,
+                "spawn_cap_at_launch_usd": cap_at_launch_usd,
             },
             produces=produces,
         )

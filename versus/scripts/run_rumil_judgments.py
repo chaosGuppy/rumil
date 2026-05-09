@@ -370,10 +370,10 @@ def main() -> None:
                 "--simple-spine-budget-tokens (not --budget). SimpleSpine "
                 "has no budget-unit primitive."
             )
-        if args.simple_spine_budget_tokens is None:
+        if args.simple_spine_budget_usd is None:
             ap.error("--variant simple_spine requires --simple-spine-budget-tokens <int>")
     elif args.variant == "orch":
-        if args.simple_spine_budget_tokens is not None:
+        if args.simple_spine_budget_usd is not None:
             ap.error("--simple-spine-budget-tokens is only valid with --variant simple_spine")
         if args.budget is None:
             ap.error("--variant orch requires --budget <int>")
@@ -407,7 +407,7 @@ def main() -> None:
             reflect_prompt_path=args.reflect_prompt_path,
             verdict_prompt_path=args.verdict_prompt_path,
             simple_spine_config_name=args.simple_spine_config_name,
-            simple_spine_budget_tokens=args.simple_spine_budget_tokens,
+            simple_spine_budget_usd=args.simple_spine_budget_usd,
         )
     )
 

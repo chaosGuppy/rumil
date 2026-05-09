@@ -231,7 +231,7 @@ def _make_workflow_and_task(
     workflow_name: str,
     *,
     budget: int | None = None,
-    budget_tokens: int | None = None,
+    budget_usd: int | None = None,
     extra_kwargs: dict[str, Any] | None = None,
     artifacts: Mapping[str, str] | None = None,
 ) -> tuple[Any, CompleteEssayTask]:
@@ -240,7 +240,7 @@ def _make_workflow_and_task(
     Pulls the registered workflow class + defaults from
     :data:`WORKFLOW_REGISTRY` and merges the runtime budget arg plus
     any caller-supplied ``extra_kwargs`` (e.g. from ``--workflow-arg``).
-    Routes to ``budget_tokens=`` for token-budget workflows
+    Routes to ``budget_usd=`` for token-budget workflows
     (:data:`TOKEN_BUDGET_WORKFLOWS`) and to ``budget=`` for the rest.
     ``artifacts`` is forwarded only to SimpleSpine (the only registered
     workflow whose ``__init__`` accepts it) so subroutines that declare
@@ -316,7 +316,7 @@ def _plan_pending(
     workflow_name: str,
     model: str,
     budget: int | None,
-    budget_tokens: int | None,
+    budget_usd: int | None,
     prefix_cfg: config.PrefixCfg,
     workspace_id: str,
     workspace_state_hash: str,
@@ -336,7 +336,7 @@ def _plan_pending(
     workflow, task = _make_workflow_and_task(
         workflow_name,
         budget=budget,
-        budget_tokens=budget_tokens,
+        budget_usd=budget_tokens,
         extra_kwargs=workflow_kwargs,
     )
     mc = get_model_config(model, cfg=cfg)
@@ -393,7 +393,7 @@ async def run_orch_completion(
     workflow_name: str,
     model: str,
     budget: int | None = None,
-    budget_tokens: int | None = None,
+    budget_usd: int | None = None,
     prefix_cfg: config.PrefixCfg,
     limit: int | None = None,
     dry_run: bool = False,
@@ -439,7 +439,7 @@ async def run_orch_completion(
         workflow_name=workflow_name,
         model=model,
         budget=budget,
-        budget_tokens=budget_tokens,
+        budget_usd=budget_tokens,
         prefix_cfg=prefix_cfg,
         workspace_id=ws_short,
         workspace_state_hash=workspace_state_hash,
@@ -454,7 +454,7 @@ async def run_orch_completion(
 
     effective_concurrency = concurrency if concurrency is not None else 1
     budget_label = (
-        f"budget_tokens={budget_tokens}"
+        f"budget_usd={budget_tokens}"
         if workflow_name in TOKEN_BUDGET_WORKFLOWS
         else f"budget={budget}"
     )
@@ -505,7 +505,7 @@ async def run_orch_completion(
                 workflow, task = _make_workflow_and_task(
                     workflow_name,
                     budget=budget,
-                    budget_tokens=budget_tokens,
+                    budget_usd=budget_tokens,
                     extra_kwargs=workflow_kwargs,
                     artifacts=completion_artifacts,
                 )

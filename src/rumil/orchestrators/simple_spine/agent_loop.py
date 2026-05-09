@@ -5,7 +5,7 @@ Wraps :func:`rumil.llm.call_anthropic_api` to:
 - run a tool-using loop with arbitrary :class:`rumil.llm.Tool` instances
 - record token usage onto a :class:`BudgetClock`
 - stop when the model emits no tool calls, hits ``max_rounds``, or the
-  budget clock reports tokens_exhausted (caller still drains the final
+  budget clock reports cost_exhausted (caller still drains the final
   response)
 
 Distinct from :func:`rumil.calls.common.run_agent_loop` which requires
@@ -88,7 +88,7 @@ class ThinLoopResult:
     messages: list[dict]
     tool_calls: list[ToolCall]
     rounds: int
-    stopped_because: str  # "no_tool_calls" | "max_rounds" | "tokens_exhausted"
+    stopped_because: str  # "no_tool_calls" | "max_rounds" | "cost_exhausted"
 
 
 async def thin_agent_loop(
@@ -153,8 +153,7 @@ async def thin_agent_loop(
         response = api_resp.message
         usage = response.usage
         if usage is not None:
-            total = (usage.input_tokens or 0) + (usage.output_tokens or 0)
-            budget_clock.record_tokens(total)
+            budget_clock.record_exchange(usage, model)
 
         text_parts: list[str] = []
         tool_uses: list[ToolUseBlock] = []
@@ -231,15 +230,15 @@ async def thin_agent_loop(
                 f"[budget] {budget_clock.render_for_prompt()}"
                 + (
                     "\n[budget] Token cap exhausted — produce your final output now."
-                    if budget_clock.tokens_exhausted
+                    if budget_clock.cost_exhausted
                     else ""
                 )
             ),
         }
         messages.append({"role": "user", "content": [*tool_results, budget_block]})
 
-        if budget_clock.tokens_exhausted:
-            stopped_because = "tokens_exhausted"
+        if budget_clock.cost_exhausted:
+            stopped_because = "cost_exhausted"
             break
     else:
         stopped_because = "max_rounds"

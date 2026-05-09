@@ -102,7 +102,7 @@ class SimpleSpineWorkflow:
     def __init__(
         self,
         *,
-        budget_tokens: int,
+        budget_usd: float,
         config_name: str = "default",
         call_type: str = "complete",
         wall_clock_soft_s: float | None = None,
@@ -114,11 +114,11 @@ class SimpleSpineWorkflow:
     ) -> None:
         """Construct a SimpleSpine workflow.
 
-        ``budget_tokens`` is the raw token cap on the run — the only
-        thing that terminates it. SimpleSpine's budget primitive is
-        tokens, not the rumil "budget unit" used by other orchs (one
-        rumil call vs. one shared token pool), so we keep the names
-        distinct: pass `budget_tokens=200_000` for a 200k-token cap.
+        ``budget_usd`` is the hard cost cap on the run — the only thing
+        that terminates it. Counts input + output + cache_create +
+        cache_read at per-model rates from ``pricing.json``, so cache
+        spend (which dominates real cost on long runs) is properly
+        bounded. Pass `budget_usd=5.0` for a $5 cap.
 
         ``config_name`` resolves a named :class:`SimpleSpineConfig` via
         :func:`rumil.orchestrators.simple_spine.presets.get_preset`.
@@ -127,22 +127,24 @@ class SimpleSpineWorkflow:
         """
         from rumil.orchestrators.simple_spine.presets import get_preset
 
-        if "budget" in deprecated_kwargs or "tokens_per_round" in deprecated_kwargs:
+        if (
+            "budget" in deprecated_kwargs
+            or "tokens_per_round" in deprecated_kwargs
+            or "budget_tokens" in deprecated_kwargs
+        ):
             raise TypeError(
-                "SimpleSpineWorkflow no longer accepts `budget` / "
-                "`tokens_per_round`; pass `budget_tokens=<int>` directly. "
-                "The unit-based budget (budget × tokens_per_round) was "
-                "removed because SimpleSpine's hard cap is a token count, "
-                "unlike other orchs whose `budget` counts research calls."
+                "SimpleSpineWorkflow now uses `budget_usd=<float>` "
+                "(USD cost cap) instead of `budget_tokens` / `budget` / "
+                "`tokens_per_round`. Token-budgeting under-counted "
+                "cache_create spend; cost-budgeting closes that gap."
             )
         if deprecated_kwargs:
             raise TypeError(f"unexpected kwargs: {sorted(deprecated_kwargs)}")
-        if budget_tokens < 1000:
-            raise ValueError(f"budget_tokens must be >= 1000, got {budget_tokens}")
+        if budget_usd <= 0:
+            raise ValueError(f"budget_usd must be > 0, got {budget_usd}")
         if call_type not in ("complete", "judge"):
             raise ValueError(f"call_type must be 'complete' or 'judge', got {call_type!r}")
-        self.budget_tokens = budget_tokens
-        self.max_tokens = budget_tokens
+        self.budget_usd = budget_usd
         self.config_name = config_name
         self.config = get_preset(config_name)
         self.call_type_str = call_type
@@ -159,13 +161,13 @@ class SimpleSpineWorkflow:
         # this directly when produces_artifact=True.
         self.last_artifact: str = ""
 
-    def fingerprint(self) -> Mapping[str, str | int | bool | None]:
+    def fingerprint(self) -> Mapping[str, str | int | float | bool | None]:
         return {
             "kind": self.name,
             "call_type": self.call_type_str,
             "config_name": self.config_name,
             "config_fingerprint": self.config.fingerprint,
-            "budget_tokens": self.budget_tokens,
+            "budget_usd": self.budget_usd,
             "wall_clock_soft_s": (int(self.wall_clock_soft_s) if self.wall_clock_soft_s else None),
             "operating_assumptions_hash": sha8(self.operating_assumptions),
             "output_guidance_hash": sha8(self.output_guidance),
@@ -212,7 +214,7 @@ class SimpleSpineWorkflow:
             output_guidance=self.output_guidance,
             output_schema=None,
             budget=BudgetSpec(
-                max_tokens=self.max_tokens,
+                max_cost_usd=self.budget_usd,
                 wall_clock_soft_s=self.wall_clock_soft_s,
             ),
             artifacts=dict(self.artifacts),

@@ -346,7 +346,7 @@ def main() -> None:
                     workflow_name=args.orch,
                     model=model_id,
                     budget=args.budget,
-                    budget_tokens=args.budget_tokens,
+                    budget_usd=args.budget_tokens,
                     prefix_cfg=prefix_cfg,
                     limit=args.limit,
                     dry_run=args.dry_run,

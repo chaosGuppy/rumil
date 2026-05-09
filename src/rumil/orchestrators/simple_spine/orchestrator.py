@@ -39,7 +39,6 @@ from rumil.database import DB
 from rumil.llm import (
     LLMExchangeMetadata,
     Tool,
-    _aggregate_usage_tokens,
     call_anthropic_api,
     structured_call,
     text_call,
@@ -142,7 +141,7 @@ class SimpleSpineOrchestrator:
                 "orchestrator": "simple_spine",
                 "fingerprint": self.config.fingerprint_short,
                 "fingerprint_full": self.config.fingerprint,
-                "max_tokens": clock.spec.max_tokens,
+                "max_cost_usd": clock.spec.max_cost_usd,
                 "wall_clock_soft_s": clock.spec.wall_clock_soft_s,
                 "library": [s.name for s in self.config.process_library],
             },
@@ -158,7 +157,7 @@ class SimpleSpineOrchestrator:
                     "question_id": inputs.question_id,
                     "parent_call_id": parent_call_id,
                     "fingerprint": self.config.fingerprint_short,
-                    "max_tokens": clock.spec.max_tokens,
+                    "max_cost_usd": clock.spec.max_cost_usd,
                     "library": [s.name for s in self.config.process_library],
                 },
             )
@@ -279,17 +278,17 @@ class SimpleSpineOrchestrator:
                 await trace.record(
                     SpineRoundStartedEvent(
                         round_idx=round_idx,
-                        tokens_used=clock.tokens_used,
-                        tokens_remaining=clock.tokens_remaining,
+                        cost_usd_used=clock.cost_usd_used,
+                        cost_usd_remaining=clock.cost_usd_remaining,
                         elapsed_s=clock.elapsed_s,
                     )
                 )
-                if clock.tokens_exhausted:
+                if clock.cost_exhausted:
                     messages.append(
                         {
                             "role": "user",
                             "content": (
-                                "[system] Token budget exhausted. Call `finalize` "
+                                "[system] Cost budget exhausted. Call `finalize` "
                                 "now with the best answer you can synthesize from "
                                 "the work so far. No further spawns will run."
                             ),
@@ -325,12 +324,11 @@ class SimpleSpineOrchestrator:
                 response = api_resp.message
                 usage = response.usage
                 if usage is not None:
-                    # Aggregate across compaction iterations: when compaction
-                    # fires the API runs an extra summarisation iteration whose
-                    # tokens are NOT in top-level usage. Without aggregation the
-                    # budget clock under-counts (and compaction looks free).
-                    agg_in, agg_out = _aggregate_usage_tokens(usage)
-                    clock.record_tokens(agg_in + agg_out)
+                    # record_exchange folds in compaction-iteration tokens
+                    # internally and computes USD via pricing.compute_cost,
+                    # so all four token classes (input, output, cache_create,
+                    # cache_read) hit the budget at their per-model rates.
+                    clock.record_exchange(usage, self.config.main_model)
 
                 assistant_text = ""
                 tool_uses: list[ToolUseBlock] = []
@@ -356,7 +354,7 @@ class SimpleSpineOrchestrator:
                 )
 
                 if not tool_uses:
-                    if clock.tokens_exhausted and self.config.force_finalize_on_token_exhaustion:
+                    if clock.cost_exhausted and self.config.force_finalize_on_token_exhaustion:
                         finalize_state["answer"] = assistant_text.strip()
                         finalize_state["synthesized"] = True
                         finalize_reason = "token_exhaustion_synthesized"
@@ -424,7 +422,7 @@ class SimpleSpineOrchestrator:
                             )
                         )
 
-                if kept_spawn_uses and not clock.tokens_exhausted:
+                if kept_spawn_uses and not clock.cost_exhausted:
                     spawn_results = await asyncio.gather(
                         *[
                             self._run_spawn(
@@ -456,7 +454,7 @@ class SimpleSpineOrchestrator:
                             )
                         else:
                             tool_results.append(_tool_result(tu.id, res.text_summary))
-                elif kept_spawn_uses and clock.tokens_exhausted:
+                elif kept_spawn_uses and clock.cost_exhausted:
                     for tu in kept_spawn_uses:
                         tool_results.append(
                             _tool_result_error(
@@ -477,7 +475,7 @@ class SimpleSpineOrchestrator:
                             f"[budget] {clock.render_for_prompt()}"
                             + (
                                 "\n[budget] Token cap exhausted — finalize on your next turn."
-                                if clock.tokens_exhausted
+                                if clock.cost_exhausted
                                 else ""
                             )
                         ),
@@ -513,7 +511,8 @@ class SimpleSpineOrchestrator:
             call,
             self.db,
             summary=(
-                f"simple_spine: {last_status} (tokens={clock.tokens_used}, spawns={spawn_count})"
+                f"simple_spine: {last_status} "
+                f"(cost=${clock.cost_usd_used:.2f}, spawns={spawn_count})"
             ),
         )
 
@@ -523,7 +522,7 @@ class SimpleSpineOrchestrator:
             fingerprint=self.config.fingerprint,
             call_id=call.id,
             spawn_count=spawn_count,
-            tokens_used=clock.tokens_used,
+            cost_usd_used=clock.cost_usd_used,
             elapsed_s=clock.elapsed_s,
             finalize_reason=finalize_reason,
             last_status=last_status,
@@ -650,8 +649,8 @@ class SimpleSpineOrchestrator:
         # default carves a child from the parent (record_tokens still
         # bubbles up so the run-level cap is enforced); CallType returns
         # the parent because its LLM calls bypass the SimpleSpine clock.
-        raw_cap = tu.input.get("token_cap") if "token_cap" in sub.overridable else None
-        override_cap = int(raw_cap) if isinstance(raw_cap, (int, str)) else None
+        raw_cap = tu.input.get("cost_cap_usd") if "cost_cap_usd" in sub.overridable else None
+        override_cap = float(raw_cap) if isinstance(raw_cap, (int, float, str)) else None
         spawn_clock = sub.carve_spawn_clock(clock, override_cap=override_cap)
         ctx = SpawnCtx(
             db=self.db,
@@ -676,7 +675,7 @@ class SimpleSpineOrchestrator:
                 round_idx=round_idx,
                 trace=trace,
             )
-        tokens_before = spawn_clock.tokens_used
+        cost_before = spawn_clock.cost_usd_used
         try:
             result = await sub.run(ctx, tu.input)
         except Exception as e:
@@ -690,7 +689,7 @@ class SimpleSpineOrchestrator:
                 )
             )
             raise
-        tokens_consumed = max(spawn_clock.tokens_used - tokens_before, 0)
+        cost_consumed = max(spawn_clock.cost_usd_used - cost_before, 0.0)
         # Fold produces into the store. Empty sub-key → <name>/<spawn_id_short>;
         # non-empty sub-key → <name>/<spawn_id_short>/<sub_key>. Skip
         # empty-text entries (no point announcing a key with no content).
@@ -712,13 +711,12 @@ class SimpleSpineOrchestrator:
         )
         result = SubroutineResult(
             text_summary=(
-                f"[spawn cost: {tokens_consumed:,} tokens]\n"
-                f"{result.text_summary}{announcement_block}"
+                f"[spawn cost: ${cost_consumed:.3f}]\n{result.text_summary}{announcement_block}"
             ),
-            tokens_used=result.tokens_used,
+            cost_usd_used=result.cost_usd_used,
             extra={
                 **dict(result.extra),
-                "tokens_consumed": tokens_consumed,
+                "cost_usd_consumed": cost_consumed,
                 "produced_artifact_keys": new_keys,
             },
             produces=dict(result.produces),

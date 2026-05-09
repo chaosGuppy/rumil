@@ -77,13 +77,13 @@ subroutines:
     # long-essay traces — 125k-char pair_text gives plenty for the read
     # to develop). Realistic output is 6–10k; this is headroom.
     max_tokens: 32000
-    overridable: [intent, additional_context, token_cap]
+    overridable: [intent, additional_context, cost_cap_usd]
     consumes: [pair_text, rubric]
     # 80k floor: per-call worst-case ≈ input(~30k pair_text + rubric)
     # + max_tokens(32k) ≈ 62k. Historical 8k under-counted the input
     # side and made the soft budget signal misleading (spawn routinely
     # blew past cap). 80k matches the cross-preset floor.
-    base_token_cap: 80000
+    base_cost_cap_usd: 1.00
     cost_hint: "≈ 1 turn @ up to 32k out (~6–12k typical, peak 40k)"
     intent_description: >
       What aspect of the pair to emphasize in the initial read (e.g.
@@ -124,7 +124,7 @@ subroutines:
     # include_artifacts=[pair_notes], per-sample input is ~30k tokens
     # for long essays; output is typically 4–8k.
     max_tokens: 32000
-    overridable: [intent, n, additional_context, token_cap]
+    overridable: [intent, n, additional_context, cost_cap_usd]
     consumes: [pair_text, rubric]
     # 110k spawn cap = 2 × (input_estimate + max_tokens) with headroom.
     # Per-sample worst-case ≈ input(~18–30k) + max_tokens(32k) ≈ 50k;
@@ -133,7 +133,7 @@ subroutines:
     # 40k cap, both samples skipped with per_sample_worst_tokens=50387,
     # mainline burned a retry round bumping cap to 60k + dropping n to
     # 1). Sized for n=2 by default so mainline doesn't have to override.
-    base_token_cap: 110000
+    base_cost_cap_usd: 1.00
     cost_hint: "≈ N parallel turns @ up to 32k out each (~6–10k typical per sample)"
     intent_description: >
       Which side to steelman: 'A' or 'B'. Anything else falls through

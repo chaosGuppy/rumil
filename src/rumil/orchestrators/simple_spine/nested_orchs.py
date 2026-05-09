@@ -59,7 +59,7 @@ def list_orch_factories() -> list[str]:
 
 
 async def _simple_spine_recurse(
-    ctx: SpawnCtx, sub_token_cap: int, overrides: Mapping[str, Any]
+    ctx: SpawnCtx, sub_cost_cap_usd: float, overrides: Mapping[str, Any]
 ) -> str:
     """Recurse into a named SimpleSpine preset under a carved sub-clock.
 
@@ -76,7 +76,7 @@ async def _simple_spine_recurse(
     - ``intent`` (required by base schema): freeform investigative steer
     - ``output_guidance``, ``output_schema``: shape the deliverable
     - ``additional_context``: extra framing for the child orch
-    - ``token_cap``: override the static base cap
+    - ``cost_cap_usd``: override the static base cap
     - ``preset_name``: which preset to recurse into (defaults to
       ``default``)
 
@@ -154,7 +154,7 @@ async def _simple_spine_recurse(
     model_override = get_settings().simple_spine_model_override
     if model_override:
         sub_cfg = apply_model_override(sub_cfg, model_override)
-    sub_clock = ctx.budget_clock.carve_child(sub_token_cap)
+    sub_clock = ctx.budget_clock.carve_child(sub_cost_cap_usd)
     # Explicit `output_guidance` wins; fall back to `intent` for the
     # historical "intent doubles as guidance" behavior so callers that
     # only pass `intent` keep working.
@@ -178,7 +178,7 @@ async def _simple_spine_recurse(
 
 
 async def _simple_spine_self(
-    ctx: SpawnCtx, sub_token_cap: int, overrides: Mapping[str, Any]
+    ctx: SpawnCtx, sub_cost_cap_usd: float, overrides: Mapping[str, Any]
 ) -> str:
     """Recurse into the same preset that the parent orch is running.
 
@@ -188,7 +188,7 @@ async def _simple_spine_self(
     pass ``preset_name`` explicitly via the SubroutineDef's static
     config; if absent, falls back to ``default``.
     """
-    return await _simple_spine_recurse(ctx, sub_token_cap, overrides)
+    return await _simple_spine_recurse(ctx, sub_cost_cap_usd, overrides)
 
 
 def _register_builtins() -> None:

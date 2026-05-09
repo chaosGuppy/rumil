@@ -74,18 +74,18 @@ class CallTypeSubroutine(SubroutineBase):
         return parent
 
     def __post_init__(self) -> None:
-        if self.base_token_cap is not None:
+        if self.base_cost_cap_usd is not None:
             raise ValueError(
-                f"CallTypeSubroutine {self.name!r}: base_token_cap is "
+                f"CallTypeSubroutine {self.name!r}: base_cost_cap_usd is "
                 "inert on call_type kinds — the wrapped CallRunner makes "
                 "LLM calls through a path that doesn't tap the SimpleSpine "
                 "BudgetClock; budgeting is via init_budget on the staged "
-                "sub-DB. Drop base_token_cap from this entry."
+                "sub-DB. Drop base_cost_cap_usd from this entry."
             )
-        if "token_cap" in self.overridable:
+        if "cost_cap_usd" in self.overridable:
             raise ValueError(
-                f"CallTypeSubroutine {self.name!r}: 'token_cap' in "
-                "overridable is inert (see base_token_cap). Drop it."
+                f"CallTypeSubroutine {self.name!r}: 'cost_cap_usd' in "
+                "overridable is inert (see base_cost_cap_usd). Drop it."
             )
         if self.consumes:
             raise ValueError(

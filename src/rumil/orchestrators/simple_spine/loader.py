@@ -45,8 +45,8 @@ subroutines:
     response_validator: extract_preference_not_none   # optional, registry key
     retry_message_path: prompts/<retry-message>.md  # required if validator set
     response_max_retries: 2     # optional, default 1
-    base_token_cap: 8000        # optional; enables `token_cap` override on
-                                 # the spawn schema (when `token_cap` is in
+    base_cost_cap_usd: 8000        # optional; enables `cost_cap_usd` override on
+                                 # the spawn schema (when `cost_cap_usd` is in
                                  # `overridable`). Carved via carve_child so
                                  # the spawn cannot exceed this without
                                  # adding extra budget.
@@ -79,7 +79,7 @@ subroutines:
     max_tokens: 2048
     overridable: [intent, n]
     inherit_assumptions: false  # optional, default true
-    # base_token_cap, cost_hint, intent_description,
+    # base_cost_cap_usd, cost_hint, intent_description,
     # additional_context_description — same as freeform_agent above.
 ```
 
@@ -267,7 +267,7 @@ def _base_field_kwargs(entry: dict[str, Any]) -> dict[str, Any]:
 
     Single source for loading the cross-cutting fields shared by every
     subroutine kind (overridable, cost_hint, intent_description,
-    additional_context_description, inherit_assumptions, base_token_cap).
+    additional_context_description, inherit_assumptions, base_cost_cap_usd).
     Used by every kind's loader so YAML field handling is uniform —
     adding a field to SubroutineBase requires editing only this helper.
     """
@@ -276,8 +276,8 @@ def _base_field_kwargs(entry: dict[str, Any]) -> dict[str, Any]:
         out["overridable"] = frozenset(entry["overridable"])
     if "inherit_assumptions" in entry:
         out["inherit_assumptions"] = bool(entry["inherit_assumptions"])
-    if "base_token_cap" in entry:
-        out["base_token_cap"] = int(entry["base_token_cap"])
+    if "base_cost_cap_usd" in entry:
+        out["base_cost_cap_usd"] = int(entry["base_cost_cap_usd"])
     if "cost_hint" in entry:
         out["cost_hint"] = str(entry["cost_hint"])
     if "intent_description" in entry:
@@ -392,11 +392,11 @@ def _load_nested_orch(entry: dict[str, Any], source: Path) -> NestedOrchSubrouti
             "`orch_factory_key` (string registry key in nested_orchs.py)"
         )
     factory = get_orch_factory(key)
-    base_token_cap = entry.get("base_token_cap")
-    if base_token_cap is None:
+    base_cost_cap_usd = entry.get("base_cost_cap_usd")
+    if base_cost_cap_usd is None:
         raise ValueError(
             f"{source}: nested_orch subroutine {entry.get('name')!r} requires "
-            "`base_token_cap` (default token sub-cap when not overridden)"
+            "`base_cost_cap_usd` (default token sub-cap when not overridden)"
         )
     kwargs: dict[str, Any] = {
         "name": entry["name"],
@@ -404,10 +404,10 @@ def _load_nested_orch(entry: dict[str, Any], source: Path) -> NestedOrchSubrouti
         "orch_kind": key,
         "factory": factory,
         **_base_field_kwargs(entry),
-        # base_token_cap is required for nested_orch (validated above);
+        # base_cost_cap_usd is required for nested_orch (validated above);
         # _base_field_kwargs would only set it if present in YAML, so set
         # the cast int here unconditionally to override its None default.
-        "base_token_cap": int(base_token_cap),
+        "base_cost_cap_usd": int(base_cost_cap_usd),
     }
     return NestedOrchSubroutine(**kwargs)
 

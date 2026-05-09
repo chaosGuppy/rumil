@@ -118,7 +118,7 @@ async def test_run_spawn_invalid_include_artifact_raises():
     sub = _FakeSub(name="fake", description="d")
     orch = _orch_with(sub)
     store = ArtifactStore(seed={"pair_text": "P"})
-    clock = BudgetClock(spec=BudgetSpec(max_tokens=1_000_000))
+    clock = BudgetClock(spec=BudgetSpec(max_cost_usd=1_000_000))
     tu = _spawn_tu("fake", intent="x", include_artifacts=["nonexistent"])
     with pytest.raises(ValueError, match="nonexistent"):
         await orch._run_spawn(
@@ -143,7 +143,7 @@ async def test_run_spawn_invalid_include_artifacts_type_raises():
     sub = _FakeSub(name="fake", description="d")
     orch = _orch_with(sub)
     store = ArtifactStore()
-    clock = BudgetClock(spec=BudgetSpec(max_tokens=1_000_000))
+    clock = BudgetClock(spec=BudgetSpec(max_cost_usd=1_000_000))
     tu = _spawn_tu("fake", intent="x", include_artifacts="not-a-list")
     with pytest.raises(ValueError, match="must be a list"):
         await orch._run_spawn(
@@ -172,7 +172,7 @@ async def test_run_spawn_folds_produces_under_namespaced_key():
     )
     orch = _orch_with(sub)
     store = ArtifactStore()
-    clock = BudgetClock(spec=BudgetSpec(max_tokens=1_000_000))
+    clock = BudgetClock(spec=BudgetSpec(max_cost_usd=1_000_000))
     tu = _spawn_tu("pair_notes", intent="x")
     result = await orch._run_spawn(
         tu,
@@ -210,7 +210,7 @@ async def test_run_spawn_folds_multi_key_produces():
     )
     orch = _orch_with(sub)
     store = ArtifactStore()
-    clock = BudgetClock(spec=BudgetSpec(max_tokens=1_000_000))
+    clock = BudgetClock(spec=BudgetSpec(max_cost_usd=1_000_000))
     tu = _spawn_tu("steelman", intent="A")
     result = await orch._run_spawn(
         tu,
@@ -246,7 +246,7 @@ async def test_run_spawn_skips_empty_produces_text():
     )
     orch = _orch_with(sub)
     store = ArtifactStore()
-    clock = BudgetClock(spec=BudgetSpec(max_tokens=1_000_000))
+    clock = BudgetClock(spec=BudgetSpec(max_cost_usd=1_000_000))
     tu = _spawn_tu("freeform", intent="x")
     result = await orch._run_spawn(
         tu,
@@ -281,7 +281,7 @@ async def test_run_spawn_appends_announcement_to_text_summary():
     )
     orch = _orch_with(sub)
     store = ArtifactStore()
-    clock = BudgetClock(spec=BudgetSpec(max_tokens=1_000_000))
+    clock = BudgetClock(spec=BudgetSpec(max_cost_usd=1_000_000))
     tu = _spawn_tu("pair_notes", intent="x")
     result = await orch._run_spawn(
         tu,
@@ -321,7 +321,7 @@ async def test_run_spawn_threads_artifacts_into_spawn_ctx():
     sub = _CapturingSub(name="cap", description="d")
     orch = _orch_with(sub)
     store = ArtifactStore(seed={"pair_text": "P", "rubric": "R"})
-    clock = BudgetClock(spec=BudgetSpec(max_tokens=1_000_000))
+    clock = BudgetClock(spec=BudgetSpec(max_cost_usd=1_000_000))
     tu = _spawn_tu("cap", intent="x", include_artifacts=["pair_text"])
     await orch._run_spawn(
         tu,

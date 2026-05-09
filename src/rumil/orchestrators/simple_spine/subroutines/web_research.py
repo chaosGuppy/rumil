@@ -319,8 +319,10 @@ class WebResearchSubroutine(SubroutineBase):
         messages: list[dict] = [{"role": "user", "content": user_message}]
         spawn_clock = resolve_spawn_clock(
             ctx.budget_clock,
-            base_cap=self.base_token_cap,
-            override_cap=overrides.get("token_cap") if "token_cap" in self.overridable else None,
+            base_cap=self.base_cost_cap_usd,
+            override_cap=overrides.get("cost_cap_usd")
+            if "cost_cap_usd" in self.overridable
+            else None,
         )
         result = await thin_agent_loop(
             system_prompt=sys_prompt,

@@ -37,27 +37,27 @@ def _spawn_ctx(
     artifacts: ArtifactStore | None = None,
     include: tuple[str, ...] = (),
     operating_assumptions: str = "",
-    tokens_remaining: int = 1_000_000,
+    cost_usd_remaining: float = 1_000_000.0,
 ):
     """Minimal SpawnCtx for subroutine.run() — clock + broadcaster stubbed.
 
-    ``tokens_remaining`` controls what the spawn-scoped clock reports.
+    ``cost_usd_remaining`` controls what the spawn-scoped clock reports.
     Subroutine kinds read ``ctx.budget_clock`` directly (carving happens
     in the orchestrator before SpawnCtx construction), so set this to a
     small value to drive sample_n's affordability check into the
     skip-all-samples branch.
     """
     clock = MagicMock()
-    clock.tokens_remaining = tokens_remaining
-    clock.tokens_used = 0
-    clock.tokens_exhausted = False
+    clock.cost_usd_remaining = cost_usd_remaining
+    clock.cost_usd_used = 0
+    clock.cost_exhausted = False
     clock.record_tokens = MagicMock()
 
     def _carve_child(cap):
         child = MagicMock()
-        child.tokens_remaining = cap
-        child.tokens_used = 0
-        child.tokens_exhausted = False
+        child.cost_usd_remaining = cap
+        child.cost_usd_used = 0
+        child.cost_exhausted = False
         child.record_tokens = MagicMock()
         return child
 
@@ -120,7 +120,7 @@ def test_nested_orch_rejects_consumes_in_post_init():
             description="d",
             orch_kind="simple_spine",
             factory=factory,
-            base_token_cap=10_000,
+            base_cost_cap_usd=10_000,
             consumes=("pair_text",),
         )
 
@@ -132,7 +132,7 @@ def test_nested_orch_skips_include_artifacts_in_schema():
         description="d",
         orch_kind="simple_spine",
         factory=factory,
-        base_token_cap=10_000,
+        base_cost_cap_usd=10_000,
     )
     schema = sub.spawn_tool_schema()
     assert "include_artifacts" not in schema["properties"]
@@ -145,7 +145,7 @@ def test_nested_orch_exposes_output_guidance_and_schema_by_default():
         description="d",
         orch_kind="simple_spine",
         factory=factory,
-        base_token_cap=10_000,
+        base_cost_cap_usd=10_000,
     )
     props = sub.spawn_tool_schema()["properties"]
     assert "output_guidance" in props
@@ -162,7 +162,7 @@ def test_nested_orch_overridable_opt_out_hides_output_fields():
         description="d",
         orch_kind="simple_spine",
         factory=factory,
-        base_token_cap=10_000,
+        base_cost_cap_usd=10_000,
         overridable=frozenset({"intent", "additional_context"}),
     )
     props = sub.spawn_tool_schema()["properties"]
@@ -235,7 +235,7 @@ async def test_simple_spine_recurse_threads_output_overrides_into_orch_inputs(mo
     schema = {"type": "object", "properties": {"verdict": {"type": "string"}}}
     out = await nested_mod._simple_spine_recurse(
         ctx,
-        sub_token_cap=5000,
+        sub_cost_cap_usd=5000,
         overrides={
             "question_headline": "Does X imply Y?",
             "intent": "investigate the claim",
@@ -267,7 +267,7 @@ async def test_simple_spine_recurse_creates_and_links_child_question(mocker):
     ctx = _spawn_ctx(db=db)
     await nested_mod._simple_spine_recurse(
         ctx,
-        sub_token_cap=5000,
+        sub_cost_cap_usd=5000,
         overrides={
             "question_headline": "How does the X mechanism scale?",
             "question_content": "Focus on regimes above 10^6 tokens.",
@@ -305,7 +305,7 @@ async def test_simple_spine_recurse_falls_back_intent_to_output_guidance(mocker)
     ctx = _spawn_ctx(db=db)
     await nested_mod._simple_spine_recurse(
         ctx,
-        sub_token_cap=5000,
+        sub_cost_cap_usd=5000,
         overrides={"question_headline": "q?", "intent": "go deep"},
     )
     assert captured["sub_inputs"].output_guidance == "go deep"
@@ -322,7 +322,9 @@ async def test_simple_spine_recurse_requires_question_headline(mocker):
     db = _recurse_db_mock(mocker)
     ctx = _spawn_ctx(db=db)
     with pytest.raises(ValueError, match=r"question_headline.*required"):
-        await nested_mod._simple_spine_recurse(ctx, sub_token_cap=5000, overrides={"intent": "x"})
+        await nested_mod._simple_spine_recurse(
+            ctx, sub_cost_cap_usd=5000, overrides={"intent": "x"}
+        )
 
 
 @pytest.mark.asyncio
@@ -337,7 +339,7 @@ async def test_simple_spine_recurse_rejects_non_dict_output_schema(mocker):
     with pytest.raises(ValueError, match=r"output_schema.*must be a JSON Schema dict"):
         await nested_mod._simple_spine_recurse(
             ctx,
-            sub_token_cap=5000,
+            sub_cost_cap_usd=5000,
             overrides={
                 "question_headline": "q?",
                 "intent": "x",
@@ -352,14 +354,14 @@ def test_freeform_and_sample_n_expose_include_artifacts_in_schema():
         description="d",
         sys_prompt="sys",
         user_prompt_template="user {intent} {additional_context}",
-        model="claude-haiku-4-5",
+        model="claude-haiku-4-5-20251001",
     )
     s = SampleNSubroutine(
         name="sample",
         description="d",
         sys_prompt="sys",
         user_prompt_template="user {intent} {additional_context}",
-        model="claude-haiku-4-5",
+        model="claude-haiku-4-5-20251001",
     )
     assert "include_artifacts" in f.spawn_tool_schema()["properties"]
     assert "include_artifacts" in s.spawn_tool_schema()["properties"]
@@ -396,7 +398,7 @@ async def test_freeform_agent_prepends_artifact_block_and_produces_final_text(mo
         description="d",
         sys_prompt="SYS",
         user_prompt_template="## Intent\n{intent}\n",
-        model="claude-haiku-4-5",
+        model="claude-haiku-4-5-20251001",
         consumes=("pair_text", "rubric"),
     )
     ctx = _spawn_ctx(db=MagicMock(), artifacts=store)
@@ -442,7 +444,7 @@ async def test_freeform_agent_no_consumes_no_block_no_produces_change(mocker):
         description="d",
         sys_prompt="SYS",
         user_prompt_template="user prompt: {intent}",
-        model="claude-haiku-4-5",
+        model="claude-haiku-4-5-20251001",
     )
     ctx = _spawn_ctx(db=MagicMock())  # no artifacts
     await sub.run(ctx, {"intent": "anything"})
@@ -492,7 +494,7 @@ async def test_sample_n_prepends_artifact_block_and_produces_joined_body(mocker)
         description="d",
         sys_prompt="SYS",
         user_prompt_template="## Intent\n{intent}\n",
-        model="claude-haiku-4-5",
+        model="claude-haiku-4-5-20251001",
         n=2,
         max_tokens=2048,
         consumes=("pair_text", "rubric"),
@@ -522,7 +524,7 @@ async def test_sample_n_no_completions_no_produces_entry(mocker):
     mocker.patch.object(Settings, "require_anthropic_key", return_value="sk-fake")
     # Force the spawn clock to have ~0 remaining so the affordability
     # check skips all N. The orchestrator does the carving now, so the
-    # test stubs the budget_clock directly with tokens_remaining=1.
+    # test stubs the budget_clock directly with cost_usd_remaining=1.
     mocker.patch(
         "rumil.orchestrators.simple_spine.subroutines.sample_n.call_anthropic_api",
         new=AsyncMock(),  # never awaited because affordability skips all
@@ -533,12 +535,14 @@ async def test_sample_n_no_completions_no_produces_entry(mocker):
         description="d",
         sys_prompt="SYS",
         user_prompt_template="user {intent}",
-        model="claude-haiku-4-5",
+        model="claude-haiku-4-5-20251001",
         n=3,
         max_tokens=4096,
-        base_token_cap=1,
+        base_cost_cap_usd=0.001,
     )
-    ctx = _spawn_ctx(db=MagicMock(), tokens_remaining=1)
+    # Per-sample worst-cost on haiku is ≈ $0.02 (4096 output * $5/MTok); a
+    # 0.001 USD cap forces affordability to skip every sample.
+    ctx = _spawn_ctx(db=MagicMock(), cost_usd_remaining=0.001)
     result = await sub.run(ctx, {"intent": "x"})
     assert result.produces == {}
     assert result.extra["samples_run"] == 0

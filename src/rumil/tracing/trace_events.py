@@ -597,8 +597,8 @@ class ScoutPassEvent(BaseModel):
 class SpineRoundStartedEvent(BaseModel):
     event: Literal["spine_round_started"] = "spine_round_started"
     round_idx: int
-    tokens_used: int
-    tokens_remaining: int
+    cost_usd_used: float
+    cost_usd_remaining: float
     elapsed_s: float
 
 

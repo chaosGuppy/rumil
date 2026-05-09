@@ -79,24 +79,23 @@ def splice_assumptions(sys_prompt: str, operating_assumptions: str) -> str:
 def resolve_spawn_clock(
     parent: BudgetClock,
     *,
-    base_cap: int | None,
-    override_cap: int | None,
+    base_cap: float | None,
+    override_cap: float | None,
 ) -> BudgetClock:
-    """Pick the BudgetClock a spawn should use given its (optional) sub-cap.
+    """Pick the BudgetClock a spawn should use given its (optional) USD sub-cap.
 
     Returns the parent clock unchanged when no cap is configured. When
     a cap is set (override beats base), carves a child via
     ``parent.carve_child`` so the spawn cannot spend more than the cap;
-    tokens still flow up to the parent. Mirrors the clamping pattern in
-    NestedOrchSubroutine: a request larger than the parent's remaining
-    is clamped down, and ``carve_child`` floors at 1 to keep the call
-    well-formed when the parent is already drained (the spawn will then
-    immediately report ``tokens_exhausted``).
+    cost still flows up to the parent. A request larger than the parent's
+    remaining is clamped down, and ``carve_child`` floors at a minimum
+    cent so the call is well-formed when the parent is already drained
+    (the spawn will then immediately report ``cost_exhausted``).
     """
     cap = override_cap if override_cap is not None else base_cap
     if cap is None:
         return parent
-    capped = max(min(int(cap), parent.tokens_remaining), 1)
+    capped = max(min(float(cap), parent.cost_usd_remaining), 0.01)
     return parent.carve_child(capped)
 
 
@@ -202,7 +201,7 @@ class SubroutineBase:
     ``@dataclass(frozen=True, kw_only=True)`` so they can mix required
     and optional fields without ordering pain (and can override a
     base default to require the field, the way NestedOrch does for
-    ``base_token_cap``).
+    ``base_cost_cap_usd``).
 
     **Field-honoring is per-kind.** Some fields below are honored by
     every kind; others only have effect in some kinds. The base
@@ -218,7 +217,7 @@ class SubroutineBase:
       its staged sub-DB question content; NestedOrch honors it by
       gating whether ``ctx.operating_assumptions`` is forwarded to
       the nested orch's factory.
-    - ``base_token_cap``: honored by FreeformAgent and SampleN
+    - ``base_cost_cap_usd``: honored by FreeformAgent and SampleN
       (carve a child BudgetClock); required by NestedOrch;
       **rejected by CallType** in ``__post_init__`` because the
       wrapped CallRunner makes LLM calls through a path that doesn't
@@ -251,9 +250,9 @@ class SubroutineBase:
     # whose job is to push back on assumed framings). See class
     # docstring for how each kind honors this field.
     inherit_assumptions: bool = True
-    # Optional per-spawn token cap. See class docstring — different
+    # Optional per-spawn USD cost cap. See class docstring — different
     # kinds enforce this differently; CallType ignores it entirely.
-    base_token_cap: int | None = None
+    base_cost_cap_usd: float | None = None
     # Static artifact keys the subroutine always wants spliced into
     # its user prompt. Resolved against the run's ArtifactStore at
     # spawn time; missing keys raise loudly (a typo would silently
@@ -268,30 +267,30 @@ class SubroutineBase:
         self,
         parent: BudgetClock,
         *,
-        override_cap: int | None,
+        override_cap: float | None,
     ) -> BudgetClock:
         """Per-spawn :class:`BudgetClock` for accounting + cap enforcement.
 
         The orchestrator calls this once per spawn before invoking
         ``run`` and threads the returned clock through ``ctx.budget_clock``
         — that means subroutine kinds always see a clock scoped to their
-        own spawn, and the trace's ``tokens_consumed`` reads directly from
-        ``spawn_clock.tokens_used`` (no parent-clock-delta needed, which
-        would double-count under parallel spawns).
+        own spawn, and the trace's ``cost_usd_consumed`` reads directly
+        from ``spawn_clock.cost_usd_used`` (no parent-clock-delta needed,
+        which would double-count under parallel spawns).
 
         Default behavior: carve a child via :func:`resolve_spawn_clock`
-        using ``base_token_cap`` (or the override). When neither is set
-        we still carve a child clock (capped at the parent's remaining)
-        so ``tokens_used`` is per-spawn accurate even without a configured
-        cap. Overridden by :class:`CallType` whose LLM calls bypass the
-        SimpleSpine clock — it returns the parent unchanged so the
-        existing parent-delta accounting in the orchestrator still works
-        for that one kind.
+        using ``base_cost_cap_usd`` (or the override). When neither is
+        set we still carve a child clock (capped at the parent's
+        remaining) so ``cost_usd_used`` is per-spawn accurate even
+        without a configured cap. Overridden by :class:`CallType` whose
+        LLM calls bypass the SimpleSpine clock — it returns the parent
+        unchanged so the existing parent-delta accounting in the
+        orchestrator still works for that one kind.
         """
-        cap = override_cap if override_cap is not None else self.base_token_cap
+        cap = override_cap if override_cap is not None else self.base_cost_cap_usd
         if cap is None:
-            cap = parent.tokens_remaining
-        capped = max(min(int(cap), parent.tokens_remaining), 1)
+            cap = parent.cost_usd_remaining
+        capped = max(min(float(cap), parent.cost_usd_remaining), 0.01)
         return parent.carve_child(capped)
 
     def render_artifact_block(self, ctx: SpawnCtx) -> str:
@@ -356,7 +355,7 @@ class SubroutineBase:
         Every kind's ``fingerprint()`` should call ``super().fingerprint()``
         and extend with kind-specific fields. The base emits the
         cross-cutting fields (description / overridable / inherit_assumptions /
-        base_token_cap / cost_hint / intent_description /
+        base_cost_cap_usd / cost_hint / intent_description /
         additional_context_description / config_prep) so editing any of
         them naturally forks the variant fingerprint without per-kind
         bookkeeping.
@@ -366,7 +365,7 @@ class SubroutineBase:
             "description_hash": sha8(self.description),
             "overridable": sorted(self.overridable),
             "inherit_assumptions": self.inherit_assumptions,
-            "base_token_cap": self.base_token_cap,
+            "base_cost_cap_usd": self.base_cost_cap_usd,
             "consumes": list(self.consumes),
         }
         if self.cost_hint is not None:
@@ -383,12 +382,12 @@ class SubroutineBase:
         """Assemble the JSON schema mainline sees for the spawn tool.
 
         Base implementation handles the universal ``intent`` /
-        ``additional_context`` / ``token_cap`` properties. Kinds with
+        ``additional_context`` / ``cost_cap_usd`` properties. Kinds with
         their own properties (``max_rounds``, ``n``, etc.) override
         ``_extra_schema_properties()``; kinds with kind-specific
         defaults override ``_default_intent_description()`` /
         ``_default_additional_context_description()`` /
-        ``_token_cap_property()``.
+        ``_cost_cap_usd_property()``.
         """
         properties = self._build_common_schema_properties()
         properties.update(self._extra_schema_properties())
@@ -413,8 +412,8 @@ class SubroutineBase:
                 "description": self.additional_context_description
                 or self._default_additional_context_description(),
             }
-        if "token_cap" in self.overridable and self.base_token_cap is not None:
-            out["token_cap"] = self._token_cap_property()
+        if "cost_cap_usd" in self.overridable and self.base_cost_cap_usd is not None:
+            out["cost_cap_usd"] = self._cost_cap_usd_property()
         # ``include_artifacts`` is always available on FreeformAgent /
         # SampleN spawn schemas — it's the dynamic counterpart to the
         # static ``consumes`` declaration. Mainline picks earlier-spawned
@@ -456,13 +455,13 @@ class SubroutineBase:
             "user prompt under {additional_context}."
         )
 
-    def _token_cap_property(self) -> dict[str, Any]:
-        """Subclass hook: kind-specific ``token_cap`` schema property."""
+    def _cost_cap_usd_property(self) -> dict[str, Any]:
+        """Subclass hook: kind-specific ``cost_cap_usd`` schema property."""
         return {
             "type": "integer",
             "minimum": 500,
             "description": (
-                f"Per-spawn token sub-cap (default {self.base_token_cap}). "
+                f"Per-spawn token sub-cap (default {self.base_cost_cap_usd}). "
                 "Tokens still debit the parent budget; capped at the "
                 "parent's remaining."
             ),
@@ -495,11 +494,11 @@ class SubroutineResult:
     this is the only surface the mainline agent sees. Keep it small and
     informative; large blobs blow up the persistent thread fast.
 
-    ``tokens_used`` is the *additional* tokens this subroutine consumed
-    beyond what the BudgetClock has already recorded. Subroutines that
-    use ``rumil.llm`` text/structured-call helpers should pass the
-    BudgetClock through and leave this at 0; subroutines that bypass
-    helpers must report their own count here.
+    ``cost_usd_used`` is the *additional* USD cost this subroutine
+    consumed beyond what the BudgetClock has already recorded.
+    Subroutines that use ``rumil.llm`` text/structured-call helpers
+    should pass the BudgetClock through and leave this at 0; subroutines
+    that bypass helpers must report their own cost here.
 
     ``produces`` is folded into the run's :class:`ArtifactStore` after
     the spawn returns. The empty-key entry ``{"": text}`` is keyed as
@@ -509,7 +508,7 @@ class SubroutineResult:
     """
 
     text_summary: str
-    tokens_used: int = 0
+    cost_usd_used: float = 0.0
     extra: Mapping[str, Any] = field(default_factory=dict)
     produces: Mapping[str, str] = field(default_factory=dict)
 
@@ -537,7 +536,7 @@ class SubroutineDef(Protocol):
     def fingerprint(self) -> Mapping[str, Any]: ...
 
     def carve_spawn_clock(
-        self, parent: BudgetClock, *, override_cap: int | None
+        self, parent: BudgetClock, *, override_cap: float | None
     ) -> BudgetClock: ...
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult: ...

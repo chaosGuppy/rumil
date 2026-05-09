@@ -48,8 +48,8 @@ subroutines:
     max_rounds: 4
     max_tokens: 4096
     allowed_tool_names: [workspace_search]
-    overridable: [intent, additional_context, token_cap, max_rounds]
-    base_token_cap: 80000
+    overridable: [intent, additional_context, cost_cap_usd, max_rounds]
+    base_cost_cap_usd: 0.50
     cost_hint: "≈ 1–4 turns @ 4k out (~2–10k tokens; depends on how much it searches)"
     intent_description: >
       The topic, question, or claim to search for. Free-form; the agent
@@ -78,12 +78,12 @@ subroutines:
       Inputs: `question_headline` (required — the new child question);
       optional `question_content` (clarifying scope); `intent` (what
       you want investigated); optional `output_guidance` /
-      `output_schema` to shape the deliverable; optional `token_cap`.
+      `output_schema` to shape the deliverable; optional `cost_cap_usd`.
       Output: the sub-agent's freeform finalize answer (or coerced
       JSON if output_schema was set), plus a persisted child question
       in the workspace that you and future runs can build on.
     orch_factory_key: simple_spine_recurse
-    base_token_cap: 100000
+    base_cost_cap_usd: 3.00
     cost_hint: "≈ a full SimpleSpine sub-run within its sub-cap (~30–100k tokens)"
 
   - kind: web_research
@@ -114,8 +114,8 @@ subroutines:
     max_rounds: 6
     max_tokens: 4096
     web_search_max_uses: 5
-    overridable: [intent, additional_context, token_cap, max_rounds]
-    base_token_cap: 120000
+    overridable: [intent, additional_context, cost_cap_usd, max_rounds]
+    base_cost_cap_usd: 1.00
     cost_hint: "≈ 3–6 turns + ≤5 web_searches + 1–4 scrapes (~30–80k tokens)"
     intent_description: >
       Focused topic / question / claim to research externally. The agent

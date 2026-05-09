@@ -11,7 +11,7 @@ Two flavors are supported via the ``orch_factory`` callable:
   The token sub-cap is the only knob; the child orch lives entirely
   inside our token clock.
 
-The factory receives ``(ctx, sub_token_cap, overrides)`` and returns a
+The factory receives ``(ctx, sub_cost_cap_usd, overrides)`` and returns a
 ready-to-await coroutine that finishes the sub-orch run. This keeps the
 SubroutineDef agnostic about which orch shape it wraps.
 """
@@ -29,10 +29,10 @@ from rumil.orchestrators.simple_spine.subroutines.base import (
     SubroutineResult,
 )
 
-# Factory: (ctx, sub_token_cap, overrides) -> awaitable returning a text
+# Factory: (ctx, sub_cost_cap_usd, overrides) -> awaitable returning a text
 # summary that bubbles back to mainline.
 NestedOrchFactory = Callable[
-    [SpawnCtx, int, Mapping[str, Any]],
+    [SpawnCtx, float, Mapping[str, Any]],
     Awaitable[str],
 ]
 
@@ -44,7 +44,7 @@ class NestedOrchSubroutine(SubroutineBase):
     Inherits cross-cutting fields from :class:`SubroutineBase`. Honors
     ``inherit_assumptions`` by gating whether ``ctx.operating_assumptions``
     is forwarded to the nested orch's factory. Treats
-    ``base_token_cap`` as **required** (validated in ``__post_init__``)
+    ``base_cost_cap_usd`` as **required** (validated in ``__post_init__``)
     because nested orchs can recurse arbitrarily deep without it.
     """
 
@@ -57,7 +57,7 @@ class NestedOrchSubroutine(SubroutineBase):
                 "additional_context",
                 "output_guidance",
                 "output_schema",
-                "token_cap",
+                "cost_cap_usd",
                 "question_headline",
                 "question_content",
             }
@@ -65,9 +65,9 @@ class NestedOrchSubroutine(SubroutineBase):
     )
 
     def __post_init__(self) -> None:
-        if self.base_token_cap is None:
+        if self.base_cost_cap_usd is None:
             raise ValueError(
-                f"NestedOrchSubroutine {self.name!r}: base_token_cap is "
+                f"NestedOrchSubroutine {self.name!r}: base_cost_cap_usd is "
                 "required (nested orchs always need an explicit token "
                 "sub-cap because they can recurse arbitrarily deep)"
             )
@@ -95,13 +95,13 @@ class NestedOrchSubroutine(SubroutineBase):
     def _default_additional_context_description(self) -> str:
         return "Context to forward to the nested orch."
 
-    def _token_cap_property(self) -> dict[str, Any]:
+    def _cost_cap_usd_property(self) -> dict[str, Any]:
         return {
             "type": "integer",
             "minimum": 1000,
             "description": (
                 "Override the token sub-cap (default "
-                f"{self.base_token_cap}). Capped at parent's remaining."
+                f"{self.base_cost_cap_usd}). Capped at parent's remaining."
             ),
         }
 
@@ -162,19 +162,19 @@ class NestedOrchSubroutine(SubroutineBase):
         return ["question_headline"] if "question_headline" in self.overridable else []
 
     async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:
-        cap_override = overrides.get("token_cap")
-        # base_token_cap is enforced non-None in __post_init__; assert keeps
+        cap_override = overrides.get("cost_cap_usd")
+        # base_cost_cap_usd is enforced non-None in __post_init__; assert keeps
         # pyright happy without re-validating at every spawn.
-        assert self.base_token_cap is not None
+        assert self.base_cost_cap_usd is not None
         sub_cap = (
-            int(cap_override)
-            if cap_override is not None and "token_cap" in self.overridable
-            else self.base_token_cap
+            float(cap_override)
+            if cap_override is not None and "cost_cap_usd" in self.overridable
+            else self.base_cost_cap_usd
         )
         # carve_child clamps to the parent's remaining; if the parent is
-        # already drained we fall back to a token-1 sub-cap so the call
-        # is well-formed and immediately reports tokens_exhausted.
-        sub_cap = max(min(sub_cap, ctx.budget_clock.tokens_remaining), 1)
+        # already drained we fall back to a one-cent sub-cap so the call
+        # is well-formed and immediately reports cost_exhausted.
+        sub_cap = max(min(float(sub_cap), ctx.budget_clock.cost_usd_remaining), 0.01)
 
         # Honor inherit_assumptions by zeroing operating_assumptions on
         # the ctx forwarded to the factory. Default-True so global rules
@@ -190,6 +190,6 @@ class NestedOrchSubroutine(SubroutineBase):
             text_summary=text_summary,
             extra={
                 "nested_orch_kind": self.orch_kind,
-                "sub_token_cap": sub_cap,
+                "sub_cost_cap_usd": sub_cap,
             },
         )

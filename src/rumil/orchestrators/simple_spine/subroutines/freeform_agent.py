@@ -53,7 +53,7 @@ class FreeformAgentSubroutine(SubroutineBase):
 
     Inherits the cross-cutting fields from :class:`SubroutineBase`.
     Honors ``inherit_assumptions`` (spliced into sys_prompt at run time)
-    and ``base_token_cap`` (carves a child BudgetClock).
+    and ``base_cost_cap_usd`` (carves a child BudgetClock).
     """
 
     sys_prompt: str
@@ -212,7 +212,7 @@ class FreeformAgentSubroutine(SubroutineBase):
             for attempt in range(1, self.response_max_retries + 1):
                 if self.response_validator(result.final_text):
                     break
-                if spawn_clock.tokens_exhausted:
+                if spawn_clock.cost_exhausted:
                     log.warning(
                         "freeform_agent %s: validator failed but token budget "
                         "exhausted; returning last response unvalidated",

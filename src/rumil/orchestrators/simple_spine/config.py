@@ -229,7 +229,7 @@ class OrchInputs:
     # Dict shape is what tool-call callers pass — Pydantic classes can't
     # cross a JSON tool boundary.
     output_schema: type[BaseModel] | dict[str, Any] | None = None
-    budget: BudgetSpec = field(default_factory=lambda: BudgetSpec(max_tokens=200_000))
+    budget: BudgetSpec = field(default_factory=lambda: BudgetSpec(max_cost_usd=5.0))
     artifacts: Mapping[str, str] = field(default_factory=dict)
 
 
@@ -242,7 +242,7 @@ class OrchResult:
     fingerprint: str
     call_id: str
     spawn_count: int
-    tokens_used: int
+    cost_usd_used: float
     elapsed_s: float
     finalize_reason: str
     last_status: str = "complete"

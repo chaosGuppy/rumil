@@ -41,8 +41,8 @@ from rumil.settings import get_settings
 from ._format import print_event, print_trace, truncate
 from ._runctx import make_db, open_run
 
-DEFAULT_BUDGET = 10
-DEFAULT_SIMPLE_SPINE_MAX_TOKENS = 200_000
+DEFAULT_BUDGET = 10.0
+DEFAULT_SIMPLE_SPINE_BUDGET_USD = 5.0
 ORCHESTRATOR_CHOICES = ("two_phase", "experimental", "simple_spine")
 SIMPLE_SPINE_CONFIGS_DIR = (
     Path(__file__).resolve().parents[3]
@@ -75,9 +75,15 @@ async def main() -> None:
     )
     parser.add_argument(
         "--budget",
-        type=int,
-        default=DEFAULT_BUDGET,
-        help=f"Research call budget (default: {DEFAULT_BUDGET})",
+        type=float,
+        default=None,
+        help=(
+            "Per-orchestrator budget. For two_phase / experimental: integer "
+            f"research-call count (default: {int(DEFAULT_BUDGET)}). For "
+            "simple_spine: USD cost cap (default: "
+            f"${DEFAULT_SIMPLE_SPINE_BUDGET_USD:.2f}). Counts input + output "
+            "+ cache_create + cache_read at per-model rates from pricing.json."
+        ),
     )
     parser.add_argument("--workspace", default=None)
     parser.add_argument(
@@ -118,16 +124,6 @@ async def main() -> None:
             "SimpleSpine config preset name (e.g. research, view_freeform). "
             "Required when --orchestrator simple_spine. "
             f"Available: {', '.join(_list_simple_spine_configs())}."
-        ),
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=DEFAULT_SIMPLE_SPINE_MAX_TOKENS,
-        help=(
-            "Token budget for SimpleSpine (default: "
-            f"{DEFAULT_SIMPLE_SPINE_MAX_TOKENS}). Ignored unless "
-            "--orchestrator simple_spine."
         ),
     )
     parser.add_argument(
@@ -192,6 +188,9 @@ async def main() -> None:
 
         settings = get_settings()
         if is_simple_spine:
+            budget_usd = (
+                float(args.budget) if args.budget is not None else DEFAULT_SIMPLE_SPINE_BUDGET_USD
+            )
             cfg = load_simple_spine_config(SIMPLE_SPINE_CONFIGS_DIR / f"{args.config}.yaml")
             if args.model:
                 cfg = apply_model_override(cfg, args.model)
@@ -205,13 +204,13 @@ async def main() -> None:
             print(f"question:     {full_id[:8]}  {truncate(page.headline, 80)}")
             print(
                 f"orchestrator: simple_spine[{args.config}]  "
-                f"model={cfg.main_model}  max_tokens={args.max_tokens}"
+                f"model={cfg.main_model}  budget=${budget_usd:.2f}"
             )
             extra_config = {
                 "smoke_test": bool(args.smoke_test),
                 "simple_spine_config": args.config,
                 "simple_spine_fingerprint": cfg.fingerprint_short,
-                "simple_spine_max_tokens": args.max_tokens,
+                "simple_spine_budget_usd": budget_usd,
                 "simple_spine_main_model": cfg.main_model,
             }
             await open_run(
@@ -219,24 +218,28 @@ async def main() -> None:
                 name=args.name or page.headline,
                 question_id=full_id,
                 skill="rumil-orchestrate",
-                budget=args.budget,
+                # ``runs.budget`` is integer rumil-call count; pass 1 as a
+                # placeholder for SimpleSpine (its hard cap is in USD,
+                # tracked under simple_spine_budget_usd in extra_config).
+                budget=1,
                 extra_config=extra_config,
             )
             print_trace(db.run_id)
             print_event(
                 "→",
                 f"running simple_spine[{args.config}] "
-                f"(model={cfg.main_model}, max_tokens={args.max_tokens})",
+                f"(model={cfg.main_model}, budget=${budget_usd:.2f})",
             )
             inputs = OrchInputs(
                 question_id=full_id,
-                budget=BudgetSpec(max_tokens=args.max_tokens),
+                budget=BudgetSpec(max_cost_usd=budget_usd),
             )
             result = await SimpleSpineOrchestrator(db, cfg).run(inputs)
             print_event(
                 "✓",
-                f"done: status={result.last_status}  tokens={result.tokens_used}  "
-                f"spawns={result.spawn_count}  reason={result.finalize_reason}",
+                f"done: status={result.last_status}  "
+                f"cost=${result.cost_usd_used:.2f}  spawns={result.spawn_count}  "
+                f"reason={result.finalize_reason}",
             )
             if result.structured_answer is not None:
                 print(f"\nstructured_answer keys: {list(_keys(result.structured_answer))}")
@@ -245,6 +248,8 @@ async def main() -> None:
                 print(truncate(result.answer_text, 400))
             return
 
+        # two_phase / experimental: budget is rumil-call count (integer).
+        budget_calls = int(args.budget) if args.budget is not None else int(DEFAULT_BUDGET)
         variant = settings.prioritizer_variant
         global_prio = settings.enable_global_prio
         print(f"workspace:    {ws}")
@@ -256,12 +261,12 @@ async def main() -> None:
             name=args.name or page.headline,
             question_id=full_id,
             skill="rumil-orchestrate",
-            budget=args.budget,
+            budget=budget_calls,
             extra_config={"smoke_test": bool(args.smoke_test)},
         )
         print_trace(db.run_id)
 
-        print_event("→", f"running {variant} orchestrator (budget {args.budget})")
+        print_event("→", f"running {variant} orchestrator (budget {budget_calls})")
         await Orchestrator(db).run(full_id)
 
         total, used = await db.get_budget()

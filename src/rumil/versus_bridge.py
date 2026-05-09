@@ -288,7 +288,7 @@ async def judge_pair_simple_spine(
     task_body: str,
     model: str,
     config_name: str,
-    budget_tokens: int,
+    budget_usd: float,
     operating_assumptions: str = "",
     output_guidance: str = "",
     additional_context: str = "",
@@ -336,7 +336,7 @@ async def judge_pair_simple_spine(
         "rubric": task_body.strip() + "\n",
     }
     workflow = SimpleSpineWorkflow(
-        budget_tokens=budget_tokens,
+        budget_usd=budget_usd,
         config_name=config_name,
         call_type="judge",
         wall_clock_soft_s=wall_clock_soft_s,

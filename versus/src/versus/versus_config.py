@@ -446,12 +446,12 @@ def make_judge_config(
     verdict_prompt_path: Any = None,
     # SimpleSpine-variant only. ``config_name`` resolves a
     # SimpleSpineConfig preset whose fingerprint is folded into the
-    # workflow fingerprint. ``simple_spine_budget_tokens`` is the raw
+    # workflow fingerprint. ``simple_spine_budget_usd`` is the raw
     # token cap; SimpleSpine's budget primitive is tokens, so we keep
     # it distinct from the ``budget`` kwarg above (which counts
     # research calls for the orch variant).
     simple_spine_config_name: str | None = None,
-    simple_spine_budget_tokens: int | None = None,
+    simple_spine_budget_usd: float | None = None,
 ) -> tuple[dict[str, Any], str, str]:
     """Back-compat shim — translates old kwargs into ``make_versus_config``.
 
@@ -571,9 +571,9 @@ def make_judge_config(
                 "variant='simple_spine' requires simple_spine_config_name "
                 "(the preset to instantiate via SimpleSpine's preset registry)"
             )
-        if simple_spine_budget_tokens is None:
+        if simple_spine_budget_usd is None:
             raise ValueError(
-                "variant='simple_spine' requires simple_spine_budget_tokens "
+                "variant='simple_spine' requires simple_spine_budget_usd "
                 "(raw token cap; SimpleSpine has no budget-unit primitive — "
                 "pass tokens directly, e.g. 200_000)"
             )
@@ -582,7 +582,7 @@ def make_judge_config(
         from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
 
         ss_workflow = SimpleSpineWorkflow(
-            budget_tokens=simple_spine_budget_tokens,
+            budget_usd=simple_spine_budget_usd,
             config_name=simple_spine_config_name,
             call_type="judge",
         )

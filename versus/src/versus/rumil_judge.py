@@ -284,7 +284,7 @@ async def run_orch(
     reflect_prompt_path: str | None = None,
     verdict_prompt_path: str | None = None,
     simple_spine_config_name: str | None = None,
-    simple_spine_budget_tokens: int | None = None,
+    simple_spine_budget_usd: float | None = None,
 ) -> None:
     """Run a workspace-aware rumil judge variant against pending pairs.
 
@@ -296,7 +296,7 @@ async def run_orch(
       ``reader_model`` / ``reflector_model`` / ``verdict_model`` and
       ``*_prompt_path`` kwargs are this variant's iteration knobs.
     - ``"simple_spine"``: :class:`SimpleSpineWorkflow` with
-      ``call_type='judge'``. The hard cap is ``simple_spine_budget_tokens``
+      ``call_type='judge'``. The hard cap is ``simple_spine_budget_usd``
       (raw tokens; SimpleSpine has no budget-unit primitive — distinct
       from the ``budget`` arg, which is ignored in this variant).
       ``simple_spine_config_name`` selects a preset (default ``"judge_pair"``).
@@ -404,7 +404,7 @@ async def run_orch(
                 workspace_id=ws_short,
                 workspace_state_hash=workspace_state_hash,
                 simple_spine_config_name=simple_spine_config_name or "judge_pair",
-                simple_spine_budget_tokens=simple_spine_budget_tokens,
+                simple_spine_budget_usd=simple_spine_budget_usd,
             )
         # reflective: no closer, no tools — drop those fingerprint inputs.
         # Per-role models and prompt path overrides are threaded into
@@ -567,10 +567,10 @@ async def run_orch(
                         model_config=mc,
                     )
                 elif variant == "simple_spine":
-                    if simple_spine_budget_tokens is None:
+                    if simple_spine_budget_usd is None:
                         raise ValueError(
                             "variant='simple_spine' requires "
-                            "simple_spine_budget_tokens (raw token cap)"
+                            "simple_spine_budget_usd (raw token cap)"
                         )
                     result = await judge_pair_simple_spine(
                         db,
@@ -578,7 +578,7 @@ async def run_orch(
                         task_body=task_body,
                         model=model,
                         config_name=simple_spine_config_name or "judge_pair",
-                        budget_tokens=simple_spine_budget_tokens,
+                        budget_usd=simple_spine_budget_usd,
                         model_config=mc,
                     )
                 else:

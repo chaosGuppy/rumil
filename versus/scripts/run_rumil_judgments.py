@@ -124,7 +124,7 @@ def main() -> None:
         help=(
             "Orchestrator research-call budget per pair (orch variant only). "
             "TwoPhaseOrchestrator requires a minimum of 4. Required for "
-            "--variant orch; rejected for simple_spine (use --simple-spine-budget-tokens)."
+            "--variant orch; rejected for simple_spine (use --simple-spine-budget-usd)."
         ),
     )
     ap.add_argument(
@@ -264,14 +264,14 @@ def main() -> None:
         ),
     )
     ap.add_argument(
-        "--simple-spine-budget-tokens",
-        type=int,
+        "--simple-spine-budget-usd",
+        type=float,
         default=None,
         help=(
-            "simple_spine: raw token cap on the run (the only hard "
-            "terminator). Required for --variant simple_spine. "
-            "SimpleSpine has no budget-unit primitive, so this is the "
-            "direct token count — pass e.g. 200000."
+            "simple_spine: USD cost cap on the run (the only hard "
+            "terminator). Required for --variant simple_spine. Counts "
+            "input + output + cache_create + cache_read at per-model "
+            "rates from pricing.json — pass e.g. 4.00 for a $4 cap."
         ),
     )
     args = ap.parse_args()
@@ -367,14 +367,14 @@ def main() -> None:
         if args.budget is not None:
             ap.error(
                 "--variant simple_spine uses raw tokens; pass "
-                "--simple-spine-budget-tokens (not --budget). SimpleSpine "
+                "--simple-spine-budget-usd (not --budget). SimpleSpine "
                 "has no budget-unit primitive."
             )
         if args.simple_spine_budget_usd is None:
-            ap.error("--variant simple_spine requires --simple-spine-budget-tokens <int>")
+            ap.error("--variant simple_spine requires --simple-spine-budget-usd <int>")
     elif args.variant == "orch":
         if args.simple_spine_budget_usd is not None:
-            ap.error("--simple-spine-budget-tokens is only valid with --variant simple_spine")
+            ap.error("--simple-spine-budget-usd is only valid with --variant simple_spine")
         if args.budget is None:
             ap.error("--variant orch requires --budget <int>")
 

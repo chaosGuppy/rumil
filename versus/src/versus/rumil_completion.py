@@ -58,10 +58,10 @@ WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
     "two_phase": (TwoPhaseWorkflow, {}),
     "draft_and_edit": (DraftAndEditWorkflow, {}),
     # SimpleSpine on the completion side: ``--orch simple_spine
-    # --budget-tokens 200000``. ``config_name`` defaults to
+    # --budget-usd 200000``. ``config_name`` defaults to
     # ``essay_continuation`` (the only completion-purpose preset);
     # override via ``--workflow-arg config_name=<other>`` if needed.
-    # ``budget_tokens`` is interpreted as the SimpleSpine token cap
+    # ``budget_usd`` is interpreted as the SimpleSpine token cap
     # (not a rumil call-unit budget); the orch self-paces against it.
     "simple_spine": (
         SimpleSpineWorkflow,
@@ -222,7 +222,7 @@ def _parse_workflow_args(pairs: Sequence[str], cls: type) -> dict[str, Any]:
 
 
 # Workflows whose "budget" primitive is raw tokens, not research-call
-# units. The CLI requires --budget-tokens (and rejects --budget) for
+# units. The CLI requires --budget-usd (and rejects --budget) for
 # these; other workflows use --budget.
 TOKEN_BUDGET_WORKFLOWS: frozenset[str] = frozenset({"simple_spine"})
 
@@ -231,7 +231,7 @@ def _make_workflow_and_task(
     workflow_name: str,
     *,
     budget: int | None = None,
-    budget_usd: int | None = None,
+    budget_usd: float | None = None,
     extra_kwargs: dict[str, Any] | None = None,
     artifacts: Mapping[str, str] | None = None,
 ) -> tuple[Any, CompleteEssayTask]:
@@ -253,9 +253,9 @@ def _make_workflow_and_task(
         raise KeyError(f"unknown workflow {workflow_name!r}; registered: {valid}")
     cls, defaults = WORKFLOW_REGISTRY[workflow_name]
     if workflow_name in TOKEN_BUDGET_WORKFLOWS:
-        if budget_tokens is None:
-            raise ValueError(f"workflow {workflow_name!r} requires budget_tokens (raw token cap)")
-        budget_kwarg = {"budget_tokens": budget_tokens}
+        if budget_usd is None:
+            raise ValueError(f"workflow {workflow_name!r} requires budget_usd (USD cost cap)")
+        budget_kwarg = {"budget_usd": budget_usd}
     else:
         if budget is None:
             raise ValueError(f"workflow {workflow_name!r} requires budget (research-call count)")
@@ -316,7 +316,7 @@ def _plan_pending(
     workflow_name: str,
     model: str,
     budget: int | None,
-    budget_usd: int | None,
+    budget_usd: float | None,
     prefix_cfg: config.PrefixCfg,
     workspace_id: str,
     workspace_state_hash: str,
@@ -336,7 +336,7 @@ def _plan_pending(
     workflow, task = _make_workflow_and_task(
         workflow_name,
         budget=budget,
-        budget_usd=budget_tokens,
+        budget_usd=budget_usd,
         extra_kwargs=workflow_kwargs,
     )
     mc = get_model_config(model, cfg=cfg)
@@ -393,7 +393,7 @@ async def run_orch_completion(
     workflow_name: str,
     model: str,
     budget: int | None = None,
-    budget_usd: int | None = None,
+    budget_usd: float | None = None,
     prefix_cfg: config.PrefixCfg,
     limit: int | None = None,
     dry_run: bool = False,
@@ -439,7 +439,7 @@ async def run_orch_completion(
         workflow_name=workflow_name,
         model=model,
         budget=budget,
-        budget_usd=budget_tokens,
+        budget_usd=budget_usd,
         prefix_cfg=prefix_cfg,
         workspace_id=ws_short,
         workspace_state_hash=workspace_state_hash,
@@ -454,7 +454,7 @@ async def run_orch_completion(
 
     effective_concurrency = concurrency if concurrency is not None else 1
     budget_label = (
-        f"budget_usd={budget_tokens}"
+        f"budget_usd={budget_usd}"
         if workflow_name in TOKEN_BUDGET_WORKFLOWS
         else f"budget={budget}"
     )
@@ -505,7 +505,7 @@ async def run_orch_completion(
                 workflow, task = _make_workflow_and_task(
                     workflow_name,
                     budget=budget,
-                    budget_usd=budget_tokens,
+                    budget_usd=budget_usd,
                     extra_kwargs=workflow_kwargs,
                     artifacts=completion_artifacts,
                 )
@@ -517,7 +517,7 @@ async def run_orch_completion(
                 # made the traces list useless for picking out a
                 # specific run.
                 budget_slug = (
-                    f"bt{budget_tokens}"
+                    f"bt{budget_usd}"
                     if workflow_name in TOKEN_BUDGET_WORKFLOWS
                     else f"b{budget}"
                 )
@@ -561,7 +561,7 @@ async def run_orch_completion(
                 "provider": "rumil-orch",
                 "workflow": workflow_name,
                 "budget": budget,
-                "budget_tokens": budget_tokens,
+                "budget_usd": budget_usd,
                 "model_config": mc.to_record_dict(),
                 "rumil_run_id": run_id,
                 "rumil_call_id": result.call_id,

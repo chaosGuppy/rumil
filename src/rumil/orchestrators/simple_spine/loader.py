@@ -98,6 +98,7 @@ surface; research configs flip it on).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -184,6 +185,24 @@ def load_simple_spine_config(path: str | Path) -> SimpleSpineConfig:
         cfg_kwargs["compaction_trigger_tokens"] = int(blob["compaction_trigger_tokens"])
     if "expose_artifact_tools" in blob:
         cfg_kwargs["expose_artifact_tools"] = bool(blob["expose_artifact_tools"])
+    default_output_guidance = _resolve_prompt(
+        blob, "output_guidance", "output_guidance_path", base_dir
+    )
+    if default_output_guidance is not None:
+        cfg_kwargs["default_output_guidance"] = default_output_guidance
+    schema_path = blob.get("output_schema_path")
+    if schema_path is not None:
+        if not isinstance(schema_path, str):
+            raise ValueError(f"{path}: `output_schema_path` must be a string path")
+        full = (base_dir / schema_path).resolve()
+        with full.open("r", encoding="utf-8") as f:
+            schema_blob = json.load(f)
+        if not isinstance(schema_blob, dict):
+            raise ValueError(
+                f"{full}: output_schema_path JSON must be an object (JSON Schema dict), "
+                f"got {type(schema_blob).__name__}"
+            )
+        cfg_kwargs["default_output_schema"] = schema_blob
     instructions = _resolve_prompt(
         blob, "compaction_instructions", "compaction_instructions_path", base_dir
     )

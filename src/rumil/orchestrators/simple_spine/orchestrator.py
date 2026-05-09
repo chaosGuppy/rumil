@@ -192,6 +192,23 @@ class SimpleSpineOrchestrator:
         # announcements (seeds in initial user message, spawn outputs
         # appended to tool_result content) keep token cost low.
         artifact_store = ArtifactStore(seed=dict(inputs.artifacts))
+        # Fall through to preset-level defaults when caller-supplied
+        # OrchInputs leaves the deliverable-shaping fields unset. Lets a
+        # YAML preset (e.g. view_freeform) be self-describing — caller
+        # picks the preset and gets view-shaped output without separately
+        # passing schema + guidance.
+        effective_output_guidance = (
+            inputs.output_guidance
+            if inputs.output_guidance.strip()
+            else (self.config.default_output_guidance or "")
+        )
+        effective_output_schema: type[BaseModel] | dict[str, Any] | None
+        if inputs.output_schema is not None:
+            effective_output_schema = inputs.output_schema
+        elif self.config.default_output_schema is not None:
+            effective_output_schema = dict(self.config.default_output_schema)
+        else:
+            effective_output_schema = None
         initial_user = _build_initial_user_message(
             question_id=inputs.question_id,
             question_headline=question.headline,
@@ -199,6 +216,8 @@ class SimpleSpineOrchestrator:
             inputs=inputs,
             clock=clock,
             artifact_store=artifact_store,
+            output_guidance=effective_output_guidance,
+            output_schema=effective_output_schema,
         )
         messages: list[dict] = [{"role": "user", "content": initial_user}]
 
@@ -474,10 +493,10 @@ class SimpleSpineOrchestrator:
         )
 
         structured_answer: BaseModel | dict[str, Any] | None = None
-        if inputs.output_schema is not None and finalize_state["answer"]:
+        if effective_output_schema is not None and finalize_state["answer"]:
             structured_answer = await _validate_finalize(
                 finalize_state["answer"],
-                inputs.output_schema,
+                effective_output_schema,
                 model=self.config.main_model,
                 call_id=call.id,
                 db=self.db,
@@ -890,6 +909,8 @@ def _build_initial_user_message(
     inputs: OrchInputs,
     clock: BudgetClock,
     artifact_store: ArtifactStore,
+    output_guidance: str,
+    output_schema: type[BaseModel] | dict[str, Any] | None,
 ) -> str:
     # When the caller seeds artifacts, treat the artifact channel as
     # the canonical surface for content and skip question.content in
@@ -912,16 +933,14 @@ def _build_initial_user_message(
         sections.append("## Additional context (from caller)")
         sections.append(inputs.additional_context.strip())
         sections.append("")
-    if inputs.output_guidance.strip():
+    if output_guidance.strip():
         sections.append("## Output guidance")
-        sections.append(inputs.output_guidance.strip())
+        sections.append(output_guidance.strip())
         sections.append("")
-    if inputs.output_schema is not None:
+    if output_schema is not None:
         sections.append("## Output schema (your finalize answer will be parsed against this)")
         schema_json = (
-            inputs.output_schema
-            if isinstance(inputs.output_schema, dict)
-            else inputs.output_schema.model_json_schema()
+            output_schema if isinstance(output_schema, dict) else output_schema.model_json_schema()
         )
         sections.append(f"```json\n{json.dumps(schema_json, indent=2)}\n```")
         sections.append("")

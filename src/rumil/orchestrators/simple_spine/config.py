@@ -75,6 +75,18 @@ class SimpleSpineConfig:
     # flip this on so mainline can browse what its spawns produced
     # (e.g. web_research's per-source artifacts).
     expose_artifact_tools: bool = False
+    # Preset-level defaults for the OrchInputs fields that shape the
+    # finalize deliverable. When a caller leaves the corresponding
+    # OrchInputs field at its empty/None default, the orchestrator
+    # falls back to these. Lets a preset (e.g. view_freeform) be
+    # self-describing — pick the preset name and you get view-shaped
+    # output without separately passing schema + guidance.
+    # Schema is stored as a JSON Schema dict (not a Pydantic class) so
+    # it can ride along inside the YAML-driven config; the orchestrator
+    # already supports both shapes for OrchInputs.output_schema, with
+    # dict triggering the lighter coercion path.
+    default_output_guidance: str | None = None
+    default_output_schema: Mapping[str, Any] | None = None
 
     @cached_property
     def fingerprint(self) -> str:
@@ -93,6 +105,14 @@ class SimpleSpineConfig:
                 sha8(self.compaction_instructions) if self.compaction_instructions else None
             ),
             "expose_artifact_tools": self.expose_artifact_tools,
+            "default_output_guidance_hash": (
+                sha8(self.default_output_guidance) if self.default_output_guidance else None
+            ),
+            "default_output_schema_hash": (
+                sha8(json.dumps(dict(self.default_output_schema), sort_keys=True))
+                if self.default_output_schema is not None
+                else None
+            ),
             "subroutines": [s.fingerprint() for s in self.process_library],
         }
         canonical = json.dumps(blob, sort_keys=True, separators=(",", ":"))
@@ -118,6 +138,14 @@ class SimpleSpineConfig:
                 sha8(self.compaction_instructions) if self.compaction_instructions else None
             ),
             "expose_artifact_tools": self.expose_artifact_tools,
+            "default_output_guidance_hash": (
+                sha8(self.default_output_guidance) if self.default_output_guidance else None
+            ),
+            "default_output_schema_hash": (
+                sha8(json.dumps(dict(self.default_output_schema), sort_keys=True))
+                if self.default_output_schema is not None
+                else None
+            ),
             "subroutines": [s.fingerprint() for s in self.process_library],
             "fingerprint": self.fingerprint,
         }

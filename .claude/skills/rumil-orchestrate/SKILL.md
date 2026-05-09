@@ -2,7 +2,7 @@
 name: rumil-orchestrate
 description: Fire the rumil orchestrator against an existing question — a full multi-call research loop with a budget. This is the CC-initiated equivalent of `main.py --continue <qid> --budget N`. Use when the user wants real research done on a question, not just a single call. For one targeted call, use /rumil-dispatch instead. Budget defaults to 10; since that's not cheap, confirm with the user before firing if they didn't specify. Trigger when the user says things like "investigate this more", "run some research on this", "give Q# N calls of budget", or right after /rumil-ask when they want to immediately start investigating.
 allowed-tools: Bash
-argument-hint: "<question_id> [--budget N] [--orchestrator two_phase|experimental|simple_spine] [--config <preset>] [--max-tokens N] [--model <id>] [--no-compaction] [--global-prio|--no-global-prio] [--smoke-test]"
+argument-hint: "<question_id> [--budget N] [--orchestrator two_phase|experimental|simple_spine] [--config <preset>] [--model <id>] [--no-compaction] [--global-prio|--no-global-prio] [--smoke-test]"
 ---
 
 # rumil-orchestrate
@@ -30,11 +30,13 @@ setting):
   explicitly asks for it. Budget unit: rumil calls.
 - **`simple_spine`** — `SimpleSpineOrchestrator`. Single persistent
   agent thread with parallel spawn subroutines (workspace_lookup,
-  web_research, deep_dive). Budget unit: tokens (`--max-tokens`).
-  Driven by a YAML preset (`--config`) that bundles the library + an
-  optional output_guidance / output_schema declaring the deliverable
-  shape. Use for one-shot synthesis tasks where you want a single
-  agent making the call sequence in-thread rather than a separate
+  web_research, deep_dive). Budget unit: USD (`--budget <float>`),
+  enforced via `pricing.compute_cost` so input + output + cache_create
+  + cache_read all hit the cap at per-model rates. Driven by a YAML
+  preset (`--config`) that bundles the library + an optional
+  output_guidance / output_schema declaring the deliverable shape.
+  Use for one-shot synthesis tasks where you want a single agent
+  making the call sequence in-thread rather than a separate
   prioritization LLM.
 
 Not selectable here: `ClaimInvestigationOrchestrator` (a sub-orchestrator
@@ -92,8 +94,8 @@ Examples:
 - "find more considerations for this" → `/rumil-dispatch find-considerations <id>`
 - "investigate this more" / "run research on this" → `/rumil-orchestrate <id>`
 - "give this 10 more calls of budget" → `/rumil-orchestrate <id> --budget 10`
-- "produce a four-section view on this" → `/rumil-orchestrate <id> --orchestrator simple_spine --config view_freeform --max-tokens 200000`
-- "smoke-test the view preset on haiku" → `/rumil-orchestrate <id> --orchestrator simple_spine --config view_freeform --model claude-haiku-4-5-20251001 --max-tokens 100000`
+- "produce a four-section view on this" → `/rumil-orchestrate <id> --orchestrator simple_spine --config view_freeform --budget 5.00`
+- "smoke-test the view preset on haiku" → `/rumil-orchestrate <id> --orchestrator simple_spine --config view_freeform --model claude-haiku-4-5-20251001 --budget 1.50`
 
 ## When the model should invoke this directly
 
@@ -129,9 +131,12 @@ money. One-line check: "Run the orchestrator on `abc12345` with budget
 
 - **`<question_id>`** (positional, required): full UUID or short 8-char ID.
   Must be an existing question in the active workspace.
-- **`--budget N`**: research-call budget. Default 10. Used by `two_phase`
-  and `experimental`; `simple_spine` ignores this and uses `--max-tokens`
-  for its BudgetClock.
+- **`--budget N`**: per-orchestrator budget. For `two_phase` /
+  `experimental`: integer research-call count (default 10). For
+  `simple_spine`: USD cost cap (default $5.00) — counts input + output
+  + cache_create + cache_read at per-model rates from `pricing.json`,
+  so cache-write spend (which dominates real cost on multi-spawn runs)
+  is properly bounded.
 - **`--orchestrator <variant>`**: `two_phase`, `experimental`, or
   `simple_spine`. Defaults to whatever `settings.prioritizer_variant`
   is (normally `two_phase`). Pass explicitly whenever the user cares
@@ -152,12 +157,6 @@ money. One-line check: "Run the orchestrator on `abc12345` with budget
 
 - **`--config <preset>`** (required when `--orchestrator simple_spine`):
   preset name to load from `src/rumil/orchestrators/simple_spine/configs/`.
-- **`--max-tokens N`** (default 200000): token budget for the BudgetClock.
-  Note: this counts only uncached input + output. Cache-create tokens
-  fly under this radar, so real cost can substantially exceed the
-  per-token rate × `--max-tokens`. A 400k haiku run produced ~$8 of
-  cache-write spend in addition to the budgeted I/O. Confirm with the
-  user before firing if cost matters.
 - **`--model <id>`**: override every model reference in the config —
   main_model, each subroutine's model, and nested-orch presets'
   main_model — with this value. End-to-end single-model run for cheap
@@ -182,7 +181,9 @@ The orchestrator can run for many minutes. The script streams:
 - trace URL — **surface this immediately** so the user can watch progress
   in the browser alongside the CC session
 - `→ running <variant> orchestrator (budget N)` confirmation line
-- `✓ done: budget=used/total` completion line
+- `✓ done: ...` completion line. Two_phase / experimental report
+  `budget=used/total` (rumil calls); simple_spine reports
+  `cost=$N.NN  spawns=K  reason=...` instead.
 
 ### Natural next steps to offer
 

@@ -55,7 +55,12 @@ subroutines:
     max_tokens: 4096
     allowed_tool_names: [workspace_search]
     overridable: [intent, additional_context, token_cap, max_rounds]
-    base_token_cap: 8000
+    # 80k floor: per-round worst ≈ input(prior turns + tool results ≈
+    # 12k after a couple search hits) + max_tokens(4k) ≈ 16k; over 4
+    # rounds that's ~64k. 8k caused tokens_exhausted to fire mid-loop
+    # and terminate before a usable answer; 80k matches the cross-
+    # preset floor.
+    base_token_cap: 80000
     cost_hint: "≈ 1–4 turns @ 4k out (~2–10k tokens; depends on how much it searches)"
     intent_description: >
       The topic, question, or claim to search for. Free-form; the agent

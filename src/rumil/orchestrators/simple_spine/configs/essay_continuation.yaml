@@ -63,7 +63,10 @@ subroutines:
     # truncation. Sonnet/Opus 4.x both support 32k+ output.
     max_tokens: 32000
     overridable: [intent, additional_context, token_cap]
-    base_token_cap: 50000
+    # 80k floor: per-call worst-case ≈ input(prefix + prior draft via
+    # include_artifacts ≈ 40k) + max_tokens(32k) ≈ 72k. 50k under-fit
+    # revisions that pull the prior 32k draft as context.
+    base_token_cap: 80000
     cost_hint: "≈ 1 turn @ 32k out (~30–45k tokens — the most expensive single spawn in this preset)"
     intent_description: >
       What the drafter should aim for (e.g. "tighten the opening", "go
@@ -102,7 +105,12 @@ subroutines:
     temperature: 1.0
     max_tokens: 2048
     overridable: [intent, n, additional_context, token_cap]
-    base_token_cap: 12000
+    # 100k cap: per-sample worst ≈ input(prefix + 32k draft ≈ 35k) +
+    # max_tokens(2k) ≈ 37k. n=3 → ~111k worst, ~70k typical. Historical
+    # 12k caused the affordability check to silently skip all 3 samples
+    # (mainline observed n shrinking on later rounds — same failure mode
+    # as the steelman 40k cap). 100k fits n=3 typical comfortably.
+    base_token_cap: 100000
     cost_hint: "≈ N parallel turns @ 2k out each (~3k tokens per sample)"
     intent_description: >
       Optional emphasis (e.g. "focus on argument structure", "be brutal

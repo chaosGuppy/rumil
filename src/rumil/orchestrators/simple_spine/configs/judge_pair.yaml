@@ -79,7 +79,11 @@ subroutines:
     max_tokens: 32000
     overridable: [intent, additional_context, token_cap]
     consumes: [pair_text, rubric]
-    base_token_cap: 8000
+    # 80k floor: per-call worst-case ≈ input(~30k pair_text + rubric)
+    # + max_tokens(32k) ≈ 62k. Historical 8k under-counted the input
+    # side and made the soft budget signal misleading (spawn routinely
+    # blew past cap). 80k matches the cross-preset floor.
+    base_token_cap: 80000
     cost_hint: "≈ 1 turn @ up to 32k out (~6–12k typical, peak 40k)"
     intent_description: >
       What aspect of the pair to emphasize in the initial read (e.g.
@@ -121,14 +125,14 @@ subroutines:
     max_tokens: 32000
     overridable: [intent, n, additional_context, token_cap]
     consumes: [pair_text, rubric]
-    # 40k spawn cap covers ~1 sample at large pair_text (125k chars,
-    # ~30k input tokens worst-case). Historical 8k caused both samples
-    # to silently skip via the affordability check, costing 2–3
-    # mainline retry rounds before mainline overrode token_cap. Mainline
-    # can still bump higher via `token_cap` override when both samples
-    # need to fit; the surfaced skip-reason in the tool_result tells
-    # mainline exactly what cap to ask for.
-    base_token_cap: 40000
+    # 110k spawn cap = 2 × (input_estimate + max_tokens) with headroom.
+    # Per-sample worst-case ≈ input(~18–30k) + max_tokens(32k) ≈ 50k;
+    # at n=2 the affordability check needs cap ≥ 100k or both samples
+    # silently skip (observed in haiku 200k-budget runs: r1 fired at
+    # 40k cap, both samples skipped with per_sample_worst_tokens=50387,
+    # mainline burned a retry round bumping cap to 60k + dropping n to
+    # 1). Sized for n=2 by default so mainline doesn't have to override.
+    base_token_cap: 110000
     cost_hint: "≈ N parallel turns @ up to 32k out each (~6–10k typical per sample)"
     intent_description: >
       Which side to steelman: 'A' or 'B'. Anything else falls through
@@ -170,7 +174,11 @@ subroutines:
     max_tokens: 4096
     overridable: [intent, additional_context, token_cap]
     consumes: [pair_text, rubric]
-    base_token_cap: 12000
+    # 80k floor: per-call worst-case ≈ input(pair_text + rubric +
+    # pair_notes + 2× steelman ≈ 50k) + max_tokens(4k) + 1 validator
+    # retry. 12k consistently over-fit the cap; 80k matches the
+    # cross-preset floor and absorbs retries cleanly.
+    base_token_cap: 80000
     cost_hint: "≈ 1 turn @ 4k out, +1 retry on label miss (~6–14k tokens)"
     intent_description: >
       Optional steering for the verdict (e.g. "weight clarity over

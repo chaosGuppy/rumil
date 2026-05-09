@@ -84,23 +84,27 @@ subroutines:
   - kind: nested_orch
     name: deep_dive
     description: |
-      Spawn a child SimpleSpine run on a NEW sub-question with its own
-      carved token budget. Creates a question page (linked CHILD_QUESTION
-      under the parent) and runs a fresh research orch against it; the
-      child has its own workspace_lookup / web_research / deep_dive
-      library and finalizes a single deliverable back to mainline.
-      Inputs: `question_headline` (required — headline for the new
-      child question); optional `question_content` (clarifying scope);
-      `intent` for the investigative steer; optional `output_guidance`
-      / `output_schema` to shape the deliverable; optional `token_cap`
-      to override the budget.
-      Output: the child orch's freeform finalize answer (or coerced
-      JSON if output_schema was set), plus a new persisted child
-      question in the workspace.
-      Use when a sub-question deserves its own multi-round loop —
-      heavier than a single workspace_lookup / web_research spawn.
-      Avoid recursing for narrow lookups; reach for it when the work
-      itself plausibly needs spawns of its own.
+      Decompose your scope question into a sub-question and investigate
+      it as its own research thread. Creates a new child question
+      linked under your scope, then runs a fresh research agent against
+      it — the sub-agent has the same library you do (workspace_lookup,
+      web_research, deep_dive) and pursues a focused deliverable that
+      is returned to you as a single synthesis.
+      First-class strategy when the scope question has distinct
+      sub-aspects each worth their own investigation — e.g. "what
+      drives X?" decomposing into the strongest 2–4 candidate drivers,
+      "compare options A/B/C" running per-option dives, "is claim P
+      true?" decomposing into the cruxes that would change your view.
+      Use eagerly when this kind of decomposition is natural; multiple
+      deep_dives in parallel cover the parent question much faster
+      than serial workspace_lookup / web_research alone.
+      Inputs: `question_headline` (required — the new child question);
+      optional `question_content` (clarifying scope); `intent` (what
+      you want investigated); optional `output_guidance` /
+      `output_schema` to shape the deliverable; optional `token_cap`.
+      Output: the sub-agent's freeform finalize answer (or coerced
+      JSON if output_schema was set), plus a persisted child question
+      in the workspace that you and future runs can build on.
     orch_factory_key: simple_spine_recurse
     base_token_cap: 100000
     cost_hint: "≈ a full SimpleSpine sub-run within its sub-cap (~30–100k tokens)"

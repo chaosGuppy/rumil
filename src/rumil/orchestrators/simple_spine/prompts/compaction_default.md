@@ -13,4 +13,4 @@ You can drop:
 - Speculative reasoning that did not pan out, unless you might revisit it.
 - Routine planning prose ("I will now spawn X then Y") once X and Y have run.
 
-Format your summary as readable prose with section headings. Wrap the whole thing in a single `<summary>...</summary>` block. After the summary, the harness will continue the conversation; pick up where you left off.
+Format your summary as readable prose with section headings. Wrap the whole thing in a single `<summary>...</summary>` block — the API expects that wrapper. The summary will be the *only* context (plus the system prompt) the next iteration sees, so make sure everything load-bearing is inside the block.

@@ -31,7 +31,7 @@ import time
 import types
 import typing
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,10 +58,15 @@ WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
     "two_phase": (TwoPhaseWorkflow, {}),
     "draft_and_edit": (DraftAndEditWorkflow, {}),
     # SimpleSpine on the completion side: ``--orch simple_spine
-    # --workflow-arg config_name=essay_continuation --budget 10``.
-    # ``budget`` is interpreted as the SimpleSpine token cap (not a
-    # rumil call-unit budget); the orch self-paces against it.
-    "simple_spine": (SimpleSpineWorkflow, {"call_type": "complete"}),
+    # --budget-tokens 200000``. ``config_name`` defaults to
+    # ``essay_continuation`` (the only completion-purpose preset);
+    # override via ``--workflow-arg config_name=<other>`` if needed.
+    # ``budget_tokens`` is interpreted as the SimpleSpine token cap
+    # (not a rumil call-unit budget); the orch self-paces against it.
+    "simple_spine": (
+        SimpleSpineWorkflow,
+        {"call_type": "complete", "config_name": "essay_continuation"},
+    ),
 }
 
 # Judge-side workflows. Kept separate from WORKFLOW_REGISTRY so the
@@ -228,6 +233,7 @@ def _make_workflow_and_task(
     budget: int | None = None,
     budget_tokens: int | None = None,
     extra_kwargs: dict[str, Any] | None = None,
+    artifacts: Mapping[str, str] | None = None,
 ) -> tuple[Any, CompleteEssayTask]:
     """Instantiate the workflow + task pair for a given run.
 
@@ -236,6 +242,9 @@ def _make_workflow_and_task(
     any caller-supplied ``extra_kwargs`` (e.g. from ``--workflow-arg``).
     Routes to ``budget_tokens=`` for token-budget workflows
     (:data:`TOKEN_BUDGET_WORKFLOWS`) and to ``budget=`` for the rest.
+    ``artifacts`` is forwarded only to SimpleSpine (the only registered
+    workflow whose ``__init__`` accepts it) so subroutines that declare
+    ``consumes:`` can auto-splice run-start inputs (e.g. ``prefix``).
     Raises ``KeyError`` (with a list of registered names) if
     ``workflow_name`` isn't registered.
     """
@@ -252,6 +261,8 @@ def _make_workflow_and_task(
             raise ValueError(f"workflow {workflow_name!r} requires budget (research-call count)")
         budget_kwarg = {"budget": budget}
     kwargs: dict[str, Any] = {**defaults, **(extra_kwargs or {}), **budget_kwarg}
+    if artifacts and workflow_name == "simple_spine":
+        kwargs["artifacts"] = dict(artifacts)
     workflow = cls(**kwargs)
     task = CompleteEssayTask()
     return workflow, task
@@ -475,17 +486,28 @@ async def run_orch_completion(
                 run_id=run_id, prod=prod, project_id=project.id, staged=not persist
             )
             try:
-                workflow, task = _make_workflow_and_task(
-                    workflow_name,
-                    budget=budget,
-                    budget_tokens=budget_tokens,
-                    extra_kwargs=workflow_kwargs,
-                )
                 ctx = EssayPrefixContext(
                     essay_id=pc.task.essay_id,
                     prefix_hash=pc.task.prefix_config_hash,
                     prefix_text=pc.task.prefix_markdown,
                     target_length_chars=len(pc.task.remainder_markdown),
+                )
+                # Seed the essay opening + target length into the
+                # SimpleSpine artifact channel. The essay_continuation
+                # preset declares `consumes: [prefix, target_length_chars]`
+                # on its drafter so every spawn gets these without
+                # mainline having to forward them. Other workflows
+                # ignore the kwarg (see _make_workflow_and_task).
+                completion_artifacts = {
+                    "prefix": ctx.prefix_text,
+                    "target_length_chars": str(ctx.target_length_chars),
+                }
+                workflow, task = _make_workflow_and_task(
+                    workflow_name,
+                    budget=budget,
+                    budget_tokens=budget_tokens,
+                    extra_kwargs=workflow_kwargs,
+                    artifacts=completion_artifacts,
                 )
                 # Run-name template (Gap 2): include the differentiators
                 # that actually distinguish runs in the traces list —

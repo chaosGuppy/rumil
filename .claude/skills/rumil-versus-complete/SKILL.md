@@ -159,7 +159,7 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 - `--orch two_phase --workspace versus --budget 4 --model sonnet --limit 3` — run on 3 pending essays
 - `--orch draft_and_edit --workspace versus --budget 4 --model opus --essay forethought__broad-timelines` — run draft-and-edit on one essay
 - `--orch draft_and_edit --workspace versus --budget 8 --model opus --include-stale` — also runs on off-feed essays
-- `--orch simple_spine --workspace versus --budget-tokens 200000 --model haiku --workflow-arg config_name=essay_continuation --limit 1` — single spine completion with a 200k-token cap (use `--budget-tokens`, not `--budget`)
+- `--orch simple_spine --workspace versus --budget-tokens 200000 --model haiku --limit 1` — single spine completion with a 200k-token cap (use `--budget-tokens`, not `--budget`; `config_name` defaults to `essay_continuation`, override via `--workflow-arg config_name=<other>`)
 
 The `--essay` and `--prefix-label` filters mirror `rumil-versus-generate`.
 `--include-stale` is the same opt-out from the active-essay-set default.

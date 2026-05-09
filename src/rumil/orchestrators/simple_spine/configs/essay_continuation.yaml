@@ -36,12 +36,18 @@ subroutines:
     name: draft
     description: |
       Produce a full essay continuation in one shot.
-      Inputs: prefix + target length come from the question; pass any
-      revision targets / planning notes in additional_context.
+      Inputs: the essay opening (`prefix`) and `target_length_chars` are
+      auto-spliced via the artifact channel. Pass any revision targets /
+      planning notes in `additional_context`. To revise an earlier draft,
+      pass that draft's key (announced as `draft/<spawn_id_short>` in the
+      previous tool_result) via `include_artifacts` — do NOT paste the
+      prior draft into `additional_context`.
       Output: continuation wrapped in <continuation>…</continuation> tags.
       Use after: run critique on the result, then re-spawn draft with
-      critique excerpts in additional_context to revise.
+      `include_artifacts: ["draft/<spawn_id_short>"]` plus critique
+      excerpts in additional_context to revise.
     sys_prompt_path: ../prompts/drafter_essay_sys.md
+    consumes: [prefix, target_length_chars]
     user_prompt_template: |
       ## Intent
       {intent}
@@ -64,24 +70,30 @@ subroutines:
       more empirical", or just "produce the continuation"). Spliced
       verbatim into the user prompt as {intent}.
     additional_context_description: >
-      Revision targets, planning notes, prior draft excerpts, critique
-      points to address. Spliced under {additional_context}.
+      Revision targets, planning notes, critique points to address.
+      Spliced under {additional_context}. To attach a prior draft, use
+      `include_artifacts` — don't paste it here.
 
   - kind: sample_n
     name: critique
     description: |
       Surface diverse criticism of a draft via N independent critics.
-      Inputs: full draft + prefix in additional_context; optional steering
-      in intent (e.g. "focus on argument structure").
+      Inputs: the essay opening (`prefix`) is auto-spliced via the
+      artifact channel. The draft to critique MUST be passed by key via
+      `include_artifacts: ["draft/<spawn_id_short>"]` (the key was
+      announced in the draft spawn's tool_result) — do NOT paste the
+      draft text into `additional_context`. Optional steering in
+      `intent` (e.g. "focus on argument structure").
       Output: N critiques delimited under "## Sample 1", "## Sample 2", …
       Use after: pick concrete weaknesses worth fixing, feed them as
       revision targets into a follow-up draft spawn.
     sys_prompt_path: ../prompts/critic_essay_sys.md
+    consumes: [prefix]
     user_prompt_template: |
       ## Intent
       {intent}
 
-      ## Draft + prefix
+      ## Additional context
       {additional_context}
 
       Produce your critique now.
@@ -96,6 +108,7 @@ subroutines:
       Optional emphasis (e.g. "focus on argument structure", "be brutal
       about hedging"). Empty intent = open-ended critique.
     additional_context_description: >
-      The draft + the prefix it's continuing. Spliced under
-      {additional_context}; critics can compare the continuation against
-      what came before.
+      Optional steering or notes not covered by the prefix/draft
+      artifacts (e.g. "be especially harsh on hedging language"). Spliced
+      under {additional_context}. The prefix arrives via auto-splice and
+      the draft via `include_artifacts` — don't paste either here.

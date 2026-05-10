@@ -24,10 +24,15 @@ import asyncio
 import logging
 import sys
 from dataclasses import replace
+from dataclasses import replace as dataclass_replace
 from pathlib import Path
 
 from rumil.models import PageType
 from rumil.orchestrators import Orchestrator
+from rumil.orchestrators.axon import AxonOrchestrator, load_axon_config
+from rumil.orchestrators.axon import OrchInputs as AxonOrchInputs
+from rumil.orchestrators.axon import discover_configs as discover_axon_configs
+from rumil.orchestrators.axon.direct_tools import DirectToolCtx, direct_tool_ctx_scope
 from rumil.orchestrators.simple_spine import (
     BudgetSpec,
     OrchInputs,
@@ -43,7 +48,8 @@ from ._runctx import make_db, open_run
 
 DEFAULT_BUDGET = 10.0
 DEFAULT_SIMPLE_SPINE_BUDGET_USD = 5.0
-ORCHESTRATOR_CHOICES = ("two_phase", "experimental", "simple_spine")
+DEFAULT_AXON_BUDGET_USD = 5.0
+ORCHESTRATOR_CHOICES = ("two_phase", "experimental", "simple_spine", "axon")
 SIMPLE_SPINE_CONFIGS_DIR = (
     Path(__file__).resolve().parents[3]
     / "src"
@@ -52,10 +58,18 @@ SIMPLE_SPINE_CONFIGS_DIR = (
     / "simple_spine"
     / "configs"
 )
+AXON_CONFIGS_DIR = (
+    Path(__file__).resolve().parents[3] / "src" / "rumil" / "orchestrators" / "axon" / "configs"
+)
 
 
 def _list_simple_spine_configs() -> list[str]:
     return sorted(p.stem for p in discover_configs(SIMPLE_SPINE_CONFIGS_DIR))
+
+
+def _list_axon_configs() -> list[str]:
+    # axon.discover_configs returns dict[str, Path] keyed by stem.
+    return sorted(discover_axon_configs(AXON_CONFIGS_DIR))
 
 
 def _keys(answer: object) -> list[str]:
@@ -121,9 +135,10 @@ async def main() -> None:
         "--config",
         default=None,
         help=(
-            "SimpleSpine config preset name (e.g. research, view_freeform). "
-            "Required when --orchestrator simple_spine. "
-            f"Available: {', '.join(_list_simple_spine_configs())}."
+            "Config preset name. Required when --orchestrator is "
+            "simple_spine or axon. SimpleSpine presets: "
+            f"{', '.join(_list_simple_spine_configs())}. Axon presets: "
+            f"{', '.join(_list_axon_configs())}."
         ),
     )
     parser.add_argument(
@@ -158,10 +173,15 @@ async def main() -> None:
         get_settings().enable_global_prio = args.global_prio
 
     is_simple_spine = args.orchestrator == "simple_spine"
+    is_axon = args.orchestrator == "axon"
     if is_simple_spine and not args.config:
         parser.error("--orchestrator simple_spine requires --config <preset>")
-    if not is_simple_spine and (args.config or args.model):
-        parser.error("--config / --model only apply with --orchestrator simple_spine")
+    if is_axon and not args.config:
+        parser.error("--orchestrator axon requires --config <preset>")
+    if not (is_simple_spine or is_axon) and args.config:
+        parser.error("--config only applies with --orchestrator simple_spine or axon")
+    if not is_simple_spine and args.model:
+        parser.error("--model currently only applies with --orchestrator simple_spine")
 
     logging.basicConfig(
         level=logging.WARNING,
@@ -246,6 +266,67 @@ async def main() -> None:
             else:
                 print(f"\nanswer ({len(result.answer_text)} chars):")
                 print(truncate(result.answer_text, 400))
+            return
+
+        if is_axon:
+            budget_usd = float(args.budget) if args.budget is not None else DEFAULT_AXON_BUDGET_USD
+            axon_cfg = load_axon_config(AXON_CONFIGS_DIR / f"{args.config}.yaml")
+            if args.no_compaction:
+                axon_cfg = dataclass_replace(axon_cfg, enable_server_compaction=False)
+            print(f"workspace:    {ws}")
+            print(f"question:     {full_id[:8]}  {truncate(page.headline, 80)}")
+            print(
+                f"orchestrator: axon[{args.config}]  "
+                f"model={axon_cfg.main_model}  budget=${budget_usd:.2f}"
+            )
+            extra_config = {
+                "smoke_test": bool(args.smoke_test),
+                "axon_config": args.config,
+                "axon_budget_usd": budget_usd,
+                "axon_main_model": axon_cfg.main_model,
+            }
+            await open_run(
+                db,
+                name=args.name or page.headline,
+                question_id=full_id,
+                skill="rumil-orchestrate",
+                budget=1,
+                extra_config=extra_config,
+            )
+            print_trace(db.run_id)
+            print_event(
+                "→",
+                f"running axon[{args.config}] "
+                f"(model={axon_cfg.main_model}, budget=${budget_usd:.2f})",
+            )
+            # Axon takes a free-form question string + optional
+            # seed_page_ids. Seed the workspace question itself so the
+            # spine surfaces its full content via load_page on demand;
+            # auto_seed_from_question pulls additional related pages.
+            axon_question = page.headline
+            if page.content and page.content.strip():
+                axon_question = f"{page.headline}\n\n{page.content.strip()}"
+            axon_inputs = AxonOrchInputs(
+                question=axon_question,
+                budget_usd=budget_usd,
+                seed_page_ids=[full_id],
+            )
+            # Direct-tool fns (load_page, create_page) read from a
+            # contextvar; scope it for the run.
+            direct_ctx = DirectToolCtx(
+                db=db,
+                call_id="rumil-orchestrate",
+                question_id=full_id,
+            )
+            with direct_tool_ctx_scope(direct_ctx):
+                axon_result = await AxonOrchestrator(db, axon_cfg).run(axon_inputs)
+            print_event(
+                "✓",
+                f"done: status={axon_result.last_status}  "
+                f"cost=${axon_result.cost_usd_used:.2f}  rounds={axon_result.rounds_used}",
+            )
+            print(f"\nanswer ({len(axon_result.answer_text)} chars):")
+            print(truncate(axon_result.answer_text, 400))
             return
 
         # two_phase / experimental: budget is rumil-call count (integer).

@@ -93,6 +93,7 @@ from rumil.orchestrators.axon.trace_events import (
     AxonSideEffectAppliedEvent,
 )
 from rumil.settings import get_settings
+from rumil.tracing import get_langfuse, observe, phase_span, propagate_attributes
 from rumil.tracing.broadcast import Broadcaster
 from rumil.tracing.tracer import CallTrace, reset_trace, set_trace
 
@@ -240,6 +241,7 @@ class AxonOrchestrator:
             log.warning("axon: compaction_instructions_path missing: %s", path)
             return ""
 
+    @observe(name="orchestrator.axon")
     async def run(
         self,
         inputs: OrchInputs,
@@ -278,10 +280,40 @@ class AxonOrchestrator:
             call_id=call_id,
         )
         run_id = self.db.run_id or str(uuid.uuid4())
+
+        lf = get_langfuse()
+        if lf is not None:
+            lf.update_current_span(
+                name=f"orchestrator.axon[{self.config.name}]",
+                metadata={
+                    "call_id": call_id,
+                    "run_id": run_id,
+                    "call_type": call_type.value,
+                    "parent_call_id": parent_call_id,
+                    "config_name": self.config.name,
+                    "main_model": self.config.main_model,
+                    "budget_usd": inputs.budget_usd,
+                    "max_seed_pages": self.config.max_seed_pages,
+                    "auto_seed_from_question": self.config.auto_seed_from_question,
+                    "enable_server_compaction": self.config.enable_server_compaction,
+                    "question_excerpt": inputs.question[:240],
+                    "seed_page_id_count": len(inputs.seed_page_ids),
+                },
+            )
+
         trace = CallTrace(call_id=call_id, db=self.db, broadcaster=self.broadcaster)
         token = set_trace(trace)
         try:
-            return await self._run_inner(inputs, call, call_id, run_id, trace)
+            with propagate_attributes(
+                session_id=run_id,
+                metadata={
+                    "orchestrator": "axon",
+                    "config_name": self.config.name,
+                    "call_id": call_id,
+                },
+                tags=["orchestrator:axon", f"axon_config:{self.config.name}"],
+            ):
+                return await self._run_inner(inputs, call, call_id, run_id, trace)
         finally:
             reset_trace(token)
 
@@ -367,79 +399,82 @@ class AxonOrchestrator:
                     cost_usd_remaining=budget_clock.cost_usd_remaining,
                 )
             )
+            with phase_span(f"round_{round_idx}"):
+                with phase_span("mainline"):
+                    response = await self._call_mainline(
+                        system_prompt=system_prompt,
+                        messages=spine_messages,
+                        tool_defs=mainline_tool_defs,
+                        call_id=call_id,
+                        phase="mainline",
+                        round_idx=round_idx,
+                        budget_clock=budget_clock,
+                    )
 
-            response = await self._call_mainline(
-                system_prompt=system_prompt,
-                messages=spine_messages,
-                tool_defs=mainline_tool_defs,
-                call_id=call_id,
-                phase="mainline",
-                round_idx=round_idx,
-                budget_clock=budget_clock,
-            )
+                text_parts: list[str] = []
+                tool_uses: list[ToolUseBlock] = []
+                for block in response.content:
+                    if isinstance(block, (TextBlock, BetaTextBlock)):
+                        text_parts.append(block.text)
+                    elif isinstance(block, (ToolUseBlock, BetaToolUseBlock)):
+                        tool_uses.append(block)  # pyright: ignore[reportArgumentType]
+                assistant_text = "\n".join(text_parts)
+                spine_messages.append({"role": "assistant", "content": list(response.content)})
 
-            text_parts: list[str] = []
-            tool_uses: list[ToolUseBlock] = []
-            for block in response.content:
-                if isinstance(block, (TextBlock, BetaTextBlock)):
-                    text_parts.append(block.text)
-                elif isinstance(block, (ToolUseBlock, BetaToolUseBlock)):
-                    tool_uses.append(block)  # pyright: ignore[reportArgumentType]
-            assistant_text = "\n".join(text_parts)
-            spine_messages.append({"role": "assistant", "content": list(response.content)})
+                if not tool_uses:
+                    last_status = "no_tool_calls"
+                    if not answer_text and assistant_text:
+                        answer_text = assistant_text
+                    break
 
-            if not tool_uses:
-                last_status = "no_tool_calls"
-                if not answer_text and assistant_text:
-                    answer_text = assistant_text
-                break
+                finalize_block = next(
+                    (tu for tu in tool_uses if tu.name == FINALIZE_TOOL_NAME), None
+                )
+                if finalize_block is not None:
+                    payload = dict(finalize_block.input or {})
+                    answer_text = str(payload.get("answer", "")).strip()
+                    last_status = "completed"
+                    # If finalize was emitted alongside other tool calls, satisfy
+                    # them with placeholder errors so the conversation is well-
+                    # formed in the trace; the loop exits regardless.
+                    if len(tool_uses) > 1:
+                        placeholder_results: list[dict] = []
+                        for tu in tool_uses:
+                            if tu.id == finalize_block.id:
+                                continue
+                            placeholder_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tu.id,
+                                    "content": "[finalize fired in same turn — peer call skipped]",
+                                    "is_error": True,
+                                }
+                            )
+                        spine_messages.append({"role": "user", "content": placeholder_results})
+                    break
 
-            finalize_block = next((tu for tu in tool_uses if tu.name == FINALIZE_TOOL_NAME), None)
-            if finalize_block is not None:
-                payload = dict(finalize_block.input or {})
-                answer_text = str(payload.get("answer", "")).strip()
-                last_status = "completed"
-                # If finalize was emitted alongside other tool calls, satisfy
-                # them with placeholder errors so the conversation is well-
-                # formed in the trace; the loop exits regardless.
-                if len(tool_uses) > 1:
-                    placeholder_results: list[dict] = []
-                    for tu in tool_uses:
-                        if tu.id == finalize_block.id:
-                            continue
-                        placeholder_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tu.id,
-                                "content": "[finalize fired in same turn — peer call skipped]",
-                                "is_error": True,
-                            }
-                        )
-                    spine_messages.append({"role": "user", "content": placeholder_results})
-                break
+                tool_results = await self._dispatch_turn_tool_uses(
+                    tool_uses=tool_uses,
+                    spine_messages=spine_messages,
+                    system_prompt=system_prompt,
+                    mainline_tool_defs=mainline_tool_defs,
+                    mainline_tool_fns=mainline_tool_fns,
+                    artifacts=artifacts,
+                    budget_clock=budget_clock,
+                    call_id=call_id,
+                    trace=trace,
+                    round_idx=round_idx,
+                )
 
-            tool_results = await self._dispatch_turn_tool_uses(
-                tool_uses=tool_uses,
-                spine_messages=spine_messages,
-                system_prompt=system_prompt,
-                mainline_tool_defs=mainline_tool_defs,
-                mainline_tool_fns=mainline_tool_fns,
-                artifacts=artifacts,
-                budget_clock=budget_clock,
-                call_id=call_id,
-                trace=trace,
-                round_idx=round_idx,
-            )
+                budget_block = self._budget_user_block(budget_clock)
+                spine_messages.append({"role": "user", "content": [*tool_results, budget_block]})
 
-            budget_block = self._budget_user_block(budget_clock)
-            spine_messages.append({"role": "user", "content": [*tool_results, budget_block]})
-
-            if budget_clock.cost_exhausted:
-                last_status = "budget_exhausted"
-                # Continue one more round so the model gets a chance to
-                # finalize given the explicit signal in budget_block.
-                # If it still doesn't, we exit on the next iteration.
-                continue
+                if budget_clock.cost_exhausted:
+                    last_status = "budget_exhausted"
+                    # Continue one more round so the model gets a chance to
+                    # finalize given the explicit signal in budget_block.
+                    # If it still doesn't, we exit on the next iteration.
+                    continue
         else:
             last_status = "max_rounds"
 
@@ -582,6 +617,7 @@ class AxonOrchestrator:
                 out.append(self._tool_result_block(tu.id, "[no result]", True))
         return out
 
+    @observe(name="delegate")
     async def _dispatch_one_delegate(
         self,
         *,
@@ -600,6 +636,21 @@ class AxonOrchestrator:
         """Run configure → inner loop → side effects for one delegate."""
         delegate_id = uuid.uuid4().hex[:8]
         req = pending.request
+        lf = get_langfuse()
+        if lf is not None:
+            lf.update_current_span(
+                name=f"delegate[{delegate_id}]",
+                metadata={
+                    "delegate_id": delegate_id,
+                    "round_idx": round_idx,
+                    "tool_use_id": pending.tool_use_id,
+                    "intent_excerpt": req.intent[:200],
+                    "inherit_context": req.inherit_context,
+                    "budget_usd": req.budget_usd,
+                    "n": req.n,
+                    "regime": "continuation" if req.inherit_context else "isolation",
+                },
+            )
         await trace.record(
             AxonDelegateRequestedEvent(
                 round_idx=round_idx,
@@ -793,75 +844,112 @@ class AxonOrchestrator:
         """
         corrective: str | None = None
         for attempt in range(_MAX_CONFIGURE_RETRIES + 1):
-            fork_messages = self._build_configure_fork_messages(
-                spine_messages=spine_messages,
-                all_pending=all_pending,
-                target=pending,
-                corrective=corrective,
-                peer_tool_use_ids=peer_tool_use_ids,
-            )
-            response = await self._call_mainline(
-                system_prompt=system_prompt,
-                messages=fork_messages,
-                tool_defs=mainline_tool_defs,
-                call_id=call_id,
-                phase=f"configure[{delegate_id}]",
-                round_idx=round_idx,
-                budget_clock=budget_clock,
-            )
-            cfg, err = self._extract_configure_call(response, pending.request)
-            if cfg is not None:
-                # Validate artifact_keys after coupling rule passes;
-                # missing keys go through the same corrective-retry path
-                # so the model can self-correct typos.
-                missing = artifacts.require_keys(cfg.artifact_keys)
-                if missing:
-                    err = (
-                        f"artifact_keys references unknown key(s) {missing}. "
-                        f"Available keys: {artifacts.list_keys()}. "
-                        "Pick existing keys or drop the field."
-                    )
-                else:
-                    # Validate cfg.tools — names must be either the
-                    # universal `finalize`, a known server tool, or a
-                    # registered direct tool. Surface unknown names as
-                    # corrective rather than letting them crash later.
-                    bad_tools = self._unknown_tool_names(cfg.tools or [])
-                    if bad_tools:
-                        from rumil.orchestrators.axon.tools import list_direct_tool_names
-
-                        err = (
-                            f"tools references unknown name(s) {bad_tools}. "
-                            f"Allowed: registered direct tools "
-                            f"{list_direct_tool_names()} + the server tool "
-                            "`web_search` + the universal `finalize` (which "
-                            "is auto-added so you can drop it). "
-                            "Names like `web_research` or `workspace_lookup` "
-                            "are *system_prompt* refs, not tool names — "
-                            'use them under `system_prompt: {ref: "..."}` '
-                            "instead."
-                        )
-                    else:
-                        await trace.record(
-                            AxonConfigurePreparedEvent(
-                                delegate_id=delegate_id,
-                                config=cfg.model_dump(),
-                                rationale=cfg.rationale,
-                                cost_usd_used=budget_clock.cost_usd_used,
-                            )
-                        )
-                        return cfg
+            with phase_span(f"configure[{delegate_id}/attempt_{attempt}]"):
+                cfg = await self._configure_attempt(
+                    pending=pending,
+                    all_pending=all_pending,
+                    spine_messages=spine_messages,
+                    system_prompt=system_prompt,
+                    mainline_tool_defs=mainline_tool_defs,
+                    budget_clock=budget_clock,
+                    call_id=call_id,
+                    trace=trace,
+                    delegate_id=delegate_id,
+                    round_idx=round_idx,
+                    artifacts=artifacts,
+                    peer_tool_use_ids=peer_tool_use_ids,
+                    corrective=corrective,
+                )
+            if isinstance(cfg, DelegateConfig):
+                return cfg
+            corrective = cfg  # err string for next attempt's corrective
             await trace.record(
                 AxonConfigureRetriedEvent(
                     delegate_id=delegate_id,
                     attempt=attempt + 1,
-                    reason=err or "unknown",
+                    reason=corrective or "unknown",
                 )
             )
-            corrective = err
         raise _DelegateError(
             f"configure follow-up failed after {_MAX_CONFIGURE_RETRIES + 1} attempts: {corrective}"
         )
+
+    async def _configure_attempt(
+        self,
+        *,
+        pending: _PendingDelegate,
+        all_pending: Sequence[_PendingDelegate],
+        spine_messages: list[dict],
+        system_prompt: str,
+        mainline_tool_defs: list[dict],
+        budget_clock: BudgetClock,
+        call_id: str,
+        trace: CallTrace,
+        delegate_id: str,
+        round_idx: int,
+        artifacts: ArtifactStore,
+        peer_tool_use_ids: Sequence[str],
+        corrective: str | None,
+    ) -> DelegateConfig | str:
+        """Run one configure follow-up call. Returns the cfg on success or an err string for retry."""
+        fork_messages = self._build_configure_fork_messages(
+            spine_messages=spine_messages,
+            all_pending=all_pending,
+            target=pending,
+            corrective=corrective,
+            peer_tool_use_ids=peer_tool_use_ids,
+        )
+        response = await self._call_mainline(
+            system_prompt=system_prompt,
+            messages=fork_messages,
+            tool_defs=mainline_tool_defs,
+            call_id=call_id,
+            phase=f"configure[{delegate_id}]",
+            round_idx=round_idx,
+            budget_clock=budget_clock,
+        )
+        cfg, err = self._extract_configure_call(response, pending.request)
+        if cfg is None:
+            return err or "configure tool was not called in the response"
+
+        # Validate artifact_keys after coupling rule passes; missing
+        # keys go through the same corrective-retry path so the model
+        # can self-correct typos.
+        missing = artifacts.require_keys(cfg.artifact_keys)
+        if missing:
+            return (
+                f"artifact_keys references unknown key(s) {missing}. "
+                f"Available keys: {artifacts.list_keys()}. "
+                "Pick existing keys or drop the field."
+            )
+
+        # Validate cfg.tools — names must be either the universal
+        # `finalize`, a known server tool, or a registered direct
+        # tool. Surface unknown names as corrective rather than
+        # letting them crash later.
+        bad_tools = self._unknown_tool_names(cfg.tools or [])
+        if bad_tools:
+            from rumil.orchestrators.axon.tools import list_direct_tool_names
+
+            return (
+                f"tools references unknown name(s) {bad_tools}. "
+                f"Allowed: registered direct tools {list_direct_tool_names()} "
+                "+ the server tool `web_search` + the universal `finalize` "
+                "(which is auto-added so you can drop it). "
+                "Names like `web_research` or `workspace_lookup` are "
+                "*system_prompt* refs, not tool names — use them under "
+                '`system_prompt: {ref: "..."}` instead.'
+            )
+
+        await trace.record(
+            AxonConfigurePreparedEvent(
+                delegate_id=delegate_id,
+                config=cfg.model_dump(),
+                rationale=cfg.rationale,
+                cost_usd_used=budget_clock.cost_usd_used,
+            )
+        )
+        return cfg
 
     def _build_configure_fork_messages(
         self,
@@ -1068,21 +1156,22 @@ class AxonOrchestrator:
             )
         )
         compaction_kwargs = self._build_compaction_kwargs()
-        inner_result = await run_inner_loop(
-            system_prompt=inner_system,
-            seed_messages=seed_messages,
-            tools=inner_tools,
-            model=self.config.main_model,
-            model_config=None,
-            db=self.db,
-            call_id=call_id,
-            phase=f"inner[{delegate_id}/{sample_idx}]",
-            budget_clock=budget_clock,
-            max_rounds=cfg.max_rounds,
-            context_management=compaction_kwargs.get("context_management"),
-            betas=compaction_kwargs.get("betas"),
-            server_tool_defs=server_tool_defs,
-        )
+        with phase_span(f"inner[{delegate_id}/{sample_idx}]"):
+            inner_result = await run_inner_loop(
+                system_prompt=inner_system,
+                seed_messages=seed_messages,
+                tools=inner_tools,
+                model=self.config.main_model,
+                model_config=None,
+                db=self.db,
+                call_id=call_id,
+                phase=f"inner[{delegate_id}/{sample_idx}]",
+                budget_clock=budget_clock,
+                max_rounds=cfg.max_rounds,
+                context_management=compaction_kwargs.get("context_management"),
+                betas=compaction_kwargs.get("betas"),
+                server_tool_defs=server_tool_defs,
+            )
         await trace.record(
             AxonInnerLoopCompletedEvent(
                 delegate_id=delegate_id,

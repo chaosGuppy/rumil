@@ -488,6 +488,25 @@ def _capture_request_kwargs(cfg: ModelConfig) -> dict:
     return cfg.to_record_dict()
 
 
+def _serialize_request_for_storage(kwargs: dict) -> dict:
+    """Make the full request kwargs JSONB-safe for the ``request`` column.
+
+    Most kwargs are already plain dicts/strings. The structured-call path
+    puts a ``type[BaseModel]`` under ``output_format``; replace it with
+    ``{"name", "schema"}`` so the column is a faithful, replay-able
+    snapshot of what went on the wire (with the schema substituted for
+    the class).
+    """
+    out = dict(kwargs)
+    output_format = out.get("output_format")
+    if output_format is not None and hasattr(output_format, "model_json_schema"):
+        out["output_format"] = {
+            "name": output_format.__name__,
+            "schema": output_format.model_json_schema(),
+        }
+    return out
+
+
 def _capture_response_schema(response_model: type[BaseModel] | None) -> dict | None:
     """Extract the JSON Schema the model is constrained to produce.
 
@@ -610,6 +629,9 @@ async def _save_exchange(
     available_tools: Sequence[dict] | None = None,
     response_schema: dict | None = None,
     error: str | None = None,
+    request: dict | None = None,
+    response: dict | None = None,
+    provider_request_id: str | None = None,
 ) -> None:
     """Persist an LLM exchange and record a trace event.
 
@@ -638,6 +660,9 @@ async def _save_exchange(
         available_tools=available_tools,
         response_schema=response_schema,
         error=error,
+        request=request,
+        response=response,
+        provider_request_id=provider_request_id,
     )
     cost_usd = compute_cost(
         model=model,
@@ -706,6 +731,8 @@ async def _record_partial_failure(
     thinking_blocks: dict | None = None,
     available_tools: Sequence[dict] | None = None,
     response_schema: dict | None = None,
+    request: dict | None = None,
+    provider_request_id: str | None = None,
 ) -> None:
     """Persist whatever forensics we have for a failed LLM call.
 
@@ -744,6 +771,8 @@ async def _record_partial_failure(
                 available_tools=available_tools,
                 response_schema=response_schema,
                 error=error_str,
+                request=request,
+                provider_request_id=provider_request_id,
             )
         except Exception as save_exc:
             log.warning(
@@ -1054,10 +1083,10 @@ async def call_anthropic_api(
                 response = await stream.get_final_message()
             except Exception:
                 # Capture whatever was decoded before the stream raised —
-                # ``current_message_snapshot`` is only valid while the
-                # context manager is open, so do this here, not in the
-                # outer except. Asserting access on an empty stream
-                # raises AssertionError; treat as no partial.
+                # ``current_message_snapshot`` / ``request_id`` are only
+                # valid while the context manager is open, so do this
+                # here, not in the outer except. Asserting access on an
+                # empty stream raises AssertionError; treat as no partial.
                 snapshot_content: list | None = None
                 try:
                     snapshot_content = stream.current_message_snapshot.content
@@ -1065,9 +1094,15 @@ async def call_anthropic_api(
                     snapshot_content = None
                 partial_state["snapshot_content"] = snapshot_content
                 partial_state["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+                try:
+                    partial_state["request_id"] = stream.request_id
+                except Exception:
+                    partial_state["request_id"] = None
                 raise
+            stream_request_id = stream.request_id
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
+        response._request_id = stream_request_id  # type: ignore[attr-defined]
         return response
 
     try:
@@ -1094,6 +1129,8 @@ async def call_anthropic_api(
             request_kwargs=_capture_request_kwargs(cfg),
             available_tools=tools,
             response_schema=response_schema,
+            request=_serialize_request_for_storage(kwargs),
+            provider_request_id=partial_state.get("request_id"),
         )
         trace = get_trace()
         if trace:
@@ -1139,6 +1176,9 @@ async def call_anthropic_api(
                 thinking_blocks=parsed.thinking_blocks_for_storage(),
                 available_tools=tools,
                 response_schema=response_schema,
+                request=_serialize_request_for_storage(kwargs),
+                response=response.model_dump(mode="json"),
+                provider_request_id=getattr(response, "_request_id", None),
             )
         except Exception as exc:
             log.error(
@@ -2011,6 +2051,8 @@ async def _structured_call_parse(
             request_kwargs=_capture_request_kwargs(cfg),
             available_tools=tools,
             response_schema=response_schema,
+            request=_serialize_request_for_storage(parse_kwargs),
+            provider_request_id=getattr(exc, "request_id", None),
         )
         if (
             continuation_recovery
@@ -2081,6 +2123,9 @@ async def _structured_call_parse(
             thinking_blocks=parsed.thinking_blocks_for_storage(),
             available_tools=tools,
             response_schema=response_schema,
+            request=_serialize_request_for_storage(parse_kwargs),
+            response=response.model_dump(mode="json"),
+            provider_request_id=getattr(response, "_request_id", None),
         )
     if response.parsed_output is not None:
         log.debug(

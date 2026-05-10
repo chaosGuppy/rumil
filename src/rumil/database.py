@@ -2962,6 +2962,9 @@ class DB:
         thinking_blocks: dict[str, Any] | None = None,
         available_tools: Sequence[dict[str, Any]] | None = None,
         response_schema: dict[str, Any] | None = None,
+        request: dict[str, Any] | None = None,
+        response: dict[str, Any] | None = None,
+        provider_request_id: str | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         row: dict[str, Any] = {
@@ -2992,6 +2995,12 @@ class DB:
             row["available_tools"] = list(available_tools)
         if response_schema is not None:
             row["response_schema"] = response_schema
+        if request is not None:
+            row["request"] = request
+        if response is not None:
+            row["response"] = response
+        if provider_request_id is not None:
+            row["provider_request_id"] = provider_request_id
         await self._execute(self.client.table("call_llm_exchanges").insert(row))
         return exchange_id
 

@@ -27,7 +27,7 @@ work (web research, workspace search, etc.) lives inside delegates.
 
 from __future__ import annotations
 
-from rumil.orchestrators.axon.artifacts import Artifact, ArtifactStore
+from rumil.orchestrators.axon.artifacts import Artifact, ArtifactSeed, ArtifactStore
 from rumil.orchestrators.axon.budget_clock import BudgetClock, BudgetSnapshot, BudgetSpec
 from rumil.orchestrators.axon.config import (
     OPERATING_ASSUMPTIONS_KEY,
@@ -74,6 +74,7 @@ __all__ = (
     "FINALIZE_TOOL_NAME",
     "OPERATING_ASSUMPTIONS_KEY",
     "Artifact",
+    "ArtifactSeed",
     "ArtifactStore",
     "AxonConfig",
     "AxonOrchestrator",

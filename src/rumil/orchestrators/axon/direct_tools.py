@@ -30,6 +30,7 @@ from rumil.context import format_page
 from rumil.database import DB
 from rumil.llm import Tool
 from rumil.models import Page, PageDetail, PageLayer, PageType, Workspace
+from rumil.orchestrators.axon.artifacts import ArtifactStore
 from rumil.orchestrators.axon.tools import register_direct_tool
 
 log = logging.getLogger(__name__)
@@ -41,12 +42,13 @@ class DirectToolCtx:
 
     Set by the orchestrator at run start (and not mutated thereafter
     for the lifetime of the run). Tool fns read it to find the active
-    DB; missing-ctx access raises so wiring bugs surface.
+    DB / ArtifactStore; missing-ctx access raises so wiring bugs surface.
     """
 
     db: DB
     call_id: str
     question_id: str | None = None  # active question for scoped operations
+    artifacts: ArtifactStore | None = None
 
 
 _DIRECT_TOOL_CTX: ContextVar[DirectToolCtx | None] = ContextVar("_DIRECT_TOOL_CTX", default=None)
@@ -83,6 +85,7 @@ def direct_tool_ctx_scope(ctx: DirectToolCtx) -> Iterator[None]:
 
 LOAD_PAGE_TOOL_NAME = "load_page"
 CREATE_PAGE_TOOL_NAME = "create_page"
+READ_ARTIFACT_TOOL_NAME = "read_artifact"
 
 
 def build_load_page_tool() -> Tool:
@@ -227,5 +230,66 @@ def build_create_page_tool() -> Tool:
     )
 
 
+def build_read_artifact_tool() -> Tool:
+    """Read an artifact's body by key from the run's ArtifactStore.
+
+    Caller-seeded artifacts (with ``render_inline=False``, the default)
+    are announced in the spine's first user message but their bodies
+    are not spliced inline; this tool fetches the body on demand.
+    Same goes for delegate-produced artifacts that mainline wants to
+    inspect after a tool_result mentions the key.
+    """
+
+    async def fn(args: dict) -> str:
+        ctx = get_direct_tool_ctx()
+        if ctx.artifacts is None:
+            return "Error: read_artifact requires the orchestrator to have wired an ArtifactStore into the contextvar; none is set."
+        key = str(args.get("key", "")).strip()
+        if not key:
+            return "Error: read_artifact requires `key`."
+        artifact = ctx.artifacts.get(key)
+        if artifact is None:
+            available = ctx.artifacts.list_keys()
+            return f"Error: no artifact at key {key!r}. Available keys: {available}"
+        provenance = (
+            "input" if artifact.produced_by == "input" else f"delegate:{artifact.produced_by}"
+        )
+        desc_part = f" — {artifact.description}" if artifact.description else ""
+        header = (
+            f'<artifact key="{artifact.key}" chars="{len(artifact.text)}" '
+            f'from="{provenance}"{desc_part}>'
+        )
+        return f"{header}\n{artifact.text}\n</artifact>"
+
+    return Tool(
+        name=READ_ARTIFACT_TOOL_NAME,
+        description=(
+            "Read the body of a run-local artifact by its key. "
+            "Artifacts are announced in your initial user message under "
+            "'## Available artifacts' and as tool_result text when "
+            "delegates write artifacts via their write_artifact side "
+            "effect. Use this to load the full body of any artifact "
+            "whose key has been announced — caller-seeded inputs "
+            "(prefixes, rubrics, prior syntheses) and delegate "
+            "outputs alike. The reserved `operating_assumptions` key "
+            "is also readable here. Returns the body wrapped in an "
+            "<artifact key=...> XML fence with chars + provenance."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "The artifact key to load.",
+                },
+            },
+            "required": ["key"],
+            "additionalProperties": False,
+        },
+        fn=fn,
+    )
+
+
 register_direct_tool(LOAD_PAGE_TOOL_NAME, build_load_page_tool)
 register_direct_tool(CREATE_PAGE_TOOL_NAME, build_create_page_tool)
+register_direct_tool(READ_ARTIFACT_TOOL_NAME, build_read_artifact_tool)

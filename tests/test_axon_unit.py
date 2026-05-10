@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from rumil.orchestrators.axon import (
     OPERATING_ASSUMPTIONS_KEY,
+    ArtifactSeed,
     ArtifactStore,
     AxonConfig,
     AxonOrchestrator,
@@ -348,13 +349,18 @@ def test_build_initial_artifacts_operating_assumptions_seeded():
         operating_assumptions="assume X",
     )
     seed = build_initial_artifacts(inputs)
-    assert seed[OPERATING_ASSUMPTIONS_KEY] == "assume X"
+    entry = seed[OPERATING_ASSUMPTIONS_KEY]
+    assert isinstance(entry, ArtifactSeed)
+    assert entry.text == "assume X"
+    assert entry.render_inline is True
 
 
 def test_build_initial_artifacts_strips_whitespace_assumptions():
     inputs = OrchInputs(question="q", budget_usd=1.0, operating_assumptions="  assume X  \n")
     seed = build_initial_artifacts(inputs)
-    assert seed[OPERATING_ASSUMPTIONS_KEY] == "assume X"
+    entry = seed[OPERATING_ASSUMPTIONS_KEY]
+    assert isinstance(entry, ArtifactSeed)
+    assert entry.text == "assume X"
 
 
 def test_build_initial_artifacts_empty_assumptions_omitted():
@@ -371,7 +377,9 @@ def test_build_initial_artifacts_merges_caller_seed():
         artifacts={"pair_text": "P"},
     )
     seed = build_initial_artifacts(inputs)
-    assert seed[OPERATING_ASSUMPTIONS_KEY] == "A"
+    entry = seed[OPERATING_ASSUMPTIONS_KEY]
+    assert isinstance(entry, ArtifactSeed)
+    assert entry.text == "A"
     assert seed["pair_text"] == "P"
 
 
@@ -394,6 +402,25 @@ def test_build_initial_artifacts_caller_only_no_assumptions():
     )
     seed = build_initial_artifacts(inputs)
     assert seed == {"pair_text": "P"}
+
+
+def test_build_initial_artifacts_caller_artifact_seed():
+    inputs = OrchInputs(
+        question="q",
+        budget_usd=1.0,
+        artifacts={
+            "rubric": ArtifactSeed(
+                text="judge per axes A, B, C",
+                description="judging rubric",
+                render_inline=True,
+            )
+        },
+    )
+    seed = build_initial_artifacts(inputs)
+    entry = seed["rubric"]
+    assert isinstance(entry, ArtifactSeed)
+    assert entry.description == "judging rubric"
+    assert entry.render_inline is True
 
 
 def test_load_axon_config_valid_yaml(tmp_path: Path):

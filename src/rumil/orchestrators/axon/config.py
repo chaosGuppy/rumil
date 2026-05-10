@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from rumil.orchestrators.axon.artifacts import ArtifactSeed
+
 OPERATING_ASSUMPTIONS_KEY = "operating_assumptions"
 
 
@@ -90,9 +92,12 @@ class OrchInputs:
     # Caller-seeded artifacts (run-local text-by-key). Distinct from
     # pages: artifacts are for content that doesn't fit the workspace
     # graph. Folded into the run's ArtifactStore before mainline's
-    # first turn. Operating assumptions arrive via the field above
-    # (not as an artifact).
-    artifacts: Mapping[str, str] = field(default_factory=dict)
+    # first turn. Each entry is either a plain string (full body, no
+    # description, not rendered inline — body fetched via the
+    # ``read_artifact`` mainline tool) or an :class:`ArtifactSeed`
+    # carrying ``text`` + a short ``description`` + a ``render_inline``
+    # flag (True ⇒ body XML-fenced into the spine's first user message).
+    artifacts: Mapping[str, str | ArtifactSeed] = field(default_factory=dict)
     wall_clock_soft_s: float | None = None
 
 
@@ -108,20 +113,26 @@ class OrchResult:
     call_id: str
 
 
-def build_initial_artifacts(inputs: OrchInputs) -> dict[str, str]:
+def build_initial_artifacts(inputs: OrchInputs) -> dict[str, str | ArtifactSeed]:
     """Combine caller-seeded artifacts with operating assumptions.
 
     Operating assumptions land at the reserved key
-    :data:`OPERATING_ASSUMPTIONS_KEY`. Empty/whitespace-only assumptions
-    are not seeded. Raises if the caller's seed already uses that
-    reserved key.
+    :data:`OPERATING_ASSUMPTIONS_KEY` as an
+    :class:`ArtifactSeed` rendered inline (since these are
+    constraints the spine must see immediately). Empty/whitespace-only
+    assumptions are not seeded. Raises if the caller's seed already
+    uses that reserved key.
     """
-    seed: dict[str, str] = dict(inputs.artifacts)
+    seed: dict[str, str | ArtifactSeed] = dict(inputs.artifacts)
     if inputs.operating_assumptions.strip():
         if OPERATING_ASSUMPTIONS_KEY in seed:
             raise ValueError(
                 f"OrchInputs.artifacts already contains the reserved key "
                 f"{OPERATING_ASSUMPTIONS_KEY!r}; operating_assumptions cannot also be set."
             )
-        seed[OPERATING_ASSUMPTIONS_KEY] = inputs.operating_assumptions.strip()
+        seed[OPERATING_ASSUMPTIONS_KEY] = ArtifactSeed(
+            text=inputs.operating_assumptions.strip(),
+            description="caller-supplied operating assumptions / constraints",
+            render_inline=True,
+        )
     return seed

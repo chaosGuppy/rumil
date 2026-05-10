@@ -19,6 +19,7 @@ compaction_trigger_tokens: 400000
 
 direct_tools:
   - load_page
+  - read_artifact
 
 system_prompt_registry:
   web_research: ../prompts/web_research_sys.md

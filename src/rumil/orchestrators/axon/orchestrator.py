@@ -50,11 +50,15 @@ from rumil.models import Call, CallType
 from rumil.orchestrators.axon.artifacts import ArtifactStore
 from rumil.orchestrators.axon.budget_clock import BudgetClock, BudgetSpec
 from rumil.orchestrators.axon.config import (
-    OPERATING_ASSUMPTIONS_KEY,
     AxonConfig,
     OrchInputs,
     OrchResult,
     build_initial_artifacts,
+)
+from rumil.orchestrators.axon.direct_tools import (
+    DirectToolCtx,
+    reset_direct_tool_ctx,
+    set_direct_tool_ctx,
 )
 from rumil.orchestrators.axon.runner import (
     InnerLoopResult,
@@ -278,6 +282,41 @@ class AxonOrchestrator:
         budget_clock = BudgetClock(spec=budget_spec)
         artifacts = ArtifactStore(seed=build_initial_artifacts(inputs))
 
+        # Scope a DirectToolCtx with the run's ArtifactStore so the
+        # mainline read_artifact / load_page / create_page tool fns
+        # have what they need. Overrides any externally-set ctx for the
+        # duration of the run; that's fine — orchestrator state is
+        # the authoritative source for these fields.
+        direct_ctx = DirectToolCtx(
+            db=self.db,
+            call_id=call_id,
+            artifacts=artifacts,
+        )
+        direct_token = set_direct_tool_ctx(direct_ctx)
+        try:
+            return await self._run_inner_with_ctx(
+                inputs=inputs,
+                call=call,
+                call_id=call_id,
+                run_id=run_id,
+                trace=trace,
+                budget_clock=budget_clock,
+                artifacts=artifacts,
+            )
+        finally:
+            reset_direct_tool_ctx(direct_token)
+
+    async def _run_inner_with_ctx(
+        self,
+        *,
+        inputs: OrchInputs,
+        call: Call,
+        call_id: str,
+        run_id: str,
+        trace: CallTrace,
+        budget_clock: BudgetClock,
+        artifacts: ArtifactStore,
+    ) -> OrchResult:
         system_prompt = self._load_main_system_prompt()
         mainline_tools = build_mainline_tools(self.config.direct_tools)
         mainline_tool_defs, mainline_tool_fns = prepare_tools(mainline_tools)
@@ -1220,10 +1259,13 @@ class AxonOrchestrator:
     ) -> list[dict]:
         """Render the spine's first user-role content block list.
 
-        Sections: Question (always), Operating assumptions (if non-empty),
-        Available pages (if seed_page_ids provided — truncated to
-        AxonConfig.max_seed_pages with id+type+headline), Available
-        artifacts (if any caller-seeded artifacts).
+        Sections (each only if applicable): Question, Available pages
+        (id + type + headline for seed_page_ids), Available artifacts
+        (announcements with description + load-mode hint), Inline
+        artifact bodies (XML-fenced for any caller seed flagged
+        ``render_inline=True`` — operating_assumptions defaults to
+        inline). Operating assumptions render via the artifact path now;
+        no separate "## Operating assumptions" section.
         """
         parts: list[dict] = [
             {
@@ -1231,13 +1273,6 @@ class AxonOrchestrator:
                 "text": f"## Question\n\n{inputs.question}\n",
             },
         ]
-        if OPERATING_ASSUMPTIONS_KEY in artifacts:
-            parts.append(
-                {
-                    "type": "text",
-                    "text": f"## Operating assumptions\n\n{inputs.operating_assumptions.strip()}\n",
-                }
-            )
 
         effective_seed_ids = await self._resolve_effective_seed_page_ids(inputs, trace)
         seed_pages_text = await self._render_seed_pages_section(effective_seed_ids)
@@ -1246,8 +1281,15 @@ class AxonOrchestrator:
 
         seed_announces = artifacts.announce_seed()
         if seed_announces:
-            announce_text = "## Available artifacts\n\n" + "\n".join(seed_announces)
+            announce_text = "## Available artifacts\n\n" + "\n".join(
+                f"- {line}" for line in seed_announces
+            )
             parts.append({"type": "text", "text": announce_text})
+
+        inline_block = artifacts.render_seed_inline_block()
+        if inline_block:
+            parts.append({"type": "text", "text": inline_block})
+
         return parts
 
     async def _resolve_effective_seed_page_ids(

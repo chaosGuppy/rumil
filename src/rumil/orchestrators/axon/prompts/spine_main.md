@@ -3,7 +3,7 @@ Each turn, you may:
 - call any direct tool (e.g. `web_research`, `workspace_lookup`)
 - finalize via `finalize` when you have enough to produce the deliverable
 
-Two-step delegation: each `delegate` call is followed in the next turn by a `configure` directive identifying which delegate to set up. You produce the full inner-loop config there. The inner loop runs, terminates by calling `finalize`, and its result lands as your delegate call's tool_result.
+Two-step delegation: each `delegate` call is followed in the next turn by a `configure` directive identifying which delegate to set up. You produce the full delegate config there. The delegate runs, terminates by calling `finalize`, and its result lands as your delegate call's tool_result.
 
 Budget discipline:
 - The USD budget is a hard cap. When exhausted you will be asked to finalize on your next turn.

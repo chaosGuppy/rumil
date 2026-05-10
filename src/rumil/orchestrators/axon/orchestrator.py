@@ -103,6 +103,24 @@ _MAX_CONFIGURE_RETRIES = 2
 _CONFIGURE_PLACEHOLDER = "[awaiting configure]"
 
 
+def _known_server_tool_def(name: str) -> dict | None:
+    """Return the Anthropic server-tool def for a known name, or None.
+
+    Server tools are executed Anthropic-side (no fn dispatch); they
+    travel in the API request's ``tools`` list alongside our regular
+    tool defs. Configure can list them by name in ``cfg.tools``; the
+    orchestrator routes them here instead of through the direct-tool
+    registry.
+    """
+    if name == "web_search":
+        return {
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": 5,
+        }
+    return None
+
+
 @dataclass
 class _PendingDelegate:
     """One delegate call collected from a mainline assistant turn."""
@@ -495,6 +513,16 @@ class AxonOrchestrator:
         # is a fully-self-contained coroutine over its own carved budget
         # clock; mutations to shared state (artifacts, trace) are
         # serialised by Python's GIL since neither does heavy CPU work.
+        # Configure-fork messages need placeholder tool_results for every
+        # tool_use in the assistant turn (delegates AND any peer direct
+        # tools / unexpected calls) — the API rejects fork messages
+        # whose prior tool_use blocks lack matching tool_results.
+        peer_tool_use_ids = tuple(
+            tu.id
+            for tu in tool_uses
+            if tu.name != DELEGATE_TOOL_NAME
+            and tu.id not in {pd.tool_use_id for pd in delegate_calls}
+        )
         delegate_outcomes: dict[str, _DelegateOutcome] = {}
         if delegate_calls:
             outcomes = await _gather_delegate_outcomes(
@@ -509,6 +537,7 @@ class AxonOrchestrator:
                     call_id=call_id,
                     trace=trace,
                     round_idx=round_idx,
+                    peer_tool_use_ids=peer_tool_use_ids,
                 )
                 for pd in delegate_calls
             )
@@ -566,6 +595,7 @@ class AxonOrchestrator:
         call_id: str,
         trace: CallTrace,
         round_idx: int,
+        peer_tool_use_ids: Sequence[str] = (),
     ) -> _DelegateOutcome:
         """Run configure → inner loop → side effects for one delegate."""
         delegate_id = uuid.uuid4().hex[:8]
@@ -599,6 +629,7 @@ class AxonOrchestrator:
                 delegate_id=delegate_id,
                 round_idx=round_idx,
                 artifacts=artifacts,
+                peer_tool_use_ids=peer_tool_use_ids,
             )
         except _DelegateError as e:
             return _DelegateOutcome(
@@ -752,6 +783,7 @@ class AxonOrchestrator:
         delegate_id: str,
         round_idx: int,
         artifacts: ArtifactStore,
+        peer_tool_use_ids: Sequence[str] = (),
     ) -> DelegateConfig:
         """Run the configure follow-up call(s) until a valid DelegateConfig lands.
 
@@ -766,6 +798,7 @@ class AxonOrchestrator:
                 all_pending=all_pending,
                 target=pending,
                 corrective=corrective,
+                peer_tool_use_ids=peer_tool_use_ids,
             )
             response = await self._call_mainline(
                 system_prompt=system_prompt,
@@ -789,15 +822,35 @@ class AxonOrchestrator:
                         "Pick existing keys or drop the field."
                     )
                 else:
-                    await trace.record(
-                        AxonConfigurePreparedEvent(
-                            delegate_id=delegate_id,
-                            config=cfg.model_dump(),
-                            rationale=cfg.rationale,
-                            cost_usd_used=budget_clock.cost_usd_used,
+                    # Validate cfg.tools — names must be either the
+                    # universal `finalize`, a known server tool, or a
+                    # registered direct tool. Surface unknown names as
+                    # corrective rather than letting them crash later.
+                    bad_tools = self._unknown_tool_names(cfg.tools or [])
+                    if bad_tools:
+                        from rumil.orchestrators.axon.tools import list_direct_tool_names
+
+                        err = (
+                            f"tools references unknown name(s) {bad_tools}. "
+                            f"Allowed: registered direct tools "
+                            f"{list_direct_tool_names()} + the server tool "
+                            "`web_search` + the universal `finalize` (which "
+                            "is auto-added so you can drop it). "
+                            "Names like `web_research` or `workspace_lookup` "
+                            "are *system_prompt* refs, not tool names — "
+                            'use them under `system_prompt: {ref: "..."}` '
+                            "instead."
                         )
-                    )
-                    return cfg
+                    else:
+                        await trace.record(
+                            AxonConfigurePreparedEvent(
+                                delegate_id=delegate_id,
+                                config=cfg.model_dump(),
+                                rationale=cfg.rationale,
+                                cost_usd_used=budget_clock.cost_usd_used,
+                            )
+                        )
+                        return cfg
             await trace.record(
                 AxonConfigureRetriedEvent(
                     delegate_id=delegate_id,
@@ -817,13 +870,17 @@ class AxonOrchestrator:
         all_pending: Sequence[_PendingDelegate],
         target: _PendingDelegate,
         corrective: str | None,
+        peer_tool_use_ids: Sequence[str] = (),
     ) -> list[dict]:
         """Build the message stack for one configure follow-up call.
 
         Spine prefix + a single user-role block containing placeholder
         tool_results (one per parallel delegate, identical text for
-        cache uniformity) + a directive identifying the target +
-        optional corrective on retry.
+        cache uniformity, plus placeholders for any non-delegate peer
+        tool_uses on the same assistant turn — load_page / read_artifact
+        / etc. — so the API doesn't reject the fork for unmatched
+        tool_use ids) + a directive identifying the target + optional
+        corrective on retry.
         """
         placeholders: list[dict] = []
         for pd in all_pending:
@@ -831,6 +888,14 @@ class AxonOrchestrator:
                 {
                     "type": "tool_result",
                     "tool_use_id": pd.tool_use_id,
+                    "content": _CONFIGURE_PLACEHOLDER,
+                }
+            )
+        for tool_use_id in peer_tool_use_ids:
+            placeholders.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
                     "content": _CONFIGURE_PLACEHOLDER,
                 }
             )
@@ -845,7 +910,7 @@ class AxonOrchestrator:
                     "n": target.request.n,
                 }
             ),
-            "If inherit_context=True: leave system_prompt and tools as null (the inner loop reuses my system + tools — that's the cache-shared continuation).",
+            "If inherit_context=True: leave system_prompt and tools as null (the delegate reuses my system + tools — that's the cache-shared continuation).",
             "If inherit_context=False: pick a system_prompt (ref or inline) and a tools subset.",
             "Set finalize_schema to whatever shape the result should come back as.",
         ]
@@ -879,6 +944,21 @@ class AxonOrchestrator:
         return None, "configure tool was not called in the response"
 
     @staticmethod
+    def _unknown_tool_names(names: Sequence[str]) -> list[str]:
+        """Return tool names that don't resolve to anything we can run.
+
+        Valid names: registered direct tools (load_page, read_artifact,
+        create_page, ...), the `finalize` token (auto-added by the
+        orchestrator; harmless to list), and known server tool names
+        (web_search). Anything else is returned for the corrective
+        retry path.
+        """
+        from rumil.orchestrators.axon.tools import list_direct_tool_names
+
+        valid = set(list_direct_tool_names()) | {FINALIZE_TOOL_NAME}
+        return [n for n in names if n not in valid and _known_server_tool_def(n) is None]
+
+    @staticmethod
     def _validate_coupling_rule(
         cfg: DelegateConfig,
         request: DelegateRequest,
@@ -898,20 +978,20 @@ class AxonOrchestrator:
             if cfg.system_prompt is not None:
                 return (
                     "inherit_context=True requires system_prompt=null "
-                    "(the inner loop reuses the spine's system for cache reuse). "
+                    "(the delegate reuses the spine's system for cache reuse). "
                     "Either set inherit_context=False or null the system_prompt."
                 )
             if cfg.tools is not None:
                 return (
                     "inherit_context=True requires tools=null "
-                    "(the inner loop reuses the spine's full tool set for cache reuse). "
+                    "(the delegate reuses the spine's full tool set for cache reuse). "
                     "Either set inherit_context=False or null the tools."
                 )
         else:
             if cfg.system_prompt is None:
                 return (
                     "inherit_context=False requires an explicit system_prompt "
-                    "(ref or inline). Without inheritance, the inner loop has no system."
+                    "(ref or inline). Without inheritance, the delegate has no system."
                 )
             if cfg.tools is None:
                 return (
@@ -955,16 +1035,29 @@ class AxonOrchestrator:
             seed_messages = [*spine_messages, {"role": "user", "content": framing}]
         else:
             inner_system = self._resolve_system_prompt(cfg.system_prompt)
-            # The model often lists `finalize` in cfg.tools defensively
-            # (it's the universal terminator and the configure description
-            # tells it to call finalize). The orchestrator builds finalize
-            # itself via build_finalize_tool with cfg.finalize_schema, so
-            # silently filter `finalize` out of the registry-resolved list.
-            tool_names = [n for n in (cfg.tools or []) if n != FINALIZE_TOOL_NAME]
-            inner_direct_tools = resolve_direct_tools(tool_names)
+            # Split cfg.tools into:
+            # - finalize: filtered out (orchestrator builds it separately)
+            # - known server tools (web_search): routed via server_tool_defs
+            # - everything else: resolved through the direct-tool registry
+            regular_names: list[str] = []
+            for n in cfg.tools or []:
+                if n == FINALIZE_TOOL_NAME:
+                    continue
+                if _known_server_tool_def(n) is not None:
+                    continue
+                regular_names.append(n)
+            inner_direct_tools = resolve_direct_tools(regular_names)
             inner_tools = [finalize_tool, *inner_direct_tools]
             framing = self._render_isolation_framing(req, cfg, artifacts)
             seed_messages = [{"role": "user", "content": framing}]
+
+        # Build server-tool defs from any known server-tool names in
+        # cfg.tools (currently just web_search).
+        server_tool_defs: list[dict] = []
+        for n in cfg.tools or []:
+            stdef = _known_server_tool_def(n)
+            if stdef is not None:
+                server_tool_defs.append(stdef)
 
         await trace.record(
             AxonInnerLoopStartedEvent(
@@ -988,6 +1081,7 @@ class AxonOrchestrator:
             max_rounds=cfg.max_rounds,
             context_management=compaction_kwargs.get("context_management"),
             betas=compaction_kwargs.get("betas"),
+            server_tool_defs=server_tool_defs,
         )
         await trace.record(
             AxonInnerLoopCompletedEvent(
@@ -1190,18 +1284,44 @@ class AxonOrchestrator:
     def _build_registry_summary(self) -> str:
         """Append registry contents to the spine system prompt.
 
-        Without this, the model has no way to know what
-        ``system_prompt: {ref: "<name>"}`` or
-        ``finalize_schema: {ref: "<name>"}`` keys are valid in
-        configure outputs. Surfacing them at run start (in cache —
-        registry is config-static) lets the model pick refs without
-        having to invent the shape from scratch.
+        Three surfaces the model needs to know about for valid
+        configure outputs:
+
+        - ``system_prompt_registry`` keys: usable as
+          ``system_prompt: {ref: "<name>"}`` in isolation delegates.
+        - ``finalize_schema_registry`` keys: usable as
+          ``finalize_schema: {ref: "<name>"}`` for any delegate.
+        - Direct-tool names + known server tools: usable in
+          ``cfg.tools``.
+
+        Surfacing all three at run start (in cache — registry is
+        config-static) cuts down on configure-step retries because
+        the model picks valid names instead of inventing them.
         """
+        from rumil.orchestrators.axon.tools import list_direct_tool_names
+
         sys_keys = sorted(self.config.system_prompt_registry)
         fin_keys = sorted(self.config.finalize_schema_registry)
-        if not sys_keys and not fin_keys:
+        tool_names = list_direct_tool_names()
+        if not sys_keys and not fin_keys and not tool_names:
             return ""
         lines: list[str] = ["## Available registries (use in `configure` calls)"]
+        if tool_names:
+            lines.append("")
+            lines.append("### Tools for `cfg.tools` (isolation delegates):")
+            for n in tool_names:
+                lines.append(f"- `{n}`")
+            lines.append(
+                "- `web_search` — Anthropic server tool; routes via "
+                "context-management. Pair with a `system_prompt` that "
+                "instructs the delegated agent on search strategy."
+            )
+            lines.append(
+                "(`finalize` is auto-added per delegate; you can list "
+                "it harmlessly. Names like `web_research` / "
+                "`workspace_lookup` are *system_prompt* refs below, "
+                "not tool names.)"
+            )
         if sys_keys:
             lines.append("")
             lines.append('### System prompts (`system_prompt: {ref: "<name>"}`):')

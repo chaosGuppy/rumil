@@ -22,8 +22,9 @@ Architecture (matches design discussion):
 - After all parallel delegates complete (gather), real tool_results
   replace the placeholders and the spine takes its next turn.
 
-This first version implements the core flow for ``n=1`` delegates with
-``artifact_key`` side effects. ``n>1`` is a follow-up.
+Implements the core flow for n=1 and n>1 delegates with the
+``write_artifact`` side effect. Workspace-page creation happens
+inside delegates via the ``create_page`` tool, not as a side effect.
 """
 
 from __future__ import annotations
@@ -75,6 +76,7 @@ from rumil.orchestrators.axon.tools import (
     resolve_direct_tools,
 )
 from rumil.orchestrators.axon.trace_events import (
+    AxonAutoSeedFailedEvent,
     AxonConfigurePreparedEvent,
     AxonConfigureRetriedEvent,
     AxonDelegateCompletedEvent,
@@ -244,7 +246,7 @@ class AxonOrchestrator:
 
         # Spine message stack — accumulates over the run.
         spine_messages: list[dict] = []
-        first_user_text = await self._build_initial_user_message(inputs, artifacts)
+        first_user_text = await self._build_initial_user_message(inputs, artifacts, trace)
         spine_messages.append({"role": "user", "content": first_user_text})
 
         last_status = "incomplete"
@@ -1057,6 +1059,7 @@ class AxonOrchestrator:
         self,
         inputs: OrchInputs,
         artifacts: ArtifactStore,
+        trace: CallTrace | None = None,
     ) -> list[dict]:
         """Render the spine's first user-role content block list.
 
@@ -1079,7 +1082,7 @@ class AxonOrchestrator:
                 }
             )
 
-        effective_seed_ids = await self._resolve_effective_seed_page_ids(inputs)
+        effective_seed_ids = await self._resolve_effective_seed_page_ids(inputs, trace)
         seed_pages_text = await self._render_seed_pages_section(effective_seed_ids)
         if seed_pages_text:
             parts.append({"type": "text", "text": seed_pages_text})
@@ -1093,6 +1096,7 @@ class AxonOrchestrator:
     async def _resolve_effective_seed_page_ids(
         self,
         inputs: OrchInputs,
+        trace: CallTrace | None = None,
     ) -> Sequence[str]:
         """Caller-supplied IDs take priority; otherwise auto-seed via embeddings.
 
@@ -1102,6 +1106,11 @@ class AxonOrchestrator:
         question and pulls top-K similar pages from the workspace via
         :func:`search_pages_by_vector` (K = ``AxonConfig.max_seed_pages``).
         Returns the resolved page IDs in similarity-descending order.
+
+        If the embedding lookup raises (flaky service, RPC error, etc.)
+        the run continues with no seed pages but emits an
+        :class:`AxonAutoSeedFailedEvent` so the failure is visible in
+        the trace UI.
         """
         if inputs.seed_page_ids:
             return inputs.seed_page_ids
@@ -1119,6 +1128,13 @@ class AxonOrchestrator:
             )
         except Exception as e:
             log.warning("axon: auto-seed embedding lookup failed: %s", e)
+            if trace is not None:
+                await trace.record(
+                    AxonAutoSeedFailedEvent(
+                        reason=f"{type(e).__name__}: {e}",
+                        question_excerpt=inputs.question[:200],
+                    )
+                )
             return ()
         return [page.id for page, _score in ranked]
 

@@ -7,6 +7,7 @@ internals can import locally.
 """
 
 from rumil.tracing.trace_events import (
+    AxonAutoSeedFailedEvent,
     AxonConfigurePreparedEvent,
     AxonConfigureRetriedEvent,
     AxonDelegateCompletedEvent,
@@ -20,6 +21,7 @@ from rumil.tracing.trace_events import (
 )
 
 __all__ = (
+    "AxonAutoSeedFailedEvent",
     "AxonConfigurePreparedEvent",
     "AxonConfigureRetriedEvent",
     "AxonDelegateCompletedEvent",

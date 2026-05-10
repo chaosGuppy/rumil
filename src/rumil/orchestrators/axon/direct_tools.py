@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from rumil.context import format_page
 from rumil.database import DB
 from rumil.llm import Tool
-from rumil.models import PageDetail
+from rumil.models import Page, PageDetail, PageLayer, PageType, Workspace
 from rumil.orchestrators.axon.tools import register_direct_tool
 
 log = logging.getLogger(__name__)
@@ -124,42 +124,92 @@ def build_load_page_tool() -> Tool:
     )
 
 
+_CREATE_PAGE_ALLOWED_TYPES = ("claim", "source", "view", "judgement")
+
+
 def build_create_page_tool() -> Tool:
     """Create a workspace page; return its newly-assigned ID.
 
     Intended for inclusion in **delegate** tool lists, NOT mainline's.
     Mainline doesn't mutate the workspace directly — page creation
     happens inside delegates whose job is producing workspace
-    artifacts.
+    artifacts (research syntheses, source pages, claims, judgements).
 
-    v1: stub — returns a not-implemented error. Real wiring requires
-    the page-creation pipeline (type validation, link creation,
-    embedding generation) and is a follow-up. Until then, delegates
-    that need to surface results should use ``artifact_key`` to
-    persist a summary string and let mainline read it back.
+    Allowed page types are restricted to ``claim``, ``source``,
+    ``view``, ``judgement`` — the durable, content-bearing kinds.
+    Question pages have scoping constraints (parent question linkage)
+    that need a more deliberate API; wiki / summary / view_item /
+    view_meta / spec_item / artefact are managed by other paths and
+    not safe for ad-hoc delegate creation.
+
+    The page is persisted via :meth:`DB.save_page` with run_id /
+    project_id taken from the orchestrator's DB context. Returns the
+    new page id as the tool's string result so the delegate's finalize
+    payload can surface it.
     """
 
     async def fn(args: dict) -> str:
-        return (
-            "Error: create_page is registered but not yet wired in v1. "
-            "Use artifact_key on your delegate config to persist a "
-            "summary string instead."
+        ctx = get_direct_tool_ctx()
+        page_type_raw = str(args.get("page_type", "")).strip()
+        headline = str(args.get("headline", "")).strip()
+        content = str(args.get("content", "")).strip()
+        if not page_type_raw:
+            return "Error: create_page requires `page_type`."
+        if not headline:
+            return "Error: create_page requires `headline`."
+        if not content:
+            return "Error: create_page requires `content`."
+        if page_type_raw not in _CREATE_PAGE_ALLOWED_TYPES:
+            return (
+                f"Error: page_type {page_type_raw!r} is not allowed via "
+                f"create_page (allowed: {list(_CREATE_PAGE_ALLOWED_TYPES)})."
+            )
+        try:
+            page_type = PageType(page_type_raw)
+        except ValueError as e:
+            return f"Error: invalid page_type: {e}"
+        page = Page(
+            page_type=page_type,
+            layer=PageLayer.SQUIDGY,
+            workspace=Workspace.RESEARCH,
+            content=content,
+            headline=headline,
+            project_id=ctx.db.project_id or "",
+            provenance_call_id=ctx.call_id or "",
+            run_id=ctx.db.run_id or "",
+            scope_question_id=ctx.question_id,
         )
+        try:
+            await ctx.db.save_page(page)
+        except Exception as e:
+            log.exception("axon.create_page: save_page failed")
+            return f"Error: failed to save page: {type(e).__name__}: {e}"
+        return f"Created page id={page.id} (type={page_type.value}, headline={headline!r})."
 
     return Tool(
         name=CREATE_PAGE_TOOL_NAME,
         description=(
-            "Create a workspace page (claim, source, view, etc.) and "
-            "return its assigned id. For use by delegates whose job is "
-            "producing durable workspace artifacts."
+            "Create a workspace page (one of claim, source, view, "
+            "judgement) and return its assigned id. For use by "
+            "delegates whose job is producing durable workspace "
+            "artifacts (research syntheses, scraped sources, claims, "
+            "judgements). The page is persisted to the active "
+            "project / run; the assigned id can be surfaced in your "
+            "finalize payload so your caller can load_page it later. "
+            "Mainline does not have this tool — only delegates with "
+            "create_page in their configured tools list."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "page_type": {
                     "type": "string",
-                    "enum": ["claim", "source", "view", "concept", "judgement"],
-                    "description": "What kind of page to create.",
+                    "enum": list(_CREATE_PAGE_ALLOWED_TYPES),
+                    "description": (
+                        "claim / source / view / judgement. "
+                        "Question pages need parent linkage and are "
+                        "not creatable via this tool."
+                    ),
                 },
                 "headline": {
                     "type": "string",

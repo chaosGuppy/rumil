@@ -748,6 +748,19 @@ class AxonFinalizedEvent(BaseModel):
     cost_usd_used: float
 
 
+class AxonAutoSeedFailedEvent(BaseModel):
+    """Auto-seed embedding lookup raised; run continues with no seed pages.
+
+    Surfaces in the UI so a flaky embedding service / RPC failure isn't
+    invisible. The orchestrator catches the exception and treats it as
+    "no seed pages" rather than failing the run.
+    """
+
+    event: Literal["axon_auto_seed_failed"] = "axon_auto_seed_failed"
+    reason: str = ""
+    question_excerpt: str = ""
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -817,6 +830,7 @@ TraceEvent = Annotated[
     | AxonInnerLoopCompletedEvent
     | AxonSideEffectAppliedEvent
     | AxonDelegateCompletedEvent
-    | AxonFinalizedEvent,
+    | AxonFinalizedEvent
+    | AxonAutoSeedFailedEvent,
     Field(discriminator="event"),
 ]

@@ -32,6 +32,19 @@ they exist only as a `calls.run_id` tag. This skill queries `calls` directly
 so it works for both cases. If a `runs` row exists, its name + config are
 printed as a header.
 
+## Axon runs
+
+For `axon` orchestrator runs, the per-call event summaries surface
+axon-specific events: `axon_run_started`, `axon_round_started`,
+`axon_delegate_requested`, `axon_configure_prepared`,
+`axon_configure_retried` (model produced a malformed `DelegateConfig`
+on first attempt — confusion signal),
+`axon_inner_loop_started` / `..._completed`,
+`axon_side_effect_applied`, `axon_delegate_completed`, `axon_finalized`,
+and `axon_auto_seed_failed`. See `rumil-trace` for what each means.
+Drill into a specific delegate via `rumil-trace <call_id>` once you've
+located the interesting one in the tree.
+
 ```!
 setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.load_run $ARGUMENTS
 ```

@@ -171,6 +171,53 @@ class AxonOrchestrator:
             self._client = anthropic.AsyncAnthropic(api_key=get_settings().require_anthropic_key())
         return self._client
 
+    def _build_compaction_kwargs(self) -> dict[str, Any]:
+        """Server-side compaction (compact_20260112) kwargs for call_anthropic_api.
+
+        Mirrors :class:`simple_spine.SimpleSpineOrchestrator`: when
+        ``enable_server_compaction`` is on, configure the API to summarise
+        the prefix once it crosses ``compaction_trigger_tokens`` and drop
+        every prior message on subsequent turns. The system prompt is
+        preserved (cached separately); the original first user message is
+        NOT preserved automatically — the configured instructions prompt
+        tells the summariser what to keep.
+
+        Returns ``{}`` when compaction is disabled. Reused across mainline
+        rounds, configure follow-ups, and inner-loop calls so any
+        long-running thread benefits.
+        """
+        if not self.config.enable_server_compaction:
+            return {}
+        edit: dict[str, Any] = {
+            "type": "compact_20260112",
+            "trigger": {
+                "type": "input_tokens",
+                "value": self.config.compaction_trigger_tokens,
+            },
+        }
+        instructions = self._load_compaction_instructions()
+        if instructions:
+            edit["instructions"] = instructions
+        return {
+            "context_management": {"edits": [edit]},
+            "betas": ["compact-2026-01-12"],
+        }
+
+    def _load_compaction_instructions(self) -> str:
+        """Read the compaction instructions prompt, if configured."""
+        path_raw = self.config.compaction_instructions_path
+        if path_raw is None:
+            return ""
+        path = Path(path_raw)
+        if not path.is_absolute():
+            here = Path(__file__).parent
+            path = (here / path).resolve()
+        try:
+            return path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            log.warning("axon: compaction_instructions_path missing: %s", path)
+            return ""
+
     async def run(
         self,
         inputs: OrchInputs,
@@ -873,6 +920,7 @@ class AxonOrchestrator:
                 tool_names=[t.name for t in inner_tools],
             )
         )
+        compaction_kwargs = self._build_compaction_kwargs()
         inner_result = await run_inner_loop(
             system_prompt=inner_system,
             seed_messages=seed_messages,
@@ -884,6 +932,8 @@ class AxonOrchestrator:
             phase=f"inner[{delegate_id}/{sample_idx}]",
             budget_clock=budget_clock,
             max_rounds=cfg.max_rounds,
+            context_management=compaction_kwargs.get("context_management"),
+            betas=compaction_kwargs.get("betas"),
         )
         await trace.record(
             AxonInnerLoopCompletedEvent(
@@ -1025,6 +1075,7 @@ class AxonOrchestrator:
             db=self.db,
             cache=True,
             model_config=None,
+            **self._build_compaction_kwargs(),
         )
         if api_resp.message.usage is not None:
             budget_clock.record_exchange(api_resp.message.usage, self.config.main_model)
@@ -1053,7 +1104,75 @@ class AxonOrchestrator:
         if not path.is_absolute():
             here = Path(__file__).parent
             path = (here / path).resolve()
-        return path.read_text(encoding="utf-8")
+        base = path.read_text(encoding="utf-8")
+        registry = self._build_registry_summary()
+        if registry:
+            return base.rstrip() + "\n\n" + registry
+        return base
+
+    def _build_registry_summary(self) -> str:
+        """Append registry contents to the spine system prompt.
+
+        Without this, the model has no way to know what
+        ``system_prompt: {ref: "<name>"}`` or
+        ``finalize_schema: {ref: "<name>"}`` keys are valid in
+        configure outputs. Surfacing them at run start (in cache —
+        registry is config-static) lets the model pick refs without
+        having to invent the shape from scratch.
+        """
+        sys_keys = sorted(self.config.system_prompt_registry)
+        fin_keys = sorted(self.config.finalize_schema_registry)
+        if not sys_keys and not fin_keys:
+            return ""
+        lines: list[str] = ["## Available registries (use in `configure` calls)"]
+        if sys_keys:
+            lines.append("")
+            lines.append('### System prompts (`system_prompt: {ref: "<name>"}`):')
+            for k in sys_keys:
+                summary = self._summarise_prompt(self.config.system_prompt_registry[k])
+                lines.append(f"- `{k}`: {summary}")
+        if fin_keys:
+            lines.append("")
+            lines.append('### Finalize schemas (`finalize_schema: {ref: "<name>"}`):')
+            for k in fin_keys:
+                schema = self.config.finalize_schema_registry[k]
+                desc = self._summarise_finalize_schema(schema)
+                lines.append(f"- `{k}`: {desc}")
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _summarise_prompt(text: str) -> str:
+        """Extract a one-line summary from a prompt's first non-empty line.
+
+        Strips markdown headers ("# ", "## ") and quotes; clamps to 200
+        chars. Used for the registry summary in the spine system prompt
+        so the model has a quick read on what each registered prompt is
+        for without dumping its full body inline.
+        """
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            line = line.lstrip("#").strip().strip("\"'`")
+            if not line:
+                continue
+            return line[:200] + ("..." if len(line) > 200 else "")
+        return "(empty)"
+
+    @staticmethod
+    def _summarise_finalize_schema(schema: dict[str, Any]) -> str:
+        """Produce a one-line summary of a finalize schema for the registry list."""
+        desc = schema.get("description")
+        if isinstance(desc, str) and desc.strip():
+            return desc.strip()[:200]
+        required = schema.get("required") or []
+        properties = schema.get("properties") or {}
+        prop_pairs: list[str] = []
+        for name, spec in properties.items():
+            mark = "" if name in required else "?"
+            type_hint = spec.get("type", "?") if isinstance(spec, dict) else "?"
+            prop_pairs.append(f"{name}{mark}:{type_hint}")
+        return "{" + ", ".join(prop_pairs) + "}"
 
     async def _build_initial_user_message(
         self,

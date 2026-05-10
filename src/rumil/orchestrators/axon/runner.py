@@ -95,6 +95,8 @@ async def run_inner_loop(
     max_rounds: int,
     cache: bool = True,
     server_tool_defs: Sequence[dict] = (),
+    context_management: dict | None = None,
+    betas: Sequence[str] | None = None,
 ) -> InnerLoopResult:
     """Run a tool-using inner loop until finalize / max_rounds / cost_exhausted.
 
@@ -145,6 +147,8 @@ async def run_inner_loop(
             db=db,
             cache=cache,
             model_config=model_config,
+            context_management=context_management,
+            betas=betas,
         )
         response = api_resp.message
         usage = response.usage

@@ -28,6 +28,38 @@ These flags combine — e.g. `--system-once --user-only 2000 --response-only 200
 gives a compact read of a long multi-round call with the high-signal tail of
 each exchange and no system-prompt repetition.
 
+## Axon trace events
+
+When tracing a call from an `axon` orchestrator run, the event timeline
+includes axon-specific events alongside `llm_exchange`. Brief reading
+guide:
+
+- `axon_run_started` — run boot. Has `config_name`, `main_model`,
+  `budget_usd`, `initial_artifact_keys`.
+- `axon_round_started` — one mainline turn. Useful for chunking the
+  trace; carries `cost_usd_used` / `cost_usd_remaining`.
+- `axon_delegate_requested` — mainline emitted a `delegate(...)` tool
+  call. One per delegate (multiple in parallel per round are normal).
+  Has `intent`, `inherit_context`, `budget_usd`, `n`.
+- `axon_configure_prepared` — the configure follow-up returned a valid
+  `DelegateConfig`. The full config (system prompt ref, tool list,
+  finalize schema, side effects) is in the `config` field.
+- `axon_configure_retried` — the configure call's output failed
+  validation; orchestrator re-fired with a corrective. Important
+  confusion signal — see `/rumil-find-confusion`.
+- `axon_inner_loop_started` / `axon_inner_loop_completed` — bracket the
+  delegate's inner loop. `tool_names`, `rounds`, `finalized`, and
+  `last_status` tell you what the delegate had access to and how it
+  exited.
+- `axon_side_effect_applied` — a configured side effect (e.g.
+  `write_artifact`) fired after the delegate finalized.
+- `axon_delegate_completed` — all samples for one delegate finished
+  and its `tool_result` is ready for mainline.
+- `axon_finalized` — mainline called `finalize`; the run is done.
+- `axon_auto_seed_failed` — embedding-based auto-seed lookup raised at
+  run start; the run continued without seed pages. Surfaced so a flaky
+  embedding service isn't invisible.
+
 ```!
 setopt no_glob 2>/dev/null; set -f; PYTHONPATH=.claude/lib uv run python -m rumil_skills.trace $ARGUMENTS
 ```

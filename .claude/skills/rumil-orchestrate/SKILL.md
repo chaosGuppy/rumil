@@ -2,7 +2,7 @@
 name: rumil-orchestrate
 description: Fire the rumil orchestrator against an existing question — a full multi-call research loop with a budget. This is the CC-initiated equivalent of `main.py --continue <qid> --budget N`. Use when the user wants real research done on a question, not just a single call. For one targeted call, use /rumil-dispatch instead. Budget defaults to 10; since that's not cheap, confirm with the user before firing if they didn't specify. Trigger when the user says things like "investigate this more", "run some research on this", "give Q# N calls of budget", or right after /rumil-ask when they want to immediately start investigating.
 allowed-tools: Bash
-argument-hint: "<question_id> [--budget N] [--orchestrator two_phase|experimental|simple_spine] [--config <preset>] [--model <id>] [--no-compaction] [--global-prio|--no-global-prio] [--smoke-test]"
+argument-hint: "<question_id> [--budget N] [--orchestrator two_phase|experimental|simple_spine|axon] [--config <preset>] [--model <id>] [--no-compaction] [--global-prio|--no-global-prio] [--smoke-test]"
 ---
 
 # rumil-orchestrate
@@ -16,7 +16,7 @@ the orchestrator decides the question is done.
 
 ## Which orchestrator
 
-Rumil ships three top-level research-loop orchestrators, selected via the
+Rumil ships four top-level research-loop orchestrators, selected via the
 `--orchestrator` flag (or, equivalently, the `prioritizer_variant`
 setting):
 
@@ -38,6 +38,22 @@ setting):
   Use for one-shot synthesis tasks where you want a single agent
   making the call sequence in-thread rather than a separate
   prioritization LLM.
+- **`axon`** — `AxonOrchestrator`. Cache-aware mainline thread with a
+  tiny fixed tool surface (`delegate`, `configure`, `finalize`,
+  `load_page`) and two-step dispatch: each `delegate(intent,
+  inherit_context, budget_usd, n)` is followed by a `configure`
+  continuation that emits a structured `DelegateConfig` (system prompt,
+  tools, finalize schema, side effects), then the orchestrator runs the
+  delegate's inner loop and gathers all parallel results before the next
+  mainline turn. Budget unit: USD (`--budget <float>`). Driven by a YAML
+  preset (`--config`). Good for research questions where parallel
+  sub-investigations + structured synthesis matter, and where keeping
+  the spine cache prefix stable across many turns is worth the
+  two-step dispatch overhead. **Note: axon currently has no `main.py`
+  CLI hook and is not yet wired into the skill's `run_orchestrator.py`
+  driver — invoke it via direct Python (instantiate `AxonOrchestrator`
+  with an `AxonConfig` and `OrchInputs`). Wiring it up is a known
+  follow-up.**
 
 Not selectable here: `ClaimInvestigationOrchestrator` (a sub-orchestrator
 used *inside* two_phase for per-claim work) and `RobustifyOrchestrator`
@@ -62,6 +78,18 @@ Available `--config` values are the YAML files under
   populated automatically.
 - `essay_continuation`, `judge_pair` — versus-eval-only presets, not
   useful for general research.
+
+### Axon presets
+
+Available `--config` values are the YAML files under
+`src/rumil/orchestrators/axon/configs/` (auto-discovered):
+
+- **`research`** — minimal mainline (delegate / configure / finalize /
+  load_page) plus a system-prompt registry for `web_research` and
+  `workspace_lookup` delegate flavors and a finalize-schema registry
+  (`freeform_text`, `research_synthesis`). The spine decides per-turn
+  whether to delegate, what intent to delegate with, and how many in
+  parallel; configure picks the system prompt + tools + finalize shape.
 
 ### Global-prio (orthogonal)
 
@@ -133,14 +161,15 @@ money. One-line check: "Run the orchestrator on `abc12345` with budget
   Must be an existing question in the active workspace.
 - **`--budget N`**: per-orchestrator budget. For `two_phase` /
   `experimental`: integer research-call count (default 10). For
-  `simple_spine`: USD cost cap (default $5.00) — counts input + output
-  + cache_create + cache_read at per-model rates from `pricing.json`,
-  so cache-write spend (which dominates real cost on multi-spawn runs)
-  is properly bounded.
-- **`--orchestrator <variant>`**: `two_phase`, `experimental`, or
-  `simple_spine`. Defaults to whatever `settings.prioritizer_variant`
-  is (normally `two_phase`). Pass explicitly whenever the user cares
-  which loop is running.
+  `simple_spine` / `axon`: USD cost cap (default $5.00) — counts input
+  + output + cache_create + cache_read at per-model rates from
+  `pricing.json`, so cache-write spend (which dominates real cost on
+  multi-spawn / multi-delegate runs) is properly bounded.
+- **`--orchestrator <variant>`**: `two_phase`, `experimental`,
+  `simple_spine`, or `axon`. Defaults to whatever
+  `settings.prioritizer_variant` is (normally `two_phase`). Pass
+  explicitly whenever the user cares which loop is running. (axon is
+  not yet wired into the skill driver — see "Which orchestrator" above.)
 - **`--global-prio` / `--no-global-prio`**: force the cross-cutting
   `GlobalPrioOrchestrator` on or off for this invocation. When on, it
   runs *concurrently* with the variant (budget-split). Overrides the
@@ -154,6 +183,9 @@ money. One-line check: "Run the orchestrator on `abc12345` with budget
 - **`--name <text>`**: optional run name; defaults to the question headline.
 
 ### SimpleSpine-only flags
+
+(Axon will share the same `--config` / `--model` shape once wired in;
+for now it has no driver flags here.)
 
 - **`--config <preset>`** (required when `--orchestrator simple_spine`):
   preset name to load from `src/rumil/orchestrators/simple_spine/configs/`.
@@ -183,7 +215,8 @@ The orchestrator can run for many minutes. The script streams:
 - `→ running <variant> orchestrator (budget N)` confirmation line
 - `✓ done: ...` completion line. Two_phase / experimental report
   `budget=used/total` (rumil calls); simple_spine reports
-  `cost=$N.NN  spawns=K  reason=...` instead.
+  `cost=$N.NN  spawns=K  reason=...`; axon (when run directly)
+  reports `cost=$N.NN  rounds=K  last_status=...` from `OrchResult`.
 
 ### Natural next steps to offer
 

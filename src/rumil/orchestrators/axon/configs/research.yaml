@@ -1,0 +1,54 @@
+# Default axon research config — minimal mainline surface.
+#
+# The spine has 4 tools: delegate, configure, finalize, load_page.
+# Multi-round work (web research, workspace lookup, etc.) lives inside
+# delegates whose configure step pulls a system prompt from the registry
+# and assembles the right tool list.
+
+name: research
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/spine_main.md
+compaction_instructions_path: ../prompts/compaction_default.md
+
+max_parallel_delegates_per_turn: 4
+hard_max_rounds: 50
+max_seed_pages: 20
+
+enable_server_compaction: true
+compaction_trigger_tokens: 400000
+
+direct_tools:
+  - load_page
+
+system_prompt_registry:
+  web_research: ../prompts/web_research_sys.md
+  workspace_lookup: ../prompts/workspace_lookup_sys.md
+
+finalize_schema_registry:
+  # A freeform string answer — most general; what mainline finalize
+  # uses by default. Configure picks this for delegates whose result
+  # is best as prose.
+  freeform_text:
+    type: object
+    properties:
+      answer:
+        type: string
+        description: Freeform answer text returned to the caller.
+    required: [answer]
+    additionalProperties: false
+  # A research-shaped synthesis with optional surfaced page IDs.
+  # Configure picks this for delegates that produce both a summary
+  # and a list of created/relevant workspace pages.
+  research_synthesis:
+    type: object
+    properties:
+      summary:
+        type: string
+        description: Synthesised result text.
+      page_ids:
+        type: array
+        items:
+          type: string
+        description: Workspace page IDs created or surfaced by this delegate.
+    required: [summary]
+    additionalProperties: false

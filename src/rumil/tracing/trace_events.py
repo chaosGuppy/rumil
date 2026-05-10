@@ -656,6 +656,98 @@ class SpineCompactedEvent(BaseModel):
     summary_text: str = ""
 
 
+class AxonRunStartedEvent(BaseModel):
+    event: Literal["axon_run_started"] = "axon_run_started"
+    config_name: str
+    main_model: str
+    budget_usd: float
+    initial_artifact_keys: list[str] = []
+
+
+class AxonRoundStartedEvent(BaseModel):
+    event: Literal["axon_round_started"] = "axon_round_started"
+    round_idx: int
+    cost_usd_used: float
+    cost_usd_remaining: float
+
+
+class AxonDelegateRequestedEvent(BaseModel):
+    """Mainline emitted a delegate(...) tool call this turn."""
+
+    event: Literal["axon_delegate_requested"] = "axon_delegate_requested"
+    round_idx: int
+    delegate_id: str
+    tool_use_id: str
+    intent: str
+    inherit_context: bool
+    budget_usd: float
+    n: int = 1
+
+
+class AxonConfigurePreparedEvent(BaseModel):
+    """A configure follow-up call produced a DelegateConfig."""
+
+    event: Literal["axon_configure_prepared"] = "axon_configure_prepared"
+    delegate_id: str
+    config: dict[str, Any] = {}
+    rationale: str = ""
+    cost_usd_used: float
+
+
+class AxonConfigureRetriedEvent(BaseModel):
+    """A configure call's output failed validation; orchestrator re-fired with corrective."""
+
+    event: Literal["axon_configure_retried"] = "axon_configure_retried"
+    delegate_id: str
+    attempt: int
+    reason: str = ""
+
+
+class AxonInnerLoopStartedEvent(BaseModel):
+    event: Literal["axon_inner_loop_started"] = "axon_inner_loop_started"
+    delegate_id: str
+    sample_idx: int = 0
+    inherit_context: bool
+    tool_names: list[str] = []
+
+
+class AxonInnerLoopCompletedEvent(BaseModel):
+    event: Literal["axon_inner_loop_completed"] = "axon_inner_loop_completed"
+    delegate_id: str
+    sample_idx: int = 0
+    rounds: int
+    cost_usd_used: float
+    finalized: bool
+    last_status: str = ""
+
+
+class AxonSideEffectAppliedEvent(BaseModel):
+    """An artifact write or child-question creation fired after a delegate finalized."""
+
+    event: Literal["axon_side_effect_applied"] = "axon_side_effect_applied"
+    delegate_id: str
+    sample_idx: int = 0
+    kind: Literal["write_artifact"]
+    detail: dict[str, Any] = {}
+
+
+class AxonDelegateCompletedEvent(BaseModel):
+    """All samples for one delegate finished and its tool_result is ready for mainline."""
+
+    event: Literal["axon_delegate_completed"] = "axon_delegate_completed"
+    delegate_id: str
+    n: int = 1
+    cost_usd_used: float
+
+
+class AxonFinalizedEvent(BaseModel):
+    event: Literal["axon_finalized"] = "axon_finalized"
+    answer_text: str = ""
+    last_status: str = ""
+    rounds_used: int
+    cost_usd_used: float
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -715,6 +807,16 @@ TraceEvent = Annotated[
     | SpineConfigPrepEvent
     | SpineFinalizedEvent
     | SpineThrottledEvent
-    | SpineCompactedEvent,
+    | SpineCompactedEvent
+    | AxonRunStartedEvent
+    | AxonRoundStartedEvent
+    | AxonDelegateRequestedEvent
+    | AxonConfigurePreparedEvent
+    | AxonConfigureRetriedEvent
+    | AxonInnerLoopStartedEvent
+    | AxonInnerLoopCompletedEvent
+    | AxonSideEffectAppliedEvent
+    | AxonDelegateCompletedEvent
+    | AxonFinalizedEvent,
     Field(discriminator="event"),
 ]

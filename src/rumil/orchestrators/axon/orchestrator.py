@@ -559,6 +559,7 @@ class AxonOrchestrator:
                 trace=trace,
                 delegate_id=delegate_id,
                 round_idx=round_idx,
+                artifacts=artifacts,
             )
         except _DelegateError as e:
             return _DelegateOutcome(
@@ -590,6 +591,7 @@ class AxonOrchestrator:
                     delegate_id=delegate_id,
                     sample_idx=sample_idx,
                     trace=trace,
+                    artifacts=artifacts,
                 )
             except _DelegateError as e:
                 return (sample_idx, None, str(e), "")
@@ -710,6 +712,7 @@ class AxonOrchestrator:
         trace: CallTrace,
         delegate_id: str,
         round_idx: int,
+        artifacts: ArtifactStore,
     ) -> DelegateConfig:
         """Run the configure follow-up call(s) until a valid DelegateConfig lands.
 
@@ -736,15 +739,26 @@ class AxonOrchestrator:
             )
             cfg, err = self._extract_configure_call(response, pending.request)
             if cfg is not None:
-                await trace.record(
-                    AxonConfigurePreparedEvent(
-                        delegate_id=delegate_id,
-                        config=cfg.model_dump(),
-                        rationale=cfg.rationale,
-                        cost_usd_used=budget_clock.cost_usd_used,
+                # Validate artifact_keys after coupling rule passes;
+                # missing keys go through the same corrective-retry path
+                # so the model can self-correct typos.
+                missing = artifacts.require_keys(cfg.artifact_keys)
+                if missing:
+                    err = (
+                        f"artifact_keys references unknown key(s) {missing}. "
+                        f"Available keys: {artifacts.list_keys()}. "
+                        "Pick existing keys or drop the field."
                     )
-                )
-                return cfg
+                else:
+                    await trace.record(
+                        AxonConfigurePreparedEvent(
+                            delegate_id=delegate_id,
+                            config=cfg.model_dump(),
+                            rationale=cfg.rationale,
+                            cost_usd_used=budget_clock.cost_usd_used,
+                        )
+                    )
+                    return cfg
             await trace.record(
                 AxonConfigureRetriedEvent(
                     delegate_id=delegate_id,
@@ -879,6 +893,7 @@ class AxonOrchestrator:
         delegate_id: str,
         sample_idx: int,
         trace: CallTrace,
+        artifacts: ArtifactStore,
     ) -> InnerLoopResult:
         """Build the inner loop's seed messages + tools, then run it."""
         finalize_schema = self._resolve_finalize_schema(cfg.finalize_schema)
@@ -897,7 +912,7 @@ class AxonOrchestrator:
                     finalize_tool=finalize_tool, inner_direct_tools=inner_direct_tools
                 ),
             ]
-            framing = self._render_continuation_framing(req, cfg)
+            framing = self._render_continuation_framing(req, cfg, artifacts)
             seed_messages = [*spine_messages, {"role": "user", "content": framing}]
         else:
             inner_system = self._resolve_system_prompt(cfg.system_prompt)
@@ -909,7 +924,7 @@ class AxonOrchestrator:
             tool_names = [n for n in (cfg.tools or []) if n != FINALIZE_TOOL_NAME]
             inner_direct_tools = resolve_direct_tools(tool_names)
             inner_tools = [finalize_tool, *inner_direct_tools]
-            framing = self._render_isolation_framing(req, cfg)
+            framing = self._render_isolation_framing(req, cfg, artifacts)
             seed_messages = [{"role": "user", "content": framing}]
 
         await trace.record(
@@ -1006,6 +1021,7 @@ class AxonOrchestrator:
         self,
         req: DelegateRequest,
         cfg: DelegateConfig,
+        artifacts: ArtifactStore,
     ) -> list[dict]:
         """Continuation framing as a list of text blocks (matches spine shape)."""
         body = (
@@ -1017,6 +1033,9 @@ class AxonOrchestrator:
             "returned to the main agent for this delegate."
         )
         blocks: list[dict] = [{"type": "text", "text": body}]
+        artifact_block = self._render_artifact_block(cfg, artifacts)
+        if artifact_block:
+            blocks.append({"type": "text", "text": artifact_block})
         if cfg.extra_context and cfg.extra_context.strip():
             blocks.append({"type": "text", "text": cfg.extra_context.strip()})
         return blocks
@@ -1025,6 +1044,7 @@ class AxonOrchestrator:
         self,
         req: DelegateRequest,
         cfg: DelegateConfig,
+        artifacts: ArtifactStore,
     ) -> list[dict]:
         """Isolation framing as a list of text blocks (matches spine shape)."""
         body = (
@@ -1034,9 +1054,27 @@ class AxonOrchestrator:
             "returned to your caller."
         )
         blocks: list[dict] = [{"type": "text", "text": body}]
+        artifact_block = self._render_artifact_block(cfg, artifacts)
+        if artifact_block:
+            blocks.append({"type": "text", "text": artifact_block})
         if cfg.extra_context and cfg.extra_context.strip():
             blocks.append({"type": "text", "text": cfg.extra_context.strip()})
         return blocks
+
+    @staticmethod
+    def _render_artifact_block(
+        cfg: DelegateConfig,
+        artifacts: ArtifactStore,
+    ) -> str:
+        """Render configure-selected artifact_keys as an XML-fenced block.
+
+        Returns ``""`` when ``cfg.artifact_keys`` is empty. Missing keys
+        are validated upstream in :meth:`_validate_coupling_rule_with_artifacts`
+        — by the time we reach here all keys are present in the store.
+        """
+        if not cfg.artifact_keys:
+            return ""
+        return artifacts.render_block(cfg.artifact_keys)
 
     def _format_delegate_result(
         self,

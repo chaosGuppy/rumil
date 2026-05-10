@@ -134,8 +134,27 @@ class DelegateConfig(BaseModel):
         default=None,
         description=(
             "Optional extra prose for the inner loop's framing user "
-            "message. Use to reference artifacts by key, or to give "
-            "context not in the spine that the inner agent needs."
+            "message. Use to give freeform context (instructions, "
+            "scratch notes, framing) the inner agent needs."
+        ),
+    )
+
+    # Artifact handoff: pick keys from the run's ArtifactStore to splice
+    # into the inner loop's framing as XML-fenced <artifact> blocks.
+    # Most useful in isolation regime where the inner loop doesn't
+    # inherit the spine's view of the artifacts; also valid in
+    # continuation regime if you want artifacts surfaced explicitly.
+    artifact_keys: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional list of artifact keys from the run's "
+            "ArtifactStore to splice into the inner loop's framing "
+            "user message as XML-fenced <artifact key=...> blocks. "
+            "Use to give the inner agent direct access to seed "
+            "artifacts, sibling delegates' artifact outputs, or the "
+            "operating_assumptions key. Keys must exist at run time; "
+            "the orchestrator validates and surfaces a config error "
+            "for typos."
         ),
     )
 

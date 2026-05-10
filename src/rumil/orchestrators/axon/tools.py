@@ -77,7 +77,20 @@ CONFIGURE_DESCRIPTION = (
     "tool_result — currently only `write_artifact` is supported, which "
     "requires artifact_key. (Workspace page creation happens inside "
     "the delegate via the create_page tool when configured, not as a "
-    "side effect.) rationale is for the trace; one or two sentences."
+    "side effect.)\n\n"
+    "Pass content into the delegate two ways:\n"
+    " - extra_context (string): freeform prose — instructions, scratch "
+    "notes, framing — appended to the inner loop's first user message.\n"
+    " - artifact_keys (list of strings): keys from the run's artifact "
+    "store to splice into the inner loop's first user message as "
+    "XML-fenced <artifact key=...> blocks. Most useful in isolation "
+    "regime where the inner loop doesn't see the spine's artifact "
+    "view; also valid in continuation. Available keys are listed at "
+    "run start in the system prompt (operating_assumptions plus any "
+    "caller-seeded keys) and grow as sibling delegates write artifacts "
+    "via write_artifact side effect. Typo'd keys trigger a corrective "
+    "retry — pick from existing keys.\n\n"
+    "rationale is for the trace; one or two sentences."
 )
 
 

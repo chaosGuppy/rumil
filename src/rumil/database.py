@@ -3008,6 +3008,33 @@ class DB:
         )
         return rows
 
+    async def get_llm_exchange_totals_for_run(self, run_id: str) -> dict[str, int]:
+        """Sum token counts across every llm exchange in the run.
+
+        Returns a dict with ``input_tokens``, ``output_tokens``,
+        ``cache_read_tokens``, ``cache_create_tokens`` — zero when the run has
+        no exchanges or no rows match. Used by ``/api/runs/{id}/trace-tree``
+        to render a run-level token/cache rollup alongside total cost.
+        """
+        rows = _rows(
+            await self._execute(
+                self.client.table("call_llm_exchanges")
+                .select(
+                    "input_tokens, output_tokens, "
+                    "cache_creation_input_tokens, cache_read_input_tokens"
+                )
+                .eq("run_id", run_id)
+            )
+        )
+        return {
+            "input_tokens": sum(int(r.get("input_tokens") or 0) for r in rows),
+            "output_tokens": sum(int(r.get("output_tokens") or 0) for r in rows),
+            "cache_read_tokens": sum(int(r.get("cache_read_input_tokens") or 0) for r in rows),
+            "cache_create_tokens": sum(
+                int(r.get("cache_creation_input_tokens") or 0) for r in rows
+            ),
+        }
+
     async def get_llm_exchange(self, exchange_id: str) -> dict[str, Any] | None:
         rows = _rows(
             await self._execute(

@@ -452,6 +452,13 @@ class RunTraceTreeOut(BaseModel):
     question: Page | None
     calls: list[CallNodeOut]
     cost_usd: float | None = None
+    # Run-level token + cache rollup summed across every llm exchange on
+    # the run. Surfaced next to cost in the trace UI so cache reuse is
+    # visible at a glance. ``None`` when the run has no exchanges yet.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_create_tokens: int | None = None
     staged: bool = False
     config: dict = {}
 

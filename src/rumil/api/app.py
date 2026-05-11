@@ -519,11 +519,17 @@ async def get_run_trace_tree(
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
+    totals = await read_db.get_llm_exchange_totals_for_run(run_id)
+    has_exchanges = any(totals.values())
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
         calls=nodes,
         cost_usd=total_cost if total_cost > 0 else None,
+        input_tokens=totals["input_tokens"] if has_exchanges else None,
+        output_tokens=totals["output_tokens"] if has_exchanges else None,
+        cache_read_tokens=totals["cache_read_tokens"] if has_exchanges else None,
+        cache_create_tokens=totals["cache_create_tokens"] if has_exchanges else None,
         staged=is_staged,
         config=run_config,
     )

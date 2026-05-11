@@ -12,6 +12,44 @@ export type SequenceNode = {
   calls: TreeNode[];
 };
 
+function fmtTokens(n: number | null | undefined): string {
+  const v = n ?? 0;
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}k`;
+  return String(v);
+}
+
+function RunRollup({ trace }: { trace: RunTraceTreeOut }) {
+  const hasCost = trace.cost_usd != null;
+  const hasTokens =
+    (trace.input_tokens ?? 0) > 0 ||
+    (trace.output_tokens ?? 0) > 0 ||
+    (trace.cache_read_tokens ?? 0) > 0 ||
+    (trace.cache_create_tokens ?? 0) > 0;
+  if (!hasCost && !hasTokens) return null;
+
+  const cr = trace.cache_read_tokens ?? 0;
+  const cc = trace.cache_create_tokens ?? 0;
+  const fresh = trace.input_tokens ?? 0;
+  const totalIn = cr + cc + fresh;
+  const hitPct = totalIn > 0 ? Math.round((cr / totalIn) * 100) : null;
+
+  return (
+    <div className="trace-run-cost">
+      {hasCost && <>Total cost: ${trace.cost_usd!.toFixed(4)}</>}
+      {hasCost && hasTokens && <> · </>}
+      {hasTokens && (
+        <>
+          in {fmtTokens(totalIn)} (cache {fmtTokens(cr)} read / {fmtTokens(cc)}{" "}
+          write / {fmtTokens(fresh)} fresh
+          {hitPct !== null && <>, {hitPct}% hit</>}) · out{" "}
+          {fmtTokens(trace.output_tokens)}
+        </>
+      )}
+    </div>
+  );
+}
+
 function buildTree(calls: CallNodeOut[]): TreeNode[] {
   const byId = new Map<string, CallNodeOut>();
   for (const n of calls) byId.set(n.call.id, n);
@@ -102,11 +140,7 @@ export function TraceViewer({
   return (
     <HashTargetProvider>
       <div className="trace-root">
-        {trace.cost_usd != null && (
-          <div className="trace-run-cost">
-            Total cost: ${trace.cost_usd.toFixed(4)}
-          </div>
-        )}
+        <RunRollup trace={trace} />
         {tree.map((t) => (
           <CallNode key={t.node.call.id} tree={t} depth={0} />
         ))}

@@ -33,7 +33,7 @@ from typing import Any, Literal
 
 from rumil.model_config import ModelConfig
 
-Variant = Literal["blind", "orch", "reflective"]
+Variant = Literal["blind", "orch", "reflective", "simple_spine", "axon"]
 
 
 def _repo_root() -> pathlib.Path:
@@ -387,6 +387,68 @@ class _ShimJudgePairTaskReflective:
         }
 
 
+class _ShimJudgePairTaskAxon:
+    """Slimmed JudgePair fingerprint for the axon shim path.
+
+    Like simple_spine / reflective: produces_artifact=True so no closer
+    + no tools. Workflow.fingerprint carries config_name + main_model +
+    finalize_schema_ref + artifacts_hash, so a different YAML or pair
+    surface naturally forks the dedup hash.
+    """
+
+    name = "judge_pair"
+
+    def __init__(
+        self,
+        *,
+        dimension: str,
+        prompt_hash: str,
+        pair_surface_hash: str,
+    ) -> None:
+        self.dimension = dimension
+        self.prompt_hash = prompt_hash
+        self.pair_surface_hash = pair_surface_hash
+
+    def fingerprint(self, _inputs: Any) -> Mapping[str, str | int | bool | None]:
+        return {
+            "kind": self.name,
+            "dimension": self.dimension,
+            "prompt_hash": self.prompt_hash,
+            "pair_surface_hash": self.pair_surface_hash,
+        }
+
+
+class _ShimJudgePairTaskSimpleSpine:
+    """Slimmed JudgePair fingerprint for the simple_spine shim path.
+
+    Like reflective: produces_artifact=True so no closer + no tools.
+    Workflow.fingerprint already carries config_name + config_fingerprint
+    (which folds in every subroutine's prompts/models), so the task
+    fingerprint stays minimal.
+    """
+
+    name = "judge_pair"
+
+    def __init__(
+        self,
+        *,
+        dimension: str,
+        prompt_hash: str,
+        pair_surface_hash: str,
+    ) -> None:
+        self.dimension = dimension
+        self.prompt_hash = prompt_hash
+        self.pair_surface_hash = pair_surface_hash
+
+    def fingerprint(self, _inputs: Any) -> Mapping[str, str | int | bool | None]:
+        return {
+            "kind": self.name,
+            "dimension": self.dimension,
+            "prompt_hash": self.prompt_hash,
+            "pair_surface_hash": self.pair_surface_hash,
+        }
+
+
 def make_judge_config(
     variant: Variant,
     *,
@@ -413,6 +475,18 @@ def make_judge_config(
     read_prompt_path: Any = None,
     reflect_prompt_path: Any = None,
     verdict_prompt_path: Any = None,
+    # SimpleSpine-variant only. ``config_name`` resolves a
+    # SimpleSpineConfig preset whose fingerprint is folded into the
+    # workflow fingerprint. ``simple_spine_budget_usd`` is the raw
+    # token cap; SimpleSpine's budget primitive is tokens, so we keep
+    # it distinct from the ``budget`` kwarg above (which counts
+    # research calls for the orch variant).
+    simple_spine_config_name: str | None = None,
+    simple_spine_budget_usd: float | None = None,
+    # Axon-variant only. Mirrors SimpleSpine: ``config_name`` selects an
+    # axon YAML config; ``budget_usd`` is the hard USD cost cap.
+    axon_config_name: str | None = None,
+    axon_budget_usd: float | None = None,
 ) -> tuple[dict[str, Any], str, str]:
     """Back-compat shim — translates old kwargs into ``make_versus_config``.
 
@@ -517,6 +591,79 @@ def make_judge_config(
         return make_versus_config(
             workflow=reflective_workflow,
             task=reflective_task,
+            inputs=None,
+            model=model,
+            model_config=model_config,
+            workspace_id=workspace_id,
+            workspace_state_hash=workspace_state_hash,
+            code_fingerprint=code_fingerprint,
+        )
+    if variant == "simple_spine":
+        if pair_surface_hash is None:
+            raise ValueError("variant='simple_spine' requires pair_surface_hash")
+        if simple_spine_config_name is None:
+            raise ValueError(
+                "variant='simple_spine' requires simple_spine_config_name "
+                "(the preset to instantiate via SimpleSpine's preset registry)"
+            )
+        if simple_spine_budget_usd is None:
+            raise ValueError(
+                "variant='simple_spine' requires simple_spine_budget_usd "
+                "(raw token cap; SimpleSpine has no budget-unit primitive — "
+                "pass tokens directly, e.g. 200_000)"
+            )
+        # Local import to avoid circular: simple_spine pulls in the
+        # whole SDK + tracing graph.
+        from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
+
+        ss_workflow = SimpleSpineWorkflow(
+            budget_usd=simple_spine_budget_usd,
+            config_name=simple_spine_config_name,
+            call_type="judge",
+        )
+        ss_task = _ShimJudgePairTaskSimpleSpine(
+            dimension=dimension,
+            prompt_hash=prompt_hash,
+            pair_surface_hash=pair_surface_hash,
+        )
+        return make_versus_config(
+            workflow=ss_workflow,
+            task=ss_task,
+            inputs=None,
+            model=model,
+            model_config=model_config,
+            workspace_id=workspace_id,
+            workspace_state_hash=workspace_state_hash,
+            code_fingerprint=code_fingerprint,
+        )
+    if variant == "axon":
+        if pair_surface_hash is None:
+            raise ValueError("variant='axon' requires pair_surface_hash")
+        if axon_config_name is None:
+            raise ValueError(
+                "variant='axon' requires axon_config_name "
+                "(the YAML config name under rumil/orchestrators/axon/configs/)"
+            )
+        if axon_budget_usd is None:
+            raise ValueError(
+                "variant='axon' requires axon_budget_usd "
+                "(hard USD cost cap; pass e.g. 1.50 for a $1.50 cap)"
+            )
+        from rumil.orchestrators.axon import AxonWorkflow
+
+        ax_workflow = AxonWorkflow(
+            budget_usd=axon_budget_usd,
+            config_name=axon_config_name,
+            call_type="judge",
+        )
+        ax_task = _ShimJudgePairTaskAxon(
+            dimension=dimension,
+            prompt_hash=prompt_hash,
+            pair_surface_hash=pair_surface_hash,
+        )
+        return make_versus_config(
+            workflow=ax_workflow,
+            task=ax_task,
             inputs=None,
             model=model,
             model_config=model_config,

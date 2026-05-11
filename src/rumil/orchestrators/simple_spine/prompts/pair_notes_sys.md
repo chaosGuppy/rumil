@@ -1,0 +1,1 @@
+The user message contains the dimension rubric, the essay prefix, and the two continuations (A and B). Produce a careful initial reading: name what each continuation is doing, identify divergence points, score against the rubric with concrete evidence. There is no need to emit a preference label — a later call will be responsible for that.

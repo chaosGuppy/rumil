@@ -1,0 +1,122 @@
+# essay_continuation — SimpleSpine preset for versus essay-continuation runs.
+#
+# Library: drafter (FreeformAgent, single-shot, 32k output) + critic
+# (SampleN, n=3 parallel critics). Mainline opus by default; per-role
+# models are pinned but can be overridden globally via versus's --model
+# flag (the workflow applies _apply_model_override at run time).
+#
+# Default models for the drafter / critic / mainline are claude-opus-4-7;
+# versus's --model flag overrides all three uniformly.
+
+name: essay_continuation
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/main_default.md
+max_parallel_spawns_per_turn: 4
+# Versus pins these explicitly: 32k mainline output is required so the
+# `finalize.answer` can carry a full essay continuation when the model
+# finalizes in a single turn (drafter outputs up to 32k; mainline must
+# be able to pass that through verbatim).
+mainline_temperature: 1.0
+mainline_max_tokens: 32000
+# Server-side compaction (compact_20260112). Replaces the entire prior
+# message thread with a summary block once `compaction_trigger_tokens`
+# is crossed; system prompt is preserved (cached separately), the
+# original first user message is NOT preserved automatically. Default
+# instructions (prompts/compaction_default.md) tell the summariser to
+# preserve the scope question, drafted deliverable content, and
+# durable findings verbatim — soft preservation only. 400k trigger
+# fits the 1M-context window: drafts (32k each) + critiques can
+# accumulate fast, but triggering before then would summarise still-
+# load-bearing draft/critique pairs.
+enable_server_compaction: true
+compaction_trigger_tokens: 400000
+
+subroutines:
+  - kind: freeform_agent
+    name: draft
+    description: |
+      Produce a full essay continuation in one shot.
+      Inputs: the essay opening (`prefix`) and `target_length_chars` are
+      auto-spliced via the artifact channel. Pass any revision targets /
+      planning notes in `additional_context`. To revise an earlier draft,
+      pass that draft's key (announced as `draft/<spawn_id_short>` in the
+      previous tool_result) via `include_artifacts` — do NOT paste the
+      prior draft into `additional_context`.
+      Output: continuation wrapped in <continuation>…</continuation> tags.
+      Use after: run critique on the result, then re-spawn draft with
+      `include_artifacts: ["draft/<spawn_id_short>"]` plus critique
+      excerpts in additional_context to revise.
+    sys_prompt_path: ../prompts/drafter_essay_sys.md
+    consumes: [prefix, target_length_chars]
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Additional context
+      {additional_context}
+
+      Produce the continuation now.
+    model: claude-opus-4-7
+    max_rounds: 1
+    # Wide enough that even verbose / planning-heavy drafters can
+    # finish a full continuation + closing </continuation> tag without
+    # truncation. Sonnet/Opus 4.x both support 32k+ output.
+    max_tokens: 32000
+    overridable: [intent, additional_context, cost_cap_usd]
+    # 80k floor: per-call worst-case ≈ input(prefix + prior draft via
+    # include_artifacts ≈ 40k) + max_tokens(32k) ≈ 72k. 50k under-fit
+    # revisions that pull the prior 32k draft as context.
+    base_cost_cap_usd: 1.50
+    cost_hint: "≈ 1 turn @ 32k out (~30–45k tokens — the most expensive single spawn in this preset)"
+    intent_description: >
+      What the drafter should aim for (e.g. "tighten the opening", "go
+      more empirical", or just "produce the continuation"). Spliced
+      verbatim into the user prompt as {intent}.
+    additional_context_description: >
+      Revision targets, planning notes, critique points to address.
+      Spliced under {additional_context}. To attach a prior draft, use
+      `include_artifacts` — don't paste it here.
+
+  - kind: sample_n
+    name: critique
+    description: |
+      Surface diverse criticism of a draft via N independent critics.
+      Inputs: the essay opening (`prefix`) is auto-spliced via the
+      artifact channel. The draft to critique MUST be passed by key via
+      `include_artifacts: ["draft/<spawn_id_short>"]` (the key was
+      announced in the draft spawn's tool_result) — do NOT paste the
+      draft text into `additional_context`. Optional steering in
+      `intent` (e.g. "focus on argument structure").
+      Output: N critiques delimited under "## Sample 1", "## Sample 2", …
+      Use after: pick concrete weaknesses worth fixing, feed them as
+      revision targets into a follow-up draft spawn.
+    sys_prompt_path: ../prompts/critic_essay_sys.md
+    consumes: [prefix]
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Additional context
+      {additional_context}
+
+      Produce your critique now.
+    model: claude-sonnet-4-6
+    n: 3
+    temperature: 1.0
+    max_tokens: 2048
+    overridable: [intent, n, additional_context, cost_cap_usd]
+    # 100k cap: per-sample worst ≈ input(prefix + 32k draft ≈ 35k) +
+    # max_tokens(2k) ≈ 37k. n=3 → ~111k worst, ~70k typical. Historical
+    # 12k caused the affordability check to silently skip all 3 samples
+    # (mainline observed n shrinking on later rounds — same failure mode
+    # as the steelman 40k cap). 100k fits n=3 typical comfortably.
+    base_cost_cap_usd: 0.60
+    cost_hint: "≈ N parallel turns @ 2k out each (~3k tokens per sample)"
+    intent_description: >
+      Optional emphasis (e.g. "focus on argument structure", "be brutal
+      about hedging"). Empty intent = open-ended critique.
+    additional_context_description: >
+      Optional steering or notes not covered by the prefix/draft
+      artifacts (e.g. "be especially harsh on hedging language"). Spliced
+      under {additional_context}. The prefix arrives via auto-splice and
+      the draft via `include_artifacts` — don't paste either here.

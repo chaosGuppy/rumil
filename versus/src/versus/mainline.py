@@ -37,7 +37,7 @@ AXIS_DESCRIPTIONS: dict[str, str] = {
         "produces new rows.)"
     ),
     "judge_base_model": ("Underlying LLM model id (provider/<model> or just <model>)."),
-    "judge_dimension": ("Criterion the judge was rendered for (e.g. general_quality, grounding)."),
+    "judge_dimension": ("Criterion the judge was rendered for (e.g. would_recommend, grounding)."),
     "judge_workspace_id": (
         "First 8 chars of the rumil project (workspace) ID the ws/orch "
         "judge ran against. ws/orch only — empty on blind."

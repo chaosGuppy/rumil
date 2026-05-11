@@ -23,6 +23,12 @@
     "cache_creation_input_tokens_per_mtok": 1.25,
     "cache_read_input_tokens_per_mtok": 0.10
   },
+  "claude-haiku-4-5": {
+    "input_tokens_per_mtok": 1.0,
+    "output_tokens_per_mtok": 5.0,
+    "cache_creation_input_tokens_per_mtok": 1.25,
+    "cache_read_input_tokens_per_mtok": 0.10
+  },
   "gemini-3-flash-preview": {
     "input_tokens_per_mtok": 0.5,
     "output_tokens_per_mtok": 3.0,

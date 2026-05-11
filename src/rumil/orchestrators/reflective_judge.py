@@ -1,9 +1,10 @@
 """ReflectiveJudgeWorkflow — pairwise judging via read → reflect → verdict.
 
 Versus-specific judge workflow. Three sequential ``text_call`` stages
-(initial read, reflective critique, final verdict) write the verdict
-into ``question.content`` for the runner's ``produces_artifact=True``
-path to extract.
+(initial read, reflective critique, final verdict) surface the verdict
+on ``self.last_artifact`` for the runner's ``produces_artifact=True``
+path to extract. ``question.content`` stays as the pair surface —
+read once at the top of run(), never mutated.
 
 Why this exists:
 
@@ -39,7 +40,7 @@ Design notes:
   This is the iterate skill's primary lever for A/B-ing prompt-text
   variants without forking the workflow file.
 - **Dimension body** (the rubric for the dimension being judged —
-  e.g. ``versus-general_quality.md``) is shared with the orch and
+  e.g. ``versus-would_recommend.md``) is shared with the orch and
   blind paths intentionally. The rubric is what the dimension *is*;
   it's not workflow-specific. The workflow's iteration surface is the
   three stage prompts, not the rubric.
@@ -221,6 +222,8 @@ class ReflectiveJudgeWorkflow:
         self.reflect_prompt = _load_prompt(reflect_prompt_path, _DEFAULT_REFLECT_PROMPT)
         self.verdict_prompt = _load_prompt(verdict_prompt_path, _DEFAULT_VERDICT_PROMPT)
         self.last_status: str = "complete"
+        # Set in run() to the verdict text the runner reads.
+        self.last_artifact: str = ""
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]:
         return {
@@ -279,7 +282,12 @@ class ReflectiveJudgeWorkflow:
                 pair_content=pair_content,
                 model_config=model_config,
             )
-            await db.update_page_content(question_id, verdict_text)
+            # Surface the verdict via the workflow contract — the versus
+            # runner reads ``last_artifact`` directly. question.content
+            # stays as the pair surface (read at the top of run()) so
+            # handlers observing it mid-run or post-run see what the
+            # workflow consumed, not what it produced.
+            self.last_artifact = verdict_text
             # Must run before reset_trace: mark_call_completed reads
             # total_cost_usd from the active trace via get_trace() to
             # populate call.cost_usd. Resetting first drops cost to 0,

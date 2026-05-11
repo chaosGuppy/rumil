@@ -104,7 +104,9 @@ uv run scripts/fetch_essays.py
 uv run scripts/run_completions.py                    # single-shot completions (one LLM call per essay × prefix × model)
 uv run scripts/run_completions.py --orch two_phase \
     --workspace <ws> --model <id> --budget 4         # orch-driven completions; lands as source_id=orch:<workflow>:<model>:c<hash8>
-uv run scripts/run_rumil_judgments.py                # blind judges (default); --variant orch for the tool-using path
+uv run scripts/run_completions.py --orch simple_spine \
+    --workspace <ws> --model <id> --budget-usd 200000  # SimpleSpine uses --budget-usd (USD cap), not --budget
+uv run scripts/run_rumil_judgments.py                # blind judges (default); --variant orch / simple_spine for the tool-using paths
 ```
 
 Env resolution for `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` cascades: `versus/.env`, then `<rumil-root>/.env`, then process env. Files override process env.
@@ -118,14 +120,25 @@ UI routes (`/versus` redirects to `/versus/results`; `/versus/inspect` and `/ver
 - Default — single-shot: one LLM call per essay × prefix × model. Rows land with `source_id=<model_id>` (the bare model id).
 - `--orch <workflow_name>` — fires a rumil workflow against a per-essay Question via `versus.rumil_completion.run_orch_completion`, then a closing call extracts the continuation (or, for workflows where `produces_artifact=True`, the runner reads `question.content` directly). Rows land with `source_id=orch:<workflow>:<model>:c<hash8>` so judges can pair orch outputs against single-shot or human baselines. Requires `--workspace`. Pickable as a contestant by `run_rumil_judgments.py` with no further wiring — different workflows / configs / budgets all coexist as separate source_ids by design (the `c<hash8>` suffix is the workflow's `config_hash`).
 
-`WORKFLOW_REGISTRY` in `versus/src/versus/rumil_completion.py` is the source of truth for which workflows `--orch` accepts. Today: `two_phase` (`TwoPhaseWorkflow`, #426) and `draft_and_edit` (`DraftAndEditWorkflow`, #427 — drafter → N parallel critics → editor, `produces_artifact=True`). Workflow-specific knobs (e.g. `n_critics`, `max_rounds`, `drafter_model` for `draft_and_edit`) are passed via `--workflow-arg key=value` (repeatable, type-coerced from the workflow class's `__init__` signature). Adding a new workflow is one diff: implement the Workflow protocol (`rumil.versus_workflow`), register it in `WORKFLOW_REGISTRY`, update the docs.
+`WORKFLOW_REGISTRY` in `versus/src/versus/rumil_completion.py` is the source of truth for which workflows `--orch` accepts. Today: `two_phase` (`TwoPhaseWorkflow`, #426), `draft_and_edit` (`DraftAndEditWorkflow`, #427 — drafter → N parallel critics → editor, `produces_artifact=True`), and `simple_spine` (`SimpleSpineWorkflow` — mainline + subroutines self-paced against a token clock). Workflow-specific knobs (e.g. `n_critics`, `max_rounds`, `drafter_model` for `draft_and_edit`; `config_name` for `simple_spine` — defaults to `essay_continuation` on completion / `judge_pair` on judging) are passed via `--workflow-arg key=value` (repeatable, type-coerced from the workflow class's `__init__` signature). Adding a new workflow is one diff: implement the Workflow protocol (`rumil.versus_workflow`), register it in `WORKFLOW_REGISTRY`, update the docs.
+
+### Budget flag: research calls vs. raw tokens
+
+Two camps, mutually exclusive at the CLI:
+
+- **Research-call budget** (`--budget N`) — small int, counts dispatched rumil calls. Used by `two_phase` (min 4), `draft_and_edit`, `claim_investigation`, `experimental`. The orchestrator decides what each call is.
+- **Token budget** (`--budget-usd N`) — USD cost cap on the run; the only hard terminator. Used by `simple_spine` (the only token-budget workflow today, listed in `TOKEN_BUDGET_WORKFLOWS` in `rumil_completion.py`). SimpleSpine has no budget-unit primitive — its mainline self-paces against the token clock — so the CLI takes tokens directly to keep the units unambiguous.
+
+The CLI rejects the wrong flag for the chosen workflow (`--budget` on `simple_spine` errors; `--budget-usd` on non-spine workflows errors). Same split applies to `run_rumil_judgments.py`: `--variant orch` requires `--budget`; `--variant simple_spine` requires `--simple-spine-budget-usd`.
 
 ## Judge variants
 
 `scripts/run_rumil_judgments.py` has two modes. See `.claude/skills/rumil-versus-judge/SKILL.md` for the detailed invocation guide, cost estimates, and confirmation thresholds.
 
 - Blind (default, no `--variant`) — single-turn LLM call using the blind shell + dimension prompt. Repeat `--model` for multi-model runs; each model routes by id (claude-* direct to Anthropic, others via OpenRouter). `judge_model = judge_pair/blind:<canonical_model>:c<hash8>` (no embedded dimension — it lives in `judge_inputs.task.dimension`). Defaults to `cfg.judging.models`.
-- `--variant orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = judge_pair/two_phase:<model>:c<hash8>`. Requires local Supabase. Expensive.
+- `--variant orch` — full TwoPhaseOrchestrator run + closing call per pair. `judge_model = judge_pair/two_phase:<model>:c<hash8>`. Requires local Supabase. Expensive. Uses `--budget N` (research-call count).
+- `--variant reflective` — read → reflect → verdict (3 LLM calls, no orch). `judge_model = judge_pair/reflective:<model>:c<hash8>`. Budget flag ignored.
+- `--variant simple_spine` — SimpleSpine workflow under the `judge_pair` preset (mainline + subroutines, self-paced). `judge_model = judge_pair/simple_spine:<model>:c<hash8>`. Uses `--simple-spine-budget-usd N` (raw token cap); `--budget` is rejected.
 
 The earlier `--variant ws` path (one SDK agent call with workspace-exploration tools, no orchestrator) was removed; a low-budget orch run subsumes the agentic-baseline use case. Historical `rumil:ws:*` and `rumil:orch:<model>:<dim>:c<hash8>` rows are preserved and the read-side parsers accept both shapes.
 

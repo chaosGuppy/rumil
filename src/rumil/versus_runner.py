@@ -14,13 +14,15 @@ The four phases (research workflows, ``produces_artifact=False``):
 4. :func:`run_closer_agent` then ``task.extract_artifact(text)`` —
    single SDK-agent call, then parse the artifact.
 
-For ``produces_artifact=True`` workflows (e.g. ``DraftAndEditWorkflow``
-landing in #427) the runner skips phases 3-4: the workflow has already
-written the final artifact text into ``question.content``, so we read
-that verbatim and feed it straight into ``task.extract_artifact``. The
-``call_id`` / ``trace_url`` on the returned result point at the most
-recent call recorded under the run, and ``system_prompt`` /
-``user_prompt`` are empty strings (no closer ran).
+For ``produces_artifact=True`` workflows (DraftAndEdit, ReflectiveJudge,
+SimpleSpine) the runner skips phases 3-4: the workflow surfaces its
+deliverable on ``workflow.last_artifact`` (the workflow contract — see
+``rumil.versus_workflow``), and we feed that straight into
+``task.extract_artifact``. The ``call_id`` / ``trace_url`` on the
+returned result point at the most recent call recorded under the run,
+and ``system_prompt`` / ``user_prompt`` are empty strings (no closer
+ran). ``question.content`` is intentionally NOT mutated by these
+workflows — it stays as the input the workflow consumed.
 
 Cost accounting sums across every call recorded under the run id —
 the workflow's research dispatches plus the closer call (when run).
@@ -111,17 +113,21 @@ async def run_versus(
 
         if workflow.produces_artifact:
             # Artifact-producing workflow path: the workflow has already
-            # written the final text to question.content. Skip the closer
-            # entirely and feed that text into extract_artifact. No
-            # closer call ⇒ no system/user prompt; call_id falls back to
-            # the most recent call on the run for trace anchoring.
-            question = await db.get_page(question_id)
-            if question is None:
+            # set ``last_artifact`` on itself. Skip the closer entirely
+            # and feed that text into extract_artifact. No closer call ⇒
+            # no system/user prompt; call_id falls back to the most
+            # recent call on the run for trace anchoring.
+            #
+            # We deliberately do NOT read ``question.content`` for the
+            # deliverable — workflows leave it as the input (pair
+            # surface, prefix-framing) so handlers reading the question
+            # mid-run or post-run see what was consumed, not produced.
+            if not workflow.last_artifact:
                 raise RuntimeError(
                     f"workflow {workflow.name} declared produces_artifact=True "
-                    f"but question {question_id} is missing after run"
+                    f"but did not set last_artifact before run() returned"
                 )
-            closer_text = question.content
+            closer_text = workflow.last_artifact
             closer_call = None
             system_prompt = ""
             user_prompt = ""

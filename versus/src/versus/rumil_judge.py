@@ -252,7 +252,7 @@ def _resolve_task_body(task_name: str, is_versus_criterion: bool) -> str:
         raise ValueError(
             f"versus-criterion task bodies have been removed; "
             f"got task_name={task_name!r}. Pass the rumil dimension name instead "
-            f"(e.g. 'general_quality')."
+            f"(e.g. 'would_recommend')."
         )
     from rumil.versus_bridge import get_rumil_dimension_body
 
@@ -283,6 +283,10 @@ async def run_orch(
     read_prompt_path: str | None = None,
     reflect_prompt_path: str | None = None,
     verdict_prompt_path: str | None = None,
+    simple_spine_config_name: str | None = None,
+    simple_spine_budget_usd: float | None = None,
+    axon_config_name: str | None = None,
+    axon_budget_usd: float | None = None,
 ) -> None:
     """Run a workspace-aware rumil judge variant against pending pairs.
 
@@ -293,6 +297,11 @@ async def run_orch(
       verdict, fixed 3 LLM calls; ``budget`` is ignored). The
       ``reader_model`` / ``reflector_model`` / ``verdict_model`` and
       ``*_prompt_path`` kwargs are this variant's iteration knobs.
+    - ``"simple_spine"``: :class:`SimpleSpineWorkflow` with
+      ``call_type='judge'``. The hard cap is ``simple_spine_budget_usd``
+      (raw tokens; SimpleSpine has no budget-unit primitive — distinct
+      from the ``budget`` arg, which is ignored in this variant).
+      ``simple_spine_config_name`` selects a preset (default ``"judge_pair"``).
 
     ``model`` is the Anthropic model id the bridge (and the workflow's
     internal LLM calls) runs on; passed explicitly so versus controls
@@ -305,11 +314,20 @@ async def run_orch(
 
     from rumil.database import DB
     from rumil.settings import get_settings
-    from rumil.versus_bridge import PairContext, judge_pair_orch, judge_pair_reflective
+    from rumil.versus_bridge import (
+        PairContext,
+        judge_pair_axon,
+        judge_pair_orch,
+        judge_pair_reflective,
+        judge_pair_simple_spine,
+    )
     from versus.rumil_completion import short_model
 
-    if variant not in ("orch", "reflective"):
-        raise ValueError(f"unknown variant: {variant!r}; expected 'orch' or 'reflective'")
+    if variant not in ("orch", "reflective", "simple_spine", "axon"):
+        raise ValueError(
+            f"unknown variant: {variant!r}; expected one of 'orch', 'reflective', "
+            f"'simple_spine', 'axon'"
+        )
 
     settings = get_settings()
     # Gap 2 run-name disambiguation: when no prefix variant is configured,
@@ -373,6 +391,40 @@ async def run_orch(
                 budget=budget,
                 closer_hash=chash,
                 workspace_state_hash=workspace_state_hash,
+            )
+        if variant == "simple_spine":
+            # simple_spine: produces_artifact=True so no closer + no
+            # tools (same as reflective). Workflow fingerprint folds in
+            # config_fingerprint (full preset hash including subroutine
+            # prompts/models) + budget_tokens, so a different config_name
+            # or budget_tokens naturally forks the dedup hash.
+            return make_judge_config(
+                "simple_spine",
+                model=model,
+                dimension=dim,
+                model_config=mc,
+                prompt_hash=ph,
+                pair_surface_hash=qhash,
+                workspace_id=ws_short,
+                workspace_state_hash=workspace_state_hash,
+                simple_spine_config_name=simple_spine_config_name or "judge_pair",
+                simple_spine_budget_usd=simple_spine_budget_usd,
+            )
+        if variant == "axon":
+            # axon: produces_artifact=True (no closer, no tools); workflow
+            # fingerprint folds config_name + main_model +
+            # finalize_schema_ref + artifacts_hash + budget_usd.
+            return make_judge_config(
+                "axon",
+                model=model,
+                dimension=dim,
+                model_config=mc,
+                prompt_hash=ph,
+                pair_surface_hash=qhash,
+                workspace_id=ws_short,
+                workspace_state_hash=workspace_state_hash,
+                axon_config_name=axon_config_name or "judge_pair",
+                axon_budget_usd=axon_budget_usd,
             )
         # reflective: no closer, no tools — drop those fingerprint inputs.
         # Per-role models and prompt path overrides are threaded into
@@ -485,6 +537,12 @@ async def run_orch(
                 if variant == "orch":
                     workflow_name_judge = "two_phase"
                     budget_segment = f"b{budget}"
+                elif variant == "simple_spine":
+                    workflow_name_judge = "simple_spine"
+                    budget_segment = f"b{budget}"
+                elif variant == "axon":
+                    workflow_name_judge = "axon"
+                    budget_segment = f"${axon_budget_usd:.2f}" if axon_budget_usd else "b?"
                 else:
                     workflow_name_judge = "reflective"
                     # Reflective has no budget knob; emit a fixed segment
@@ -529,6 +587,33 @@ async def run_orch(
                         task_body=task_body,
                         model=model,
                         budget=budget,
+                        model_config=mc,
+                    )
+                elif variant == "simple_spine":
+                    if simple_spine_budget_usd is None:
+                        raise ValueError(
+                            "variant='simple_spine' requires "
+                            "simple_spine_budget_usd (raw token cap)"
+                        )
+                    result = await judge_pair_simple_spine(
+                        db,
+                        pair_ctx,
+                        task_body=task_body,
+                        model=model,
+                        config_name=simple_spine_config_name or "judge_pair",
+                        budget_usd=simple_spine_budget_usd,
+                        model_config=mc,
+                    )
+                elif variant == "axon":
+                    if axon_budget_usd is None:
+                        raise ValueError("variant='axon' requires axon_budget_usd (USD cost cap)")
+                    result = await judge_pair_axon(
+                        db,
+                        pair_ctx,
+                        task_body=task_body,
+                        model=model,
+                        config_name=axon_config_name or "judge_pair",
+                        budget_usd=axon_budget_usd,
                         model_config=mc,
                     )
                 else:

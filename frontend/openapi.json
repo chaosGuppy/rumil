@@ -2756,6 +2756,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/ScoutPassEventOut"
+                      },
+                      {
+                        "$ref": "#/components/schemas/SpineCompactedEventOut"
                       }
                     ],
                     "discriminator": {
@@ -2812,7 +2815,8 @@
                         "brief_audit_started": "#/components/schemas/BriefAuditStartedEventOut",
                         "brief_audit": "#/components/schemas/BriefAuditEventOut",
                         "scout_pass_started": "#/components/schemas/ScoutPassStartedEventOut",
-                        "scout_pass": "#/components/schemas/ScoutPassEventOut"
+                        "scout_pass": "#/components/schemas/ScoutPassEventOut",
+                        "spine_compacted": "#/components/schemas/SpineCompactedEventOut"
                       }
                     }
                   },
@@ -10611,6 +10615,47 @@
           "avg_delta_pct"
         ],
         "title": "SourceSummary"
+      },
+      "SpineCompactedEventOut": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "title": "Ts"
+          },
+          "call_id": {
+            "type": "string",
+            "title": "Call Id"
+          },
+          "event": {
+            "type": "string",
+            "const": "spine_compacted",
+            "title": "Event",
+            "default": "spine_compacted"
+          },
+          "round_idx": {
+            "type": "integer",
+            "title": "Round Idx"
+          },
+          "summary_chars": {
+            "type": "integer",
+            "title": "Summary Chars"
+          },
+          "summary_text": {
+            "type": "string",
+            "title": "Summary Text",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "call_id",
+          "event",
+          "round_idx",
+          "summary_chars",
+          "summary_text"
+        ],
+        "title": "SpineCompactedEventOut"
       },
       "SubagentCompletedEventOut": {
         "properties": {

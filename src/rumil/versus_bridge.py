@@ -39,7 +39,9 @@ from versus.tasks.judge_pair import (  # noqa: F401
 from rumil.database import DB
 from rumil.model_config import ModelConfig
 from rumil.models import Call, CallType
+from rumil.orchestrators.axon import AxonWorkflow
 from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
+from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
 from rumil.tracing.broadcast import Broadcaster
 from rumil.versus_closer import run_closer_agent
 
@@ -280,6 +282,181 @@ async def judge_pair_reflective(
     )
 
 
+async def judge_pair_simple_spine(
+    db: DB,
+    pair: PairContext,
+    *,
+    task_body: str,
+    model: str,
+    config_name: str,
+    budget_usd: float,
+    operating_assumptions: str = "",
+    output_guidance: str = "",
+    additional_context: str = "",
+    wall_clock_soft_s: float | None = None,
+    broadcaster: Broadcaster | None = None,
+    model_config: ModelConfig | None = None,
+) -> JudgeResult:
+    """Run :class:`SimpleSpineWorkflow` on a pair (judging side).
+
+    ``config_name`` selects a named :class:`SimpleSpineConfig` preset
+    (see :mod:`rumil.orchestrators.simple_spine.presets`). The workflow
+    writes its final answer text — which must end with one of the seven
+    preference labels — to ``question.content``; the runner reads it
+    and parses the label via :func:`extract_preference`.
+
+    ``budget_tokens`` is the raw token cap on the run — SimpleSpine's
+    only hard terminator. Distinct from other orchs' ``budget`` (which
+    counts research calls): SimpleSpine has no call-unit primitive, so
+    it accepts tokens directly to keep the units unambiguous.
+
+    The ``task_body`` (dimension rubric) is spliced into the workflow's
+    ``additional_context`` so mainline + every spawn can read the actual
+    rubric text rather than just the dimension slug. The pair surface
+    (prefix + both continuations) lives on ``question.content`` and is
+    rendered into the initial mainline prompt; the rubric is the missing
+    piece without this splice.
+
+    Returned :class:`JudgeResult` mirrors :func:`judge_pair_orch`.
+
+    Pair surface (prefix + both continuations with display labels) and
+    rubric body land in ``artifacts={"pair_text": ..., "rubric": ...}``.
+    The judge_pair preset's subroutines declare ``consumes: [pair_text,
+    rubric]`` so every spawn gets the full content via the artifact
+    channel without mainline having to forward it. ``additional_context``
+    stays as a freeform mainline-supplied notes channel — separate from
+    artifacts; do NOT use it to splice pair / rubric.
+    """
+    pair_text = (
+        f"## Essay opening\n\n{pair.prefix_text}\n\n"
+        f"## Continuation A\n\n{pair.continuation_a_text}\n\n"
+        f"## Continuation B\n\n{pair.continuation_b_text}\n"
+    )
+    artifacts = {
+        "pair_text": pair_text,
+        "rubric": task_body.strip() + "\n",
+    }
+    workflow = SimpleSpineWorkflow(
+        budget_usd=budget_usd,
+        config_name=config_name,
+        call_type="judge",
+        wall_clock_soft_s=wall_clock_soft_s,
+        operating_assumptions=operating_assumptions,
+        output_guidance=output_guidance,
+        additional_context=additional_context,
+        artifacts=artifacts,
+    )
+    task = JudgePairTask(dimension=pair.task_name, dimension_body=task_body)
+    try:
+        result = await run_versus(
+            db,
+            workflow=workflow,
+            task=task,
+            inputs=pair,
+            model=model,
+            broadcaster=broadcaster,
+            model_config=model_config,
+        )
+    except Exception:
+        log.exception(
+            "versus simple_spine failed (essay=%s, pair=%s/%s, task=%s)",
+            pair.essay_id,
+            pair.source_a_id,
+            pair.source_b_id,
+            pair.task_name,
+        )
+        raise
+    return JudgeResult(
+        verdict=result.artifact.verdict,
+        preference_label=result.artifact.preference_label,
+        reasoning_text=result.artifact.reasoning_text,
+        trace_url=result.trace_url,
+        call_id=result.call_id,
+        run_id=result.run_id,
+        question_id=result.question_id,
+        cost_usd=result.cost_usd,
+        system_prompt=result.system_prompt,
+        user_prompt=result.user_prompt,
+    )
+
+
+async def judge_pair_axon(
+    db: DB,
+    pair: PairContext,
+    *,
+    task_body: str,
+    model: str,
+    config_name: str = "judge_pair",
+    budget_usd: float,
+    wall_clock_soft_s: float | None = None,
+    broadcaster: Broadcaster | None = None,
+    model_config: ModelConfig | None = None,
+) -> JudgeResult:
+    """Run :class:`AxonWorkflow` on a pair (judging side).
+
+    Mirrors :func:`judge_pair_simple_spine`. ``config_name`` selects an
+    axon YAML config (default ``"judge_pair"``); the pair surface is
+    passed as four inline artifacts — ``prefix``, ``essay_a``, ``essay_b``,
+    ``rubric`` — each XML-fenced into the spine's first user message.
+    The spine calls ``finalize`` with the pinned ``pair_judgment`` schema
+    (``{reasoning, verdict}``); ``AxonWorkflow`` synthesises the closer
+    string as ``reasoning + "\\n\\n" + verdict`` so the existing
+    :meth:`JudgePairTask.extract_artifact` (``rfind`` on label) works
+    unchanged.
+
+    No ``operating_assumptions`` / ``output_guidance`` / ``additional_context``
+    plumbing: axon's spine prompt + the inline artifacts already cover
+    that surface, and exposing free-form mainline text channels here
+    would compete with the prompt for the model's attention. Add them
+    back if a concrete use case appears.
+    """
+    artifacts = {
+        "prefix": pair.prefix_text,
+        "essay_a": pair.continuation_a_text,
+        "essay_b": pair.continuation_b_text,
+        "rubric": task_body.strip() + "\n",
+    }
+    workflow = AxonWorkflow(
+        budget_usd=budget_usd,
+        config_name=config_name,
+        call_type="judge",
+        wall_clock_soft_s=wall_clock_soft_s,
+        artifacts=artifacts,
+    )
+    task = JudgePairTask(dimension=pair.task_name, dimension_body=task_body)
+    try:
+        result = await run_versus(
+            db,
+            workflow=workflow,
+            task=task,
+            inputs=pair,
+            model=model,
+            broadcaster=broadcaster,
+            model_config=model_config,
+        )
+    except Exception:
+        log.exception(
+            "versus axon failed (essay=%s, pair=%s/%s, task=%s)",
+            pair.essay_id,
+            pair.source_a_id,
+            pair.source_b_id,
+            pair.task_name,
+        )
+        raise
+    return JudgeResult(
+        verdict=result.artifact.verdict,
+        preference_label=result.artifact.preference_label,
+        reasoning_text=result.artifact.reasoning_text,
+        trace_url=result.trace_url,
+        call_id=result.call_id,
+        run_id=result.run_id,
+        question_id=result.question_id,
+        cost_usd=result.cost_usd,
+        system_prompt=result.system_prompt,
+        user_prompt=result.user_prompt,
+    )
+
+
 __all__ = (
     "PREFERENCE_LABELS",
     "JudgeArtifact",
@@ -295,7 +472,9 @@ __all__ = (
     "ensure_versus_question",
     "extract_preference",
     "get_rumil_dimension_body",
+    "judge_pair_axon",
     "judge_pair_orch",
     "judge_pair_reflective",
+    "judge_pair_simple_spine",
     "label_to_verdict",
 )

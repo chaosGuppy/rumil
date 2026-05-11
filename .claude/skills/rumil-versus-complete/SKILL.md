@@ -2,7 +2,7 @@
 name: rumil-versus-complete
 description: Run orchestrator-driven essay completions for the versus pairwise-eval pipeline. Per essay × prefix × model × workflow, fires a rumil orchestrator (TwoPhase, DraftAndEdit) and writes the resulting continuation as a `versus_texts` row tagged `kind="completion"`, `source_id="orch:<workflow>:<model>:c<hash8>"` — pickable as a contestant by `rumil-versus-judge` afterwards. Use when the user wants to A/B orchestrator-produced continuations against single-shot model continuations or against the human baseline. Both `--orch two_phase` and `--orch draft_and_edit` are usable. For single-shot completions (no orch), use `rumil-versus-generate`.
 allowed-tools: Bash, Read
-argument-hint: "--orch <workflow_name> [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--budget N] [--essay <id>...] [--prefix-label <id>] [--include-stale] [--limit N] [--concurrency N] [--persist] [--prod] [--workflow-arg key=value ...] [--dry-run]"
+argument-hint: "--orch <workflow_name> [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--budget N | --budget-usd N] [--essay <id>...] [--prefix-label <id>] [--include-stale] [--limit N] [--concurrency N] [--persist] [--prod] [--workflow-arg key=value ...] [--dry-run]"
 ---
 
 # rumil-versus-complete
@@ -128,11 +128,19 @@ completion text always lands in `versus_texts` regardless of staging
   roles, `--model` sets the closer / final-emit model; per-role
   overrides go through `--workflow-arg drafter_model=... critic_model=...`
   (see workflow-specific docs).
-- `--budget` — orchestrator research-call budget. Minimum varies by
-  workflow:
-  - `two_phase`: 4 (`MIN_TWOPHASE_BUDGET`)
-  - `draft_and_edit`: 1 round draft-only; 2+ adds critic/edit cycles
-  - `claim_investigation`, `experimental`: 4
+- Budget: workflows split into two camps. The CLI rejects the wrong
+  flag for each camp (mutually exclusive, neither has a default).
+  - **Research-call workflows** use `--budget N` (small int, counts
+    rumil dispatched calls):
+    - `two_phase`: minimum 4 (`MIN_TWOPHASE_BUDGET`)
+    - `draft_and_edit`: 1 round draft-only; 2+ adds critic/edit cycles
+    - `claim_investigation`, `experimental`: 4
+  - **Token-budget workflows** use `--budget-usd N` (USD cost cap;
+    no unit conversion):
+    - `simple_spine` — pass e.g. `--budget-usd 5.00` for a 200k cap.
+      SimpleSpine has no budget-unit primitive (its mainline self-paces
+      against the token clock), so it accepts tokens directly to keep
+      the units unambiguous.
 - `--orch <workflow_name>` is required. No default — caller picks
   the workflow explicitly.
 
@@ -151,6 +159,7 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 - `--orch two_phase --workspace versus --budget 4 --model sonnet --limit 3` — run on 3 pending essays
 - `--orch draft_and_edit --workspace versus --budget 4 --model opus --essay forethought__broad-timelines` — run draft-and-edit on one essay
 - `--orch draft_and_edit --workspace versus --budget 8 --model opus --include-stale` — also runs on off-feed essays
+- `--orch simple_spine --workspace versus --budget-usd 5.00 --model haiku --limit 1` — single spine completion with a $5 cap (use `--budget-usd`, not `--budget`; `config_name` defaults to `essay_continuation`, override via `--workflow-arg config_name=<other>`)
 
 The `--essay` and `--prefix-label` filters mirror `rumil-versus-generate`.
 `--include-stale` is the same opt-out from the active-essay-set default.

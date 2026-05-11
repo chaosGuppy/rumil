@@ -1,0 +1,149 @@
+# judge_pair — SimpleSpine preset for versus pairwise-judging runs.
+#
+# Library: pair_notes (FreeformAgent) → steelman (SampleN n=2). Mainline
+# itself produces the verdict + canonical label via `finalize` after
+# reading both stages' outputs (pair_text + rubric are in mainline's
+# initial user message; pair_notes / steelman outputs land as tool_results).
+# Mainline + role models default to opus; versus's --model flag uniformly
+# overrides via _apply_model_override.
+#
+# Context flow uses the artifact channel (k,v store on the run):
+# - The bridge seeds `pair_text` (prefix + both continuations with display
+#   labels) and `rubric` (the dimension body) into OrchInputs.artifacts.
+# - Both subroutines declare `consumes: [pair_text, rubric]` so they're
+#   spliced into each spawn's user prompt under "## Artifacts" without
+#   mainline having to forward content. Mainline chooses *when* to spawn
+#   and *which earlier outputs* (e.g. `pair_notes/<spawn_id>`) to pass
+#   via `include_artifacts` on the next spawn.
+#
+# Mainline system prompt extends the default with an explicit
+# wire-format constraint (judge_pair_wire_format.md) requiring the
+# `finalize.answer` to end with one of the seven canonical preference
+# labels verbatim, on its own line. The harness parses the label out of
+# `finalize.answer` via `extract_preference` (rfind on the label set),
+# so mainline can reason freely above the line as long as the trailing
+# label is canonical.
+
+name: judge_pair
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/main_default.md
+main_system_prompt_extra_path: ../prompts/judge_pair_wire_format.md
+max_parallel_spawns_per_turn: 3
+# Versus pins these explicitly: the verdict deliverable + canonical
+# label fits comfortably under 32k, but mainline finalize may quote
+# pair_notes / steelman summaries inline before the label, so we
+# match the essay-continuation cap rather than dropping to a smaller
+# value. Temperature 1.0 lets mainline plan diverse spawn batches.
+mainline_temperature: 1.0
+mainline_max_tokens: 32000
+# Server-side compaction (compact_20260112). Once mainline input
+# crosses `compaction_trigger_tokens` the API replaces the entire
+# prior message thread with a summary block — system prompt is
+# preserved (cached separately), the original first user message is
+# NOT preserved automatically. The default instructions
+# (prompts/compaction_default.md) tell the summariser to preserve the
+# scope question, the rubric, and durable findings verbatim — soft
+# preservation only. 400k trigger fits the 1M-context window: pair +
+# rubric + steelmans rarely cross that, so this is mostly a safety
+# net for very long essays + many spawn rounds.
+enable_server_compaction: true
+compaction_trigger_tokens: 400000
+
+subroutines:
+  - kind: freeform_agent
+    name: pair_notes
+    description: |
+      Stage 1 of 2 (pair_notes → steelman → mainline finalize).
+      Auto-spliced inputs (via consumes): `pair_text` (prefix + both
+      continuations with display labels) and `rubric` (dimension body).
+      Output: structured initial reading — what each continuation is doing,
+      divergence points, evidence against rubric. NO preference label.
+      Auto-keyed as `pair_notes/<spawn_id>` in the artifact store; pass
+      that key in subsequent steelman spawns' `include_artifacts` to feed
+      it forward.
+    sys_prompt_path: ../prompts/pair_notes_sys.md
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Notes from mainline
+      {additional_context}
+
+      Produce the initial read now, grounding every observation in the
+      pair_text and rubric provided in the Artifacts block above.
+    model: claude-opus-4-7
+    max_rounds: 1
+    # 32k output ceiling (raised from 4k after pair_notes saturated on
+    # long-essay traces — 125k-char pair_text gives plenty for the read
+    # to develop). Realistic output is 6–10k; this is headroom.
+    max_tokens: 32000
+    overridable: [intent, additional_context, cost_cap_usd]
+    consumes: [pair_text, rubric]
+    # 80k floor: per-call worst-case ≈ input(~30k pair_text + rubric)
+    # + max_tokens(32k) ≈ 62k. Historical 8k under-counted the input
+    # side and made the soft budget signal misleading (spawn routinely
+    # blew past cap). 80k matches the cross-preset floor.
+    base_cost_cap_usd: 1.00
+    cost_hint: "≈ 1 turn @ up to 32k out (~6–12k typical, peak 40k)"
+    intent_description: >
+      What aspect of the pair to emphasize in the initial read (e.g.
+      "focus on argument structure" or just "general"). Free-form.
+    additional_context_description: >
+      Optional freeform notes from mainline — guidance not covered by
+      pair_text or rubric (e.g. "the prefix sets up X; weight the
+      delivery against that"). Pair text + rubric are auto-spliced via
+      consumes — do NOT paste them here.
+
+  - kind: sample_n
+    name: steelman
+    description: |
+      Stage 2 of 2 (pair_notes → steelman → mainline finalize).
+      Auto-spliced inputs (via consumes): `pair_text`, `rubric`.
+      Pass the pair_notes output via `include_artifacts: ["pair_notes/<spawn_id>"]`
+      so steelmans see the same context mainline will when finalizing.
+      Intent: side label ('A' or 'B') indicating which to steelman.
+      Output: N independent steelmans for the chosen side, delimited
+      under "## Sample 1", "## Sample 2", … Auto-keyed as
+      `steelman/<spawn_id>`. Mainline reads them as tool_results and
+      composes the final verdict directly in `finalize.answer`.
+    sys_prompt_path: ../prompts/steelman_judge_sys.md
+    user_prompt_template: |
+      ## Intent (which side to steelman)
+      {intent}
+
+      ## Notes from mainline
+      {additional_context}
+
+      Produce the steelman now, grounding every claim in the pair_text,
+      rubric, and any prior outputs provided in the Artifacts block above.
+    model: claude-sonnet-4-6
+    n: 2
+    temperature: 1.0
+    # 32k output ceiling (raised from 2k after steelmen routinely
+    # truncated mid-sentence). With consumes=[pair_text, rubric] +
+    # include_artifacts=[pair_notes], per-sample input is ~30k tokens
+    # for long essays; output is typically 4–8k.
+    max_tokens: 32000
+    overridable: [intent, n, additional_context, cost_cap_usd]
+    consumes: [pair_text, rubric]
+    # 110k spawn cap = 2 × (input_estimate + max_tokens) with headroom.
+    # Per-sample worst-case ≈ input(~18–30k) + max_tokens(32k) ≈ 50k;
+    # at n=2 the affordability check needs cap ≥ 100k or both samples
+    # silently skip (observed in haiku 200k-budget runs: r1 fired at
+    # 40k cap, both samples skipped with per_sample_worst_tokens=50387,
+    # mainline burned a retry round bumping cap to 60k + dropping n to
+    # 1). Sized for n=2 by default so mainline doesn't have to override.
+    base_cost_cap_usd: 1.00
+    cost_hint: "≈ N parallel turns @ up to 32k out each (~6–10k typical per sample)"
+    intent_description: >
+      Which side to steelman: 'A' or 'B'. Anything else falls through
+      verbatim into the prompt and the steelman will pick on its own.
+    additional_context_description: >
+      Optional freeform notes — e.g. "play to the rubric's clarity
+      criterion in particular" or "address pair_notes' specific
+      concerns about hedging". Pair + rubric + the chosen prior outputs
+      are spliced via consumes / include_artifacts — do NOT paste them.
+    # A steelman's job is to argue maximally for one side; global
+    # operating_assumptions like "be neutral" would distort that role.
+    # Same logic the SubroutineBase docstring flags for critics.
+    inherit_assumptions: false

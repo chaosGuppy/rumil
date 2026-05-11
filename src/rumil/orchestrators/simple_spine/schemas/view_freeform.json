@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "title": "FreeformViewAnswer",
+  "description": "A four-section view-shaped take on the scope question.",
+  "required": [
+    "framing_and_interpretation",
+    "assertions_and_deductions",
+    "research_direction",
+    "returns_to_further_research"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "framing_and_interpretation": {
+      "type": "string",
+      "description": "What is this question really about? At a very high level, what is important to consider when investigating it? Are there frames that might seem important superficially but, on deeper reflection, should be deprioritised? Are there ambiguities in the question, and if so, what are the most helpful resolutions?"
+    },
+    "assertions_and_deductions": {
+      "type": "string",
+      "description": "What can we state about the answer, and at what confidence? Reason carefully from the available (likely uncertain) evidence and crystallised knowledge. Use language that conveys uncertainty faithfully and shows how it propagates. Do not assign meaningless probabilities over high-level undefined propositions; only use probabilities when the proposition is precise enough that the assignment is meaningful. Otherwise prefer 'confident', 'uncertain', 'would update upon further research'."
+    },
+    "research_direction": {
+      "type": "string",
+      "description": "What cruxes and key unknowns would, if investigated, most improve our answer to the question?"
+    },
+    "returns_to_further_research": {
+      "type": "string",
+      "description": "How much reducible uncertainty remains? How far are we from a maximally-uncertainty-reduced answer? What does the curve of returns to further research look like — flat then spiking, saturating quickly, linear then saturating, or something else?"
+    }
+  }
+}

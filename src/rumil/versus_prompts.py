@@ -70,7 +70,7 @@ def get_rumil_dimension_body(name: str) -> str:
     """Load the essay-adapted rumil dimension prompt at ``prompts/versus-<name>.md``.
 
     ``name`` uses the same keys as :class:`rumil.run_eval.agents.EvalAgentSpec`
-    (e.g. ``general_quality``, ``grounding``); underscores are converted to
+    (e.g. ``would_recommend``, ``grounding``); underscores are converted to
     hyphens when resolving the file name.
     """
     path = _PROMPTS_DIR / f"versus-{name.replace('_', '-')}.md"

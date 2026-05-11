@@ -53,3 +53,15 @@ severity, evidence quotes, suggested action (`inspect`, `redispatch`,
 For any call that looks worth investigating, the natural next step is
 `/rumil-trace <call_id>` to read the full exchanges, or
 `/rumil-review <question_id>` if the issue seems question-wide.
+
+## Axon-specific signal
+
+For `axon` orchestrator traces, `axon_configure_retried` events are an
+important confusion signal: each one means the model produced a
+malformed `DelegateConfig` on its first attempt at the configure step
+(violating the continuation/isolation coupling rule, missing required
+fields, etc.) and the orchestrator had to re-fire with a corrective.
+A small handful of retries on a smaller model (e.g. Haiku) is normal
+convergence; many retries — or any retries from a frontier model — is
+worth inspecting via `/rumil-trace`. The retry's `reason` field
+explains what failed validation.

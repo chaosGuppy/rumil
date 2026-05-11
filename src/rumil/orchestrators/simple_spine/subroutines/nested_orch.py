@@ -1,0 +1,195 @@
+"""NestedOrchSubroutine — recurse into another orchestrator with a sub-budget.
+
+Two flavors are supported via the ``orch_factory`` callable:
+
+- A budgeted research orch (TwoPhase / ClaimInvestigation) that takes
+  ``assigned_budget`` in **rumil budget units** (one unit per call).
+  The token sub-cap carved from the parent's BudgetClock here is a
+  separate axis — set ``budget_units`` on the override or via the
+  factory's defaults.
+- A SimpleSpine recursion (factory returns a ``SimpleSpineOrchestrator``).
+  The token sub-cap is the only knob; the child orch lives entirely
+  inside our token clock.
+
+The factory receives ``(ctx, sub_cost_cap_usd, overrides)`` and returns a
+ready-to-await coroutine that finishes the sub-orch run. This keeps the
+SubroutineDef agnostic about which orch shape it wraps.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+from rumil.orchestrators.simple_spine.subroutines.base import (
+    SpawnCtx,
+    SubroutineBase,
+    SubroutineResult,
+)
+
+# Factory: (ctx, sub_cost_cap_usd, overrides) -> awaitable returning a text
+# summary that bubbles back to mainline.
+NestedOrchFactory = Callable[
+    [SpawnCtx, float, Mapping[str, Any]],
+    Awaitable[str],
+]
+
+
+@dataclass(frozen=True, kw_only=True)
+class NestedOrchSubroutine(SubroutineBase):
+    """Recurse into another orchestrator with a carved sub-budget.
+
+    Inherits cross-cutting fields from :class:`SubroutineBase`. Honors
+    ``inherit_assumptions`` by gating whether ``ctx.operating_assumptions``
+    is forwarded to the nested orch's factory. Treats
+    ``base_cost_cap_usd`` as **required** (validated in ``__post_init__``)
+    because nested orchs can recurse arbitrarily deep without it.
+    """
+
+    orch_kind: str  # "two_phase" | "draft_and_edit" | "simple_spine" | etc.
+    factory: NestedOrchFactory
+    overridable: frozenset[str] = field(
+        default_factory=lambda: frozenset(
+            {
+                "intent",
+                "additional_context",
+                "output_guidance",
+                "output_schema",
+                "cost_cap_usd",
+                "question_headline",
+                "question_content",
+            }
+        )
+    )
+
+    def __post_init__(self) -> None:
+        if self.base_cost_cap_usd is None:
+            raise ValueError(
+                f"NestedOrchSubroutine {self.name!r}: base_cost_cap_usd is "
+                "required (nested orchs always need an explicit token "
+                "sub-cap because they can recurse arbitrarily deep)"
+            )
+        if self.consumes:
+            raise ValueError(
+                f"NestedOrchSubroutine {self.name!r}: consumes is not yet "
+                "supported on nested_orch kinds — artifact pass-through to "
+                "a child orch needs an explicit forwarding contract that "
+                "is out of MVP scope. Track which keys the child orch "
+                "needs via its own OrchInputs.artifacts at factory time."
+            )
+
+    def _supports_include_artifacts(self) -> bool:
+        return False
+
+    def fingerprint(self) -> Mapping[str, Any]:
+        out = dict(super().fingerprint())
+        out["kind"] = "nested_orch"
+        out["orch_kind"] = self.orch_kind
+        return out
+
+    def _default_intent_description(self) -> str:
+        return "What you want this nested orch to investigate / produce."
+
+    def _default_additional_context_description(self) -> str:
+        return "Context to forward to the nested orch."
+
+    def _cost_cap_usd_property(self) -> dict[str, Any]:
+        return {
+            "type": "integer",
+            "minimum": 1000,
+            "description": (
+                "Override the token sub-cap (default "
+                f"{self.base_cost_cap_usd}). Capped at parent's remaining."
+            ),
+        }
+
+    def _extra_schema_properties(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if "question_headline" in self.overridable:
+            out["question_headline"] = {
+                "type": "string",
+                "description": (
+                    "Headline for a NEW child question created for this "
+                    "nested orch run. The child orch scopes to this new "
+                    "question (not the parent's). The new question is "
+                    "linked as a CHILD_QUESTION of the parent and inherits "
+                    "the parent run's staging."
+                ),
+            }
+        if "question_content" in self.overridable:
+            out["question_content"] = {
+                "type": "string",
+                "description": (
+                    "Optional clarifying content for the new child "
+                    "question — scope, what counts as an answer, units / "
+                    "thresholds. Use only when the headline alone is "
+                    "ambiguous; investigative steering belongs in `intent`."
+                ),
+            }
+        if "output_guidance" in self.overridable:
+            out["output_guidance"] = {
+                "type": "string",
+                "description": (
+                    "What the nested orch's deliverable should look like — "
+                    "format, length, must-cover sections. Spliced into the "
+                    "child's first user turn under '## Output guidance'. "
+                    "Distinct from `intent` (which is the freeform "
+                    "investigative steer); use this when you want to pin "
+                    "down the shape of the answer."
+                ),
+            }
+        if "output_schema" in self.overridable:
+            out["output_schema"] = {
+                "type": "object",
+                "additionalProperties": True,
+                "description": (
+                    "Optional JSON Schema dict the child's finalize answer "
+                    "should match. Rendered into the child's first user "
+                    "turn and used to coerce its freeform answer into JSON "
+                    "after finalize. Pass standard JSON Schema (e.g. "
+                    "{type: object, properties: {...}, required: [...]}). "
+                    "Omit for freeform prose deliverables."
+                ),
+            }
+        return out
+
+    def _extra_required_fields(self) -> list[str]:
+        # Nested orchs operate on a NEW child question, so the caller
+        # must supply its headline. Optional only when the YAML opts out
+        # via `overridable`.
+        return ["question_headline"] if "question_headline" in self.overridable else []
+
+    async def run(self, ctx: SpawnCtx, overrides: Mapping[str, Any]) -> SubroutineResult:
+        cap_override = overrides.get("cost_cap_usd")
+        # base_cost_cap_usd is enforced non-None in __post_init__; assert keeps
+        # pyright happy without re-validating at every spawn.
+        assert self.base_cost_cap_usd is not None
+        sub_cap = (
+            float(cap_override)
+            if cap_override is not None and "cost_cap_usd" in self.overridable
+            else self.base_cost_cap_usd
+        )
+        # carve_child clamps to the parent's remaining; if the parent is
+        # already drained we fall back to a one-cent sub-cap so the call
+        # is well-formed and immediately reports cost_exhausted.
+        sub_cap = max(min(float(sub_cap), ctx.budget_clock.cost_usd_remaining), 0.01)
+
+        # Honor inherit_assumptions by zeroing operating_assumptions on
+        # the ctx forwarded to the factory. Default-True so global rules
+        # propagate; opt-out for nested orchs whose role is to push back.
+        forward_ctx = (
+            ctx if self.inherit_assumptions else dataclasses.replace(ctx, operating_assumptions="")
+        )
+        text_summary = await self.factory(forward_ctx, sub_cap, overrides)
+        # tokens_consumed is reported by the orchestrator from the
+        # per-spawn BudgetClock (carved via SubroutineBase.carve_spawn_clock);
+        # no need for a manual delta here.
+        return SubroutineResult(
+            text_summary=text_summary,
+            extra={
+                "nested_orch_kind": self.orch_kind,
+                "sub_cost_cap_usd": sub_cap,
+            },
+        )

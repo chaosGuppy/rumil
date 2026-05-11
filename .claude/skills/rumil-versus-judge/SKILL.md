@@ -2,7 +2,7 @@
 name: rumil-versus-judge
 description: Run pairwise judgments on versus essay-continuation pairs. Default mode is the unified blind path (single-turn LLM call, no tools, no DB) — claude-* models route direct to Anthropic, others through OpenRouter. --variant orch fires a full TwoPhaseOrchestrator run per pair. Use when the user wants to measure how rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare blind judges against workspace-aware ones, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "[--variant orch] [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
+argument-hint: "[--variant orch|reflective|simple_spine] [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N | --simple-spine-budget-usd N] [--simple-spine-config-name <name>] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -15,17 +15,25 @@ rumil paths also store project_id / run_id / rumil_call_id so the
 
 ## Two modes
 
-| Mode | What it does | judge_model format | Needs supabase? |
-|---|---|---|---|
-| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `judge_pair/blind:<model>:c<hash8>` | no |
-| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `judge_pair/two_phase:<model>:c<hash8>` | **yes** |
+| Mode | What it does | judge_model format | Needs supabase? | Budget flag |
+|---|---|---|---|---|
+| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `judge_pair/blind:<model>:c<hash8>` | no | n/a |
+| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `judge_pair/two_phase:<model>:c<hash8>` | **yes** | `--budget N` (research-call count) |
+| `reflective` | Read → reflect → verdict (3 LLM calls; `--budget` ignored). | `judge_pair/reflective:<model>:c<hash8>` | yes | n/a |
+| `simple_spine` | Per-pair: SimpleSpine workflow under `judge_pair` preset (mainline + subroutines, self-paced against the token clock). | `judge_pair/simple_spine:<model>:c<hash8>` | yes | `--simple-spine-budget-usd N` (USD cost cap) |
+
+**Budget flags are mutually exclusive per variant.** `--variant orch`
+requires `--budget`; `--variant simple_spine` requires
+`--simple-spine-budget-usd` (SimpleSpine has no budget-unit
+primitive, so it accepts tokens directly to keep units unambiguous).
+The CLI rejects the wrong flag for the chosen variant.
 
 The earlier `--variant ws` path (one SDK agent call with
 workspace-exploration tools, no orchestrator) was removed; for an
 agentic-baseline run, use `--variant orch --budget 4` (the minimum).
 Historical `rumil:ws:*` rows in `versus_judgments` are preserved.
 
-The dimension (`general_quality`, `grounding`, ...) is selected via
+The dimension (`would_recommend`, `general_quality`, `grounding`, ...) is selected via
 `--dimension` and lives in the structured `judge_inputs.task.dimension`
 field. It's no longer embedded in the display string —
 post-#424 rows use `judge_pair/<workflow>:<model>:c<hash8>`. Historical
@@ -119,11 +127,11 @@ on in the UI, so `status.py`'s numbers should match what you see there.
   part of the judge identity.
 - New aliases land via `RUMIL_MODEL_ALIASES` in `src/rumil/settings.py`;
   the script imports the dict from there.
-- Dimensions default to `general_quality`. Each dimension needs a
+- Dimensions default to `would_recommend`. Each dimension needs a
   prompt at `prompts/versus-<name>.md`. Currently available:
-  `general_quality`, `grounding`. Adding more = drop a new prompt file
-  following the existing adapted-for-essays shape — no code changes
-  needed.
+  `would_recommend`, `general_quality`, `grounding`, `identify_human`.
+  Adding more = drop a new prompt file following the existing
+  adapted-for-essays shape — no code changes needed.
 - `--current-only` — skip groups whose `prefix_config_hash` isn't the
   current one for the essay. Protects against judging stale rows after
   an essay re-import; pair with `scripts/status.py` to detect staleness.
@@ -211,7 +219,8 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 - `--variant orch --workspace versus --dry-run` — list pending orch judgments
 - `--variant orch --workspace versus --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
 - `--variant orch --workspace versus --budget 4 --model sonnet --limit 5` — run on sonnet instead of opus
-- `--variant orch --workspace versus --budget 4 --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
+- `--variant orch --workspace versus --budget 4 --dimension would_recommend --dimension grounding --limit 5` — run multiple dimensions
+- `--variant simple_spine --workspace versus --simple-spine-budget-usd 5.00 --model sonnet --limit 3` — 3 spine judgments with a $5 cap (use `--simple-spine-budget-usd`, not `--budget`)
 
 ## What to surface
 

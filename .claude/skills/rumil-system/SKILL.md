@@ -88,6 +88,61 @@ ordinary judgements. A question with a View is meant to be understood
 through the View first; dig into the considerations only when the View
 is silent or you need to verify it.
 
+## Orchestrators
+
+Rumil has multiple research-loop orchestrators. The two main shapes:
+
+- **Call-graph orchestrators** (`two_phase`, `experimental`) —
+  prioritize sub-questions, dispatch a sequence of typed rumil calls
+  (`find_considerations`, `assess`, `scout_*`, `web_research`), each
+  call going through its own `ContextBuilder` → `WorkspaceUpdater` →
+  `ClosingReviewer` pipeline. Budget unit: integer call count. This is
+  what `main.py --continue` runs.
+- **Spine orchestrators** (`simple_spine`, `axon`) — a single
+  persistent agent thread (the "spine") that decides what to do next
+  in-thread, dispatching parallel sub-investigations and synthesising
+  results. Budget unit: USD, enforced at per-model rates (cache writes
+  included). Driven by YAML presets under each orchestrator's
+  `configs/` directory.
+
+### Axon specifics
+
+Axon is the newer spine orchestrator and has a few load-bearing
+concepts worth knowing when interpreting an axon run:
+
+- **Two-step delegate dispatch.** The mainline thread emits
+  `delegate(intent, inherit_context, budget_usd, n)` tool calls. Each
+  is followed by a `configure` continuation in the same thread that
+  produces a structured `DelegateConfig` (system prompt, tools, max
+  rounds, finalize schema, side effects). The orchestrator then runs
+  each delegate's *inner loop* with that config; inner loops terminate
+  by calling the universal `finalize` tool. All parallel delegates
+  gather before the next mainline turn.
+- **Continuation vs. isolation regimes.** `inherit_context=True` reuses
+  the spine's system + tools + messages so the inner loop hits cache on
+  the spine prefix; configure cannot customise system or tools in this
+  regime. `inherit_context=False` starts the inner loop fresh and
+  configure picks any system / tools.
+- **Page creation lives inside delegates.** Workspace pages
+  (claims, judgements, view_items, etc.) are minted via the
+  `create_page` tool *inside* a delegate's inner loop, not as a side
+  effect of finalizing. This means the spine sees a delegate's pages
+  only via its finalized `page_ids` field (or via `load_page`).
+- **Artifacts vs. pages.** Artifacts are run-local text-by-key state
+  (`ArtifactStore`) — useful for content that doesn't fit the
+  workspace graph and shouldn't be visible outside the run. Pages are
+  the durable workspace-graph nodes. Operating assumptions land at the
+  reserved artifact key `OPERATING_ASSUMPTIONS_KEY`.
+- **Seed pages + auto-seed.** `OrchInputs.seed_page_ids` are surfaced
+  in the spine's first user message as `id + type + headline` (the
+  spine calls `load_page` for full content). When `seed_page_ids` is
+  empty and `AxonConfig.auto_seed_enabled` is True, the orchestrator
+  embeds the question and seeds with the top matches; failures fire an
+  `AxonAutoSeedFailedEvent` and the run continues with no seeds.
+- **Tiny stable mainline tool surface.** Just `delegate`, `configure`,
+  `finalize`, `load_page` (plus configured direct tools). Stable across
+  the run so the spine cache prefix never invalidates.
+
 ## The rumil-* skill surface
 
 Direct skills (run scripts immediately, no LLM turn needed):

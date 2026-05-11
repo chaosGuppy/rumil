@@ -161,7 +161,7 @@ How to dispatch:
        --workflow reflective_judge \
        --workspace versus \
        --essay <essay_id> \
-       --dimension general_quality \
+       --dimension would_recommend \
        --model sonnet \
        --limit 1 \
        --contestants <source_a>,<source_b>
@@ -213,7 +213,7 @@ the rumil UI to find recent runs in scope. Pick one run per
 (workflow × task_name) combination — typically:
 
 - `draft_and_edit` × `complete_essay`
-- `reflective_judge` × `<dimension>` (e.g. `general_quality`)
+- `reflective_judge` × `<dimension>` (e.g. `would_recommend`)
 
 Skip runs with 0 calls (dedup'd shells, not real work).
 
@@ -559,7 +559,7 @@ The trace+fork loop is high-leverage but the sample size is tiny
   Iterate on the read/reflect/verdict prompts to make the judge weigh
   rubric criteria more discerningly, not to teach it side-detection.
 - **Don't change the rubric**: dimension prompts under
-  `src/rumil/prompts/versus-*.md` define what "general_quality" etc.
+  `src/rumil/prompts/versus-*.md` define what "would_recommend" etc.
   mean across the entire eval and across all judges. Editing them
   retroactively reshapes the dataset's meaning and breaks comparison
   with prior judgments. Iterate on the workflow stage prompts (read /

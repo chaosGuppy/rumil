@@ -77,7 +77,7 @@ judging:
                                   # src/rumil/prompts/versus-<dimension>.md so
                                   # cross-judge rows are directly comparable on
                                   # the prompt axis.
-    - general_quality
+    - would_recommend
   include_human_as_contestant: true
   max_tokens: 64000           # reasoning judges (gpt-5.4) can chew through tokens
 

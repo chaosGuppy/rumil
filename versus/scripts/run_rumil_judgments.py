@@ -62,7 +62,7 @@ envcascade.apply(
 from rumil.settings import RUMIL_MODEL_ALIASES, resolve_model_alias  # noqa: E402
 from versus import config, judge, prepare, rumil_judge, versus_db  # noqa: E402
 
-DEFAULT_DIMENSIONS = ("general_quality",)
+DEFAULT_DIMENSIONS = ("would_recommend",)
 
 
 def main() -> None:
@@ -77,14 +77,15 @@ def main() -> None:
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--variant",
-        choices=("orch", "reflective"),
+        choices=("orch", "reflective", "simple_spine", "axon"),
         default=None,
         help=(
             "Workflow variant. Omit for the default blind judge path. "
             "orch fires TwoPhaseOrchestrator (research + closer); "
             "reflective fires ReflectiveJudgeWorkflow (read → reflect → "
-            "verdict, no research). Both require --workspace and "
-            "running Supabase."
+            "verdict, no research); simple_spine fires SimpleSpineWorkflow "
+            "(structured-rounds main agent loop with parallel subroutine "
+            "spawns). All require --workspace and running Supabase."
         ),
     )
     ap.add_argument(
@@ -112,17 +113,18 @@ def main() -> None:
         default=None,
         help=(
             "Essay-adapted rumil dimension name, repeatable "
-            "(default: general_quality). Requires a prompt at "
+            "(default: would_recommend). Requires a prompt at "
             "src/rumil/prompts/versus-<name>.md."
         ),
     )
     ap.add_argument(
         "--budget",
         type=int,
-        default=4,
+        default=None,
         help=(
             "Orchestrator research-call budget per pair (orch variant only). "
-            "TwoPhaseOrchestrator requires a minimum of 4. Default: 4."
+            "TwoPhaseOrchestrator requires a minimum of 4. Required for "
+            "--variant orch; rejected for simple_spine (use --simple-spine-budget-usd)."
         ),
     )
     ap.add_argument(
@@ -252,6 +254,43 @@ def main() -> None:
         default=None,
         help="Reflective: path to a markdown file replacing the built-in verdict prompt.",
     )
+    ap.add_argument(
+        "--simple-spine-config-name",
+        default="judge_pair",
+        help=(
+            "simple_spine: preset name resolved via "
+            "rumil.orchestrators.simple_spine.presets.get_preset. "
+            "Default: judge_pair."
+        ),
+    )
+    ap.add_argument(
+        "--simple-spine-budget-usd",
+        type=float,
+        default=None,
+        help=(
+            "simple_spine: USD cost cap on the run (the only hard "
+            "terminator). Required for --variant simple_spine. Counts "
+            "input + output + cache_create + cache_read at per-model "
+            "rates from pricing.json — pass e.g. 4.00 for a $4 cap."
+        ),
+    )
+    ap.add_argument(
+        "--axon-config-name",
+        default="judge_pair",
+        help=(
+            "axon: YAML config name under rumil/orchestrators/axon/configs/. Default: judge_pair."
+        ),
+    )
+    ap.add_argument(
+        "--axon-budget-usd",
+        type=float,
+        default=None,
+        help=(
+            "axon: USD cost cap on the run (the only hard terminator). "
+            "Required for --variant axon. Counts input + output + "
+            "cache_create + cache_read at per-model rates."
+        ),
+    )
     args = ap.parse_args()
 
     contestants = (
@@ -323,9 +362,13 @@ def main() -> None:
 
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
 
-    # Reflective-only flags must be unset on the orch path so the
-    # CLI surface stays unambiguous about which variant they apply to.
-    if args.variant == "orch":
+    # Reflective-only flags must be unset on non-reflective paths so
+    # the CLI surface stays unambiguous about which variant they apply
+    # to. (Symmetric: simple_spine flags would be silently ignored on
+    # reflective/orch paths since they don't reach the bridge; not
+    # gated here because the default for simple-spine-config-name is
+    # the safe sentinel "judge_pair" which is harmless on other paths.)
+    if args.variant in ("orch", "simple_spine", "axon"):
         for flag, value in (
             ("--reader-model", args.reader_model),
             ("--reflector-model", args.reflector_model),
@@ -336,6 +379,35 @@ def main() -> None:
         ):
             if value is not None:
                 ap.error(f"{flag} is only valid with --variant reflective")
+
+    if args.variant == "simple_spine":
+        if args.budget is not None:
+            ap.error(
+                "--variant simple_spine uses raw tokens; pass "
+                "--simple-spine-budget-usd (not --budget). SimpleSpine "
+                "has no budget-unit primitive."
+            )
+        if args.simple_spine_budget_usd is None:
+            ap.error("--variant simple_spine requires --simple-spine-budget-usd <int>")
+        if args.axon_budget_usd is not None:
+            ap.error("--axon-budget-usd is only valid with --variant axon")
+    elif args.variant == "axon":
+        if args.budget is not None:
+            ap.error(
+                "--variant axon uses a USD cost cap; pass --axon-budget-usd "
+                "(not --budget). Axon has no research-call-count primitive."
+            )
+        if args.simple_spine_budget_usd is not None:
+            ap.error("--simple-spine-budget-usd is only valid with --variant simple_spine")
+        if args.axon_budget_usd is None:
+            ap.error("--variant axon requires --axon-budget-usd <float>")
+    elif args.variant == "orch":
+        if args.simple_spine_budget_usd is not None:
+            ap.error("--simple-spine-budget-usd is only valid with --variant simple_spine")
+        if args.axon_budget_usd is not None:
+            ap.error("--axon-budget-usd is only valid with --variant axon")
+        if args.budget is None:
+            ap.error("--variant orch requires --budget <int>")
 
     reader_model = resolve_model_alias(args.reader_model) if args.reader_model else None
     reflector_model = resolve_model_alias(args.reflector_model) if args.reflector_model else None
@@ -365,6 +437,10 @@ def main() -> None:
             read_prompt_path=args.read_prompt_path,
             reflect_prompt_path=args.reflect_prompt_path,
             verdict_prompt_path=args.verdict_prompt_path,
+            simple_spine_config_name=args.simple_spine_config_name,
+            simple_spine_budget_usd=args.simple_spine_budget_usd,
+            axon_config_name=args.axon_config_name,
+            axon_budget_usd=args.axon_budget_usd,
         )
     )
 

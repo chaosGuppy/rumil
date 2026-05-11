@@ -3,8 +3,10 @@
 Distinct from the BudgetedOrchWorkflow base because there's no rumil
 orchestrator wrapped here: the workflow drives a small fixed pipeline
 of plain ``text_call`` LLMs (drafter → N parallel critics → editor) per
-round and stores the final draft on ``question.content`` for the
+round and surfaces the final draft on ``self.last_artifact`` for the
 versus runner's ``produces_artifact=True`` path to read.
+``question.content`` is read once at the top of run() to extract the
+prefix + target length and is not mutated thereafter.
 
 Design notes (full sketch in ``planning/draft-and-edit-workflow-sketch.md``):
 
@@ -17,9 +19,10 @@ Design notes (full sketch in ``planning/draft-and-edit-workflow-sketch.md``):
   not workspace pages. Critic prose on the page graph would pollute
   embedding search and risks leaking essay prefix material into
   unrelated workspace surfaces under blind-judging.
-- **Where the final draft lives**: ``question.content`` via
-  ``db.update_page_content`` (mutation event aware). The runner reads
-  it verbatim and feeds it to ``CompleteEssayTask.extract_artifact``.
+- **Where the final draft lives**: ``self.last_artifact`` on the
+  workflow instance. The runner reads it verbatim and feeds it to
+  ``CompleteEssayTask.extract_artifact``. We deliberately do not write
+  to ``question.content`` — the prefix-framing input stays put.
 - **Budget**: 1 unit per outer round. One round = drafter (or editor)
   + N critics. Budget consumed at the top of each round; if exhausted
   before any draft was produced ``last_status="incomplete"``.
@@ -675,6 +678,9 @@ class DraftAndEditWorkflow:
         self.audit_prompt = _load_prompt(audit_prompt_path, _DEFAULT_AUDIT_PROMPT)
         self.scout_pass_prompt = _load_prompt(scout_pass_prompt_path, _DEFAULT_SCOUT_PASS_PROMPT)
         self.last_status: str = "complete"
+        # Set in _run_loop() to the final draft; the versus runner reads
+        # this directly when produces_artifact=True.
+        self.last_artifact: str = ""
 
     def fingerprint(self) -> Mapping[str, str | int | bool | None]:
         # Planner / arbiter / audit prompt hashes only fold into the
@@ -1002,7 +1008,12 @@ class DraftAndEditWorkflow:
 
         if not current_draft:
             return
-        await db.update_page_content(question_id, current_draft)
+        # Surface the final draft via the workflow contract — the versus
+        # runner reads ``last_artifact`` directly. question.content stays
+        # as the prefix-framing input (read at the top of run()) so
+        # handlers observing the question mid-run see what the workflow
+        # consumed, not what it produced.
+        self.last_artifact = current_draft
 
     async def _draft(
         self,

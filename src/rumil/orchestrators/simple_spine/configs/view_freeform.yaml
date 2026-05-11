@@ -1,0 +1,126 @@
+# view_freeform — SimpleSpine preset that produces a four-section view-shaped
+# take on a question. Library is identical to research.yaml; the difference
+# is the bundled output_guidance + output_schema declaring the four-section
+# deliverable. Callers just pick this preset; the orchestrator falls through
+# to these defaults when OrchInputs leaves output_guidance / output_schema
+# unset.
+#
+# Note: this preset's output is just returned in OrchResult.structured_answer.
+# It does NOT persist a workspace VIEW page — that's a separate adapter step
+# if you want the view indexed alongside other research.
+
+name: view_freeform
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/main_default.md
+output_guidance_path: ../prompts/view_freeform_guidance.md
+output_schema_path: ../schemas/view_freeform.json
+max_parallel_spawns_per_turn: 4
+enable_server_compaction: true
+compaction_trigger_tokens: 400000
+expose_artifact_tools: true
+# Bumped from the 8192 default: the four-section finalize.answer can run
+# ~12k tokens (4 sections × ~600 words × ~1.3 tokens/word ≈ 12k) before
+# schema overhead. 16384 leaves headroom.
+mainline_max_tokens: 16384
+
+subroutines:
+  - kind: freeform_agent
+    name: workspace_lookup
+    description: |
+      Curate workspace pages relevant to a topic.
+      Inputs: focused topic / question / claim in intent; optional
+      framing in additional_context.
+      Output: relevant pages with short IDs and brief framing — drops
+      off-topic hits.
+      Use after: cite returned page IDs in finalize, or feed them into
+      another spawn as additional_context. Cheap; safe to run early to
+      seed yourself before any heavier spawn.
+    sys_prompt_path: ../prompts/workspace_lookup_sys.md
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Additional context
+      {additional_context}
+
+      Search the workspace and return the curated context now.
+    model: claude-sonnet-4-6
+    max_rounds: 4
+    max_tokens: 4096
+    allowed_tool_names: [workspace_search]
+    overridable: [intent, additional_context, cost_cap_usd, max_rounds]
+    base_cost_cap_usd: 0.50
+    cost_hint: "≈ 1–4 turns @ 4k out (~2–10k tokens; depends on how much it searches)"
+    intent_description: >
+      The topic, question, or claim to search for. Free-form; the agent
+      converts it to 1–3 embedding queries.
+    additional_context_description: >
+      Optional framing, e.g. "rule out X as already-covered" or "focus
+      on pages that bear on Y". Spliced under {additional_context}.
+
+  - kind: nested_orch
+    name: deep_dive
+    description: |
+      Decompose your scope question into a sub-question and investigate
+      it as its own research thread. Creates a new child question
+      linked under your scope, then runs a fresh research agent against
+      it — the sub-agent has the same library you do (workspace_lookup,
+      web_research, deep_dive) and pursues a focused deliverable that
+      is returned to you as a single synthesis.
+      First-class strategy when the scope question has distinct
+      sub-aspects each worth their own investigation — e.g. "what
+      drives X?" decomposing into the strongest 2–4 candidate drivers,
+      "compare options A/B/C" running per-option dives, "is claim P
+      true?" decomposing into the cruxes that would change your view.
+      Use eagerly when this kind of decomposition is natural; multiple
+      deep_dives in parallel cover the parent question much faster
+      than serial workspace_lookup / web_research alone.
+      Inputs: `question_headline` (required — the new child question);
+      optional `question_content` (clarifying scope); `intent` (what
+      you want investigated); optional `output_guidance` /
+      `output_schema` to shape the deliverable; optional `cost_cap_usd`.
+      Output: the sub-agent's freeform finalize answer (or coerced
+      JSON if output_schema was set), plus a persisted child question
+      in the workspace that you and future runs can build on.
+    orch_factory_key: simple_spine_recurse
+    base_cost_cap_usd: 3.00
+    cost_hint: "≈ a full SimpleSpine sub-run within its sub-cap (~30–100k tokens)"
+
+  - kind: web_research
+    name: web_research
+    description: |
+      Search the web and scrape promising URLs for evidence on a topic.
+      Inputs: focused question / claim / topic in intent; optional
+      framing in additional_context (recency, domain hints, what's
+      already covered).
+      Output: a synthesis citing source_ids, plus one artifact per
+      fetched page (key `web_research/<spawn_id>/source/<source_id>`).
+      Mainline can `read_artifact` any source for full text or
+      `search_artifacts` to find which source mentioned a term.
+      Use when the workspace is thin on a topic, when a claim needs
+      external grounding, or for recent/empirical questions. Heavier
+      than workspace_lookup — prefer workspace_lookup first when the
+      answer plausibly lives in the workspace.
+    sys_prompt_path: ../prompts/web_research_sys.md
+    user_prompt_template: |
+      ## Intent
+      {intent}
+
+      ## Additional context
+      {additional_context}
+
+      Research and return your synthesis with source_id citations now.
+    model: claude-sonnet-4-6
+    max_rounds: 6
+    max_tokens: 4096
+    web_search_max_uses: 5
+    overridable: [intent, additional_context, cost_cap_usd, max_rounds]
+    base_cost_cap_usd: 1.00
+    cost_hint: "≈ 3–6 turns + ≤5 web_searches + 1–4 scrapes (~30–80k tokens)"
+    intent_description: >
+      Focused topic / question / claim to research externally. The agent
+      issues 1–3 web_search queries, scrapes 1–4 promising URLs, and
+      returns a synthesis citing the fetched source_ids.
+    additional_context_description: >
+      Optional framing — recency requirements, preferred domains, things
+      already covered to skip. Spliced under {additional_context}.

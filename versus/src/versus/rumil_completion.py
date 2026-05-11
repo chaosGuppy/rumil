@@ -31,12 +31,14 @@ import time
 import types
 import typing
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from rumil.orchestrators.axon import AxonWorkflow
 from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
 from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
+from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
 from rumil.versus_workflow import TwoPhaseWorkflow
 from versus import config, prepare, versus_db
 from versus.run_summary import RunSummary
@@ -56,6 +58,23 @@ from versus.tasks import CompleteEssayTask, EssayPrefixContext
 WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
     "two_phase": (TwoPhaseWorkflow, {}),
     "draft_and_edit": (DraftAndEditWorkflow, {}),
+    # SimpleSpine on the completion side: ``--orch simple_spine
+    # --budget-usd 200000``. ``config_name`` defaults to
+    # ``essay_continuation`` (the only completion-purpose preset);
+    # override via ``--workflow-arg config_name=<other>`` if needed.
+    # ``budget_usd`` is interpreted as the SimpleSpine token cap
+    # (not a rumil call-unit budget); the orch self-paces against it.
+    "simple_spine": (
+        SimpleSpineWorkflow,
+        {"call_type": "complete", "config_name": "essay_continuation"},
+    ),
+    # Axon on the completion side: ``--orch axon --budget-usd <usd>``.
+    # ``config_name`` defaults to ``essay_continuation`` (the matching
+    # axon YAML); override via ``--workflow-arg config_name=<other>``.
+    "axon": (
+        AxonWorkflow,
+        {"call_type": "complete", "config_name": "essay_continuation"},
+    ),
 }
 
 # Judge-side workflows. Kept separate from WORKFLOW_REGISTRY so the
@@ -70,6 +89,8 @@ JUDGE_WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
         ReflectiveJudgeWorkflow,
         {"dimension_body": "<staleness-check-placeholder>"},
     ),
+    "simple_spine": (SimpleSpineWorkflow, {"call_type": "judge"}),
+    "axon": (AxonWorkflow, {"call_type": "judge", "config_name": "judge_pair"}),
 }
 
 
@@ -209,17 +230,32 @@ def _parse_workflow_args(pairs: Sequence[str], cls: type) -> dict[str, Any]:
     return out
 
 
+# Workflows whose "budget" primitive is raw tokens, not research-call
+# units. The CLI requires --budget-usd (and rejects --budget) for
+# these; other workflows use --budget.
+TOKEN_BUDGET_WORKFLOWS: frozenset[str] = frozenset({"simple_spine", "axon"})
+
+
 def _make_workflow_and_task(
     workflow_name: str,
     *,
-    budget: int,
+    budget: int | None = None,
+    budget_usd: float | None = None,
     extra_kwargs: dict[str, Any] | None = None,
+    artifacts: Mapping[str, str] | None = None,
 ) -> tuple[Any, CompleteEssayTask]:
     """Instantiate the workflow + task pair for a given run.
 
     Pulls the registered workflow class + defaults from
-    :data:`WORKFLOW_REGISTRY` and merges the runtime ``budget`` plus
+    :data:`WORKFLOW_REGISTRY` and merges the runtime budget arg plus
     any caller-supplied ``extra_kwargs`` (e.g. from ``--workflow-arg``).
+    Routes to ``budget_usd=`` for token-budget workflows
+    (:data:`TOKEN_BUDGET_WORKFLOWS`) and to ``budget=`` for the rest.
+    ``artifacts`` is forwarded to SimpleSpine and Axon — the registered
+    workflows whose ``__init__`` accepts it. SimpleSpine subroutines that
+    declare ``consumes:`` auto-splice run-start inputs; axon wraps each
+    entry as a render-inline ArtifactSeed in the spine's first user
+    message.
     Raises ``KeyError`` (with a list of registered names) if
     ``workflow_name`` isn't registered.
     """
@@ -227,7 +263,17 @@ def _make_workflow_and_task(
         valid = sorted(WORKFLOW_REGISTRY.keys())
         raise KeyError(f"unknown workflow {workflow_name!r}; registered: {valid}")
     cls, defaults = WORKFLOW_REGISTRY[workflow_name]
-    kwargs: dict[str, Any] = {**defaults, **(extra_kwargs or {}), "budget": budget}
+    if workflow_name in TOKEN_BUDGET_WORKFLOWS:
+        if budget_usd is None:
+            raise ValueError(f"workflow {workflow_name!r} requires budget_usd (USD cost cap)")
+        budget_kwarg = {"budget_usd": budget_usd}
+    else:
+        if budget is None:
+            raise ValueError(f"workflow {workflow_name!r} requires budget (research-call count)")
+        budget_kwarg = {"budget": budget}
+    kwargs: dict[str, Any] = {**defaults, **(extra_kwargs or {}), **budget_kwarg}
+    if artifacts and workflow_name in {"simple_spine", "axon"}:
+        kwargs["artifacts"] = dict(artifacts)
     workflow = cls(**kwargs)
     task = CompleteEssayTask()
     return workflow, task
@@ -280,7 +326,8 @@ def _plan_pending(
     *,
     workflow_name: str,
     model: str,
-    budget: int,
+    budget: int | None,
+    budget_usd: float | None,
     prefix_cfg: config.PrefixCfg,
     workspace_id: str,
     workspace_state_hash: str,
@@ -298,7 +345,10 @@ def _plan_pending(
     from versus.versus_config import make_versus_config
 
     workflow, task = _make_workflow_and_task(
-        workflow_name, budget=budget, extra_kwargs=workflow_kwargs
+        workflow_name,
+        budget=budget,
+        budget_usd=budget_usd,
+        extra_kwargs=workflow_kwargs,
     )
     mc = get_model_config(model, cfg=cfg)
     db = versus_db.get_client(prod=prod)
@@ -353,7 +403,8 @@ async def run_orch_completion(
     workspace: str,
     workflow_name: str,
     model: str,
-    budget: int,
+    budget: int | None = None,
+    budget_usd: float | None = None,
     prefix_cfg: config.PrefixCfg,
     limit: int | None = None,
     dry_run: bool = False,
@@ -399,6 +450,7 @@ async def run_orch_completion(
         workflow_name=workflow_name,
         model=model,
         budget=budget,
+        budget_usd=budget_usd,
         prefix_cfg=prefix_cfg,
         workspace_id=ws_short,
         workspace_state_hash=workspace_state_hash,
@@ -412,10 +464,15 @@ async def run_orch_completion(
         return
 
     effective_concurrency = concurrency if concurrency is not None else 1
+    budget_label = (
+        f"budget_usd={budget_usd}"
+        if workflow_name in TOKEN_BUDGET_WORKFLOWS
+        else f"budget={budget}"
+    )
     print(
         f"[plan] {len(pending)} orch completions "
         f"(workflow={workflow_name}, model={model}, workspace={workspace}, "
-        f"budget={budget}, concurrency={effective_concurrency})"
+        f"{budget_label}, concurrency={effective_concurrency})"
     )
     if dry_run:
         for pc in pending[:20]:
@@ -440,14 +497,28 @@ async def run_orch_completion(
                 run_id=run_id, prod=prod, project_id=project.id, staged=not persist
             )
             try:
-                workflow, task = _make_workflow_and_task(
-                    workflow_name, budget=budget, extra_kwargs=workflow_kwargs
-                )
                 ctx = EssayPrefixContext(
                     essay_id=pc.task.essay_id,
                     prefix_hash=pc.task.prefix_config_hash,
                     prefix_text=pc.task.prefix_markdown,
                     target_length_chars=len(pc.task.remainder_markdown),
+                )
+                # Seed the essay opening + target length into the
+                # SimpleSpine artifact channel. The essay_continuation
+                # preset declares `consumes: [prefix, target_length_chars]`
+                # on its drafter so every spawn gets these without
+                # mainline having to forward them. Other workflows
+                # ignore the kwarg (see _make_workflow_and_task).
+                completion_artifacts = {
+                    "prefix": ctx.prefix_text,
+                    "target_length_chars": str(ctx.target_length_chars),
+                }
+                workflow, task = _make_workflow_and_task(
+                    workflow_name,
+                    budget=budget,
+                    budget_usd=budget_usd,
+                    extra_kwargs=workflow_kwargs,
+                    artifacts=completion_artifacts,
                 )
                 # Run-name template (Gap 2): include the differentiators
                 # that actually distinguish runs in the traces list —
@@ -456,9 +527,12 @@ async def run_orch_completion(
                 # prefix variants / workflows / models / budgets and
                 # made the traces list useless for picking out a
                 # specific run.
+                budget_slug = (
+                    f"bt{budget_usd}" if workflow_name in TOKEN_BUDGET_WORKFLOWS else f"b{budget}"
+                )
                 run_name = (
                     f"versus-orch-completion:{workspace}:{pc.task.essay_id}"
-                    f"@{prefix_cfg.id}:{workflow_name}/{short_model(model)}/b{budget}"
+                    f"@{prefix_cfg.id}:{workflow_name}/{short_model(model)}/{budget_slug}"
                 )
                 await db.create_run(
                     name=run_name,
@@ -496,6 +570,7 @@ async def run_orch_completion(
                 "provider": "rumil-orch",
                 "workflow": workflow_name,
                 "budget": budget,
+                "budget_usd": budget_usd,
                 "model_config": mc.to_record_dict(),
                 "rumil_run_id": run_id,
                 "rumil_call_id": result.call_id,

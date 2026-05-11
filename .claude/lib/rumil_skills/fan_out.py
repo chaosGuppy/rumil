@@ -12,7 +12,7 @@ Usage::
         --workflow reflective_judge \\
         --essay forethought__ai-for-decision-advice \\
         --workspace versus \\
-        --dimension general_quality \\
+        --dimension would_recommend \\
         --model sonnet \\
         --limit 1 \\
         [--contestants <source_a>,<source_b>] \\

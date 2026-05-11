@@ -1,0 +1,74 @@
+# Default axon research config — minimal mainline surface.
+#
+# Mainline has 4 tools: delegate, configure, finalize, load_page,
+# read_artifact. Multi-round work (web research, workspace lookup,
+# etc.) lives inside delegates whose configure step picks a system
+# prompt by referencing an artifact key and assembles the right
+# tool list. Config-time prompts are seeded as artifacts below so
+# delegates can ref them via `system_prompt: {ref: "<key>"}`, and
+# mainline can read them on demand via read_artifact.
+
+name: research
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/spine_main.md
+compaction_instructions_path: ../prompts/compaction_default.md
+
+hard_max_rounds: 50
+max_seed_pages: 20
+
+enable_server_compaction: true
+compaction_trigger_tokens: 400000
+
+direct_tools:
+  - load_page
+  - read_artifact
+  - record_operator_feedback
+
+# Config-time artifact seeds. Each entry is either text-inline or a
+# path to load at config-load time. Prompts default to render_inline:
+# false so the spine sees only the announcement + description in its
+# first user message; the body is fetched via read_artifact OR pulled
+# into a delegate via system_prompt: {ref: "<key>"}.
+artifact_seeds:
+  web_research:
+    path: ../prompts/web_research_sys.md
+    description: >
+      Isolation-mode prompt for a delegate that uses the web_search
+      server tool + URL scraping. Pair with tools: [web_search,
+      load_page] (plus create_page if the delegate should persist
+      sources or syntheses) and a finalize_schema like research_synthesis.
+  workspace_lookup:
+    path: ../prompts/workspace_lookup_sys.md
+    description: >
+      Isolation-mode prompt for a delegate that searches the workspace
+      via embedding similarity to surface relevant page ids. Pair with
+      tools: [load_page] and a finalize_schema like research_synthesis.
+
+finalize_schema_registry:
+  # A freeform string answer — most general; what mainline finalize
+  # uses by default. Configure picks this for delegates whose result
+  # is best as prose.
+  freeform_text:
+    type: object
+    properties:
+      answer:
+        type: string
+        description: Freeform answer text returned to the caller.
+    required: [answer]
+    additionalProperties: false
+  # A research-shaped synthesis with optional surfaced page IDs.
+  # Configure picks this for delegates that produce both a summary
+  # and a list of created/relevant workspace pages.
+  research_synthesis:
+    type: object
+    properties:
+      summary:
+        type: string
+        description: Synthesised result text.
+      page_ids:
+        type: array
+        items:
+          type: string
+        description: Workspace page IDs created or surfaced by this delegate.
+    required: [summary]
+    additionalProperties: false

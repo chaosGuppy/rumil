@@ -35,6 +35,14 @@ from anthropic.types import (
     ToolUseBlock,
     WebSearchToolResultBlock,
 )
+from anthropic.types.beta import (
+    BetaRedactedThinkingBlock,
+    BetaServerToolUseBlock,
+    BetaTextBlock,
+    BetaThinkingBlock,
+    BetaToolUseBlock,
+    BetaWebSearchToolResultBlock,
+)
 from google import genai
 from google.genai import types as genai_types
 from pydantic import BaseModel, ValidationError
@@ -60,6 +68,21 @@ from rumil.tracing.tracer import get_trace
 
 if TYPE_CHECKING:
     from rumil.database import DB
+
+# Anthropic SDK returns Beta* block subclasses when the request hits a beta
+# endpoint (e.g. with `betas=["compact-2026-01-12"]`). They are NOT subclasses
+# of the regular blocks, so a plain `isinstance(block, ToolUseBlock)` check
+# silently misses tool_uses on beta responses — which then leaves them
+# unpaired in the next request and the API rejects with "tool_use ids ...
+# without tool_result blocks". Use these unions everywhere we dispatch on
+# block type.
+TEXT_BLOCKS = (TextBlock, BetaTextBlock)
+TOOL_USE_BLOCKS = (ToolUseBlock, BetaToolUseBlock)
+SERVER_TOOL_USE_BLOCKS = (ServerToolUseBlock, BetaServerToolUseBlock)
+WEB_SEARCH_TOOL_RESULT_BLOCKS = (WebSearchToolResultBlock, BetaWebSearchToolResultBlock)
+THINKING_BLOCKS = (ThinkingBlock, BetaThinkingBlock)
+REDACTED_THINKING_BLOCKS = (RedactedThinkingBlock, BetaRedactedThinkingBlock)
+
 
 DEFAULT_MAX_TOKENS = 20_000
 DEFAULT_TEMPERATURE = 0.15
@@ -372,6 +395,26 @@ def _with_date_suffix(system_prompt: str) -> str:
     return system_prompt + f"\n\nIMPORTANT: Today's date is {today}\n"
 
 
+def _aggregate_usage_tokens(usage: Any) -> tuple[int, int]:
+    """Return (input_tokens, output_tokens) summed across compaction iterations.
+
+    Per Anthropic's compact_20260112 docs: when compaction fires the API
+    runs an extra summarisation iteration whose tokens are NOT folded
+    into top-level ``usage.input_tokens``/``output_tokens`` — those only
+    reflect the final ``message`` iteration. ``usage.iterations`` lists
+    every iteration (``type``=``"compaction"`` or ``"message"``) with
+    its own input/output counts; sum across to get the true totals for
+    cost tracking. When ``iterations`` is absent/empty (no new
+    compaction this request) the top-level fields are accurate.
+    """
+    iterations = getattr(usage, "iterations", None) or []
+    if not iterations:
+        return (usage.input_tokens or 0, usage.output_tokens or 0)
+    total_in = sum((getattr(it, "input_tokens", 0) or 0) for it in iterations)
+    total_out = sum((getattr(it, "output_tokens", 0) or 0) for it in iterations)
+    return (total_in, total_out)
+
+
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
 
 
@@ -549,11 +592,19 @@ def parse_anthropic_response(content: Sequence[Any]) -> ParsedAnthropicResponse:
     thinking: list[dict] = []
     redacted_thinking: list[dict] = []
     for block in content:
-        if isinstance(block, TextBlock):
+        if isinstance(block, (TextBlock, BetaTextBlock)):
             text_parts.append(block.text)
-        elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
+        elif isinstance(
+            block,
+            (
+                ToolUseBlock,
+                BetaToolUseBlock,
+                ServerToolUseBlock,
+                BetaServerToolUseBlock,
+            ),
+        ):
             tool_calls.append({"name": block.name, "input": block.input})
-        elif isinstance(block, WebSearchToolResultBlock):
+        elif isinstance(block, (WebSearchToolResultBlock, BetaWebSearchToolResultBlock)):
             tool_calls.append(
                 {
                     "type": "web_search_tool_result",
@@ -561,9 +612,9 @@ def parse_anthropic_response(content: Sequence[Any]) -> ParsedAnthropicResponse:
                     "content": block.model_dump(mode="json")["content"],
                 }
             )
-        elif isinstance(block, ThinkingBlock):
+        elif isinstance(block, (ThinkingBlock, BetaThinkingBlock)):
             thinking.append({"content": block.thinking, "signature": block.signature})
-        elif isinstance(block, RedactedThinkingBlock):
+        elif isinstance(block, (RedactedThinkingBlock, BetaRedactedThinkingBlock)):
             redacted_thinking.append({"data": block.data})
     return ParsedAnthropicResponse(
         text_parts=text_parts,
@@ -993,6 +1044,8 @@ async def call_anthropic_api(
     effort: str | None = None,
     model_config: ModelConfig | None = None,
     response_schema: dict | None = None,
+    context_management: dict | None = None,
+    betas: Sequence[str] | None = None,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
@@ -1004,11 +1057,32 @@ async def call_anthropic_api(
     effort). The legacy ``effort`` kwarg is honored only when
     ``model_config`` is None — pass effort via ``model_config.effort``
     in new code.
+
+    ``context_management`` / ``betas`` route the request through
+    ``client.beta.messages.stream`` instead of ``client.messages.stream``
+    so features like ``compact_20260112`` work. Passing either alone is
+    enough to flip the route — typically the caller passes both (the beta
+    header that gates the strategy + the strategy itself).
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
     if model_config is not None and effort is not None:
         raise ValueError("pass effort via model_config.effort, not both")
+    # Backfill metadata.user_message from messages[0] for single-turn calls.
+    # The persistence sites below skip user_messages when len(messages)==1 to
+    # avoid duplicating the prompt across user_message and user_messages, on
+    # the assumption that single-turn callers (text_call etc.) populate
+    # metadata.user_message. Multi-turn callers like thin_agent_loop pass
+    # messages directly and don't set it, so round-0 calls otherwise persist
+    # neither column. Future cleanup: collapse user_message and user_messages
+    # to a single column and drop both this backfill and the len>1 guards.
+    if (
+        metadata is not None
+        and not metadata.user_message
+        and len(messages) == 1
+        and isinstance(messages[0].get("content"), str)
+    ):
+        metadata.user_message = messages[0]["content"]
     if model_config is None:
         cfg = derive_model_config(model)
         # Caller can override effort only when the model actually supports it;
@@ -1019,14 +1093,31 @@ async def call_anthropic_api(
     else:
         cfg = model_config
     system_prompt = _with_date_suffix(system_prompt)
+    # When caching, place a cache_control breakpoint at the end of the
+    # system prompt as well as the last message. This keeps the system
+    # prompt cached separately so that compaction (which invalidates the
+    # conversation cache) doesn't force the system prompt to be re-cached
+    # — see Anthropic's "Maximizing cache hits with system prompts"
+    # guidance under the compact_20260112 docs. Two breakpoints (system +
+    # last message) is well under Anthropic's 4-breakpoint limit.
+    system_param: Any = (
+        [{"type": "text", "text": system_prompt, "cache_control": _CACHE_BREAKPOINT}]
+        if cache
+        else system_prompt
+    )
     kwargs: dict = {
         "model": model,
-        "system": system_prompt,
+        "system": system_param,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
         **cfg.to_anthropic_kwargs(),
     }
     if tools:
         kwargs["tools"] = tools
+    use_beta = context_management is not None or betas
+    if context_management is not None:
+        kwargs["context_management"] = context_management
+    if betas:
+        kwargs["betas"] = list(betas)
 
     n_tools = len(tools) if tools else 0
     log.debug(
@@ -1049,7 +1140,10 @@ async def call_anthropic_api(
         # exceeds 10 minutes (Anthropic#long-requests), which breaks any
         # call with large context + high max_tokens — e.g. d&e's editor
         # stage on a long essay.
-        async with client.messages.stream(**kwargs) as stream:
+        stream_ctx = (
+            client.beta.messages.stream(**kwargs) if use_beta else client.messages.stream(**kwargs)
+        )
+        async with stream_ctx as stream:
             try:
                 response = await stream.get_final_message()
             except Exception:
@@ -1068,7 +1162,9 @@ async def call_anthropic_api(
                 raise
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
-        return response
+        # ParsedBetaMessage is structurally compatible with Message for
+        # the fields we touch (content, usage, stop_reason). Treat as one.
+        return response  # type: ignore[return-value]
 
     try:
         response = await _do_api_call()
@@ -1116,6 +1212,11 @@ async def call_anthropic_api(
         response.usage,
     )
     parsed = parse_anthropic_response(response.content)
+    # Aggregate across compaction iterations so the recorded exchange
+    # reflects the full billed token count (top-level usage drops the
+    # compaction-summarisation iteration). No-op when compaction didn't
+    # fire on this request.
+    agg_input_tokens, agg_output_tokens = _aggregate_usage_tokens(response.usage)
     if metadata and db:
         serialized = _serialize_messages(messages) if len(messages) > 1 else None
         try:
@@ -1126,8 +1227,8 @@ async def call_anthropic_api(
                 system_prompt=system_prompt,
                 response_text=parsed.text or None,
                 tool_calls=parsed.tool_calls,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
+                input_tokens=agg_input_tokens,
+                output_tokens=agg_output_tokens,
                 duration_ms=elapsed_ms,
                 cache_creation_input_tokens=getattr(
                     response.usage, "cache_creation_input_tokens", 0

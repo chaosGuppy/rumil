@@ -71,7 +71,7 @@ class PairContext:
     continuation_b_text: str
     source_a_id: str
     source_b_id: str
-    task_name: str  # e.g. "general_quality", "grounding", "standalone_quality"
+    task_name: str  # e.g. "would_recommend", "general_quality", "grounding"
 
 
 @dataclass

@@ -594,6 +594,195 @@ class ScoutPassEvent(BaseModel):
     model: str = ""
 
 
+class SpineRoundStartedEvent(BaseModel):
+    event: Literal["spine_round_started"] = "spine_round_started"
+    round_idx: int
+    cost_usd_used: float
+    cost_usd_remaining: float
+    elapsed_s: float
+
+
+class SpineSpawnStartedEvent(BaseModel):
+    event: Literal["spine_spawn_started"] = "spine_spawn_started"
+    round_idx: int
+    spawn_id: str
+    subroutine_name: str
+    overrides: dict[str, Any] = {}
+
+
+class SpineSpawnCompletedEvent(BaseModel):
+    event: Literal["spine_spawn_completed"] = "spine_spawn_completed"
+    round_idx: int
+    spawn_id: str
+    subroutine_name: str
+    text_summary_chars: int
+    extra: dict[str, Any] = {}
+    error: str | None = None
+
+
+class SpineConfigPrepEvent(BaseModel):
+    event: Literal["spine_config_prep"] = "spine_config_prep"
+    round_idx: int
+    spawn_id: str
+    subroutine_name: str
+    prepped_config: dict[str, Any] = {}
+
+
+class SpineFinalizedEvent(BaseModel):
+    event: Literal["spine_finalized"] = "spine_finalized"
+    round_idx: int
+    answer_chars: int
+    reason: str
+    synthesized: bool = False
+
+
+class SpineThrottledEvent(BaseModel):
+    event: Literal["spine_throttled"] = "spine_throttled"
+    round_idx: int
+    requested: int
+    kept: int
+
+
+class SpineCompactedEvent(BaseModel):
+    """Anthropic server-side compaction fired during a mainline turn.
+
+    The API summarizes the prior thread into a ``compaction`` block; on
+    the next request the prefix before that block is dropped server-side.
+    """
+
+    event: Literal["spine_compacted"] = "spine_compacted"
+    round_idx: int
+    summary_chars: int
+    summary_text: str = ""
+
+
+class AxonRunStartedEvent(BaseModel):
+    event: Literal["axon_run_started"] = "axon_run_started"
+    config_name: str
+    main_model: str
+    budget_usd: float
+    initial_artifact_keys: list[str] = []
+
+
+class AxonRoundStartedEvent(BaseModel):
+    event: Literal["axon_round_started"] = "axon_round_started"
+    round_idx: int
+    cost_usd_used: float
+    cost_usd_remaining: float
+
+
+class AxonDelegateRequestedEvent(BaseModel):
+    """Mainline emitted a delegate(...) tool call this turn."""
+
+    event: Literal["axon_delegate_requested"] = "axon_delegate_requested"
+    round_idx: int
+    delegate_id: str
+    tool_use_id: str
+    intent: str
+    inherit_context: bool
+    budget_usd: float
+    n: int = 1
+
+
+class AxonConfigurePreparedEvent(BaseModel):
+    """A configure follow-up call produced a DelegateConfig."""
+
+    event: Literal["axon_configure_prepared"] = "axon_configure_prepared"
+    delegate_id: str
+    config: dict[str, Any] = {}
+    rationale: str = ""
+    cost_usd_used: float
+
+
+class AxonConfigureRetriedEvent(BaseModel):
+    """A configure call's output failed validation; orchestrator re-fired with corrective."""
+
+    event: Literal["axon_configure_retried"] = "axon_configure_retried"
+    delegate_id: str
+    attempt: int
+    reason: str = ""
+
+
+class AxonInnerLoopStartedEvent(BaseModel):
+    event: Literal["axon_inner_loop_started"] = "axon_inner_loop_started"
+    delegate_id: str
+    sample_idx: int = 0
+    inherit_context: bool
+    tool_names: list[str] = []
+
+
+class AxonInnerLoopCompletedEvent(BaseModel):
+    event: Literal["axon_inner_loop_completed"] = "axon_inner_loop_completed"
+    delegate_id: str
+    sample_idx: int = 0
+    rounds: int
+    cost_usd_used: float
+    finalized: bool
+    last_status: str = ""
+
+
+class AxonSideEffectAppliedEvent(BaseModel):
+    """An artifact write or child-question creation fired after a delegate finalized."""
+
+    event: Literal["axon_side_effect_applied"] = "axon_side_effect_applied"
+    delegate_id: str
+    sample_idx: int = 0
+    kind: Literal["write_artifact"]
+    detail: dict[str, Any] = {}
+
+
+class AxonDelegateCompletedEvent(BaseModel):
+    """All samples for one delegate finished and its tool_result is ready for mainline."""
+
+    event: Literal["axon_delegate_completed"] = "axon_delegate_completed"
+    delegate_id: str
+    n: int = 1
+    cost_usd_used: float
+
+
+class AxonFinalizedEvent(BaseModel):
+    event: Literal["axon_finalized"] = "axon_finalized"
+    answer_text: str = ""
+    last_status: str = ""
+    rounds_used: int
+    cost_usd_used: float
+
+
+class AxonAutoSeedFailedEvent(BaseModel):
+    """Auto-seed embedding lookup raised; run continues with no seed pages.
+
+    Surfaces in the UI so a flaky embedding service / RPC failure isn't
+    invisible. The orchestrator catches the exception and treats it as
+    "no seed pages" rather than failing the run.
+    """
+
+    event: Literal["axon_auto_seed_failed"] = "axon_auto_seed_failed"
+    reason: str = ""
+    question_excerpt: str = ""
+
+
+class AxonOperatorFeedbackEvent(BaseModel):
+    """The agent recorded a structured comment for the operator.
+
+    Mainline or delegates fire ``record_operator_feedback`` to flag
+    orchestrator-level friction — bad prompts, missing tools, schema
+    mismatches, question-framing issues — that wouldn't surface from
+    the final answer alone. Not the agent saying "I can't do this";
+    these are observations a human should see to improve the setup.
+
+    Whether the event came from mainline or a specific delegate is
+    inferred from temporal ordering against the surrounding
+    delegate-bracketing trace events (AxonDelegateRequested /
+    AxonInnerLoopStarted / Completed).
+    """
+
+    event: Literal["axon_operator_feedback"] = "axon_operator_feedback"
+    subject: str
+    detail: str
+    suggestion: str = ""
+    severity: Literal["info", "warn", "blocker"] = "info"
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -646,6 +835,25 @@ TraceEvent = Annotated[
     | BriefAuditStartedEvent
     | BriefAuditEvent
     | ScoutPassStartedEvent
-    | ScoutPassEvent,
+    | ScoutPassEvent
+    | SpineRoundStartedEvent
+    | SpineSpawnStartedEvent
+    | SpineSpawnCompletedEvent
+    | SpineConfigPrepEvent
+    | SpineFinalizedEvent
+    | SpineThrottledEvent
+    | SpineCompactedEvent
+    | AxonRunStartedEvent
+    | AxonRoundStartedEvent
+    | AxonDelegateRequestedEvent
+    | AxonConfigurePreparedEvent
+    | AxonConfigureRetriedEvent
+    | AxonInnerLoopStartedEvent
+    | AxonInnerLoopCompletedEvent
+    | AxonSideEffectAppliedEvent
+    | AxonDelegateCompletedEvent
+    | AxonFinalizedEvent
+    | AxonAutoSeedFailedEvent
+    | AxonOperatorFeedbackEvent,
     Field(discriminator="event"),
 ]

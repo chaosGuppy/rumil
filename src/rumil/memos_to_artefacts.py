@@ -31,11 +31,17 @@ from rumil.memo_mode import memo_mode
 from rumil.memos import MemoCandidate, MemoScan
 from rumil.models import (
     CallType,
+    LinkType,
     Page,
     PageDetail,
+    PageLayer,
+    PageLink,
+    PageType,
+    Workspace,
 )
 from rumil.orchestrators.generative import GenerativeOrchestrator, GenerativeResult
 from rumil.prompts import PROMPTS_DIR
+from rumil.settings import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -538,3 +544,57 @@ def save_memo_summary(
     body = text.strip()
     path.write_text(f"{metadata}{body}\n", encoding="utf-8")
     return path
+
+
+async def publish_memo_index(
+    summary_text: str,
+    scan: MemoScan,
+    drafted: Sequence[tuple[MemoCandidate, GenerativeResult, Path | None]],
+    db: DB,
+) -> str | None:
+    """Publish the summary index as a SUMMARY page linked to the question and memos.
+
+    Creates a single SUMMARY page whose content is the index text, links it
+    to the root question via SUMMARIZES, and links it to each successfully
+    drafted memo via RELATED. Returns the new page id, or None if there are
+    no drafted memos to index.
+    """
+    drafted_artefact_ids = [
+        (candidate, result.artefact_id)
+        for candidate, result, _path in drafted
+        if result.artefact_id
+    ]
+    if not drafted_artefact_ids:
+        return None
+
+    headline = f"Memo index: {scan.root_question_headline[:80]}"
+    page = Page(
+        page_type=PageType.SUMMARY,
+        layer=PageLayer.SQUIDGY,
+        workspace=Workspace.RESEARCH,
+        content=summary_text.strip(),
+        headline=headline,
+        provenance_model=get_settings().model,
+        provenance_call_type="memo_summary",
+    )
+    await db.save_page(page)
+
+    await db.save_link(
+        PageLink(
+            from_page_id=page.id,
+            to_page_id=scan.root_question_id,
+            link_type=LinkType.SUMMARIZES,
+            reasoning="Memo index over the drafted memos for this investigation",
+        )
+    )
+    for candidate, artefact_id in drafted_artefact_ids:
+        await db.save_link(
+            PageLink(
+                from_page_id=page.id,
+                to_page_id=artefact_id,
+                link_type=LinkType.RELATED,
+                reasoning=f"Indexes memo: {candidate.title[:80]}",
+            )
+        )
+
+    return page.id

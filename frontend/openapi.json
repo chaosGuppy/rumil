@@ -1306,16 +1306,6 @@
             }
           },
           {
-            "name": "project_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "",
-              "title": "Project Id"
-            }
-          },
-          {
             "name": "authorization",
             "in": "header",
             "required": false,

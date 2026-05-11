@@ -5697,10 +5697,6 @@ export type ListRecentRunsApiAdminRunsGetData = {
          * Limit
          */
         limit?: number;
-        /**
-         * Project Id
-         */
-        project_id?: string;
     };
     url: '/api/admin/runs';
 };

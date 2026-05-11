@@ -228,7 +228,7 @@ async def list_recent_runs(
     offset: int = 0,
     limit: int = 20,
     _admin: AuthUser = Depends(require_admin),
-    db: DB = Depends(_get_db),
+    db: DB = Depends(_get_admin_db),
 ):
     rows, total = await db.list_recent_runs(offset=offset, limit=limit)
     items = [RunListItemOut(**r) for r in rows]

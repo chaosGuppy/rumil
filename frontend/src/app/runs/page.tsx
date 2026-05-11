@@ -45,6 +45,11 @@ export default function RecentRunsPage() {
         setRuns(data.items as RunListItemOut[]);
         setTotalCount(data.total_count);
         setLoading(false);
+      })
+      .catch(() => {
+        setRuns([]);
+        setTotalCount(0);
+        setLoading(false);
       });
   }, [isAdmin, offset]);
 

@@ -25,6 +25,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from rumil.context import format_page
 from rumil.database import DB
@@ -32,6 +33,9 @@ from rumil.llm import Tool
 from rumil.models import Page, PageDetail, PageLayer, PageType, Workspace
 from rumil.orchestrators.axon.artifacts import ArtifactStore
 from rumil.orchestrators.axon.tools import register_direct_tool
+
+if TYPE_CHECKING:
+    from rumil.orchestrators.axon.web_fetch import WebFetchStore
 
 log = logging.getLogger(__name__)
 
@@ -42,13 +46,15 @@ class DirectToolCtx:
 
     Set by the orchestrator at run start (and not mutated thereafter
     for the lifetime of the run). Tool fns read it to find the active
-    DB / ArtifactStore; missing-ctx access raises so wiring bugs surface.
+    DB / ArtifactStore / WebFetchStore; missing-ctx access raises so
+    wiring bugs surface.
     """
 
     db: DB
     call_id: str
     question_id: str | None = None  # active question for scoped operations
     artifacts: ArtifactStore | None = None
+    fetch_store: WebFetchStore | None = None
 
 
 _DIRECT_TOOL_CTX: ContextVar[DirectToolCtx | None] = ContextVar("_DIRECT_TOOL_CTX", default=None)

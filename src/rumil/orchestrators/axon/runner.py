@@ -43,6 +43,14 @@ log = logging.getLogger(__name__)
 
 InnerStopReason = str  # "finalized" | "no_tool_calls" | "max_rounds" | "cost_exhausted"
 
+MAX_NO_TOOLS_NUDGES = 2
+NO_TOOLS_NUDGE_TEXT = (
+    "[system] No tools called this turn. Inner loops terminate by "
+    "calling `finalize` with the deliverable shape your caller asked "
+    "for. If you're still working, call a tool; otherwise call "
+    "`finalize`. Repeated text-only turns will end this delegate."
+)
+
 
 @dataclass
 class InnerLoopResult:
@@ -129,6 +137,7 @@ async def run_inner_loop(
     all_tool_calls: list[ToolCall] = []
     stopped_because: InnerStopReason = "max_rounds"
     round_idx = 0
+    no_tools_nudges_used = 0
     finalize_capture = _FinalizeCapture()
 
     for round_idx in range(max_rounds):
@@ -168,6 +177,10 @@ async def run_inner_loop(
         messages.append({"role": "assistant", "content": list(response.content)})
 
         if not tool_uses:
+            if no_tools_nudges_used < MAX_NO_TOOLS_NUDGES:
+                no_tools_nudges_used += 1
+                messages.append({"role": "user", "content": NO_TOOLS_NUDGE_TEXT})
+                continue
             stopped_because = "no_tool_calls"
             break
 

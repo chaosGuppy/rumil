@@ -61,6 +61,7 @@ from rumil.orchestrators.axon.direct_tools import (
     set_direct_tool_ctx,
 )
 from rumil.orchestrators.axon.runner import (
+    MAX_NO_TOOLS_NUDGES,
     InnerLoopResult,
     run_inner_loop,
     validate_finalize_payload,
@@ -92,6 +93,7 @@ from rumil.orchestrators.axon.trace_events import (
     AxonRunStartedEvent,
     AxonSideEffectAppliedEvent,
 )
+from rumil.orchestrators.axon.web_fetch import WebFetchStore
 from rumil.settings import get_settings
 from rumil.tracing import get_langfuse, observe, phase_span, propagate_attributes
 from rumil.tracing.broadcast import Broadcaster
@@ -102,6 +104,13 @@ log = logging.getLogger(__name__)
 _HARD_MAX_ROUNDS_FALLBACK = 50
 _MAX_CONFIGURE_RETRIES = 2
 _CONFIGURE_PLACEHOLDER = "[awaiting configure]"
+_MAX_NO_TOOLS_NUDGES = MAX_NO_TOOLS_NUDGES
+_NO_TOOLS_NUDGE_TEXT = (
+    "[system] No tools called this turn. The mainline loop terminates "
+    "by calling `finalize` with your deliverable; if you're still "
+    "working, dispatch a `delegate` or call a direct tool. "
+    "Repeated text-only turns will end the run."
+)
 
 
 def _known_server_tool_def(name: str) -> dict | None:
@@ -341,6 +350,7 @@ class AxonOrchestrator:
             db=self.db,
             call_id=call_id,
             artifacts=artifacts,
+            fetch_store=WebFetchStore(),
         )
         direct_token = set_direct_tool_ctx(direct_ctx)
         try:
@@ -393,6 +403,7 @@ class AxonOrchestrator:
         answer_text = ""
         answer_payload: dict[str, Any] | None = None
         rounds_used = 0
+        no_tools_nudges_used = 0
         hard_max = self.config.hard_max_rounds or _HARD_MAX_ROUNDS_FALLBACK
 
         for round_idx in range(hard_max):
@@ -427,6 +438,10 @@ class AxonOrchestrator:
                 spine_messages.append({"role": "assistant", "content": list(response.content)})
 
                 if not tool_uses:
+                    if no_tools_nudges_used < _MAX_NO_TOOLS_NUDGES:
+                        no_tools_nudges_used += 1
+                        spine_messages.append({"role": "user", "content": _NO_TOOLS_NUDGE_TEXT})
+                        continue
                     last_status = "no_tool_calls"
                     if not answer_text and assistant_text:
                         answer_text = assistant_text

@@ -488,17 +488,46 @@ def _capture_request_kwargs(cfg: ModelConfig) -> dict:
     return cfg.to_record_dict()
 
 
+def _jsonable(obj: Any) -> Any:
+    """Recursively replace Pydantic instances with their JSON-mode dump.
+
+    Goal is byte-faithful storage for the ``request`` JSONB column: plain
+    dicts/lists/scalars travel through untouched, and any SDK Pydantic
+    object (e.g. ``ThinkingBlock`` echoed back on an assistant turn under
+    Opus extended thinking) gets ``model_dump(mode="json")`` — the same
+    wire-format dict the Anthropic API would accept on replay.
+
+    ``type`` objects (e.g. the structured-call ``output_format`` class)
+    are left for the caller to rewrite; this helper only flattens
+    instances.
+    """
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, dict):
+        return {k: _jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_jsonable(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [_jsonable(v) for v in obj]
+    return obj
+
+
 def _serialize_request_for_storage(kwargs: dict) -> dict:
     """Make the full request kwargs JSONB-safe for the ``request`` column.
 
-    Most kwargs are already plain dicts/strings. The structured-call path
-    puts a ``type[BaseModel]`` under ``output_format``; replace it with
-    ``{"name", "schema"}`` so the column is a faithful, replay-able
-    snapshot of what went on the wire (with the schema substituted for
-    the class).
+    Two rewrites:
+
+    - Pydantic instances anywhere in the tree (``messages`` often carries
+      SDK ``ContentBlock`` objects on echoed assistant turns) are replaced
+      with their ``model_dump(mode="json")`` dict — same wire format the
+      API would accept on replay.
+    - ``output_format`` on the structured-call path is a
+      ``type[BaseModel]`` (class, not instance); replace it with
+      ``{"name", "schema"}`` so the schema travels with the snapshot
+      rather than the class reference.
     """
-    out = dict(kwargs)
-    output_format = out.get("output_format")
+    out: dict = _jsonable(dict(kwargs))
+    output_format = kwargs.get("output_format")
     if output_format is not None and hasattr(output_format, "model_json_schema"):
         out["output_format"] = {
             "name": output_format.__name__,

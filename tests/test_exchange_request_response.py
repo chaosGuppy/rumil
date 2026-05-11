@@ -5,9 +5,11 @@ Pydantic classes to a JSONB-safe shape, and the API/persistence path forwards
 ``request``/``response``/``provider_request_id`` to ``db.save_llm_exchange``.
 """
 
+import json
 from typing import Any
 
 import pytest
+from anthropic.types import ThinkingBlock
 from pydantic import BaseModel
 
 from rumil.llm import (
@@ -81,6 +83,28 @@ def test_serialize_does_not_mutate_input():
     _serialize_request_for_storage(original)
 
     assert original["output_format"] is _Schema
+
+
+def test_serialize_flattens_sdk_thinking_blocks_in_messages():
+    """Assistant turns echoed back to the API carry ``ThinkingBlock`` SDK objects
+    on extended-thinking models. The serialized form must be JSON-encodable so
+    Supabase can write the ``request`` JSONB column."""
+    thinking = ThinkingBlock(type="thinking", thinking="reasoning…", signature="sig")
+    kwargs = {
+        "model": "claude-opus-4-7",
+        "messages": [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": [thinking, {"type": "text", "text": "ok"}]},
+        ],
+    }
+
+    out = _serialize_request_for_storage(kwargs)
+
+    json.dumps(out)
+    assistant_blocks = out["messages"][1]["content"]
+    assert assistant_blocks[0]["type"] == "thinking"
+    assert assistant_blocks[0]["thinking"] == "reasoning…"
+    assert assistant_blocks[1] == {"type": "text", "text": "ok"}
 
 
 def test_serialize_preserves_other_kwargs_alongside_rewrite():

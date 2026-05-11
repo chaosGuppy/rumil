@@ -39,6 +39,7 @@ from versus.tasks.judge_pair import (  # noqa: F401
 from rumil.database import DB
 from rumil.model_config import ModelConfig
 from rumil.models import Call, CallType
+from rumil.orchestrators.axon import AxonWorkflow
 from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
 from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
 from rumil.tracing.broadcast import Broadcaster
@@ -379,6 +380,83 @@ async def judge_pair_simple_spine(
     )
 
 
+async def judge_pair_axon(
+    db: DB,
+    pair: PairContext,
+    *,
+    task_body: str,
+    model: str,
+    config_name: str = "judge_pair",
+    budget_usd: float,
+    wall_clock_soft_s: float | None = None,
+    broadcaster: Broadcaster | None = None,
+    model_config: ModelConfig | None = None,
+) -> JudgeResult:
+    """Run :class:`AxonWorkflow` on a pair (judging side).
+
+    Mirrors :func:`judge_pair_simple_spine`. ``config_name`` selects an
+    axon YAML config (default ``"judge_pair"``); the pair surface is
+    passed as four inline artifacts — ``prefix``, ``essay_a``, ``essay_b``,
+    ``rubric`` — each XML-fenced into the spine's first user message.
+    The spine calls ``finalize`` with the pinned ``pair_judgment`` schema
+    (``{reasoning, verdict}``); ``AxonWorkflow`` synthesises the closer
+    string as ``reasoning + "\\n\\n" + verdict`` so the existing
+    :meth:`JudgePairTask.extract_artifact` (``rfind`` on label) works
+    unchanged.
+
+    No ``operating_assumptions`` / ``output_guidance`` / ``additional_context``
+    plumbing: axon's spine prompt + the inline artifacts already cover
+    that surface, and exposing free-form mainline text channels here
+    would compete with the prompt for the model's attention. Add them
+    back if a concrete use case appears.
+    """
+    artifacts = {
+        "prefix": pair.prefix_text,
+        "essay_a": pair.continuation_a_text,
+        "essay_b": pair.continuation_b_text,
+        "rubric": task_body.strip() + "\n",
+    }
+    workflow = AxonWorkflow(
+        budget_usd=budget_usd,
+        config_name=config_name,
+        call_type="judge",
+        wall_clock_soft_s=wall_clock_soft_s,
+        artifacts=artifacts,
+    )
+    task = JudgePairTask(dimension=pair.task_name, dimension_body=task_body)
+    try:
+        result = await run_versus(
+            db,
+            workflow=workflow,
+            task=task,
+            inputs=pair,
+            model=model,
+            broadcaster=broadcaster,
+            model_config=model_config,
+        )
+    except Exception:
+        log.exception(
+            "versus axon failed (essay=%s, pair=%s/%s, task=%s)",
+            pair.essay_id,
+            pair.source_a_id,
+            pair.source_b_id,
+            pair.task_name,
+        )
+        raise
+    return JudgeResult(
+        verdict=result.artifact.verdict,
+        preference_label=result.artifact.preference_label,
+        reasoning_text=result.artifact.reasoning_text,
+        trace_url=result.trace_url,
+        call_id=result.call_id,
+        run_id=result.run_id,
+        question_id=result.question_id,
+        cost_usd=result.cost_usd,
+        system_prompt=result.system_prompt,
+        user_prompt=result.user_prompt,
+    )
+
+
 __all__ = (
     "PREFERENCE_LABELS",
     "JudgeArtifact",
@@ -394,6 +472,7 @@ __all__ = (
     "ensure_versus_question",
     "extract_preference",
     "get_rumil_dimension_body",
+    "judge_pair_axon",
     "judge_pair_orch",
     "judge_pair_reflective",
     "judge_pair_simple_spine",

@@ -35,6 +35,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from rumil.orchestrators.axon import AxonWorkflow
 from rumil.orchestrators.draft_and_edit import DraftAndEditWorkflow
 from rumil.orchestrators.reflective_judge import ReflectiveJudgeWorkflow
 from rumil.orchestrators.simple_spine import SimpleSpineWorkflow
@@ -67,6 +68,13 @@ WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
         SimpleSpineWorkflow,
         {"call_type": "complete", "config_name": "essay_continuation"},
     ),
+    # Axon on the completion side: ``--orch axon --budget-usd <usd>``.
+    # ``config_name`` defaults to ``essay_continuation`` (the matching
+    # axon YAML); override via ``--workflow-arg config_name=<other>``.
+    "axon": (
+        AxonWorkflow,
+        {"call_type": "complete", "config_name": "essay_continuation"},
+    ),
 }
 
 # Judge-side workflows. Kept separate from WORKFLOW_REGISTRY so the
@@ -82,6 +90,7 @@ JUDGE_WORKFLOW_REGISTRY: dict[str, tuple[type, dict[str, Any]]] = {
         {"dimension_body": "<staleness-check-placeholder>"},
     ),
     "simple_spine": (SimpleSpineWorkflow, {"call_type": "judge"}),
+    "axon": (AxonWorkflow, {"call_type": "judge", "config_name": "judge_pair"}),
 }
 
 
@@ -224,7 +233,7 @@ def _parse_workflow_args(pairs: Sequence[str], cls: type) -> dict[str, Any]:
 # Workflows whose "budget" primitive is raw tokens, not research-call
 # units. The CLI requires --budget-usd (and rejects --budget) for
 # these; other workflows use --budget.
-TOKEN_BUDGET_WORKFLOWS: frozenset[str] = frozenset({"simple_spine"})
+TOKEN_BUDGET_WORKFLOWS: frozenset[str] = frozenset({"simple_spine", "axon"})
 
 
 def _make_workflow_and_task(
@@ -242,9 +251,11 @@ def _make_workflow_and_task(
     any caller-supplied ``extra_kwargs`` (e.g. from ``--workflow-arg``).
     Routes to ``budget_usd=`` for token-budget workflows
     (:data:`TOKEN_BUDGET_WORKFLOWS`) and to ``budget=`` for the rest.
-    ``artifacts`` is forwarded only to SimpleSpine (the only registered
-    workflow whose ``__init__`` accepts it) so subroutines that declare
-    ``consumes:`` can auto-splice run-start inputs (e.g. ``prefix``).
+    ``artifacts`` is forwarded to SimpleSpine and Axon — the registered
+    workflows whose ``__init__`` accepts it. SimpleSpine subroutines that
+    declare ``consumes:`` auto-splice run-start inputs; axon wraps each
+    entry as a render-inline ArtifactSeed in the spine's first user
+    message.
     Raises ``KeyError`` (with a list of registered names) if
     ``workflow_name`` isn't registered.
     """
@@ -261,7 +272,7 @@ def _make_workflow_and_task(
             raise ValueError(f"workflow {workflow_name!r} requires budget (research-call count)")
         budget_kwarg = {"budget": budget}
     kwargs: dict[str, Any] = {**defaults, **(extra_kwargs or {}), **budget_kwarg}
-    if artifacts and workflow_name == "simple_spine":
+    if artifacts and workflow_name in {"simple_spine", "axon"}:
         kwargs["artifacts"] = dict(artifacts)
     workflow = cls(**kwargs)
     task = CompleteEssayTask()
@@ -517,9 +528,7 @@ async def run_orch_completion(
                 # made the traces list useless for picking out a
                 # specific run.
                 budget_slug = (
-                    f"bt{budget_usd}"
-                    if workflow_name in TOKEN_BUDGET_WORKFLOWS
-                    else f"b{budget}"
+                    f"bt{budget_usd}" if workflow_name in TOKEN_BUDGET_WORKFLOWS else f"b{budget}"
                 )
                 run_name = (
                     f"versus-orch-completion:{workspace}:{pc.task.essay_id}"

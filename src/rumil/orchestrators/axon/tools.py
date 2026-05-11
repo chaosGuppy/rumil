@@ -222,15 +222,22 @@ def list_direct_tool_names() -> list[str]:
 
 def build_mainline_tools(
     direct_tool_names: tuple[str, ...] | list[str],
+    *,
+    mainline_finalize_schema: dict[str, Any] | None = None,
 ) -> list[Tool]:
     """Assemble mainline's full tool list at run start (then never changes).
 
-    Order: delegate, configure, finalize (default schema), direct tools.
-    The cache prefix locks once these are sent on the first turn.
+    Order: delegate, configure, finalize, direct tools. The cache
+    prefix locks once these are sent on the first turn.
+
+    ``mainline_finalize_schema`` overrides the default ``{answer,
+    reason}`` shape for configs that need structured mainline output
+    (e.g. judge_pair → ``{reasoning, verdict}``). When None, falls
+    back to :data:`DEFAULT_FINALIZE_SCHEMA`.
     """
     return [
         build_delegate_tool(),
         build_configure_tool(),
-        build_finalize_tool(),
+        build_finalize_tool(input_schema=mainline_finalize_schema),
         *resolve_direct_tools(direct_tool_names),
     ]

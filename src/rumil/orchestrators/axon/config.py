@@ -85,6 +85,14 @@ class AxonConfig:
     # per inner loop and is not listed here.
     direct_tools: tuple[str, ...] = ()
 
+    # Optional ref into ``finalize_schema_registry`` that overrides the
+    # mainline `finalize` tool's input_schema. When None (default),
+    # mainline finalizes with the freeform ``{answer, reason}`` shape.
+    # Set for configs that want structured mainline output (e.g.
+    # judge_pair → ``{reasoning, verdict}``). Delegates always set
+    # their own finalize_schema via configure regardless.
+    mainline_finalize_schema_ref: str | None = None
+
 
 @dataclass
 class OrchInputs:
@@ -122,6 +130,14 @@ class OrchResult:
     last_status: str  # "completed" | "incomplete" | "budget_exhausted"
     run_id: str
     call_id: str
+    # Full structured payload from the mainline finalize tool call. For
+    # configs that pin ``mainline_finalize_schema_ref``, this carries
+    # the validated payload (e.g. ``{reasoning, verdict}`` for
+    # judge_pair). For default-schema configs, it carries
+    # ``{answer, reason}`` with ``answer`` mirroring ``answer_text``.
+    # ``None`` when the run terminated without a finalize call (e.g.
+    # max_rounds, no_tool_calls).
+    answer_payload: dict[str, Any] | None = None
 
 
 def build_initial_artifacts(

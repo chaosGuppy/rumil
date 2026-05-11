@@ -77,7 +77,7 @@ def main() -> None:
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--variant",
-        choices=("orch", "reflective", "simple_spine"),
+        choices=("orch", "reflective", "simple_spine", "axon"),
         default=None,
         help=(
             "Workflow variant. Omit for the default blind judge path. "
@@ -274,6 +274,23 @@ def main() -> None:
             "rates from pricing.json — pass e.g. 4.00 for a $4 cap."
         ),
     )
+    ap.add_argument(
+        "--axon-config-name",
+        default="judge_pair",
+        help=(
+            "axon: YAML config name under rumil/orchestrators/axon/configs/. Default: judge_pair."
+        ),
+    )
+    ap.add_argument(
+        "--axon-budget-usd",
+        type=float,
+        default=None,
+        help=(
+            "axon: USD cost cap on the run (the only hard terminator). "
+            "Required for --variant axon. Counts input + output + "
+            "cache_create + cache_read at per-model rates."
+        ),
+    )
     args = ap.parse_args()
 
     contestants = (
@@ -351,7 +368,7 @@ def main() -> None:
     # reflective/orch paths since they don't reach the bridge; not
     # gated here because the default for simple-spine-config-name is
     # the safe sentinel "judge_pair" which is harmless on other paths.)
-    if args.variant in ("orch", "simple_spine"):
+    if args.variant in ("orch", "simple_spine", "axon"):
         for flag, value in (
             ("--reader-model", args.reader_model),
             ("--reflector-model", args.reflector_model),
@@ -372,9 +389,23 @@ def main() -> None:
             )
         if args.simple_spine_budget_usd is None:
             ap.error("--variant simple_spine requires --simple-spine-budget-usd <int>")
+        if args.axon_budget_usd is not None:
+            ap.error("--axon-budget-usd is only valid with --variant axon")
+    elif args.variant == "axon":
+        if args.budget is not None:
+            ap.error(
+                "--variant axon uses a USD cost cap; pass --axon-budget-usd "
+                "(not --budget). Axon has no research-call-count primitive."
+            )
+        if args.simple_spine_budget_usd is not None:
+            ap.error("--simple-spine-budget-usd is only valid with --variant simple_spine")
+        if args.axon_budget_usd is None:
+            ap.error("--variant axon requires --axon-budget-usd <float>")
     elif args.variant == "orch":
         if args.simple_spine_budget_usd is not None:
             ap.error("--simple-spine-budget-usd is only valid with --variant simple_spine")
+        if args.axon_budget_usd is not None:
+            ap.error("--axon-budget-usd is only valid with --variant axon")
         if args.budget is None:
             ap.error("--variant orch requires --budget <int>")
 
@@ -408,6 +439,8 @@ def main() -> None:
             verdict_prompt_path=args.verdict_prompt_path,
             simple_spine_config_name=args.simple_spine_config_name,
             simple_spine_budget_usd=args.simple_spine_budget_usd,
+            axon_config_name=args.axon_config_name,
+            axon_budget_usd=args.axon_budget_usd,
         )
     )
 

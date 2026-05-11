@@ -1,0 +1,51 @@
+# essay_continuation — axon preset for versus essay-continuation runs.
+#
+# Caller passes essay inputs as inline artifacts via OrchInputs.artifacts:
+#   - prefix              (render_inline=True): the essay opening
+#   - target_length_chars (render_inline=True, optional): target length hint
+#
+# Mainline reads them in the first user message and calls finalize with
+# a `continuation` field. No delegates fire on a typical run — the spine
+# produces the continuation directly. The bridge reads the structured
+# answer_payload to extract the continuation.
+
+name: essay_continuation
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/essay_continuation_spine.md
+
+# Single mainline turn under normal use; cap rounds tight to surface
+# misbehavior rather than burn budget on retries.
+hard_max_rounds: 4
+max_parallel_delegates_per_turn: 1
+max_seed_pages: 0
+
+# Versus is blind / scoped to the prefix; never auto-seed workspace
+# pages by question similarity.
+auto_seed_from_question: false
+
+# 32k mainline output: drafter continuations historically reach this
+# ceiling. Server-side compaction on; Haiku-side overrides at
+# run time via --no-compaction.
+enable_server_compaction: true
+compaction_trigger_tokens: 400000
+
+# Minimal direct tools. read_artifact is harmless and useful if the
+# spine wants to re-read an inline artifact. record_operator_feedback
+# lets the spine flag rubric/instruction friction.
+direct_tools:
+  - read_artifact
+  - record_operator_feedback
+
+mainline_finalize_schema_ref: essay_continuation
+
+finalize_schema_registry:
+  essay_continuation:
+    type: object
+    description: The essay continuation, returned as a single string.
+    properties:
+      continuation:
+        type: string
+        description: >
+          Continuation text that picks up from the prefix. No wrapping tags, no commentary.
+    required: [continuation]
+    additionalProperties: false

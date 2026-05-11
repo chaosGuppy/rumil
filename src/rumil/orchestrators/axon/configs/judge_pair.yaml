@@ -1,0 +1,60 @@
+# judge_pair — axon preset for versus pairwise-judging runs.
+#
+# Caller passes the pair as inline artifacts via OrchInputs.artifacts:
+#   - prefix    (render_inline=True): the shared essay opening
+#   - essay_a   (render_inline=True): continuation A (blind)
+#   - essay_b   (render_inline=True): continuation B (blind)
+#   - rubric    (render_inline=True): the dimension being judged
+#
+# Mainline reads them in its first user message and calls finalize with
+# {reasoning, verdict}. verdict is a constrained enum of the seven
+# preference labels — structured output, so no rfind-the-trailing-label
+# parse. The bridge reads answer_payload["verdict"] directly.
+
+name: judge_pair
+main_model: claude-opus-4-7
+main_system_prompt_path: ../prompts/judge_pair_spine.md
+
+# Single mainline turn under normal use.
+hard_max_rounds: 4
+max_parallel_delegates_per_turn: 1
+max_seed_pages: 0
+
+# Versus is blind / scoped to the pair; do NOT auto-seed by question.
+auto_seed_from_question: false
+
+# 32k mainline output: reasoning + verdict fit comfortably; this is
+# headroom. Server compaction on by default; --no-compaction at run
+# time for Haiku.
+enable_server_compaction: true
+compaction_trigger_tokens: 400000
+
+direct_tools:
+  - read_artifact
+  - record_operator_feedback
+
+mainline_finalize_schema_ref: pair_judgment
+
+finalize_schema_registry:
+  pair_judgment:
+    type: object
+    description: Pairwise verdict on continuations A and B against a rubric.
+    properties:
+      reasoning:
+        type: string
+        description: >
+          Evidence-grounded reading of both continuations against the
+          rubric. Cite specifics from each. No hedging; no preamble.
+      verdict:
+        type: string
+        description: One of the seven canonical preference labels.
+        enum:
+          - A strongly preferred
+          - A somewhat preferred
+          - A slightly preferred
+          - Approximately indifferent between A and B
+          - B slightly preferred
+          - B somewhat preferred
+          - B strongly preferred
+    required: [reasoning, verdict]
+    additionalProperties: false

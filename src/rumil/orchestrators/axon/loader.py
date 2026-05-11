@@ -101,6 +101,11 @@ def load_axon_config(path: str | Path) -> AxonConfig:
         artifact_seeds=artifact_seeds,
         finalize_schema_registry=finalize_schema_registry,
         direct_tools=direct_tools,
+        mainline_finalize_schema_ref=(
+            str(raw["mainline_finalize_schema_ref"])
+            if raw.get("mainline_finalize_schema_ref") is not None
+            else None
+        ),
     )
 
 

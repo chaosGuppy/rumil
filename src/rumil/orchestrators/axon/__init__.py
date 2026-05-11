@@ -67,6 +67,7 @@ from rumil.orchestrators.axon.tools import (
     register_direct_tool,
     resolve_direct_tools,
 )
+from rumil.orchestrators.axon.workflow import AxonWorkflow
 
 __all__ = (
     "CONFIGURE_TOOL_NAME",
@@ -78,6 +79,7 @@ __all__ = (
     "ArtifactStore",
     "AxonConfig",
     "AxonOrchestrator",
+    "AxonWorkflow",
     "BudgetClock",
     "BudgetSnapshot",
     "BudgetSpec",

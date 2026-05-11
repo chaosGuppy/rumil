@@ -368,7 +368,11 @@ class AxonOrchestrator:
         artifacts: ArtifactStore,
     ) -> OrchResult:
         system_prompt = self._load_main_system_prompt()
-        mainline_tools = build_mainline_tools(self.config.direct_tools)
+        mainline_finalize_schema = self._resolve_mainline_finalize_schema()
+        mainline_tools = build_mainline_tools(
+            self.config.direct_tools,
+            mainline_finalize_schema=mainline_finalize_schema,
+        )
         mainline_tool_defs, mainline_tool_fns = prepare_tools(mainline_tools)
 
         await trace.record(
@@ -387,6 +391,7 @@ class AxonOrchestrator:
 
         last_status = "incomplete"
         answer_text = ""
+        answer_payload: dict[str, Any] | None = None
         rounds_used = 0
         hard_max = self.config.hard_max_rounds or _HARD_MAX_ROUNDS_FALLBACK
 
@@ -432,7 +437,16 @@ class AxonOrchestrator:
                 )
                 if finalize_block is not None:
                     payload = dict(finalize_block.input or {})
-                    answer_text = str(payload.get("answer", "")).strip()
+                    answer_payload = payload
+                    # ``answer_text`` mirrors the default-schema's
+                    # ``answer`` field when present; otherwise falls
+                    # back to a JSON-serialised payload so callers
+                    # that only read answer_text still see something
+                    # informative.
+                    if "answer" in payload and isinstance(payload["answer"], str):
+                        answer_text = payload["answer"].strip()
+                    else:
+                        answer_text = json.dumps(payload, ensure_ascii=False, indent=2)
                     last_status = "completed"
                     # If finalize was emitted alongside other tool calls, satisfy
                     # them with placeholder errors so the conversation is well-
@@ -495,6 +509,7 @@ class AxonOrchestrator:
             last_status=last_status,
             run_id=run_id,
             call_id=call_id,
+            answer_payload=answer_payload,
         )
 
     async def _dispatch_turn_tool_uses(
@@ -1247,6 +1262,24 @@ class AxonOrchestrator:
         if schema is None:
             raise _DelegateError(
                 f"finalize_schema ref {spec.ref!r} not in registry "
+                f"(available: {sorted(self.config.finalize_schema_registry)})"
+            )
+        return schema
+
+    def _resolve_mainline_finalize_schema(self) -> dict[str, Any] | None:
+        """Resolve ``AxonConfig.mainline_finalize_schema_ref`` to a schema dict.
+
+        Returns ``None`` when no ref is set — mainline's finalize tool
+        keeps the default ``{answer, reason}`` shape. Used by
+        :func:`build_mainline_tools` at run start.
+        """
+        ref = self.config.mainline_finalize_schema_ref
+        if ref is None:
+            return None
+        schema = self.config.finalize_schema_registry.get(ref)
+        if schema is None:
+            raise ValueError(
+                f"mainline_finalize_schema_ref {ref!r} not in finalize_schema_registry "
                 f"(available: {sorted(self.config.finalize_schema_registry)})"
             )
         return schema

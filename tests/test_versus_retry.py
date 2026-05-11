@@ -9,8 +9,6 @@ pure (no I/O of its own — caller's ``fn`` does any I/O), so we drive
 it with stub callables that increment a counter and selectively raise.
 """
 
-from __future__ import annotations
-
 import httpx
 import pytest
 

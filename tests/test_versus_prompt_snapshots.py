@@ -20,8 +20,6 @@ bump alongside the edit. Regenerate pins below by running:
 and pasting the output into ``EXPECTED_HASHES`` below.
 """
 
-from __future__ import annotations
-
 import hashlib
 import pathlib
 

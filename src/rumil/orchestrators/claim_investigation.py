@@ -234,7 +234,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None = None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> "PrioritizationResult":
+    ) -> PrioritizationResult:
         claim_id = root_question_id
 
         if self._invocation == 0:
@@ -270,7 +270,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> "PrioritizationResult":
+    ) -> PrioritizationResult:
 
         phase1_budget = budget
         log.info(
@@ -414,7 +414,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> "PrioritizationResult":
+    ) -> PrioritizationResult:
         from rumil.orchestrators.common import PrioritizationResult
         from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 

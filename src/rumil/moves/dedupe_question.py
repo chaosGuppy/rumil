@@ -296,7 +296,7 @@ async def _opus_decide(
     candidate: Page,
     call: Call,
     db: DB,
-) -> "_OpusDecision | None":
+) -> _OpusDecision | None:
     """Ask Opus whether the candidate can substitute for the proposed question."""
     user_message = (
         f"## Parent question\n\n**{parent.headline}**\n\n{parent.content}\n\n"

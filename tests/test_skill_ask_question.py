@@ -1,7 +1,5 @@
 """Tests for rumil_skills.ask_question — cc-mediated question creation."""
 
-from __future__ import annotations
-
 import json
 import uuid
 

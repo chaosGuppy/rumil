@@ -557,7 +557,7 @@ def mocked_helpers(mocker):
     }
 
 
-async def _make_orch(db) -> "ScriptedOrchestrator":
+async def _make_orch(db) -> ScriptedOrchestrator:
     orch = ScriptedOrchestrator(db, batches=[])
     await orch._setup()
     return orch

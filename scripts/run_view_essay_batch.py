@@ -24,8 +24,6 @@ Usage:
         --n-per-label 5
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import logging

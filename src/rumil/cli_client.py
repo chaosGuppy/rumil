@@ -7,8 +7,6 @@ the job name and a Cloud Logging URL, then exits. Pod logs are followed
 via that URL rather than streamed back over HTTP.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import sys

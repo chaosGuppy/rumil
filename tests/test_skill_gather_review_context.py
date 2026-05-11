@@ -1,7 +1,5 @@
 """Tests for rumil_skills.gather_review_context — non-LLM context assembly."""
 
-from __future__ import annotations
-
 import pytest
 from rumil_skills import _runctx, gather_review_context, scan_log
 

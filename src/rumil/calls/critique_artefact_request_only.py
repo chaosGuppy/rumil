@@ -8,8 +8,6 @@ critic might rationalise away because of context the workspace happens
 to carry. The refiner reads both critiques and triangulates.
 """
 
-from __future__ import annotations
-
 import logging
 
 from rumil.calls.closing_reviewers import StandardClosingReview

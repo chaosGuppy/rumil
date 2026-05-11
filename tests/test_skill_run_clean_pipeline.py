@@ -6,8 +6,6 @@ rumil_skills.run_clean_pipeline`). Asserts structurally — exit 0, run
 row created with origin=claude-code, a grounding_feedback call exists.
 """
 
-from __future__ import annotations
-
 import os
 import subprocess
 import sys

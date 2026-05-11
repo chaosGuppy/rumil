@@ -14,8 +14,6 @@ human reference was 4,470 words. Fresh re-fires of the same exchange
 produced ~4,100-word complete continuations.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock

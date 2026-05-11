@@ -5,8 +5,6 @@ the legacy field names), so they need pinned coverage even though they're
 boring shape-conversions.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from rumil.api.versus_router import (

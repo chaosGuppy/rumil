@@ -13,8 +13,6 @@ Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
             LLMExchangeMetadata.
 """
 
-from __future__ import annotations
-
 import contextvars
 import json
 import logging
@@ -24,7 +22,7 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
+from typing import Any, overload
 
 import anthropic
 from anthropic.types import (
@@ -45,6 +43,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from rumil.database import DB
 from rumil.model_config import ModelConfig
 from rumil.models import CallType, ScoutScope, scout_scope
 from rumil.pricing import compute_cost
@@ -57,9 +56,6 @@ from rumil.tracing import (
 )
 from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
 from rumil.tracing.tracer import get_trace
-
-if TYPE_CHECKING:
-    from rumil.database import DB
 
 DEFAULT_MAX_TOKENS = 20_000
 DEFAULT_TEMPERATURE = 0.15
@@ -736,7 +732,7 @@ def _partial_from_validation_error(exc: ValidationError) -> str | None:
     try:
         first = exc.errors()[0]
         inp = first.get("input")
-    except (IndexError, KeyError):
+    except IndexError, KeyError:
         return None
     return inp if isinstance(inp, str) else None
 
@@ -1619,11 +1615,8 @@ async def text_call(
     return ""
 
 
-T = TypeVar("T", bound=BaseModel)
-
-
 @dataclass
-class StructuredCallResult(Generic[T]):
+class StructuredCallResult[T: BaseModel]:
     """Result of a structured_call invocation.
 
     `parsed` holds the validated pydantic instance, or None if the model
@@ -1638,7 +1631,7 @@ class StructuredCallResult(Generic[T]):
     duration_ms: int | None = None
 
 
-async def _structured_call_cached(
+async def _structured_call_cached[T: BaseModel](
     system_prompt: str,
     response_model: type[T],
     msg_list: list[dict],
@@ -1745,7 +1738,7 @@ async def _structured_call_cached(
     raise RuntimeError("Unreachable: parse retry loop exhausted")
 
 
-async def _structured_call_google(
+async def _structured_call_google[T: BaseModel](
     system_prompt: str,
     response_model: type[T] | None,
     msg_list: list[dict],
@@ -1910,7 +1903,7 @@ def _safe_truncate_partial_json(partial: str) -> str | None:
     return partial[:last_boundary]
 
 
-async def _continuation_recovery_for_parse(
+async def _continuation_recovery_for_parse[T: BaseModel](
     *,
     response_model: type[T],
     system_prompt: str,
@@ -2000,7 +1993,7 @@ async def _continuation_recovery_for_parse(
 
 
 @observe(as_type="generation", name="anthropic.messages.parse", capture_output=False)
-async def _structured_call_parse(
+async def _structured_call_parse[T: BaseModel](
     system_prompt: str,
     response_model: type[T] | None,
     msg_list: list[dict],
@@ -2184,7 +2177,7 @@ async def _structured_call_parse(
 
 
 @overload
-async def structured_call(
+async def structured_call[T: BaseModel](
     system_prompt: str,
     user_message: str,
     response_model: type[T],
@@ -2204,7 +2197,7 @@ async def structured_call(
 
 
 @overload
-async def structured_call(
+async def structured_call[T: BaseModel](
     system_prompt: str,
     user_message: str = "",
     *,
@@ -2242,7 +2235,7 @@ async def structured_call(
 ) -> StructuredCallResult[BaseModel]: ...
 
 
-async def structured_call(
+async def structured_call[T: BaseModel](
     system_prompt: str,
     user_message: str = "",
     response_model: type[T] | None = None,

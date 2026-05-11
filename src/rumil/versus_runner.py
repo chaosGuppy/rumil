@@ -26,10 +26,8 @@ Cost accounting sums across every call recorded under the run id —
 the workflow's research dispatches plus the closer call (when run).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Generic, Literal, TypeVar
+from typing import Literal
 
 from rumil.database import DB
 from rumil.model_config import ModelConfig
@@ -38,14 +36,11 @@ from rumil.tracing.broadcast import Broadcaster
 from rumil.versus_closer import run_closer_agent
 from rumil.versus_workflow import Workflow
 
-TInputs = TypeVar("TInputs")
-TArtifact = TypeVar("TArtifact")
-
 WorkflowStatus = Literal["complete", "incomplete", "failed"]
 
 
 @dataclass
-class VersusResult(Generic[TArtifact]):
+class VersusResult[TArtifact]:
     """End-to-end output of one ``run_versus`` invocation.
 
     ``status`` distinguishes "ran cleanly to completion" from

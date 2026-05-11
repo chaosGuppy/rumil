@@ -17,8 +17,6 @@ Design:
   long-lived chunked responses being killed by the GKE Gateway timeout.
 """
 
-from __future__ import annotations
-
 import logging
 import re
 import secrets

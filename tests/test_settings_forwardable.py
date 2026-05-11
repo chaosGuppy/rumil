@@ -1,7 +1,5 @@
 """Tests for Settings.all_env_keys() and Settings.cli_forwardable_overrides()."""
 
-from __future__ import annotations
-
 from pydantic_core import PydanticUndefined
 
 from rumil.settings import Settings

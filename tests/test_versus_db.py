@@ -12,8 +12,6 @@ fixture deletes those rows on teardown so the suite is idempotent and
 runnable in any order.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from versus import versus_db

@@ -26,8 +26,6 @@ Invariants worth preserving in subclasses:
   the run config; #424 will fold them in via ``make_versus_config``.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from typing import Protocol, runtime_checkable
 

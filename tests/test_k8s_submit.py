@@ -4,8 +4,6 @@ We don't talk to a real cluster — we exercise the command-builder, name
 slugger, and manifest-renderer with mocked kubernetes client returns.
 """
 
-from __future__ import annotations
-
 import re
 
 import pytest

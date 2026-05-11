@@ -4,7 +4,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -29,9 +29,6 @@ from rumil.settings import get_settings
 DispatchValidator = Callable[[Dispatch], Dispatch | str]
 
 log = logging.getLogger(__name__)
-
-S = TypeVar("S", bound=BaseModel)
-P = TypeVar("P", bound=BaseModel)
 
 
 @dataclass
@@ -89,7 +86,7 @@ class MoveState:
         return new_moves, new_created, new_extras
 
 
-def _resolve_last_created(payload: P, last_created_id: str) -> P:
+def _resolve_last_created[P: BaseModel](payload: P, last_created_id: str) -> P:
     """Replace any string field containing 'LAST_CREATED' with the actual ID."""
     updates = {}
     for field_name, value in payload:
@@ -101,7 +98,7 @@ def _resolve_last_created(payload: P, last_created_id: str) -> P:
 
 
 @dataclass
-class MoveDef(Generic[S]):
+class MoveDef[S: BaseModel]:
     """Complete definition of a move: its identity, tool schema, and execution logic."""
 
     move_type: MoveType
@@ -109,7 +106,7 @@ class MoveDef(Generic[S]):
     description: str
     schema: type[S]
     execute: Callable[[S, Call, DB], Awaitable[MoveResult]]
-    context_check: Callable[[S, "MoveState"], Awaitable[MoveResult | None]] | None = None
+    context_check: Callable[[S, MoveState], Awaitable[MoveResult | None]] | None = None
 
     def bind(self, state: MoveState) -> Tool:
         """Return a Tool bound to this call's mutable state."""

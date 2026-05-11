@@ -52,8 +52,6 @@ Design notes:
   Add events later if the iterate loop wants more structure.
 """
 
-from __future__ import annotations
-
 import hashlib
 from collections.abc import Mapping, Sequence
 from pathlib import Path

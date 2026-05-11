@@ -9,8 +9,6 @@ falling into the ``provider/model`` branch and parsing as
 ``base="two_phase:claude-opus-4-7:c..."``, sorting nonsensically.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

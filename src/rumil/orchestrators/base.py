@@ -468,7 +468,7 @@ class BaseOrchestrator(ABC):
 
     async def _handle_failed_recurse(
         self,
-        child: "BaseOrchestrator",
+        child: BaseOrchestrator,
         child_qid: str,
         exc: BaseException,
         parent_trace: CallTrace | None,

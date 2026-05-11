@@ -18,8 +18,6 @@ agent-loop turns cost 1 each (run_agent_loop does not charge budget — budget
 is only debited by explicit consume_budget calls, which the move does).
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 

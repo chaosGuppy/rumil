@@ -19,8 +19,6 @@ These tests pin the acceptance criteria from #425:
   shows up as a shared-axis change.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

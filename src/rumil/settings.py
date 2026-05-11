@@ -305,7 +305,7 @@ class Settings(BaseSettings):
         return bool(self.langfuse_public_key and self.langfuse_secret_key)
 
     @classmethod
-    def from_env_files(cls, *env_files: str | Path) -> "Settings":
+    def from_env_files(cls, *env_files: str | Path) -> Settings:
         """Create a Settings instance loading from the given env files."""
         return cls(_env_file=env_files)  # type: ignore[call-arg]
 

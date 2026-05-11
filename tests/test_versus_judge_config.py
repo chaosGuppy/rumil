@@ -9,8 +9,6 @@ config-driven axis projection.
 Pure-Python tests: no LLM, no DB, no network. Fast.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 from typing import Any

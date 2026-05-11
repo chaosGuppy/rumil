@@ -10,8 +10,6 @@ Config resolution: VERSUS_CONFIG_PATH env var, defaulting to
 without config; everything else returns 503 if config is missing.
 """
 
-from __future__ import annotations
-
 import functools
 import os
 import pathlib

@@ -6,8 +6,6 @@ crash-on-truncated-write case that used to bubble a JSONDecodeError up
 through the API into a 500.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import sys

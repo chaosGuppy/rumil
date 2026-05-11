@@ -8,8 +8,6 @@ duplicating it. The *prompts* are task-specific (the task supplies
 on ``sdk_agent_max_turns``) is task-agnostic and lives here.
 """
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime

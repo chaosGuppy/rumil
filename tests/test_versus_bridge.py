@@ -15,8 +15,6 @@ Focus here is the surfaces that carry real correctness risk:
   (which can literally be ``"human"``) must NOT leak into the prompt.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

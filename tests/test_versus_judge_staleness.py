@@ -12,8 +12,6 @@ registry returns for the given model id. The staleness detector loads
 versus/config.yaml from the repo root.
 """
 
-from __future__ import annotations
-
 import pathlib
 
 import pytest

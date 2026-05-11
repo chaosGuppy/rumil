@@ -7,8 +7,6 @@ and emits the standard `context_built` trace event. The CLI in
 candidate (configurable) call so their loaded-page sets can be diffed.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 
 from rumil.calls.context_builders import EmbeddingContext

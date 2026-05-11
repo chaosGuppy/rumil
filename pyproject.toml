@@ -3,7 +3,7 @@ name = "rumil"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "anthropic>=0.84.0",
     "fastapi>=0.135.1",
@@ -12,7 +12,6 @@ dependencies = [
     "pydantic-settings>=2.0",
     "supabase>=2.0.0",
     "uvicorn[standard]>=0.41.0",
-    "voyageai>=0.3.2",
     "claude-agent-sdk>=0.1.66",
     "tenacity>=9.0.0",
     "google-genai>=1.72",
@@ -54,7 +53,7 @@ addopts = "-n auto --dist worksteal"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 extend-exclude = ["frontend", "supabase", "data", "versus"]
 
 [tool.ruff.lint]
@@ -64,9 +63,6 @@ ignore = [
     "E741",   # ambiguous single-letter names (l, I, O) used deliberately in comprehensions
     "B008",   # function-call-in-default — FastAPI Depends() pattern
     "B905",   # zip(..., strict=) — opt-in per call site, not universally appropriate
-    "UP042",  # StrEnum migration — existing str-inheriting enums stay as-is
-    "UP046",  # PEP 695 generic class syntax — opt-in migration
-    "UP047",  # PEP 695 generic function syntax — opt-in migration
     "RUF001", # ambiguous unicode in strings (intentional em-dashes, smart quotes)
     "RUF002", # ambiguous unicode in docstrings
 ]
@@ -77,7 +73,7 @@ ignore = [
 [tool.pyright]
 include = ["src", "tests", "scripts"]
 exclude = ["frontend", "supabase", "data", "**/__pycache__"]
-pythonVersion = "3.12"
+pythonVersion = "3.14"
 typeCheckingMode = "standard"
 venvPath = "."
 venv = ".venv"

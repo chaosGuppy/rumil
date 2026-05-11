@@ -3,8 +3,6 @@
 All tests exercise pure heuristic code paths. No LLM calls.
 """
 
-from __future__ import annotations
-
 import pytest
 from rumil_skills import _runctx, scan
 

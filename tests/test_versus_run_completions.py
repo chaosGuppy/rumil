@@ -13,8 +13,6 @@ on:
   per-essay run firing) without touching the network.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock

@@ -12,8 +12,6 @@ derives a default config from a model id lives in :mod:`rumil.llm`
 (``derive_model_config``) since that's where the rules live.
 """
 
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass
 from typing import Any
 

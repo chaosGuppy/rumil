@@ -5,8 +5,6 @@ exposes via the :class:`VersusTask` protocol — fingerprint shape,
 question creation, render_for_closer behavior, artifact extraction.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock

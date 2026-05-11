@@ -9,8 +9,6 @@ subdicts). These tests pin the read-side projection so a new-shape row
 doesn't KeyError or silently lose its rumil tint when the router hits it.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

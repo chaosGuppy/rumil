@@ -4211,6 +4211,22 @@ export type RunTraceTreeOut = {
      */
     cost_usd?: number | null;
     /**
+     * Input Tokens
+     */
+    input_tokens?: number | null;
+    /**
+     * Output Tokens
+     */
+    output_tokens?: number | null;
+    /**
+     * Cache Read Tokens
+     */
+    cache_read_tokens?: number | null;
+    /**
+     * Cache Create Tokens
+     */
+    cache_create_tokens?: number | null;
+    /**
      * Staged
      */
     staged?: boolean;

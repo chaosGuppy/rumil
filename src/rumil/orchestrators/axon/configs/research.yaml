@@ -23,6 +23,7 @@ compaction_trigger_tokens: 400000
 direct_tools:
   - load_page
   - read_artifact
+  - record_operator_feedback
 
 # Config-time artifact seeds. Each entry is either text-inline or a
 # path to load at config-load time. Prompts default to render_inline:

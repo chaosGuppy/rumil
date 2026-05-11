@@ -86,6 +86,7 @@ def direct_tool_ctx_scope(ctx: DirectToolCtx) -> Iterator[None]:
 LOAD_PAGE_TOOL_NAME = "load_page"
 CREATE_PAGE_TOOL_NAME = "create_page"
 READ_ARTIFACT_TOOL_NAME = "read_artifact"
+RECORD_OPERATOR_FEEDBACK_TOOL_NAME = "record_operator_feedback"
 
 
 def build_load_page_tool() -> Tool:
@@ -290,6 +291,96 @@ def build_read_artifact_tool() -> Tool:
     )
 
 
+def build_record_operator_feedback_tool() -> Tool:
+    """Record a structured comment for the operator.
+
+    Records an :class:`AxonOperatorFeedbackEvent` on the active trace
+    so a human reviewing the run can see orchestrator-level friction
+    the model noticed. Whether the event came from mainline or a
+    specific delegate is inferable from temporal ordering against the
+    surrounding delegate-bracketing trace events.
+    """
+
+    async def fn(args: dict) -> str:
+        from rumil.orchestrators.axon.trace_events import AxonOperatorFeedbackEvent
+        from rumil.tracing.tracer import get_trace
+
+        # Touch the contextvar so wiring bugs (no ctx set) surface the
+        # same way they do for load_page / read_artifact.
+        get_direct_tool_ctx()
+        subject = str(args.get("subject", "")).strip()
+        detail = str(args.get("detail", "")).strip()
+        if not subject:
+            return "Error: record_operator_feedback requires `subject`."
+        if not detail:
+            return "Error: record_operator_feedback requires `detail`."
+        suggestion = str(args.get("suggestion", "") or "").strip()
+        severity = str(args.get("severity", "info")).strip() or "info"
+        if severity not in ("info", "warn", "blocker"):
+            return f"Error: severity {severity!r} not in (info, warn, blocker)."
+        trace = get_trace()
+        if trace is None:
+            log.warning("record_operator_feedback: no active trace; dropping event")
+            return "Error: no active trace; feedback not recorded."
+        await trace.record(
+            AxonOperatorFeedbackEvent(
+                subject=subject,
+                detail=detail,
+                suggestion=suggestion,
+                severity=severity,  # pyright: ignore[reportArgumentType]
+            )
+        )
+        return f"Recorded operator feedback ({severity}): {subject}"
+
+    return Tool(
+        name=RECORD_OPERATOR_FEEDBACK_TOOL_NAME,
+        description=(
+            "Record a short structured comment for the operator about "
+            "orchestrator-level friction — bad prompts, missing or "
+            "mis-named tools, schema mismatches, question-framing "
+            "issues — anything a human should see to improve the "
+            "setup. Use this for observations about the SYSTEM, not "
+            "for things you should figure out yourself (don't use it "
+            "to say 'I'd rather not do this' or 'this is hard'). "
+            "The event lands on the trace and the operator reviews "
+            "later; runs continue normally. Severity ladder: "
+            "`info` = nice-to-improve, `warn` = real friction worth "
+            "addressing, `blocker` = the setup made it impossible to "
+            "do the task well."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "subject": {
+                    "type": "string",
+                    "description": (
+                        "What this is about — name the specific thing "
+                        "(e.g. 'web_research system prompt', "
+                        "'DelegateConfig.tools enum', 'seed_page_ids 3 of 5')."
+                    ),
+                },
+                "detail": {
+                    "type": "string",
+                    "description": "What's off / what could improve. One short paragraph.",
+                },
+                "suggestion": {
+                    "type": "string",
+                    "description": "Optional concrete fix — what change you'd make.",
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": ["info", "warn", "blocker"],
+                    "description": "Severity. Defaults to `info`.",
+                },
+            },
+            "required": ["subject", "detail"],
+            "additionalProperties": False,
+        },
+        fn=fn,
+    )
+
+
 register_direct_tool(LOAD_PAGE_TOOL_NAME, build_load_page_tool)
 register_direct_tool(CREATE_PAGE_TOOL_NAME, build_create_page_tool)
 register_direct_tool(READ_ARTIFACT_TOOL_NAME, build_read_artifact_tool)
+register_direct_tool(RECORD_OPERATOR_FEEDBACK_TOOL_NAME, build_record_operator_feedback_tool)

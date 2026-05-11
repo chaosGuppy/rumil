@@ -761,6 +761,28 @@ class AxonAutoSeedFailedEvent(BaseModel):
     question_excerpt: str = ""
 
 
+class AxonOperatorFeedbackEvent(BaseModel):
+    """The agent recorded a structured comment for the operator.
+
+    Mainline or delegates fire ``record_operator_feedback`` to flag
+    orchestrator-level friction — bad prompts, missing tools, schema
+    mismatches, question-framing issues — that wouldn't surface from
+    the final answer alone. Not the agent saying "I can't do this";
+    these are observations a human should see to improve the setup.
+
+    Whether the event came from mainline or a specific delegate is
+    inferred from temporal ordering against the surrounding
+    delegate-bracketing trace events (AxonDelegateRequested /
+    AxonInnerLoopStarted / Completed).
+    """
+
+    event: Literal["axon_operator_feedback"] = "axon_operator_feedback"
+    subject: str
+    detail: str
+    suggestion: str = ""
+    severity: Literal["info", "warn", "blocker"] = "info"
+
+
 TraceEvent = Annotated[
     ContextBuiltEvent
     | MovesExecutedEvent
@@ -831,6 +853,7 @@ TraceEvent = Annotated[
     | AxonSideEffectAppliedEvent
     | AxonDelegateCompletedEvent
     | AxonFinalizedEvent
-    | AxonAutoSeedFailedEvent,
+    | AxonAutoSeedFailedEvent
+    | AxonOperatorFeedbackEvent,
     Field(discriminator="event"),
 ]

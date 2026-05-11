@@ -261,6 +261,125 @@ async def test_create_run_default_entrypoint_is_null(tmp_db):
     assert row.get("entrypoint") is None
 
 
+async def test_exchange_totals_for_run_empty(tmp_db):
+    """Runs with no exchanges return zeros, not nulls or errors."""
+    totals = await tmp_db.get_llm_exchange_totals_for_run(tmp_db.run_id)
+    assert totals == {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_create_tokens": 0,
+    }
+
+
+async def test_exchange_totals_for_run_sums_rows(tmp_db, scout_call):
+    """Tokens and cache counts sum across every exchange in the run, treating
+    null fields as zero."""
+    await tmp_db.save_llm_exchange(
+        call_id=scout_call.id,
+        phase="agent",
+        system_prompt="s",
+        user_message="u",
+        response_text="r",
+        tool_calls=[],
+        input_tokens=10,
+        output_tokens=5,
+        cache_creation_input_tokens=100,
+        cache_read_input_tokens=200,
+    )
+    await tmp_db.save_llm_exchange(
+        call_id=scout_call.id,
+        phase="agent",
+        system_prompt="s",
+        user_message="u",
+        response_text="r",
+        tool_calls=[],
+        input_tokens=2,
+        output_tokens=3,
+        cache_creation_input_tokens=None,
+        cache_read_input_tokens=50,
+    )
+    totals = await tmp_db.get_llm_exchange_totals_for_run(tmp_db.run_id)
+    assert totals == {
+        "input_tokens": 12,
+        "output_tokens": 8,
+        "cache_read_tokens": 250,
+        "cache_create_tokens": 100,
+    }
+
+
+async def test_exchange_totals_for_run_filters_by_run(tmp_db, scout_call):
+    """Exchanges from other runs must not leak into the totals."""
+    await tmp_db.save_llm_exchange(
+        call_id=scout_call.id,
+        phase="agent",
+        system_prompt="s",
+        user_message="u",
+        response_text="r",
+        tool_calls=[],
+        input_tokens=7,
+    )
+
+    other_run_id = str(uuid.uuid4())
+    other = await DB.create(run_id=other_run_id, project_id=str(tmp_db.project_id))
+    other.project_id = tmp_db.project_id
+    try:
+        await other.save_llm_exchange(
+            call_id=scout_call.id,
+            phase="agent",
+            system_prompt="s",
+            user_message="u",
+            response_text="r",
+            tool_calls=[],
+            input_tokens=999,
+        )
+        totals = await tmp_db.get_llm_exchange_totals_for_run(tmp_db.run_id)
+        assert totals["input_tokens"] == 7
+    finally:
+        await other._execute(
+            other.client.table("call_llm_exchanges").delete().eq("run_id", other_run_id)
+        )
+        await other.close()
+
+
+async def test_trace_tree_surfaces_run_token_totals(api_client, tmp_db, scout_call):
+    """Trace-tree should report run-level token + cache totals when exchanges exist."""
+    await tmp_db.save_llm_exchange(
+        call_id=scout_call.id,
+        phase="agent",
+        system_prompt="s",
+        user_message="u",
+        response_text="r",
+        tool_calls=[],
+        input_tokens=11,
+        output_tokens=22,
+        cache_creation_input_tokens=33,
+        cache_read_input_tokens=44,
+    )
+    await tmp_db.create_run(name="trace-token-totals", question_id=None, config={})
+
+    resp = await api_client.get(f"/api/runs/{tmp_db.run_id}/trace-tree")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["input_tokens"] == 11
+    assert body["output_tokens"] == 22
+    assert body["cache_create_tokens"] == 33
+    assert body["cache_read_tokens"] == 44
+
+
+async def test_trace_tree_no_exchanges_returns_null_token_totals(api_client, tmp_db):
+    """Runs with no exchanges get null token fields so the UI knows to omit the rollup."""
+    await tmp_db.create_run(name="no-exchanges", question_id=None, config={})
+
+    resp = await api_client.get(f"/api/runs/{tmp_db.run_id}/trace-tree")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["input_tokens"] is None
+    assert body["output_tokens"] is None
+    assert body["cache_read_tokens"] is None
+    assert body["cache_create_tokens"] is None
+
+
 async def test_list_run_call_experiments_filters_by_entrypoint(tmp_db):
     """Only rows with entrypoint='run_call' in this project should come back."""
     project_id = tmp_db.project_id

@@ -1145,6 +1145,45 @@ class DB:
             pages = [p for p in pages if p.is_active()]
         return pages
 
+    async def has_any_active_claim(self) -> bool:
+        """True iff this project contains at least one active claim page.
+
+        Used to gate scout types whose value depends on the workspace
+        already containing claims (e.g. ``scout_factchecks``, which has
+        nothing to verify in an empty workspace).
+        """
+        if not self.project_id:
+            return False
+        pages = await self.get_pages(page_type=PageType.CLAIM)
+        return bool(pages)
+
+    async def count_unsourced_high_credence_claims(
+        self,
+        credence_threshold: int = 6,
+    ) -> int:
+        """How many active claims in this project hit ``credence_threshold`` or
+        above without citing any source page.
+
+        Surfaces a "the workspace is walking around with N high-confidence
+        retrievals from training data" signal for the main-phase prioritizer.
+        Goes through ``get_pages`` + ``get_links_from_many`` so staged-run
+        visibility is preserved.
+        """
+        if not self.project_id:
+            return 0
+        pages = await self.get_pages(page_type=PageType.CLAIM)
+        high_credence = [
+            p for p in pages if p.credence is not None and p.credence >= credence_threshold
+        ]
+        if not high_credence:
+            return 0
+        links_by_source = await self.get_links_from_many([p.id for p in high_credence])
+        return sum(
+            1
+            for p in high_credence
+            if not any(l.link_type == LinkType.CITES for l in links_by_source.get(p.id, []))
+        )
+
     async def set_page_hidden(self, page_id: str, hidden: bool) -> None:
         """Flip a page's hidden flag, recording a mutation event.
 

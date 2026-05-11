@@ -476,11 +476,21 @@ class RunListItemOut(BaseModel):
     config: dict | None = None
     question_summary: str | None = None
     staged: bool = False
+    project_id: str | None = None
+    project_name: str | None = None
 
 
 class PaginatedPagesOut(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
     items: Sequence[Page]
+    total_count: int
+    offset: int
+    limit: int
+
+
+class PaginatedRunsOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    items: Sequence[RunListItemOut]
     total_count: int
     offset: int
     limit: int

@@ -3166,6 +3166,28 @@ export type PaginatedPagesOut = {
 };
 
 /**
+ * PaginatedRunsOut
+ */
+export type PaginatedRunsOut = {
+    /**
+     * Items
+     */
+    items: Array<RunListItemOut>;
+    /**
+     * Total Count
+     */
+    total_count: number;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Limit
+     */
+    limit: number;
+};
+
+/**
  * PhaseSkippedEventOut
  */
 export type PhaseSkippedEventOut = {
@@ -4133,6 +4155,14 @@ export type RunListItemOut = {
      * Staged
      */
     staged?: boolean;
+    /**
+     * Project Id
+     */
+    project_id?: string | null;
+    /**
+     * Project Name
+     */
+    project_name?: string | null;
 };
 
 /**
@@ -5664,6 +5694,46 @@ export type ListProjectRunsApiProjectsProjectIdRunsGetResponses = {
 };
 
 export type ListProjectRunsApiProjectsProjectIdRunsGetResponse = ListProjectRunsApiProjectsProjectIdRunsGetResponses[keyof ListProjectRunsApiProjectsProjectIdRunsGetResponses];
+
+export type ListRecentRunsApiAdminRunsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/admin/runs';
+};
+
+export type ListRecentRunsApiAdminRunsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListRecentRunsApiAdminRunsGetError = ListRecentRunsApiAdminRunsGetErrors[keyof ListRecentRunsApiAdminRunsGetErrors];
+
+export type ListRecentRunsApiAdminRunsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PaginatedRunsOut;
+};
+
+export type ListRecentRunsApiAdminRunsGetResponse = ListRecentRunsApiAdminRunsGetResponses[keyof ListRecentRunsApiAdminRunsGetResponses];
 
 export type ListPagesApiProjectsProjectIdPagesGetData = {
     body?: never;

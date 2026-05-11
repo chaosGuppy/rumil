@@ -330,7 +330,7 @@ class AxonOrchestrator:
             wall_clock_soft_s=inputs.wall_clock_soft_s,
         )
         budget_clock = BudgetClock(spec=budget_spec)
-        artifacts = ArtifactStore(seed=build_initial_artifacts(inputs))
+        artifacts = ArtifactStore(seed=build_initial_artifacts(inputs, self.config.artifact_seeds))
 
         # Scope a DirectToolCtx with the run's ArtifactStore so the
         # mainline read_artifact / load_page / create_page tool fns
@@ -1122,7 +1122,7 @@ class AxonOrchestrator:
             framing = self._render_continuation_framing(req, cfg, artifacts)
             seed_messages = [*spine_messages, {"role": "user", "content": framing}]
         else:
-            inner_system = self._resolve_system_prompt(cfg.system_prompt)
+            inner_system = self._resolve_system_prompt(cfg.system_prompt, artifacts)
             # Split cfg.tools into:
             # - finalize: filtered out (orchestrator builds it separately)
             # - known server tools (web_search): routed via server_tool_defs
@@ -1211,20 +1211,32 @@ class AxonOrchestrator:
             *inner_direct_tools,
         ]
 
-    def _resolve_system_prompt(self, spec: SystemPromptSpec | None) -> str:
+    def _resolve_system_prompt(
+        self,
+        spec: SystemPromptSpec | None,
+        artifacts: ArtifactStore,
+    ) -> str:
+        """Resolve a SystemPromptSpec to its actual text.
+
+        ``ref`` is now an artifact key — config-time prompts are seeded
+        as artifacts (via :class:`AxonConfig.artifact_seeds`) so the
+        spine and delegates use the same store. Mid-run delegates can
+        write a prompt-shaped artifact via ``write_artifact`` and a
+        sibling delegate's configure can reference its key.
+        """
         if spec is None:
             return ""
         if spec.inline is not None:
             return spec.inline
         if spec.ref is None:
             return ""
-        prompt = self.config.system_prompt_registry.get(spec.ref)
-        if prompt is None:
+        art = artifacts.get(spec.ref)
+        if art is None:
             raise _DelegateError(
-                f"system_prompt ref {spec.ref!r} not in registry "
-                f"(available: {sorted(self.config.system_prompt_registry)})"
+                f"system_prompt ref {spec.ref!r} not in artifact store "
+                f"(available: {artifacts.list_keys()})"
             )
-        return prompt
+        return art.text
 
     def _resolve_finalize_schema(self, spec: FinalizeSchemaSpec) -> dict[str, Any]:
         if spec.inline is not None:
@@ -1373,26 +1385,25 @@ class AxonOrchestrator:
     def _build_registry_summary(self) -> str:
         """Append registry contents to the spine system prompt.
 
-        Three surfaces the model needs to know about for valid
-        configure outputs:
+        Two surfaces the model needs to know about for valid configure
+        outputs:
 
-        - ``system_prompt_registry`` keys: usable as
-          ``system_prompt: {ref: "<name>"}`` in isolation delegates.
-        - ``finalize_schema_registry`` keys: usable as
-          ``finalize_schema: {ref: "<name>"}`` for any delegate.
         - Direct-tool names + known server tools: usable in
           ``cfg.tools``.
+        - ``finalize_schema_registry`` keys: usable as
+          ``finalize_schema: {ref: "<name>"}`` for any delegate.
 
-        Surfacing all three at run start (in cache — registry is
-        config-static) cuts down on configure-step retries because
-        the model picks valid names instead of inventing them.
+        System prompts (formerly a separate registry) live as artifact
+        seeds now — they appear in the spine's first user message
+        under "## Available artifacts" with their author-supplied
+        descriptions, and ``system_prompt: {ref: "<key>"}`` resolves
+        against the ArtifactStore.
         """
         from rumil.orchestrators.axon.tools import list_direct_tool_names
 
-        sys_keys = sorted(self.config.system_prompt_registry)
         fin_keys = sorted(self.config.finalize_schema_registry)
         tool_names = list_direct_tool_names()
-        if not sys_keys and not fin_keys and not tool_names:
+        if not fin_keys and not tool_names:
             return ""
         lines: list[str] = ["## Available registries (use in `configure` calls)"]
         if tool_names:
@@ -1407,16 +1418,11 @@ class AxonOrchestrator:
             )
             lines.append(
                 "(`finalize` is auto-added per delegate; you can list "
-                "it harmlessly. Names like `web_research` / "
-                "`workspace_lookup` are *system_prompt* refs below, "
-                "not tool names.)"
+                'it harmlessly. For `system_prompt: {ref: "..."}`, the '
+                "ref is an artifact key — see '## Available artifacts' "
+                "in your first user message for the keys that already "
+                "have prompt content.)"
             )
-        if sys_keys:
-            lines.append("")
-            lines.append('### System prompts (`system_prompt: {ref: "<name>"}`):')
-            for k in sys_keys:
-                summary = self._summarise_prompt(self.config.system_prompt_registry[k])
-                lines.append(f"- `{k}`: {summary}")
         if fin_keys:
             lines.append("")
             lines.append('### Finalize schemas (`finalize_schema: {ref: "<name>"}`):')
@@ -1425,25 +1431,6 @@ class AxonOrchestrator:
                 desc = self._summarise_finalize_schema(schema)
                 lines.append(f"- `{k}`: {desc}")
         return "\n".join(lines) + "\n"
-
-    @staticmethod
-    def _summarise_prompt(text: str) -> str:
-        """Extract a one-line summary from a prompt's first non-empty line.
-
-        Strips markdown headers ("# ", "## ") and quotes; clamps to 200
-        chars. Used for the registry summary in the spine system prompt
-        so the model has a quick read on what each registered prompt is
-        for without dumping its full body inline.
-        """
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            line = line.lstrip("#").strip().strip("\"'`")
-            if not line:
-                continue
-            return line[:200] + ("..." if len(line) > 200 else "")
-        return "(empty)"
 
     @staticmethod
     def _summarise_finalize_schema(schema: dict[str, Any]) -> str:

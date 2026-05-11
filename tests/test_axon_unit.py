@@ -487,12 +487,20 @@ def test_load_axon_config_relative_paths_resolved(tmp_path: Path):
                 "name": "research",
                 "main_model": "claude-haiku-4-5",
                 "main_system_prompt_path": "prompts/main.md",
-                "system_prompt_registry": {"web": "prompts/web.md"},
+                "artifact_seeds": {
+                    "web": {
+                        "path": "prompts/web.md",
+                        "description": "agent for web research",
+                    },
+                },
             }
         )
     )
     cfg = load_axon_config(config_yaml)
-    assert cfg.system_prompt_registry["web"] == "web research system"
+    seed = cfg.artifact_seeds["web"]
+    assert seed.text == "web research system"
+    assert seed.description == "agent for web research"
+    assert seed.render_inline is False
     resolved = Path(cfg.main_system_prompt_path)
     assert resolved.is_absolute()
     assert resolved.read_text() == "system prompt body"

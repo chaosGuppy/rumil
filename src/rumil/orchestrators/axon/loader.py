@@ -42,6 +42,7 @@ from typing import Any
 
 import yaml
 
+from rumil.orchestrators.axon.artifacts import ArtifactSeed
 from rumil.orchestrators.axon.config import AxonConfig
 
 log = logging.getLogger(__name__)
@@ -66,10 +67,11 @@ def load_axon_config(path: str | Path) -> AxonConfig:
 
     direct_tools = tuple(raw.get("direct_tools", ["load_page"]) or ())
 
-    system_prompt_registry: dict[str, str] = {}
-    for ref_name, rel_path in (raw.get("system_prompt_registry") or {}).items():
-        full = _resolve_path(config_dir, str(rel_path))
-        system_prompt_registry[str(ref_name)] = full.read_text(encoding="utf-8")
+    artifact_seeds = _parse_artifact_seeds(
+        raw.get("artifact_seeds") or {},
+        config_dir,
+        config_path,
+    )
 
     finalize_schema_registry: dict[str, dict[str, Any]] = {}
     for schema_name, schema in (raw.get("finalize_schema_registry") or {}).items():
@@ -96,10 +98,49 @@ def load_axon_config(path: str | Path) -> AxonConfig:
         enable_server_compaction=bool(raw.get("enable_server_compaction", True)),
         compaction_trigger_tokens=int(raw.get("compaction_trigger_tokens", 400_000)),
         compaction_instructions_path=compaction_path,
-        system_prompt_registry=system_prompt_registry,
+        artifact_seeds=artifact_seeds,
         finalize_schema_registry=finalize_schema_registry,
         direct_tools=direct_tools,
     )
+
+
+def _parse_artifact_seeds(
+    raw_seeds: dict,
+    config_dir: Path,
+    config_path: Path,
+) -> dict[str, ArtifactSeed]:
+    """Parse the YAML ``artifact_seeds`` block into ArtifactSeed instances.
+
+    Each entry is a mapping that supplies ``description`` plus exactly
+    one of ``path`` (file path, resolved relative to the config dir) or
+    ``text`` (inline body). ``render_inline`` defaults to False.
+    """
+    from rumil.orchestrators.axon.artifacts import ArtifactSeed
+
+    out: dict[str, ArtifactSeed] = {}
+    for key, raw_seed in raw_seeds.items():
+        if not isinstance(raw_seed, dict):
+            raise ValueError(
+                f"artifact_seeds entry {key!r} in {config_path} must be a mapping "
+                f"with `path` or `text` (got {type(raw_seed).__name__})"
+            )
+        path_val = raw_seed.get("path")
+        text_val = raw_seed.get("text")
+        if (path_val is None) == (text_val is None):
+            raise ValueError(
+                f"artifact_seeds entry {key!r} in {config_path} must set exactly "
+                "one of `path` or `text`"
+            )
+        if path_val is not None:
+            text = _resolve_path(config_dir, str(path_val)).read_text(encoding="utf-8")
+        else:
+            text = str(text_val)
+        out[str(key)] = ArtifactSeed(
+            text=text,
+            description=str(raw_seed.get("description", "")),
+            render_inline=bool(raw_seed.get("render_inline", False)),
+        )
+    return out
 
 
 def discover_configs(configs_dir: str | Path | None = None) -> dict[str, Path]:

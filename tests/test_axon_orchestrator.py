@@ -141,7 +141,12 @@ async def axon_config(tmp_path: Path):
                 "hard_max_rounds": 6,
                 "max_seed_pages": 2,
                 "direct_tools": ["load_page"],
-                "system_prompt_registry": {"web_research": "web.md"},
+                "artifact_seeds": {
+                    "web_research": {
+                        "path": "web.md",
+                        "description": "isolation prompt for a web-research delegate",
+                    },
+                },
                 "finalize_schema_registry": {
                     "freeform_text": {
                         "type": "object",

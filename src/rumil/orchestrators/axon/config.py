@@ -61,11 +61,22 @@ class AxonConfig:
     compaction_trigger_tokens: int = 400_000
     compaction_instructions_path: str | Path | None = None
 
-    # Registries — names → resolved content. Loaded from disk by the
-    # YAML loader. Populating these means delegates can reference them
-    # by ref-name without inlining text in every configure call (and
-    # also gets cache reuse across delegates that share a ref).
-    system_prompt_registry: Mapping[str, str] = field(default_factory=dict)
+    # Config-time artifact seeds. Loaded from YAML's `artifact_seeds`
+    # block (text inlined or read from a `path:`); folded into the
+    # run's ArtifactStore at run start with ``produced_by="input"``,
+    # alongside any :class:`OrchInputs.artifacts` from the caller.
+    # System prompts that delegates can reference via
+    # ``DelegateConfig.system_prompt = {ref: "<key>"}`` live here —
+    # the orchestrator resolves the ref against the ArtifactStore, so
+    # delegates created mid-run can also write prompt-shaped artifacts
+    # for siblings to use. ``render_inline`` defaults to False so the
+    # spine sees an announcement + description but not the full body
+    # until it calls ``read_artifact``.
+    artifact_seeds: Mapping[str, ArtifactSeed] = field(default_factory=dict)
+    # JSON schemas referenced by ``DelegateConfig.finalize_schema =
+    # {ref: "<name>"}``. Kept separate from artifacts because the
+    # consumer needs a dict, not text, and `output_format` on the
+    # inner loop's tool expects structured JSON Schema.
     finalize_schema_registry: Mapping[str, dict[str, Any]] = field(default_factory=dict)
 
     # Direct tool registry — names of tools (web_research, workspace_lookup,
@@ -113,22 +124,37 @@ class OrchResult:
     call_id: str
 
 
-def build_initial_artifacts(inputs: OrchInputs) -> dict[str, str | ArtifactSeed]:
-    """Combine caller-seeded artifacts with operating assumptions.
+def build_initial_artifacts(
+    inputs: OrchInputs,
+    config_seeds: Mapping[str, ArtifactSeed] | None = None,
+) -> dict[str, str | ArtifactSeed]:
+    """Combine config-time seeds, caller seeds, and operating assumptions.
 
-    Operating assumptions land at the reserved key
-    :data:`OPERATING_ASSUMPTIONS_KEY` as an
-    :class:`ArtifactSeed` rendered inline (since these are
-    constraints the spine must see immediately). Empty/whitespace-only
-    assumptions are not seeded. Raises if the caller's seed already
-    uses that reserved key.
+    Layering order (collision raises):
+
+    1. ``config_seeds`` — from :attr:`AxonConfig.artifact_seeds`,
+       including prompt-shaped seeds that delegates reference via
+       ``DelegateConfig.system_prompt = {ref: "<key>"}``.
+    2. ``inputs.artifacts`` — caller-runtime seeds.
+    3. ``operating_assumptions`` — landed at the reserved key
+       :data:`OPERATING_ASSUMPTIONS_KEY` as a render-inline ArtifactSeed.
+
+    Empty/whitespace-only assumptions are not seeded. Raises on any
+    key collision so silent shadowing can't happen.
     """
-    seed: dict[str, str | ArtifactSeed] = dict(inputs.artifacts)
+    seed: dict[str, str | ArtifactSeed] = {}
+    if config_seeds:
+        for k, v in config_seeds.items():
+            seed[k] = v
+    for k, v in inputs.artifacts.items():
+        if k in seed:
+            raise ValueError(f"OrchInputs.artifacts[{k!r}] collides with AxonConfig.artifact_seeds")
+        seed[k] = v
     if inputs.operating_assumptions.strip():
         if OPERATING_ASSUMPTIONS_KEY in seed:
             raise ValueError(
-                f"OrchInputs.artifacts already contains the reserved key "
-                f"{OPERATING_ASSUMPTIONS_KEY!r}; operating_assumptions cannot also be set."
+                f"reserved key {OPERATING_ASSUMPTIONS_KEY!r} already seeded; "
+                "operating_assumptions cannot also be set."
             )
         seed[OPERATING_ASSUMPTIONS_KEY] = ArtifactSeed(
             text=inputs.operating_assumptions.strip(),

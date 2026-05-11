@@ -1,9 +1,12 @@
 # Default axon research config — minimal mainline surface.
 #
-# The spine has 4 tools: delegate, configure, finalize, load_page.
-# Multi-round work (web research, workspace lookup, etc.) lives inside
-# delegates whose configure step pulls a system prompt from the registry
-# and assembles the right tool list.
+# Mainline has 4 tools: delegate, configure, finalize, load_page,
+# read_artifact. Multi-round work (web research, workspace lookup,
+# etc.) lives inside delegates whose configure step picks a system
+# prompt by referencing an artifact key and assembles the right
+# tool list. Config-time prompts are seeded as artifacts below so
+# delegates can ref them via `system_prompt: {ref: "<key>"}`, and
+# mainline can read them on demand via read_artifact.
 
 name: research
 main_model: claude-opus-4-7
@@ -21,9 +24,25 @@ direct_tools:
   - load_page
   - read_artifact
 
-system_prompt_registry:
-  web_research: ../prompts/web_research_sys.md
-  workspace_lookup: ../prompts/workspace_lookup_sys.md
+# Config-time artifact seeds. Each entry is either text-inline or a
+# path to load at config-load time. Prompts default to render_inline:
+# false so the spine sees only the announcement + description in its
+# first user message; the body is fetched via read_artifact OR pulled
+# into a delegate via system_prompt: {ref: "<key>"}.
+artifact_seeds:
+  web_research:
+    path: ../prompts/web_research_sys.md
+    description: >
+      Isolation-mode prompt for a delegate that uses the web_search
+      server tool + URL scraping. Pair with tools: [web_search,
+      load_page] (plus create_page if the delegate should persist
+      sources or syntheses) and a finalize_schema like research_synthesis.
+  workspace_lookup:
+    path: ../prompts/workspace_lookup_sys.md
+    description: >
+      Isolation-mode prompt for a delegate that searches the workspace
+      via embedding similarity to surface relevant page ids. Pair with
+      tools: [load_page] and a finalize_schema like research_synthesis.
 
 finalize_schema_registry:
   # A freeform string answer — most general; what mainline finalize

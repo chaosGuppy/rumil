@@ -17,7 +17,6 @@ main_system_prompt_path: ../prompts/judge_pair_spine.md
 
 # Single mainline turn under normal use.
 hard_max_rounds: 4
-max_parallel_delegates_per_turn: 1
 max_seed_pages: 0
 
 # Versus is blind / scoped to the pair; do NOT auto-seed by question.

@@ -13,7 +13,6 @@ main_model: claude-opus-4-7
 main_system_prompt_path: ../prompts/spine_main.md
 compaction_instructions_path: ../prompts/compaction_default.md
 
-max_parallel_delegates_per_turn: 4
 hard_max_rounds: 50
 max_seed_pages: 20
 

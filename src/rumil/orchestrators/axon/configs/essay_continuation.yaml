@@ -16,7 +16,6 @@ main_system_prompt_path: ../prompts/essay_continuation_spine.md
 # Single mainline turn under normal use; cap rounds tight to surface
 # misbehavior rather than burn budget on retries.
 hard_max_rounds: 4
-max_parallel_delegates_per_turn: 1
 max_seed_pages: 0
 
 # Versus is blind / scoped to the prefix; never auto-seed workspace

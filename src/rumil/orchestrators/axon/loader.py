@@ -12,7 +12,6 @@ Schema:
 name: research
 main_model: claude-opus-4-7
 main_system_prompt_path: ../prompts/spine_main.md
-max_parallel_delegates_per_turn: 4   # optional, default 4
 hard_max_rounds: 50                  # optional, default 50
 max_seed_pages: 20                   # optional, default 20
 enable_server_compaction: true       # optional, default true
@@ -90,7 +89,6 @@ def load_axon_config(path: str | Path) -> AxonConfig:
         name=name,
         main_model=main_model,
         main_system_prompt_path=main_system_prompt_path,
-        max_parallel_delegates_per_turn=int(raw.get("max_parallel_delegates_per_turn", 4)),
         hard_max_rounds=int(raw.get("hard_max_rounds", 50)),
         max_seed_pages=int(raw.get("max_seed_pages", 20)),
         auto_seed_from_question=bool(raw.get("auto_seed_from_question", True)),

@@ -528,7 +528,6 @@ def test_axon_config_dataclass_defaults():
         main_model="claude-haiku-4-5",
         main_system_prompt_path="x.md",
     )
-    assert cfg.max_parallel_delegates_per_turn == 4
     assert cfg.hard_max_rounds == 50
     assert cfg.max_seed_pages == 20
     assert cfg.direct_tools == ()

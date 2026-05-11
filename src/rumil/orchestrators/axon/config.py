@@ -36,7 +36,6 @@ class AxonConfig:
     name: str
     main_model: str
     main_system_prompt_path: str | Path
-    max_parallel_delegates_per_turn: int = 4
     hard_max_rounds: int = 50
     # Cap on how many seed_page_ids the spine sees in its first user
     # message. Excess IDs from OrchInputs.seed_page_ids are dropped

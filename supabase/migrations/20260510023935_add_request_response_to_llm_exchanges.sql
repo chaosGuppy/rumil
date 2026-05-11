@@ -8,8 +8,7 @@
 -- provider_request_id is the request id assigned by the LLM provider
 -- (Anthropic returns this in response headers as ``request-id`` and
 -- exposes it via ``stream.request_id`` / ``response._request_id``).
--- Stored top-level so it's indexable for support-ticket lookups
--- without parsing JSONB.
+-- Stored top-level so support-ticket lookups don't have to parse JSONB.
 
 ALTER TABLE public.call_llm_exchanges
     ADD COLUMN request JSONB,

@@ -2,8 +2,6 @@
 preconditions, end-to-end LLM call, and CLI wiring.
 """
 
-from __future__ import annotations
-
 import json
 import subprocess
 import uuid

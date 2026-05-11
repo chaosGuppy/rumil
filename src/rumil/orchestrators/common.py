@@ -355,7 +355,7 @@ async def score_items_sequentially(
 class PrioritizationResult:
     dispatch_sequences: Sequence[Sequence[Dispatch]]
     call_id: str | None = None
-    children: Sequence[tuple["BaseOrchestrator", str]] = ()
+    children: Sequence[tuple[BaseOrchestrator, str]] = ()
 
 
 async def create_root_question(

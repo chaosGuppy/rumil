@@ -7,7 +7,7 @@ Composite response types and trace event envelope types. Core models
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,11 +15,21 @@ from rumil.models import Page, PageLink, _all_fields_required
 from rumil.tracing.trace_events import (
     AffectedPagesIdentifiedEvent,
     AgentStartedEvent,
+    ArbitrationEvent,
+    ArbitrationStartedEvent,
     AutocompactEvent,
+    BriefAuditEvent,
+    BriefAuditStartedEvent,
     ClaimReassessedEvent,
     ContextBuiltEvent,
+    CritiqueRoundEvent,
+    CritiqueStartedEvent,
     DispatchesPlannedEvent,
     DispatchExecutedEvent,
+    DraftEvent,
+    DraftStartedEvent,
+    EditEvent,
+    EditStartedEvent,
     ErrorEvent,
     EvaluationCompleteEvent,
     ExperimentalScoringCompletedEvent,
@@ -31,18 +41,28 @@ from rumil.tracing.trace_events import (
     LLMExchangeEvent,
     LoadPageEvent,
     MovesExecutedEvent,
+    PageRef,
     PhaseSkippedEvent,
+    PlannerEvent,
+    PlannerStartedEvent,
     QuestionDedupeEvent,
+    ReadStartedEvent,
     ReassessTriggeredEvent,
+    RecurseFailedEvent,
+    ReflectStartedEvent,
     RenderQuestionSubgraphEvent,
     ReviewCompleteEvent,
+    RoundStartedEvent,
     ScoringCompletedEvent,
+    ScoutPassEvent,
+    ScoutPassStartedEvent,
     SubagentCompletedEvent,
     SubagentStartedEvent,
     ToolCallEvent,
     UpdatePlanCreatedEvent,
     UpdateSubgraphComputedEvent,
     UpdateViewPhaseCompletedEvent,
+    VerdictStartedEvent,
     ViewCreatedEvent,
     WarningEvent,
     WebResearchCompleteEvent,
@@ -100,6 +120,10 @@ class WarningEventOut(WarningEvent, _TraceEnvelopeMixin):
 
 
 class ErrorEventOut(ErrorEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class RecurseFailedEventOut(RecurseFailedEvent, _TraceEnvelopeMixin):
     pass
 
 
@@ -211,6 +235,78 @@ class ImpactFilterEventOut(ImpactFilterEvent, _TraceEnvelopeMixin):
     pass
 
 
+class RoundStartedEventOut(RoundStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class DraftStartedEventOut(DraftStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CritiqueStartedEventOut(CritiqueStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EditStartedEventOut(EditStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ReadStartedEventOut(ReadStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ReflectStartedEventOut(ReflectStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class VerdictStartedEventOut(VerdictStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class DraftEventOut(DraftEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class CritiqueRoundEventOut(CritiqueRoundEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class EditEventOut(EditEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class PlannerStartedEventOut(PlannerStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class PlannerEventOut(PlannerEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ArbitrationStartedEventOut(ArbitrationStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ArbitrationEventOut(ArbitrationEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class BriefAuditStartedEventOut(BriefAuditStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class BriefAuditEventOut(BriefAuditEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ScoutPassStartedEventOut(ScoutPassStartedEvent, _TraceEnvelopeMixin):
+    pass
+
+
+class ScoutPassEventOut(ScoutPassEvent, _TraceEnvelopeMixin):
+    pass
+
+
 TraceEventOut = Annotated[
     ContextBuiltEventOut
     | MovesExecutedEventOut
@@ -218,6 +314,7 @@ TraceEventOut = Annotated[
     | LLMExchangeEventOut
     | WarningEventOut
     | ErrorEventOut
+    | RecurseFailedEventOut
     | ScoringCompletedEventOut
     | ExperimentalScoringCompletedEventOut
     | DispatchesPlannedEventOut
@@ -244,7 +341,25 @@ TraceEventOut = Annotated[
     | GlobalPhaseCompletedEventOut
     | UpdateViewPhaseCompletedEventOut
     | QuestionDedupeEventOut
-    | ImpactFilterEventOut,
+    | ImpactFilterEventOut
+    | RoundStartedEventOut
+    | DraftStartedEventOut
+    | CritiqueStartedEventOut
+    | EditStartedEventOut
+    | ReadStartedEventOut
+    | ReflectStartedEventOut
+    | VerdictStartedEventOut
+    | DraftEventOut
+    | CritiqueRoundEventOut
+    | EditEventOut
+    | PlannerStartedEventOut
+    | PlannerEventOut
+    | ArbitrationStartedEventOut
+    | ArbitrationEventOut
+    | BriefAuditStartedEventOut
+    | BriefAuditEventOut
+    | ScoutPassStartedEventOut
+    | ScoutPassEventOut,
     Field(discriminator="event"),
 ]
 
@@ -260,6 +375,32 @@ class LLMExchangeSummaryOut(BaseModel):
     created_at: datetime
 
 
+class ThinkingBlockOut(BaseModel):
+    """One summarized chain-of-thought block from an Anthropic response."""
+
+    content: str
+    signature: str | None = None
+
+
+class RedactedThinkingBlockOut(BaseModel):
+    """Anthropic-encrypted thinking block (content unavailable to clients)."""
+
+    data: str
+
+
+class ThinkingBlocksOut(BaseModel):
+    """Captured thinking content for an LLM exchange.
+
+    Populated when the model returned ``ThinkingBlock`` /
+    ``RedactedThinkingBlock`` content. Null on the parent ``LLMExchangeOut``
+    when the model didn't think (e.g. Haiku) — clients should treat the
+    field as optional.
+    """
+
+    thinking: list[ThinkingBlockOut] = []
+    redacted_thinking: list[RedactedThinkingBlockOut] = []
+
+
 class LLMExchangeOut(BaseModel):
     id: str
     call_id: str
@@ -270,10 +411,13 @@ class LLMExchangeOut(BaseModel):
     user_messages: list[dict] | None = None
     response_text: str | None
     tool_calls: list[dict]
+    available_tools: list[dict] | None = None
+    response_schema: dict | None = None
     input_tokens: int | None
     output_tokens: int | None
     duration_ms: int | None
     error: str | None
+    thinking_blocks: ThinkingBlocksOut | None = None
     created_at: datetime
 
 
@@ -308,6 +452,13 @@ class RunTraceTreeOut(BaseModel):
     question: Page | None
     calls: list[CallNodeOut]
     cost_usd: float | None = None
+    # Run-level token + cache rollup summed across every llm exchange on
+    # the run. Surfaced next to cost in the trace UI so cache reuse is
+    # visible at a glance. ``None`` when the run has no exchanges yet.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_create_tokens: int | None = None
     staged: bool = False
     config: dict = {}
 
@@ -325,11 +476,21 @@ class RunListItemOut(BaseModel):
     config: dict | None = None
     question_summary: str | None = None
     staged: bool = False
+    project_id: str | None = None
+    project_name: str | None = None
 
 
 class PaginatedPagesOut(BaseModel):
     model_config = ConfigDict(json_schema_extra=_all_fields_required)
     items: Sequence[Page]
+    total_count: int
+    offset: int
+    limit: int
+
+
+class PaginatedRunsOut(BaseModel):
+    model_config = ConfigDict(json_schema_extra=_all_fields_required)
+    items: Sequence[RunListItemOut]
     total_count: int
     offset: int
     limit: int
@@ -375,6 +536,56 @@ class ABEvalReportListItemOut(BaseModel):
     overall_assessment_preview: str = ""
     preferences: list[ABEvalDimensionSummaryOut]
     created_at: str
+
+
+class AbEvalExperimentOut(ABEvalReportListItemOut):
+    kind: Literal["ab_eval"] = "ab_eval"
+
+
+class RunCallExperimentOut(BaseModel):
+    kind: Literal["run_call"] = "run_call"
+    run_id: str
+    name: str
+    question_id: str = ""
+    question_headline: str = ""
+    config_summary: dict = {}
+    staged: bool = False
+    created_at: str
+
+
+class RunPrioExperimentOut(BaseModel):
+    kind: Literal["run_prio"] = "run_prio"
+    run_id: str
+    name: str
+    question_id: str = ""
+    question_headline: str = ""
+    config_summary: dict = {}
+    staged: bool = False
+    created_at: str
+
+
+class ContextEvalExperimentOut(BaseModel):
+    """One context-builder comparison (one gold arm paired with a candidate).
+
+    Surfaced in the experiments feed alongside ab_eval and run_call rows.
+    Links to the side-by-side diff page at
+    /context-evals/{gold_run_id}/vs/{candidate_run_id}.
+    """
+
+    kind: Literal["context_eval"] = "context_eval"
+    gold_run_id: str
+    candidate_run_id: str
+    question_id: str = ""
+    question_headline: str = ""
+    gold_builder: str = ""
+    candidate_builder: str = ""
+    created_at: str
+
+
+ExperimentListItemOut = Annotated[
+    AbEvalExperimentOut | RunCallExperimentOut | RunPrioExperimentOut | ContextEvalExperimentOut,
+    Field(discriminator="kind"),
+]
 
 
 class RealtimeConfigOut(BaseModel):
@@ -472,3 +683,31 @@ class PageLoadStatsOut(BaseModel):
     total: int
     total_unique: int
     question_headlines: dict[str, str]
+
+
+class ContextEvalArmOut(BaseModel):
+    """One arm (gold or candidate) of a context-builder eval."""
+
+    run_id: str
+    call_id: str
+    builder_name: str
+    context_built: ContextBuiltEventOut
+    cost_usd: float | None = None
+    config: dict = {}
+
+
+class ContextEvalDiffOut(BaseModel):
+    """Side-by-side diff of two context-builder runs on the same question.
+
+    pages_only_in_gold/pages_only_in_candidate/pages_in_both are the result
+    of diffing the union of working_context, preloaded, and scope-linked
+    pages from each arm's context_built event. Headlines are carried via
+    PageRef so the UI can render links without an extra lookup.
+    """
+
+    question: Page | None = None
+    gold: ContextEvalArmOut
+    candidate: ContextEvalArmOut
+    pages_only_in_gold: list[PageRef] = []
+    pages_only_in_candidate: list[PageRef] = []
+    pages_in_both: list[PageRef] = []

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Project } from "@/api";
 import { API_BASE, serverFetch } from "@/lib/api-base";
+import { isAdmin as getIsAdmin } from "@/lib/current-user";
 
 async function getProjects(): Promise<Project[]> {
   const res = await serverFetch(`${API_BASE}/api/projects`, {
@@ -34,7 +35,7 @@ function relativeTime(iso: string): string {
 }
 
 export default async function Home() {
-  const projects = await getProjects();
+  const [projects, isAdmin] = await Promise.all([getProjects(), getIsAdmin()]);
 
   return (
     <main className="workspace-index">
@@ -180,10 +181,12 @@ export default async function Home() {
           <h1>Rumil</h1>
           <div className="subtitle">workspaces</div>
         </div>
-        <nav className="ws-nav">
-          <Link className="ws-nav-link" href="/jobs">jobs</Link>
-          <Link className="ws-nav-link" href="/ab-evals">a/b evals</Link>
-        </nav>
+        {isAdmin && (
+          <nav className="ws-nav">
+            <Link className="ws-nav-link" href="/jobs">jobs</Link>
+            <Link className="ws-nav-link" href="/experiments">experiments</Link>
+          </nav>
+        )}
       </div>
 
       {projects.length === 0 ? (

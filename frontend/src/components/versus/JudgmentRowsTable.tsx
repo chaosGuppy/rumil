@@ -5,6 +5,15 @@ import Link from "next/link";
 import type { JudgmentRow } from "@/api/types.gen";
 import { JudgmentDetailPanel } from "./JudgmentDetailPanel";
 
+/** Workflow segment from a compound judge_model display string, e.g.
+ *  `judge_pair/two_phase:claude-opus-4-7:c12345678` → "two_phase". Returns
+ *  null when the string doesn't match the new shape (legacy rows). */
+function workflowOfJudge(judgeModel: string | null | undefined): string | null {
+  if (!judgeModel) return null;
+  const m = judgeModel.match(/^[^/]+\/([^:]+):/);
+  return m ? m[1] : null;
+}
+
 export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -57,7 +66,21 @@ export function JudgmentRowsTable({ rows }: { rows: JudgmentRow[] }) {
                 <td className="versus-mono">{r.display_first}</td>
                 <td className="versus-mono">{r.display_second}</td>
                 <td>{r.criterion}</td>
-                <td className="versus-mono" title={r.judge_model}>{r.judge_model_id}</td>
+                <td className="versus-mono" title={r.judge_model}>
+                  {r.judge_model_id}
+                  {(() => {
+                    const wf = workflowOfJudge(r.judge_model);
+                    return wf ? (
+                      <span
+                        className="versus-pill"
+                        style={{ fontSize: 10, marginLeft: 6 }}
+                        title={`workflow: ${wf}`}
+                      >
+                        {wf}
+                      </span>
+                    ) : null;
+                  })()}
+                </td>
                 <td>{r.verdict}</td>
                 <td className="versus-mono">{r.winner}</td>
                 <td style={{ fontSize: 11 }}>{r.preference_label ?? ""}</td>

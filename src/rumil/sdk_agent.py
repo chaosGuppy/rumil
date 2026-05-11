@@ -25,6 +25,7 @@ from claude_agent_sdk import (
 from claude_agent_sdk.types import HookEvent, SyncHookJSONOutput
 
 from rumil.database import DB
+from rumil.model_config import ModelConfig
 from rumil.models import Call, CallStatus, CallType
 from rumil.pricing import compute_cost
 from rumil.settings import get_settings
@@ -62,6 +63,12 @@ class SdkAgentConfig:
     agents: dict[str, AgentDefinition] = field(default_factory=dict)
     extra_hooks: dict[HookEvent, list[HookMatcher]] = field(default_factory=dict)
     output_format: dict[str, Any] | None = None
+    # Optional ModelConfig override. When set, the SDK agent applies the
+    # caller's thinking / effort / max_thinking_tokens choices instead of
+    # falling back to the SDK's per-model defaults. Versus passes the
+    # registry-derived ModelConfig here so bridge wire behavior matches
+    # what versus's config.yaml says.
+    model_config: ModelConfig | None = None
 
 
 @dataclass
@@ -314,6 +321,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                         round_num=turn_num,
                         cache_creation_input_tokens=turn.cache_creation_input_tokens or None,
                         cache_read_input_tokens=turn.cache_read_input_tokens or None,
+                        model=settings.model,
                     )
                     await child_trace.record(
                         LLMExchangeEvent(
@@ -425,17 +433,30 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
     for hook_type, matchers in config.extra_hooks.items():
         hooks.setdefault(hook_type, []).extend(matchers)
 
-    options = ClaudeAgentOptions(
-        system_prompt=config.system_prompt,
-        mcp_servers={config.server_name: server},
-        allowed_tools=allowed,
-        disallowed_tools=list(config.disallowed_tools),
-        agents=config.agents,
-        hooks=hooks,
-        max_turns=settings.sdk_agent_max_turns,
-        model=settings.model,
-        output_format=config.output_format,
-    )
+    sdk_options: dict[str, Any] = {
+        "system_prompt": config.system_prompt,
+        "mcp_servers": {config.server_name: server},
+        "allowed_tools": allowed,
+        "disallowed_tools": list(config.disallowed_tools),
+        "agents": config.agents,
+        "hooks": hooks,
+        "max_turns": settings.sdk_agent_max_turns,
+        "model": settings.model,
+        "output_format": config.output_format,
+    }
+    # Versus / other callers can pin thinking, effort, max-thinking-tokens
+    # via a ModelConfig override. ClaudeAgentOptions exposes the fields
+    # natively (claude_agent_sdk version 2025-11+); pass them through only
+    # when set so older versions or default behavior aren't disturbed.
+    if config.model_config is not None:
+        mc = config.model_config
+        if mc.thinking is not None:
+            sdk_options["thinking"] = dict(mc.thinking)
+        if mc.effort is not None:
+            sdk_options["effort"] = mc.effort
+        if mc.max_thinking_tokens is not None:
+            sdk_options["max_thinking_tokens"] = mc.max_thinking_tokens
+    options = ClaudeAgentOptions(**sdk_options)
 
     await config.trace.record(
         AgentStartedEvent(
@@ -456,9 +477,14 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                 text_parts = [
                     block.text for block in message.content if isinstance(block, TextBlock)
                 ]
-                thinking_parts = [
-                    block.thinking for block in message.content if isinstance(block, ThinkingBlock)
+                thinking_blocks = [
+                    {"content": block.thinking, "signature": block.signature}
+                    for block in message.content
+                    if isinstance(block, ThinkingBlock)
                 ]
+                thinking_payload: dict | None = (
+                    {"thinking": thinking_blocks} if thinking_blocks else None
+                )
                 tool_uses = [
                     {"tool": block.name, "input": block.input}
                     for block in message.content
@@ -509,6 +535,8 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                             round_num=turn_counter,
                             cache_creation_input_tokens=cache_creation,
                             cache_read_input_tokens=cache_read,
+                            model=settings.model,
+                            thinking_blocks=thinking_payload,
                         )
                         await config.trace.record(
                             LLMExchangeEvent(
@@ -520,7 +548,7 @@ async def run_sdk_agent(config: SdkAgentConfig) -> SdkAgentResult:
                                 cache_creation_input_tokens=cache_creation,
                                 cache_read_input_tokens=cache_read,
                                 cost_usd=cost_usd,
-                                has_thinking=bool(thinking_parts),
+                                has_thinking=thinking_payload is not None,
                                 tool_uses=tool_uses or None,
                             )
                         )

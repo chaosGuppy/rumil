@@ -43,34 +43,20 @@ prefix_variants:
 
 completion:
   length_tolerance: 0.10 # target = original remainder word count, allow +/- this fraction
-  # Each entry is one generation model. paraphrase=true also runs the model
-  # against the paraphrase axis (paraphrasing.enabled gates that globally).
+  # Selects which models run completions and which also produce paraphrases.
+  # Per-model sampling / thinking / effort live under `models:` below — this
+  # list is just identity + the paraphrase-axis toggle.
   models:
     - id: google/gemini-3-flash-preview
-      temperature: 0
-      max_tokens: 32000
       paraphrase: true
     - id: openai/gpt-5.4-mini
-      temperature: 0
-      max_tokens: 32000
       paraphrase: true
     - id: openai/gpt-5.4
-      temperature: 0
-      max_tokens: 64000    # reasoning model: reasoning tokens count against this
       paraphrase: true
     - id: anthropic/claude-sonnet-4-6
-      temperature: 0
-      max_tokens: 32000
     - id: anthropic/claude-opus-4-7
-      temperature: 0
-      max_tokens: 32000    # opus 4.7 deprecates explicit temperature; complete.py
-                           # drops it (and top_p) when routing direct to Anthropic
     - id: anthropic/claude-haiku-4-5
-      temperature: 0
-      max_tokens: 32000
     - id: google/gemini-3.1-pro-preview
-      temperature: 0
-      max_tokens: 32000
 
 paraphrasing:
   enabled: true
@@ -94,6 +80,70 @@ judging:
     - general_quality
   include_human_as_contestant: true
   max_tokens: 64000           # reasoning judges (gpt-5.4) can chew through tokens
+
+# Per-model effective config — what versus actually sends on the wire.
+# Source of truth for sampling, thinking block, effort level. Editing
+# any entry here forks model_config_hash on subsequent rows; previous
+# data stays valid as the prior config. Every model used by
+# completion.models or judging.models must have an entry below.
+#
+# Sampling notes:
+# - Anthropic models running adaptive thinking require temperature=null
+#   (Anthropic API rejects explicit temp when thinking is on).
+# - Opus 4.7 deprecates the temperature param entirely.
+#
+# Thinking + effort:
+# - Anthropic Opus 4.7 / 4.6, Sonnet 4.6 currently get adaptive thinking
+#   + effort high/xhigh. Haiku and older Sonnet don't support either.
+# - OpenRouter-routed models (gemini, gpt) don't use these blocks.
+models:
+  google/gemini-3-flash-preview:
+    sampling: { temperature: 0, max_tokens: 32000 }
+    thinking: null
+    effort: null
+  openai/gpt-5.4-mini:
+    sampling: { temperature: 0, max_tokens: 32000 }
+    thinking: null
+    effort: null
+  openai/gpt-5.4:
+    sampling: { temperature: 0, max_tokens: 64000 }   # reasoning model — extra headroom
+    thinking: null
+    effort: null
+  anthropic/claude-haiku-4-5:
+    sampling: { temperature: 0, max_tokens: 32000 }
+    thinking: null
+    effort: null
+  anthropic/claude-sonnet-4-6:
+    sampling: { temperature: null, max_tokens: 32000 }
+    thinking: { type: adaptive }
+    effort: high
+  anthropic/claude-opus-4-7:
+    # 64k headroom: adaptive xhigh thinking ate ~24k on 10k-word
+    # forethought continuations, truncating output mid-clause at the
+    # old 32k cap. 64k is the Anthropic max for Opus 4.7 and leaves
+    # room for both deep thinking and full essay-length output.
+    sampling: { temperature: null, max_tokens: 64000 }
+    thinking: { type: adaptive, display: summarized }
+    effort: xhigh
+  google/gemini-3.1-pro-preview:
+    sampling: { temperature: 0, max_tokens: 32000 }
+    thinking: null
+    effort: null
+  # Bare-claude judge ids (route_judge_model strips anthropic/ prefix
+  # from the equivalent above; included separately so judging.models
+  # entries match by exact key).
+  claude-haiku-4-5:
+    sampling: { temperature: 0, max_tokens: 32000 }
+    thinking: null
+    effort: null
+  claude-sonnet-4-6:
+    sampling: { temperature: null, max_tokens: 32000 }
+    thinking: { type: adaptive }
+    effort: high
+  claude-opus-4-7:
+    sampling: { temperature: null, max_tokens: 32000 }
+    thinking: { type: adaptive, display: summarized }
+    effort: xhigh
 
 storage:
   # Completions and judgments live in versus_texts / versus_judgments

@@ -14,8 +14,6 @@ Run once against your target Supabase, paste the printed UUID into
     uv run python scripts/create_cli_service_account.py --prod     # prod
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import secrets

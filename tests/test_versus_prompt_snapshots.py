@@ -20,8 +20,6 @@ bump alongside the edit. Regenerate pins below by running:
 and pasting the output into ``EXPECTED_HASHES`` below.
 """
 
-from __future__ import annotations
-
 import hashlib
 import pathlib
 
@@ -57,6 +55,7 @@ EXPECTED_HASHES = {
     "versus-general-quality.md": "194009cfe986eccd",
     "versus-grounding.md": "4a944364a2afa1d9",
     "versus-judge-shell.md": "0ef2d71735151ad6",
+    "versus-would-recommend.md": "594eb1c4e3d1b1a0",
 }
 
 

@@ -11,7 +11,7 @@ orchestrator Jobs in the cluster. See `rumil.api.jobs`.
 import logging
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,11 +23,16 @@ from rumil.api.jobs import router as jobs_router
 from rumil.api.schemas import (
     ABEvalDimensionOut,
     ABEvalDimensionSummaryOut,
-    ABEvalReportListItemOut,
+    AbEvalExperimentOut,
     ABEvalReportOut,
     AuthUserOut,
     CallNodeOut,
     CallSummary,
+    ContextBuiltEventOut,
+    ContextEvalArmOut,
+    ContextEvalDiffOut,
+    ContextEvalExperimentOut,
+    ExperimentListItemOut,
     LinkedPageOut,
     LLMExchangeOut,
     LLMExchangeSummaryOut,
@@ -36,19 +41,23 @@ from rumil.api.schemas import (
     PageLoadEventOut,
     PageLoadStatsOut,
     PaginatedPagesOut,
+    PaginatedRunsOut,
     PrioritizationCandidateOut,
     ProjectStatsOut,
     QuestionStatsOut,
     RealtimeConfigOut,
+    RunCallExperimentOut,
     RunListItemOut,
+    RunPrioExperimentOut,
     RunSummaryOut,
     RunTraceTreeOut,
     TraceEventOut,
 )
 from rumil.api.versus_router import router as versus_router
 from rumil.database import DB, _row_to_call, _rows
-from rumil.models import Call, Page, PageLink, PageType, Project, Workspace
+from rumil.models import Call, CallType, Page, PageLink, PageType, Project, Workspace
 from rumil.settings import get_settings
+from rumil.tracing.trace_events import PageRef
 
 log = logging.getLogger(__name__)
 _trace_event_adapter = TypeAdapter(TraceEventOut)
@@ -212,6 +221,18 @@ async def list_project_runs(
     db: DB = Depends(_get_db),
 ):
     return await db.list_runs_for_project(project_id)
+
+
+@app.get("/api/admin/runs", response_model=PaginatedRunsOut)
+async def list_recent_runs(
+    offset: int = 0,
+    limit: int = 20,
+    _admin: AuthUser = Depends(require_admin),
+    db: DB = Depends(_get_admin_db),
+):
+    rows, total = await db.list_recent_runs(offset=offset, limit=limit)
+    items = [RunListItemOut(**r) for r in rows]
+    return PaginatedRunsOut(items=items, total_count=total, offset=offset, limit=limit)
 
 
 @app.get("/api/projects/{project_id}/pages", response_model=PaginatedPagesOut)
@@ -511,11 +532,17 @@ async def get_run_trace_tree(
             )
         )
     total_cost = sum(c.cost_usd or 0 for c in calls)
+    totals = await read_db.get_llm_exchange_totals_for_run(run_id)
+    has_exchanges = any(totals.values())
     return RunTraceTreeOut(
         run_id=run_id,
         question=question_page,
         calls=nodes,
         cost_usd=total_cost if total_cost > 0 else None,
+        input_tokens=totals["input_tokens"] if has_exchanges else None,
+        output_tokens=totals["output_tokens"] if has_exchanges else None,
+        cache_read_tokens=totals["cache_read_tokens"] if has_exchanges else None,
+        cache_create_tokens=totals["cache_create_tokens"] if has_exchanges else None,
         staged=is_staged,
         config=run_config,
     )
@@ -531,30 +558,58 @@ async def get_call_events(
     return await _parse_trace_events(db, call_id)
 
 
+_RUN_CALL_CONFIG_KEYS = ("model", "assess_call_variant", "available_moves")
+
+
+def _config_summary(config: dict | None) -> dict:
+    if not config:
+        return {}
+    return {k: config[k] for k in _RUN_CALL_CONFIG_KEYS if k in config}
+
+
 @app.get(
-    "/api/ab-evals",
-    response_model=list[ABEvalReportListItemOut],
+    "/api/experiments",
+    response_model=list[ExperimentListItemOut],
 )
-async def list_ab_evals(
+async def list_experiments(
     _admin: AuthUser = Depends(require_admin),
     db: DB = Depends(_get_db),
 ):
-    rows = await db.list_ab_eval_reports()
+    ab_rows = await db.list_ab_eval_reports()
+    run_rows = await db.list_run_call_experiments()
+    prio_rows = await db.list_run_prio_experiments()
+    ctx_eval_rows = await db.list_context_eval_experiments()
 
-    question_ids = {
-        qid for row in rows for qid in (row.get("question_id_a"), row.get("question_id_b")) if qid
-    }
+    question_ids: set[str] = set()
+    for row in ab_rows:
+        for qid in (row.get("question_id_a"), row.get("question_id_b")):
+            if qid:
+                question_ids.add(qid)
+    for row in run_rows:
+        qid = row.get("question_id")
+        if qid:
+            question_ids.add(qid)
+    for row in prio_rows:
+        qid = row.get("question_id")
+        if qid:
+            question_ids.add(qid)
+    for row in ctx_eval_rows:
+        qid = row.get("question_id")
+        if qid:
+            question_ids.add(qid)
     pages_by_id: dict[str, Page] = {}
     if question_ids:
         pages_by_id = await db.get_pages_by_ids(list(question_ids))
 
-    results: list[ABEvalReportListItemOut] = []
-    for row in rows:
+    items: list[
+        AbEvalExperimentOut | RunCallExperimentOut | RunPrioExperimentOut | ContextEvalExperimentOut
+    ] = []
+    for row in ab_rows:
         qid = row.get("question_id_a") or row.get("question_id_b") or ""
         q_page = pages_by_id.get(qid)
         dims = row.get("dimension_reports") or []
-        results.append(
-            ABEvalReportListItemOut(
+        items.append(
+            AbEvalExperimentOut(
                 id=row["id"],
                 run_id_a=row["run_id_a"],
                 run_id_b=row["run_id_b"],
@@ -573,7 +628,70 @@ async def list_ab_evals(
                 created_at=row.get("created_at", ""),
             )
         )
-    return results
+    for row in run_rows:
+        qid = row.get("question_id") or ""
+        q_page = pages_by_id.get(qid)
+        items.append(
+            RunCallExperimentOut(
+                run_id=row["id"],
+                name=row.get("name") or "",
+                question_id=qid,
+                question_headline=q_page.headline if q_page else "",
+                config_summary=_config_summary(row.get("config")),
+                staged=bool(row.get("staged")),
+                created_at=row.get("created_at", ""),
+            )
+        )
+    for row in prio_rows:
+        qid = row.get("question_id") or ""
+        q_page = pages_by_id.get(qid)
+        items.append(
+            RunPrioExperimentOut(
+                run_id=row["id"],
+                name=row.get("name") or "",
+                question_id=qid,
+                question_headline=q_page.headline if q_page else "",
+                config_summary=_config_summary(row.get("config")),
+                staged=bool(row.get("staged")),
+                created_at=row.get("created_at", ""),
+            )
+        )
+    candidate_run_ids = [
+        ((r.get("config") or {}).get("eval") or {}).get("paired_run_id") or ""
+        for r in ctx_eval_rows
+    ]
+    candidate_run_ids = [rid for rid in candidate_run_ids if rid]
+    candidate_builders: dict[str, str] = {}
+    if candidate_run_ids:
+        cand_rows = _rows(
+            await db._execute(
+                db.client.table("runs").select("id, config").in_("id", candidate_run_ids)
+            )
+        )
+        for cand_row in cand_rows:
+            cfg = cand_row.get("config") or {}
+            eval_meta = cfg.get("eval") or {}
+            candidate_builders[cand_row["id"]] = str(eval_meta.get("context_builder") or "")
+    for row in ctx_eval_rows:
+        eval_meta = (row.get("config") or {}).get("eval") or {}
+        candidate_run_id = eval_meta.get("paired_run_id") or ""
+        if not candidate_run_id:
+            continue
+        qid = row.get("question_id") or ""
+        q_page = pages_by_id.get(qid)
+        items.append(
+            ContextEvalExperimentOut(
+                gold_run_id=row["id"],
+                candidate_run_id=candidate_run_id,
+                question_id=qid,
+                question_headline=q_page.headline if q_page else "",
+                gold_builder=str(eval_meta.get("context_builder") or ""),
+                candidate_builder=candidate_builders.get(candidate_run_id, ""),
+                created_at=row.get("created_at", ""),
+            )
+        )
+    items.sort(key=lambda x: x.created_at, reverse=True)
+    return items
 
 
 @app.get(
@@ -624,6 +742,119 @@ async def get_ab_eval(
     )
 
 
+async def _load_context_eval_arm(db: DB, run_id: str) -> tuple[ContextEvalArmOut, DB]:
+    """Load one arm of a context-builder eval (gold or candidate).
+
+    Resolves the staged read DB, finds the run's single CONTEXT_BUILDER_EVAL
+    call, parses its context_built event from the trace, and packages it
+    with the builder name from runs.config.eval. Returns the read_db too
+    so the caller can reuse it for any follow-up reads against the same
+    run (e.g. the question page) without re-resolving staging state.
+    """
+    read_db, _is_staged, run_config = await _resolve_staged_read_db(db, run_id)
+    eval_meta = (run_config.get("eval") or {}) if isinstance(run_config, dict) else {}
+    builder_name = eval_meta.get("context_builder", "")
+
+    raw_rows = await read_db.get_call_rows_for_run(run_id)
+    eval_rows = [r for r in raw_rows if r.get("call_type") == CallType.CONTEXT_BUILDER_EVAL.value]
+    if not eval_rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run {run_id} has no context_builder_eval call",
+        )
+    call_row = eval_rows[0]
+    call = _row_to_call(call_row)
+
+    events = await _parse_trace_events(read_db, call.id)
+    context_built: ContextBuiltEventOut | None = next(
+        (e for e in events if e.event == "context_built"),  # type: ignore[union-attr]
+        None,
+    )
+    if context_built is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Call {call.id} has no context_built event",
+        )
+
+    arm = ContextEvalArmOut(
+        run_id=run_id,
+        call_id=call.id,
+        builder_name=builder_name,
+        context_built=context_built,
+        cost_usd=call.cost_usd,
+        config=run_config,
+    )
+    return arm, read_db
+
+
+def _diff_context_pages(
+    gold: ContextBuiltEventOut,
+    candidate: ContextBuiltEventOut,
+) -> tuple[Sequence[PageRef], Sequence[PageRef], Sequence[PageRef]]:
+    """Diff the union of pages each arm pulled into context.
+
+    For each arm, the union covers working_context + preloaded + scope-linked
+    page IDs. Returns (only_in_gold, only_in_candidate, in_both), each a
+    list of PageRef whose headlines come from whichever arm carried them.
+    """
+
+    def _refs(ev: ContextBuiltEventOut) -> dict[str, PageRef]:
+        out: dict[str, PageRef] = {}
+        for ref in ev.working_context_page_ids or []:
+            out.setdefault(ref.id, ref)
+        for ref in ev.preloaded_page_ids or []:
+            out.setdefault(ref.id, ref)
+        for ref in ev.scope_linked_pages or []:
+            out.setdefault(ref.id, ref)
+        return out
+
+    gold_refs = _refs(gold)
+    cand_refs = _refs(candidate)
+    only_gold_ids = sorted(set(gold_refs) - set(cand_refs))
+    only_cand_ids = sorted(set(cand_refs) - set(gold_refs))
+    both_ids = sorted(set(gold_refs) & set(cand_refs))
+    return (
+        [gold_refs[i] for i in only_gold_ids],
+        [cand_refs[i] for i in only_cand_ids],
+        [gold_refs[i] for i in both_ids],
+    )
+
+
+@app.get(
+    "/api/context-evals/{gold_run_id}/vs/{candidate_run_id}",
+    response_model=ContextEvalDiffOut,
+)
+async def get_context_eval_diff(
+    gold_run_id: str,
+    candidate_run_id: str,
+    _admin: AuthUser = Depends(require_admin),
+    db: DB = Depends(_get_db),
+):
+    gold, gold_read_db = await _load_context_eval_arm(db, gold_run_id)
+    candidate, _ = await _load_context_eval_arm(db, candidate_run_id)
+
+    # Use the gold's staged read_db so a (theoretically) staged eval run sees
+    # its own page mutations on the question lookup. Today eval runs are
+    # never staged, but this matches the trace-tree pattern in
+    # get_run_trace_tree.
+    question_id = await gold_read_db.get_run_question_id(gold_run_id)
+    question_page = await gold_read_db.get_page(question_id) if question_id else None
+
+    only_gold, only_cand, in_both = _diff_context_pages(
+        gold.context_built,
+        candidate.context_built,
+    )
+
+    return ContextEvalDiffOut(
+        question=question_page,
+        gold=gold,
+        candidate=candidate,
+        pages_only_in_gold=list(only_gold),
+        pages_only_in_candidate=list(only_cand),
+        pages_in_both=list(in_both),
+    )
+
+
 @app.get(
     "/api/calls/{call_id}/llm-exchanges",
     response_model=list[LLMExchangeSummaryOut],
@@ -670,10 +901,13 @@ async def get_llm_exchange(
         user_messages=row.get("user_messages"),
         response_text=row.get("response_text"),
         tool_calls=row.get("tool_calls", []),
+        available_tools=row.get("available_tools"),
+        response_schema=row.get("response_schema"),
         input_tokens=row.get("input_tokens"),
         output_tokens=row.get("output_tokens"),
         duration_ms=row.get("duration_ms"),
         error=row.get("error"),
+        thinking_blocks=row.get("thinking_blocks"),
         created_at=row["created_at"],
     )
 

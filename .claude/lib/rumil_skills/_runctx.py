@@ -121,7 +121,7 @@ def _git_head() -> str | None:
         )
         if result.returncode == 0:
             return result.stdout.strip() or None
-    except (FileNotFoundError, subprocess.SubprocessError):
+    except FileNotFoundError, subprocess.SubprocessError:
         pass
     return None
 

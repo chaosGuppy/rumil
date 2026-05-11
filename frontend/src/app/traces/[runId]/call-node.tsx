@@ -11,12 +11,18 @@ import type {
   GetCallEventsApiCallsCallIdEventsGetResponse,
   LlmExchangeOut,
   PageRef,
+  ThinkingBlocksOut,
 } from "@/api/types.gen";
 import { CLIENT_API_BASE as QUERY_API_BASE } from "@/api-config";
 import { clientFetch } from "@/lib/client-fetch";
 import { useStagedRun } from "@/lib/staged-run-context";
 import { withStagedRun } from "@/lib/staged-run-href";
 import { traceKeys } from "@/lib/queries";
+import {
+  ContextBuiltBody,
+  PageChip,
+  PageList,
+} from "@/components/context-built-body";
 import type { SequenceNode } from "./trace-viewer";
 import { ForkPanel, ForkTrigger } from "./fork-panel";
 
@@ -163,205 +169,6 @@ function getDuration(call: { created_at: string; completed_at?: string | null })
   const secs = Math.round((end - start) / 1000);
   if (secs < 60) return `${secs}s`;
   return `${Math.floor(secs / 60)}m${secs % 60}s`;
-}
-
-function PageChip({ page }: { page: PageRef }) {
-  const short = page.id.slice(0, 8);
-  const label = page.headline || short;
-  const { activeStagedRunId } = useStagedRun();
-  const href = withStagedRun(`/pages/${page.id}`, activeStagedRunId);
-  return (
-    <Link href={href} className="trace-page-chip" title={short}>
-      {label}
-    </Link>
-  );
-}
-
-function PageList({ pages }: { pages: PageRef[] }) {
-  if (!pages || pages.length === 0)
-    return <span className="trace-empty">none</span>;
-  return (
-    <span className="trace-page-list">
-      {pages.map((p, i) => (
-        <PageChip key={`${p.id}-${i}`} page={p} />
-      ))}
-    </span>
-  );
-}
-
-type CtxTierKey = "full" | "distillation" | "abstract" | "summary";
-
-const CTX_TIER_ORDER: { key: CtxTierKey; label: string }[] = [
-  { key: "full", label: "full" },
-  { key: "distillation", label: "distillation" },
-  { key: "abstract", label: "abstract" },
-  { key: "summary", label: "summary" },
-];
-
-function ContextBuiltBody({
-  event,
-}: {
-  event: Extract<TraceEvent, { event: "context_built" }>;
-}) {
-  const working = event.working_context_page_ids ?? [];
-  const preloaded = event.preloaded_page_ids ?? [];
-  const scopeLinked = event.scope_linked_pages ?? [];
-  const budgetUsage = event.budget_usage ?? {};
-  const tierPages: Record<CtxTierKey, PageRef[]> = {
-    full: event.full_pages ?? [],
-    distillation: event.distillation_pages ?? [],
-    abstract: event.abstract_pages ?? [],
-    summary: event.summary_pages ?? [],
-  };
-  const populatedTiers = CTX_TIER_ORDER.filter(
-    (t) => tierPages[t.key].length > 0 || (budgetUsage[t.key] ?? 0) > 0,
-  );
-  const totalTierChars = CTX_TIER_ORDER.reduce(
-    (sum, t) => sum + (budgetUsage[t.key] ?? 0),
-    0,
-  );
-  const uniquePageIds = new Set<string>();
-  for (const t of populatedTiers) for (const p of tierPages[t.key]) uniquePageIds.add(p.id);
-  for (const p of scopeLinked) uniquePageIds.add(p.id);
-  for (const p of preloaded) uniquePageIds.add(p.id);
-  if (populatedTiers.length === 0) for (const p of working) uniquePageIds.add(p.id);
-  const totalPages = uniquePageIds.size;
-  const promptChars =
-    event.context_text_chars ?? (event.context_text?.length ?? 0);
-
-  return (
-    <div className="trace-event-body">
-      <div className="trace-ctx-totals">
-        <span className="trace-ctx-totals-pages">
-          {totalPages} page{totalPages === 1 ? "" : "s"}
-        </span>
-        {promptChars > 0 && (
-          <>
-            <span className="trace-ctx-totals-sep">·</span>
-            <span className="trace-ctx-totals-chars">
-              {promptChars.toLocaleString()} prompt ch
-            </span>
-          </>
-        )}
-        {totalTierChars > 0 && totalTierChars !== promptChars && (
-          <>
-            <span className="trace-ctx-totals-sep">·</span>
-            <span className="trace-ctx-totals-chars">
-              {totalTierChars.toLocaleString()} tiered ch
-            </span>
-          </>
-        )}
-      </div>
-
-      {totalTierChars > 0 && (
-        <div
-          className="trace-ctx-budget-bar"
-          title={`tiered budget: ${totalTierChars.toLocaleString()} chars`}
-        >
-          {populatedTiers.map((t) => {
-            const chars = budgetUsage[t.key] ?? 0;
-            if (chars <= 0) return null;
-            return (
-              <div
-                key={t.key}
-                className={`trace-ctx-budget-seg trace-ctx-budget-seg--${t.key}`}
-                style={{ flexGrow: chars }}
-                title={`${t.label}: ${chars.toLocaleString()} ch`}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {populatedTiers.map((t) => {
-        const pages = tierPages[t.key];
-        const chars = budgetUsage[t.key] ?? 0;
-        return (
-          <div key={t.key} className="trace-ctx-tier">
-            <span className="trace-ctx-tier-label">
-              <span
-                className={`trace-ctx-tier-swatch trace-ctx-tier-swatch--${t.key}`}
-              />
-              {t.label}
-              <span className="trace-ctx-tier-count">({pages.length})</span>
-            </span>
-            <PageList pages={pages} />
-            <span className="trace-ctx-tier-chars">
-              {chars > 0 ? `${chars.toLocaleString()} ch` : "—"}
-            </span>
-          </div>
-        );
-      })}
-
-      {populatedTiers.length === 0 && working.length > 0 && (
-        <div className="trace-ctx-tier trace-ctx-tier--flat">
-          <span className="trace-ctx-tier-label">
-            <span className="trace-ctx-tier-swatch trace-ctx-tier-swatch--flat" />
-            working context
-            <span className="trace-ctx-tier-count">({working.length})</span>
-          </span>
-          <PageList pages={working} />
-          <span className="trace-ctx-tier-chars">—</span>
-        </div>
-      )}
-
-      {scopeLinked.length > 0 && (
-        <div className="trace-ctx-tier trace-ctx-tier--scope-linked">
-          <span className="trace-ctx-tier-label">
-            <span className="trace-ctx-tier-swatch trace-ctx-tier-swatch--scope-linked" />
-            scope-linked
-            <span className="trace-ctx-tier-count">({scopeLinked.length})</span>
-          </span>
-          <PageList pages={scopeLinked} />
-          <span className="trace-ctx-tier-chars">—</span>
-        </div>
-      )}
-
-      {preloaded.length > 0 && (
-        <div className="trace-ctx-tier trace-ctx-tier--preloaded">
-          <span className="trace-ctx-tier-label">
-            <span className="trace-ctx-tier-swatch trace-ctx-tier-swatch--preloaded" />
-            preloaded
-            <span className="trace-ctx-tier-count">({preloaded.length})</span>
-          </span>
-          <PageList pages={preloaded} />
-          <span className="trace-ctx-tier-chars">—</span>
-        </div>
-      )}
-
-      {event.source_page_id && (
-        <div className="trace-kv">
-          <span className="trace-kv-key">source</span>
-          <Link
-            href={`/pages/${event.source_page_id}`}
-            className="trace-kv-value trace-ctx-source-link"
-          >
-            {event.source_page_id.slice(0, 8)}
-          </Link>
-        </div>
-      )}
-
-      {event.context_text && (
-        <details className="trace-ctx-prompt">
-          <summary className="trace-ctx-prompt-summary">
-            <span className="trace-ctx-prompt-caret" />
-            context text
-            <span className="trace-ctx-prompt-chars">
-              {promptChars.toLocaleString()} ch
-            </span>
-          </summary>
-          <pre className="trace-ctx-prompt-body">{event.context_text}</pre>
-        </details>
-      )}
-
-      {event.budget != null && (
-        <div className="trace-kv">
-          <span className="trace-kv-key">budget</span>
-          <span className="trace-kv-value">{event.budget}</span>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function RoleBadge({ role }: { role: string }) {
@@ -783,6 +590,57 @@ function WebSearchResultEntry({ tc }: { tc: Record<string, unknown> }) {
   );
 }
 
+function ResponseSchemaSection({
+  schema,
+}: {
+  schema: Record<string, unknown>;
+}) {
+  const name = (schema.name as string | undefined) ?? "response_schema";
+  const body = schema.schema ?? schema;
+  return (
+    <div className="trace-tool-calls">
+      <div className="trace-tool-calls-label">Response schema</div>
+      <details className="trace-tool-call">
+        <summary className="trace-tool-call-name">{name}</summary>
+        <pre className="trace-tool-call-input">
+          {JSON.stringify(body, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function AvailableToolsList({
+  tools,
+}: {
+  tools: Array<Record<string, unknown>>;
+}) {
+  return (
+    <div className="trace-tool-calls">
+      <div className="trace-tool-calls-label">
+        Available tools ({tools.length})
+      </div>
+      {tools.map((tool, i) => (
+        <details key={i} className="trace-tool-call">
+          <summary className="trace-tool-call-name">
+            {(tool.name as string | undefined) ?? `tool ${i}`}
+          </summary>
+          {tool.description ? (
+            <pre className="trace-tool-call-output">
+              {String(tool.description)}
+            </pre>
+          ) : null}
+          {tool.input_schema ? (
+            <pre className="trace-tool-call-input">
+              {JSON.stringify(tool.input_schema, null, 2)}
+            </pre>
+          ) : null}
+        </details>
+      ))}
+    </div>
+  );
+}
+
 function ToolCallsList({ toolCalls }: { toolCalls: Array<Record<string, unknown>> }) {
   const serverToolUses = toolCalls.filter((tc) => !tc.type);
   const webResults = toolCalls.filter((tc) => tc.type === "web_search_tool_result");
@@ -823,6 +681,86 @@ function ToolCallsList({ toolCalls }: { toolCalls: Array<Record<string, unknown>
   );
 }
 
+function ThinkingSection({ blocks }: { blocks: ThinkingBlocksOut }) {
+  const thinking = blocks.thinking ?? [];
+  const redacted = blocks.redacted_thinking ?? [];
+  const totalChars =
+    thinking.reduce((acc, b) => acc + b.content.length, 0) +
+    redacted.reduce((acc, b) => acc + b.data.length, 0);
+  const [open, setOpen] = useState(false);
+
+  if (thinking.length === 0 && redacted.length === 0) return null;
+
+  const previewSource =
+    thinking.find((b) => b.content.trim().length > 0)?.content ??
+    (redacted.length > 0 ? "[encrypted thinking]" : "");
+  const preview = previewSource.replace(/\s+/g, " ").slice(0, 180);
+  const totalCount = thinking.length + redacted.length;
+  const countLabel =
+    totalCount === 1
+      ? "1 block"
+      : `${totalCount} blocks`;
+
+  return (
+    <div className="trace-thinking">
+      <button
+        onClick={() => setOpen(!open)}
+        className="trace-collapsible-toggle trace-thinking-toggle"
+      >
+        <span className="trace-collapsible-icon">{open ? "–" : "+"}</span>
+        <span className="trace-thinking-glyph" aria-hidden="true">
+          {"✿"}
+        </span>
+        <span>Thinking</span>
+        <span className="trace-collapsible-meta">
+          {countLabel} &middot; {totalChars.toLocaleString()} chars
+        </span>
+      </button>
+      {!open && previewSource.length > 0 && (
+        <div className="trace-thinking-preview">{preview}{previewSource.length > preview.length ? "…" : ""}</div>
+      )}
+      {open && (
+        <div className="trace-thinking-content">
+          {thinking.map((block, i) => (
+            <article
+              key={`t-${i}`}
+              className="trace-thinking-block"
+              data-empty={block.content.trim().length === 0 ? "true" : "false"}
+            >
+              {thinking.length > 1 && (
+                <header className="trace-thinking-block-num">
+                  {String(i + 1).padStart(2, "0")}
+                </header>
+              )}
+              {block.content.trim().length === 0 ? (
+                <p className="trace-thinking-empty">
+                  Model emitted a thinking block without disclosing its
+                  contents&mdash;ask for{" "}
+                  <code>thinking.display: &quot;summarized&quot;</code> to see
+                  this.
+                </p>
+              ) : (
+                <p className="trace-thinking-text">{block.content}</p>
+              )}
+            </article>
+          ))}
+          {redacted.map((block, i) => (
+            <article
+              key={`r-${i}`}
+              className="trace-thinking-block trace-thinking-redacted"
+            >
+              <header className="trace-thinking-block-num">
+                <span className="trace-thinking-redacted-tag">encrypted</span>
+              </header>
+              <pre className="trace-thinking-redacted-data">{block.data}</pre>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
   return (
     <div className="trace-exchange-detail">
@@ -831,6 +769,19 @@ function ExchangeDetail({ detail }: { detail: LlmExchangeOut }) {
         <MessageThread messages={detail.user_messages as Array<Record<string, unknown>>} />
       ) : (
         <CollapsiblePre label="User message" content={detail.user_message} />
+      )}
+      {detail.available_tools && detail.available_tools.length > 0 && (
+        <AvailableToolsList
+          tools={detail.available_tools as Array<Record<string, unknown>>}
+        />
+      )}
+      {detail.response_schema && (
+        <ResponseSchemaSection
+          schema={detail.response_schema as Record<string, unknown>}
+        />
+      )}
+      {detail.thinking_blocks && (
+        <ThinkingSection blocks={detail.thinking_blocks} />
       )}
       <CollapsiblePre label="Response" content={detail.response_text} />
       {detail.tool_calls.length > 0 && (
@@ -860,8 +811,9 @@ function StatusDot({ status }: { status: string }) {
 
 const EventSection = memo(function EventSection({ event }: { event: TraceEvent }) {
   const isWarning = event.event === "warning";
-  const isError = event.event === "error";
   const isExchange = event.event === "llm_exchange";
+  const exchangeFailed = isExchange && !!event.error;
+  const isError = event.event === "error" || exchangeFailed;
 
   const [exchangeDetail, setExchangeDetail] = useState<LlmExchangeOut | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
@@ -904,6 +856,11 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
         {isExchange && (
           <span className="trace-exchange-info">
             {event.phase.replace(/_/g, " ")}{event.round != null ? ` round ${event.round}` : ""}
+            {exchangeFailed && (
+              <span className="trace-exchange-failed-badge" title={event.error ?? undefined}>
+                failed
+              </span>
+            )}
             {event.input_tokens != null && (
               <TokenMeter
                 inputTokens={event.input_tokens}
@@ -1531,6 +1488,358 @@ const EventSection = memo(function EventSection({ event }: { event: TraceEvent }
                 {event.pare_model ? ` (${event.pare_model})` : ""}
               </span>
             </div>
+          )}
+        </div>
+      )}
+
+      {event.event === "round_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+          </div>
+        </div>
+      )}
+
+      {event.event === "draft_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "critique_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>critic</span>
+            <span className="trace-kv-value">{event.critic_index}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "edit_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>current</span>
+            <span className="trace-kv-value">{event.current_chars.toLocaleString()} ch</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>critiques</span>
+            <span className="trace-kv-value">{event.n_critiques}</span>
+          </div>
+        </div>
+      )}
+
+      {event.event === "read_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">stage</span>
+            <span className="trace-kv-value">read</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "reflect_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">stage</span>
+            <span className="trace-kv-value">reflect</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>prior read</span>
+            <span className="trace-kv-value">{event.prior_read_chars.toLocaleString()} ch</span>
+          </div>
+        </div>
+      )}
+
+      {event.event === "verdict_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">stage</span>
+            <span className="trace-kv-value">verdict</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>prior read</span>
+            <span className="trace-kv-value">{event.prior_read_chars.toLocaleString()} ch</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>prior reflect</span>
+            <span className="trace-kv-value">{event.prior_reflect_chars.toLocaleString()} ch</span>
+          </div>
+        </div>
+      )}
+
+      {event.event === "draft" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.draft_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.draft_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.draft_text ? (
+            <CollapsiblePre label="Draft text" content={event.draft_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {event.event === "critique_round" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>critics</span>
+            <span className="trace-kv-value">{event.critiques.length}</span>
+          </div>
+          {event.critiques.length === 0 ? (
+            <span className="trace-empty">(no critiques)</span>
+          ) : (
+            event.critiques.map((c, i) => {
+              const critiqueLabel =
+                `Critic ${c.critic_index ?? i}`
+                + (c.model ? ` · ${c.model}` : "");
+              return (
+                <div key={i} className="trace-fruit-type-row">
+                  <div className="trace-fruit-type-header">
+                    <span className="trace-score-headline">{critiqueLabel}</span>
+                    {c.critique_text && (
+                      <span className="trace-collapsible-meta">
+                        {c.critique_text.length.toLocaleString()} ch
+                      </span>
+                    )}
+                  </div>
+                  {c.critique_text ? (
+                    <CollapsiblePre label="Critique" content={c.critique_text} />
+                  ) : (
+                    <span className="trace-empty">(empty)</span>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {event.event === "edit" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.revised_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.revised_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.revised_text ? (
+            <CollapsiblePre label="Revised text" content={event.revised_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {(event.event === "planner_started" ||
+        event.event === "scout_pass_started") && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            {event.model && (
+              <>
+                <span className="trace-kv-key">model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "planner" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            {event.model && (
+              <>
+                <span className="trace-kv-key">model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.brief_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.brief_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.brief_text ? (
+            <CollapsiblePre label="Brief" content={event.brief_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {event.event === "arbitration_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            <span className="trace-kv-key" style={{ marginLeft: 12 }}>critiques</span>
+            <span className="trace-kv-value">{event.n_critiques}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "arbitration" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">round</span>
+            <span className="trace-kv-value">{event.round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.arbitration_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.arbitration_chars.toLocaleString()}</span>
+              </>
+            )}
+            {event.prior_arbitrations_seen > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>prior</span>
+                <span className="trace-kv-value">{event.prior_arbitrations_seen}</span>
+              </>
+            )}
+          </div>
+          {event.arbitration_text ? (
+            <CollapsiblePre label="Arbitration" content={event.arbitration_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {event.event === "brief_audit_started" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">after round</span>
+            <span className="trace-kv-value">{event.after_round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {event.event === "brief_audit" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            <span className="trace-kv-key">after round</span>
+            <span className="trace-kv-value">{event.after_round}</span>
+            {event.model && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.audit_brief_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.audit_brief_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.audit_brief_text ? (
+            <CollapsiblePre label="Audit brief" content={event.audit_brief_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
+          )}
+        </div>
+      )}
+
+      {event.event === "scout_pass" && (
+        <div className="trace-event-body">
+          <div className="trace-kv">
+            {event.model && (
+              <>
+                <span className="trace-kv-key">model</span>
+                <span className="trace-kv-value"><code>{event.model}</code></span>
+              </>
+            )}
+            {event.findings_chars > 0 && (
+              <>
+                <span className="trace-kv-key" style={{ marginLeft: 12 }}>chars</span>
+                <span className="trace-kv-value">{event.findings_chars.toLocaleString()}</span>
+              </>
+            )}
+          </div>
+          {event.findings_text ? (
+            <CollapsiblePre label="Findings" content={event.findings_text} />
+          ) : (
+            <span className="trace-empty">(empty)</span>
           )}
         </div>
       )}

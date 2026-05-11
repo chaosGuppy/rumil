@@ -40,9 +40,38 @@ function deltaSlot(words: number, target: number): React.ReactNode {
   );
 }
 
-/** Strip a leading `paraphrase:` prefix; otherwise return source_id verbatim. */
+/** Reduce a source_id to its underlying model id for display / filtering.
+ *  - `paraphrase:<model>` → `<model>`
+ *  - `orch:<workflow>:<model>:c<hash8>` → `<model>` (workflow is dropped here;
+ *    surface it via {@link workflowOf} alongside).
+ *  - Anything else (raw model id, "human") → returned verbatim. */
 function modelOf(sourceId: string): string {
-  return sourceId.startsWith("paraphrase:") ? sourceId.slice("paraphrase:".length) : sourceId;
+  if (sourceId === "human") return "human";
+  if (sourceId.startsWith("paraphrase:")) return sourceId.slice("paraphrase:".length);
+  if (sourceId.startsWith("orch:")) {
+    const parts = sourceId.split(":");
+    if (parts.length >= 4) return parts[2];
+    return sourceId;
+  }
+  return sourceId;
+}
+
+/** Extract the workflow name from an orch source_id, e.g.
+ *  `orch:two_phase:claude-opus-4-7:c12345678` → "two_phase". Returns null
+ *  for non-orch ids so callers can branch on its truthiness. */
+function workflowOfSource(sourceId: string): string | null {
+  if (!sourceId.startsWith("orch:")) return null;
+  const parts = sourceId.split(":");
+  return parts.length >= 4 ? parts[1] : null;
+}
+
+/** Workflow segment from a compound judge_model display string, e.g.
+ *  `judge_pair/two_phase:claude-opus-4-7:c12345678` → "two_phase". Returns
+ *  null when the string doesn't match the new shape (legacy rows). */
+function workflowOfJudge(judgeModel: string | null | undefined): string | null {
+  if (!judgeModel) return null;
+  const m = judgeModel.match(/^[^/]+\/([^:]+):/);
+  return m ? m[1] : null;
 }
 
 /** HTML-id-safe rendering of a source_id or config_hash. */
@@ -76,8 +105,44 @@ function VariantPill({ vid }: { vid: string }) {
 
 /** Short label for a model id (drop the provider prefix). */
 function shortModel(id: string): string {
-  const after = id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
-  return id.startsWith("paraphrase:") ? `para:${shortModel(modelOf(id))}` : after;
+  if (id.startsWith("paraphrase:")) return `para:${shortModel(modelOf(id))}`;
+  if (id.startsWith("orch:")) {
+    const wf = workflowOfSource(id);
+    return wf ? `${shortModel(modelOf(id))}·orch:${wf}` : id;
+  }
+  return id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
+}
+
+/** Trailing config-hash chunk on a legacy compound judge_model_id, e.g.
+ *  "blind:claude-haiku-4-5:general_quality:c19517145" → "c19517145". Returns
+ *  the empty string when the id has no recognizable suffix (raw model id). */
+function configHashSuffix(judgeModelId: string): string {
+  const parts = judgeModelId.split(":");
+  const last = parts[parts.length - 1];
+  return last.startsWith("c") && last.length > 1 ? last : "";
+}
+
+/** Build a map id → display label, appending the config-hash suffix when two
+ *  ids would otherwise share the same short name. Used so thinking/effort
+ *  variants of the same model render as distinct columns instead of two
+ *  visually-identical labels. */
+function disambiguatedLabels(judgeModelIds: string[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  const baseCounts = new Map<string, number>();
+  for (const id of judgeModelIds) {
+    const base = shortModel(id);
+    baseCounts.set(base, (baseCounts.get(base) ?? 0) + 1);
+  }
+  for (const id of judgeModelIds) {
+    const base = shortModel(id);
+    if ((baseCounts.get(base) ?? 0) > 1) {
+      const suffix = configHashSuffix(id);
+      labels.set(id, suffix ? `${base}:${suffix}` : base);
+    } else {
+      labels.set(id, base);
+    }
+  }
+  return labels;
 }
 
 type VariantBundle = {
@@ -171,18 +236,43 @@ export default async function VersusInspectPage({
   // identical across variants by construction.
   const head = variantBundles[0];
 
-  // Models seen across all variants, for the model filter.
+  // Models seen across all variants, for the model filter. We track two
+  // tiers: the base model id (collapses single-shot + orch contestants
+  // sharing a base model) and the full orch source_id (so users can pick
+  // a specific workflow's contestant — single-shot rows won't match those
+  // entries because their data-model tag carries only the base id).
   const modelSet = new Set<string>();
+  const orchSet = new Set<string>();
+  const noteOrch = (sid: string) => {
+    if (sid.startsWith("orch:")) orchSet.add(sid);
+  };
   for (const v of variantBundles) {
     for (const s of v.sources) {
-      if (s.source_id !== "human") modelSet.add(modelOf(s.source_id));
+      if (s.source_id !== "human") {
+        modelSet.add(modelOf(s.source_id));
+        noteOrch(s.source_id);
+      }
     }
     for (const j of v.judgments) {
-      if (j.source_a !== "human") modelSet.add(modelOf(j.source_a));
-      if (j.source_b !== "human") modelSet.add(modelOf(j.source_b));
+      if (j.source_a !== "human") {
+        modelSet.add(modelOf(j.source_a));
+        noteOrch(j.source_a);
+      }
+      if (j.source_b !== "human") {
+        modelSet.add(modelOf(j.source_b));
+        noteOrch(j.source_b);
+      }
     }
   }
-  const modelOptions = Array.from(modelSet).sort().map((m) => ({ value: m, label: m }));
+  const baseOptions = Array.from(modelSet).sort().map((m) => ({ value: m, label: m }));
+  const orchOptions = Array.from(orchSet).sort().map((sid) => {
+    const wf = workflowOfSource(sid);
+    return {
+      value: sid,
+      label: wf ? `${modelOf(sid)} (orch:${wf})` : sid,
+    };
+  });
+  const modelOptions = [...baseOptions, ...orchOptions];
 
   // Source rows: source_id -> { variantId -> Source }. Renders as one
   // card per source, with one cell per variant.
@@ -451,24 +541,23 @@ export default async function VersusInspectPage({
 }
 
 type WinAccum = {
-  wins: number;
+  humanWins: number;
   ties: number;
-  losses: number;
+  genWins: number;
   n: number;
   score7Sum: number;
   score7N: number;
 };
 
 function emptyAccum(): WinAccum {
-  return { wins: 0, ties: 0, losses: 0, n: 0, score7Sum: 0, score7N: 0 };
+  return { humanWins: 0, ties: 0, genWins: 0, n: 0, score7Sum: 0, score7N: 0 };
 }
 
 /** Aggregate one judgment into a (gen, judge) accum where gen is the
- *  non-human side and the verdict is reframed as: gen wins iff
- *  winner_source == gen, gen loses iff winner_source == "human", tie
- *  otherwise. Returns null when neither side is human (block 1 only
- *  cares about gen-vs-human pairings). */
-function genVsHumanAccum(j: Judgment): { gen: string; outcome: "win" | "tie" | "loss" } | null {
+ *  non-human side. Outcome is human-centric ("human" wins, "gen" wins,
+ *  or tie) so downstream cell formulas can compute pick-human rate
+ *  without re-inverting. Returns null when neither side is human. */
+function genVsHumanAccum(j: Judgment): { gen: string; outcome: "human" | "tie" | "gen" } | null {
   const aHuman = j.source_a === "human";
   const bHuman = j.source_b === "human";
   if (aHuman === bHuman) return null;
@@ -476,8 +565,8 @@ function genVsHumanAccum(j: Judgment): { gen: string; outcome: "win" | "tie" | "
   if (j.verdict === "tie" || j.winner_source === "tie" || !j.winner_source) {
     return { gen, outcome: "tie" };
   }
-  if (j.winner_source === "human") return { gen, outcome: "loss" };
-  return { gen, outcome: "win" };
+  if (j.winner_source === "human") return { gen, outcome: "human" };
+  return { gen, outcome: "gen" };
 }
 
 /** Mirrors versus.analyze.cell_color so inspect win-matrix cells use
@@ -601,22 +690,25 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
           const acc = new Map<string, Map<string, WinAccum>>();
           const judgesSet = new Set<string>();
           const gensSet = new Set<string>();
-          // Local config_hash -> judge_model_id map so column headers
-          // render the model name rather than the opaque hex hash.
-          const judgeModelIdByHash = new Map<string, string>();
           for (const j of v.judgments) {
-            judgeModelIdByHash.set(j.config_hash, j.judge_model_id);
             const r = genVsHumanAccum(j);
             if (!r) continue;
-            const judge = j.config_hash;
+            // Group columns by the compound judge_model (full display
+            // string), not the bare judge_model_id — under the new
+            // ``<task>/<workflow>:<model>:c<hash8>`` shape, multiple
+            // workflows (blind / two_phase / draft_and_edit) at the same
+            // model would otherwise silently collapse into one cell.
+            // Using config_hash would over-fragment in the other
+            // direction; judge_model is the right granularity.
+            const judge = j.judge_model;
             judgesSet.add(judge);
             gensSet.add(r.gen);
             const row = acc.get(r.gen) ?? new Map<string, WinAccum>();
             const cell = row.get(judge) ?? emptyAccum();
             cell.n += 1;
-            if (r.outcome === "win") cell.wins += 1;
+            if (r.outcome === "human") cell.humanWins += 1;
             else if (r.outcome === "tie") cell.ties += 1;
-            else cell.losses += 1;
+            else cell.genWins += 1;
             const s7 = humanScore7pt(j);
             if (s7 !== null) {
               cell.score7Sum += s7;
@@ -644,11 +736,14 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                   <thead>
                     <tr>
                       <th></th>
-                      {judges.map((jb) => (
-                        <th key={jb} title={jb}>
-                          {shortModel(judgeModelIdByHash.get(jb) ?? jb)}
-                        </th>
-                      ))}
+                      {(() => {
+                        const labels = disambiguatedLabels(judges);
+                        return judges.map((jb) => (
+                          <th key={jb} title={jb}>
+                            {labels.get(jb) ?? shortModel(jb)}
+                          </th>
+                        ));
+                      })()}
                     </tr>
                   </thead>
                   <tbody>
@@ -664,13 +759,13 @@ function ResultsWinMatrix({ variantBundles }: { variantBundles: VariantBundle[] 
                           if (!cell || cell.n === 0) {
                             return <td key={jb} className="matrix-cell-empty"></td>;
                           }
-                          const pct = (cell.wins + 0.5 * cell.ties) / cell.n;
+                          const pct = (cell.humanWins + 0.5 * cell.ties) / cell.n;
                           const colors = pctColor(pct, cell.n);
                           const lowN = cell.n < 5;
                           const pct7 = cell.score7N > 0 ? cell.score7Sum / cell.score7N : null;
                           const tooltip =
                             `pick-human ${Math.round(pct * 100)}% (binary, ties=½) · n=${cell.n}` +
-                            ` (${cell.wins}H / ${cell.ties}T / ${cell.losses}M)` +
+                            ` (${cell.humanWins}H / ${cell.ties}T / ${cell.genWins}M)` +
                             (pct7 !== null
                               ? ` · 7pt-avg ${(pct7 * 100).toFixed(1)}% (n=${cell.score7N})`
                               : "");
@@ -842,15 +937,15 @@ function ResultsOutlier({
       if (!r) continue;
       const slot = perGen.get(r.gen) ?? emptyAccum();
       slot.n += 1;
-      if (r.outcome === "win") slot.wins += 1;
-      else if (r.outcome === "loss") slot.losses += 1;
+      if (r.outcome === "human") slot.humanWins += 1;
+      else if (r.outcome === "gen") slot.genWins += 1;
       else slot.ties += 1;
       perGen.set(r.gen, slot);
     }
     const corpus = corpusByVariant.get(v.id);
     for (const [gen, acc] of perGen) {
       if (acc.n === 0) continue;
-      const essayPct = (acc.wins + 0.5 * acc.ties) / acc.n;
+      const essayPct = (acc.humanWins + 0.5 * acc.ties) / acc.n;
       const corpusPct = corpus?.get(gen) ?? null;
       const deltaPp = corpusPct === null ? null : (essayPct - corpusPct) * 100;
       rows.push({ variantId: v.id, gen, essayPct, corpusPct, deltaPp, n: acc.n });
@@ -943,11 +1038,17 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
   const byKey = new Map<string, Pair>();
   for (const v of variantBundles) {
     for (const j of v.judgments) {
-      const k = `${j.config_hash}|${j.criterion}|${j.source_a}|${j.source_b}`;
+      // Bucket by the compound judge_model (full display string) so the
+      // same (judge identity, pair, criterion) groups across variants.
+      // Using bare judge_model_id would silently merge new-shape rows
+      // that share a base model but differ in workflow (blind vs
+      // two_phase vs …); using per-row config_hash would never match
+      // across variants and the section would always report 0 comparable.
+      const k = `${j.judge_model}|${j.criterion}|${j.source_a}|${j.source_b}`;
       const slot = byKey.get(k) ?? {
         gen: [j.source_a, j.source_b].filter((s) => s !== "human").map(modelOf).join("+") ||
           "human",
-        judge: j.config_hash,
+        judge: j.judge_model,
         criterion: j.criterion,
         source_a: j.source_a,
         source_b: j.source_b,
@@ -978,7 +1079,9 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
       </p>
       {flips.length > 0 && (
         <ul className="inspect-flip-list">
-          {flips.map((p, idx) => {
+          {(() => {
+            const judgeLabels = disambiguatedLabels(flips.map((p) => p.judge));
+            return flips.map((p, idx) => {
             const sides = [p.source_a, p.source_b].filter((s) => s !== "human").map(modelOf);
             const dataModel = sides.length > 0 ? sides.join(" ") : "";
             const alwaysShow = sides.length === 0 ? "1" : undefined;
@@ -991,7 +1094,7 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
                 data-always-show={alwaysShow}
               >
                 <div className="inspect-flip-pair">
-                  <span className="versus-mono">{shortModel(p.judge)}</span>{" "}
+                  <span className="versus-mono">{judgeLabels.get(p.judge) ?? shortModel(p.judge)}</span>{" "}
                   <span className="versus-muted">·</span>{" "}
                   <span className="versus-muted" style={{ fontSize: 11 }}>{p.criterion}</span>{" "}
                   <span className="versus-muted">·</span>{" "}
@@ -1017,7 +1120,8 @@ function ResultsVariantFlip({ variantBundles }: { variantBundles: VariantBundle[
                 </div>
               </li>
             );
-          })}
+            });
+          })()}
         </ul>
       )}
     </section>
@@ -1054,16 +1158,30 @@ function SourceRow({
 }) {
   const isHuman = sourceId === "human";
   const model = modelOf(sourceId);
+  const workflow = workflowOfSource(sourceId);
+  // Orch rows match both the base-model dropdown entry and their own
+  // workflow-specific entry (full source_id). Whitespace-separated so
+  // InspectModelFilter's split-and-match logic accepts either.
+  const dataModel = isHuman
+    ? ""
+    : workflow
+      ? `${model} ${sourceId}`
+      : model;
   return (
     <section
       id={anchorId("src", sourceId)}
       className="inspect-source-row"
       data-filterable
-      data-model={isHuman ? "" : model}
+      data-model={dataModel}
       data-always-show={isHuman ? "1" : undefined}
     >
       <header className="inspect-source-row-head">
-        <code className="versus-mono">{sourceId}</code>
+        <code className="versus-mono" title={sourceId}>{sourceId}</code>
+        {workflow && (
+          <span className="versus-pill" style={{ fontSize: 11 }}>
+            orch:{workflow}
+          </span>
+        )}
       </header>
       <div className="inspect-cells">
         {variantIds.map((vid) => {
@@ -1140,6 +1258,17 @@ function JudgmentRow({
           <strong className="versus-mono" title={sample.judge_model}>
             {sample.judge_model_id}
           </strong>
+          {(() => {
+            const wf = workflowOfJudge(sample.judge_model);
+            // "blind" is the default / least-info path — surface it inline
+            // anyway so users can tell it apart from rows where the workflow
+            // segment is missing entirely (legacy shape).
+            return wf ? (
+              <span className="versus-pill" style={{ fontSize: 11 }} title={`workflow: ${wf}`}>
+                {wf}
+              </span>
+            ) : null;
+          })()}
           <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
             c{sample.config_hash.slice(0, 8)}
           </span>
@@ -1148,9 +1277,9 @@ function JudgmentRow({
               {sample.prompt_hash}
             </span>
           )}
-          {sample.sampling && (
+          {(sample.model_config_snapshot || sample.sampling) && (
             <span className="versus-muted versus-mono" style={{ fontSize: 11 }}>
-              {samplingTag(sample.sampling)}
+              {modelConfigTag(sample.model_config_snapshot, sample.sampling)}
             </span>
           )}
         </div>
@@ -1293,16 +1422,21 @@ function InspectToc({
               {sourceOrder.map((sid) => {
                 const isHuman = sid === "human";
                 const model = modelOf(sid);
+                const wf = workflowOfSource(sid);
+                const dm = isHuman ? "" : wf ? `${model} ${sid}` : model;
+                const label = isHuman
+                  ? "human"
+                  : wf
+                    ? `${shortModel(model)} (orch:${wf})`
+                    : shortModel(sid);
                 return (
                   <li
                     key={sid}
                     data-filterable
-                    data-model={isHuman ? "" : model}
+                    data-model={dm}
                     data-always-show={isHuman ? "1" : undefined}
                   >
-                    <a href={`#${anchorId("src", sid)}`}>
-                      {isHuman ? "human" : shortModel(sid)}
-                    </a>
+                    <a href={`#${anchorId("src", sid)}`}>{label}</a>
                   </li>
                 );
               })}
@@ -1322,18 +1456,25 @@ function InspectToc({
           <li>
             <a href="#judgments">judgments</a>
             <ul>
-              {judgeOrder.map((jb) => (
-                <li
-                  key={jb}
-                  data-filterable
-                  data-model={jb}
-                  data-always-show="1"
-                >
-                  <a href={`#${anchorId("judge", jb)}`}>
-                    {shortModel(judgeModelIdByHash.get(jb) ?? jb)}
-                  </a>
-                </li>
-              ))}
+              {(() => {
+                const ids = judgeOrder.map((jb) => judgeModelIdByHash.get(jb) ?? jb);
+                const labels = disambiguatedLabels(ids);
+                return judgeOrder.map((jb) => {
+                  const id = judgeModelIdByHash.get(jb) ?? jb;
+                  return (
+                    <li
+                      key={jb}
+                      data-filterable
+                      data-model={jb}
+                      data-always-show="1"
+                    >
+                      <a href={`#${anchorId("judge", jb)}`}>
+                        {labels.get(id) ?? shortModel(id)}
+                      </a>
+                    </li>
+                  );
+                });
+              })()}
             </ul>
           </li>
         )}
@@ -1345,12 +1486,37 @@ function InspectToc({
   );
 }
 
-function samplingTag(sampling: { [k: string]: unknown }): string {
+function modelConfigTag(
+  modelConfig: { [k: string]: unknown } | null | undefined,
+  sampling: { [k: string]: unknown } | null | undefined,
+): string {
+  // Prefer the full ModelConfig snapshot (post-registry rows). Fall back
+  // to the legacy sampling-only field for rows written before the schema
+  // migration. Renders the per-row condition compactly:
+  //   T=0 · mt=32000 · think=adaptive · effort=xhigh · tier=priority
+  // Empty bits are dropped so the tag stays short on plain rows.
+  const src = modelConfig ?? sampling ?? {};
   const bits: string[] = [];
-  const t = sampling["temperature"];
-  const m = sampling["max_tokens"];
+  const t = src["temperature"];
+  const m = src["max_tokens"];
   if (t !== undefined && t !== null) bits.push(`T=${t as number | string}`);
   if (m !== undefined && m !== null) bits.push(`mt=${m as number | string}`);
+  const thinking = src["thinking"];
+  if (thinking && typeof thinking === "object") {
+    const th = thinking as { type?: string; display?: string };
+    const label = th.type
+      ? th.display
+        ? `${th.type}/${th.display}`
+        : th.type
+      : "on";
+    bits.push(`think=${label}`);
+  }
+  const effort = src["effort"];
+  if (typeof effort === "string") bits.push(`effort=${effort}`);
+  const mtt = src["max_thinking_tokens"];
+  if (typeof mtt === "number") bits.push(`mtt=${mtt}`);
+  const tier = src["service_tier"];
+  if (typeof tier === "string") bits.push(`tier=${tier}`);
   return bits.join(" · ");
 }
 

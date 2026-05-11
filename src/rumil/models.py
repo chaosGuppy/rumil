@@ -4,7 +4,7 @@ Data models for the research workspace.
 
 import uuid
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,7 +21,7 @@ def _all_fields_required(schema: dict) -> None:
     schema["required"] = list(schema.get("properties", {}).keys())
 
 
-class PageType(str, Enum):
+class PageType(StrEnum):
     SOURCE = "source"
     CLAIM = "claim"
     QUESTION = "question"
@@ -35,23 +35,23 @@ class PageType(str, Enum):
     ARTEFACT = "artefact"  # long-form object produced by the generative workflow
 
 
-class PageDetail(str, Enum):
+class PageDetail(StrEnum):
     HEADLINE = "headline"
     ABSTRACT = "abstract"
     CONTENT = "content"
 
 
-class PageLayer(str, Enum):
+class PageLayer(StrEnum):
     WIKI = "wiki"
     SQUIDGY = "squidgy"
 
 
-class Workspace(str, Enum):
+class Workspace(StrEnum):
     RESEARCH = "research"
     PRIORITIZATION = "prioritization"
 
 
-class CallType(str, Enum):
+class CallType(StrEnum):
     FIND_CONSIDERATIONS = "find_considerations"
     ASSESS = "assess"
     PRIORITIZATION = "prioritization"
@@ -104,6 +104,15 @@ class CallType(str, Enum):
     # external `versus` harness. Uses single-arm workspace-exploration
     # tools; does not write to ab_eval_reports.
     VERSUS_JUDGE = "versus_judge"
+    # Essay continuation produced by the external `versus` harness
+    # (single-shot or via a Workflow like DraftAndEdit). Distinct from
+    # VERSUS_JUDGE so completion runs don't pollute judge analytics.
+    VERSUS_COMPLETE = "versus_complete"
+    # Lightweight build_context-only call used by the context-builder
+    # evaluation workflow (see scripts/run_context_eval.py). Each eval run
+    # has one of these calls — gold (ImpactFilteredContext) or candidate
+    # (named builder under test). Never dispatchable from prioritization.
+    CONTEXT_BUILDER_EVAL = "context_builder_eval"
 
 
 # The subset of CallTypes that prioritization can dispatch.
@@ -129,14 +138,49 @@ DISPATCHABLE_CALL_TYPES: set[CallType] = {
 }
 
 
-class CallStatus(str, Enum):
+class ScoutScope(StrEnum):
+    QUESTION = "question"
+    CLAIM = "claim"
+
+
+# Single source of truth: which CallTypes are scouts and what their scope is.
+# Treat this as the authoritative answer to "is this a scout?" — never test
+# call_type names by string prefix.
+SCOUT_CALL_TYPES: dict[CallType, ScoutScope] = {
+    CallType.SCOUT_SUBQUESTIONS: ScoutScope.QUESTION,
+    CallType.SCOUT_ESTIMATES: ScoutScope.QUESTION,
+    CallType.SCOUT_HYPOTHESES: ScoutScope.QUESTION,
+    CallType.SCOUT_ANALOGIES: ScoutScope.QUESTION,
+    CallType.SCOUT_PARADIGM_CASES: ScoutScope.QUESTION,
+    CallType.SCOUT_FACTCHECKS: ScoutScope.QUESTION,
+    CallType.SCOUT_WEB_QUESTIONS: ScoutScope.QUESTION,
+    CallType.SCOUT_DEEP_QUESTIONS: ScoutScope.QUESTION,
+    CallType.SCOUT_C_HOW_TRUE: ScoutScope.CLAIM,
+    CallType.SCOUT_C_HOW_FALSE: ScoutScope.CLAIM,
+    CallType.SCOUT_C_CRUXES: ScoutScope.CLAIM,
+    CallType.SCOUT_C_RELEVANT_EVIDENCE: ScoutScope.CLAIM,
+    CallType.SCOUT_C_STRESS_TEST_CASES: ScoutScope.CLAIM,
+    CallType.SCOUT_C_ROBUSTIFY: ScoutScope.CLAIM,
+    CallType.SCOUT_C_STRENGTHEN: ScoutScope.CLAIM,
+}
+
+
+def is_scout(call_type: CallType) -> bool:
+    return call_type in SCOUT_CALL_TYPES
+
+
+def scout_scope(call_type: CallType) -> ScoutScope | None:
+    return SCOUT_CALL_TYPES.get(call_type)
+
+
+class CallStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETE = "complete"
     FAILED = "failed"
 
 
-class LinkType(str, Enum):
+class LinkType(StrEnum):
     CONSIDERATION = "consideration"  # claim -> question: claim should be accounted for in analysis of the question
     CHILD_QUESTION = "child_question"  # question decomposes into sub-question
     SUPERSEDES = "supersedes"  # page replaces another
@@ -161,7 +205,7 @@ class LinkType(str, Enum):
     )
 
 
-class MoveType(str, Enum):
+class MoveType(StrEnum):
     CREATE_CLAIM = "CREATE_CLAIM"
     CREATE_QUESTION = "CREATE_QUESTION"
     CREATE_SCOUT_QUESTION = "CREATE_SCOUT_QUESTION"
@@ -186,18 +230,18 @@ class MoveType(str, Enum):
     REGENERATE_AND_CRITIQUE = "REGENERATE_AND_CRITIQUE"
 
 
-class CallStage(str, Enum):
+class CallStage(StrEnum):
     BUILD_CONTEXT = "build_context"
     UPDATE_WORKSPACE = "update_workspace"
     CLOSING_REVIEW = "closing_review"
 
 
-class LinkRole(str, Enum):
+class LinkRole(StrEnum):
     DIRECT = "direct"
     STRUCTURAL = "structural"
 
 
-class ConsiderationDirection(str, Enum):
+class ConsiderationDirection(StrEnum):
     SUPPORTS = "supports"
     OPPOSES = "opposes"
     NEUTRAL = "neutral"
@@ -389,6 +433,7 @@ class Page(BaseModel):
     meta_type: str | None = None  # VIEW_META pages: priority/annotation/proposal
     run_id: str = ""
     hidden: bool = False
+    scope_question_id: str | None = None
 
     def is_active(self) -> bool:
         return not self.is_superseded
@@ -410,6 +455,7 @@ class PageLink(BaseModel):
     impact_on_parent_question: int | None = None  # CHILD_QUESTION links: 0-10
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     run_id: str = ""
+    scope_question_id: str | None = None
 
 
 class CallSequence(BaseModel):

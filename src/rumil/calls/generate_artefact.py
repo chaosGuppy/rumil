@@ -5,8 +5,6 @@ artefact-task description, not the rumil preamble, not the broader workspace.
 Any information the artefact should reflect must be captured in a spec item.
 """
 
-from __future__ import annotations
-
 import logging
 
 from pydantic import BaseModel, Field, ValidationError

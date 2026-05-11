@@ -6,8 +6,6 @@ as Continuation A. It survives on the judge_inputs blob and is computed
 from display_first vs sorted(source_a, source_b).
 """
 
-from __future__ import annotations
-
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +18,7 @@ from versus.rumil_judge import _mirror_row, _PendingPair  # noqa: E402
 
 from versus import judge as versus_judge  # noqa: E402
 
-_STUB_CONFIG = {"variant": "ws", "model": "stub"}
+_STUB_CONFIG = {"variant": "orch", "model": "stub"}
 
 
 # order_from_display_first correctness --------------------------------------
@@ -89,7 +87,7 @@ def test_mirror_row_carries_order_ab_when_lower_is_first():
         _FakeJudgeResult(),
         t0=0.0,
         judge_inputs=dict(_STUB_CONFIG),
-        variant="ws",
+        variant="orch",
     )
     assert row["judge_inputs"]["order"] == "ab"
 
@@ -103,7 +101,7 @@ def test_mirror_row_carries_order_ba_when_higher_is_first():
         _FakeJudgeResult(),
         t0=0.0,
         judge_inputs=dict(_STUB_CONFIG),
-        variant="ws",
+        variant="orch",
     )
     assert row["judge_inputs"]["order"] == "ba"
 
@@ -119,7 +117,7 @@ def test_mirror_row_threads_text_ids_into_judge_inputs():
         _FakeJudgeResult(),
         t0=0.0,
         judge_inputs=dict(_STUB_CONFIG),
-        variant="ws",
+        variant="orch",
     )
     assert row["judge_inputs"]["text_a_id"] == "text-a-uuid"
     assert row["judge_inputs"]["text_b_id"] == "text-b-uuid"

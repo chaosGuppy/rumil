@@ -1,7 +1,5 @@
 """Tests for rumil_skills._format helpers."""
 
-from __future__ import annotations
-
 from rumil_skills._format import (
     print_event,
     print_trace,

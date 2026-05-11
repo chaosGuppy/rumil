@@ -238,3 +238,261 @@ async def test_trace_tree_staged_run_does_not_open_extra_db(api_client, db_close
     finally:
         await staged.delete_run_data(delete_project=True)
         await staged.close()
+
+
+async def test_create_run_persists_entrypoint(tmp_db):
+    """create_run should round-trip the entrypoint tag through get_run."""
+    await tmp_db.create_run(
+        name="ep-roundtrip",
+        question_id=None,
+        config={},
+        entrypoint="run_call",
+    )
+    row = await tmp_db.get_run(tmp_db.run_id)
+    assert row is not None
+    assert row.get("entrypoint") == "run_call"
+
+
+async def test_create_run_default_entrypoint_is_null(tmp_db):
+    """Existing call sites that don't pass entrypoint should leave it NULL."""
+    await tmp_db.create_run(name="legacy", question_id=None, config={})
+    row = await tmp_db.get_run(tmp_db.run_id)
+    assert row is not None
+    assert row.get("entrypoint") is None
+
+
+async def test_exchange_totals_for_run_empty(tmp_db):
+    """Runs with no exchanges return zeros, not nulls or errors."""
+    totals = await tmp_db.get_llm_exchange_totals_for_run(tmp_db.run_id)
+    assert totals == {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_create_tokens": 0,
+    }
+
+
+async def test_exchange_totals_for_run_sums_rows(tmp_db, scout_call):
+    """Tokens and cache counts sum across every exchange in the run, treating
+    null fields as zero."""
+    await tmp_db.save_llm_exchange(
+        call_id=scout_call.id,
+        phase="agent",
+        system_prompt="s",
+        user_message="u",
+        response_text="r",
+        tool_calls=[],
+        input_tokens=10,
+        output_tokens=5,
+        cache_creation_input_tokens=100,
+        cache_read_input_tokens=200,
+    )
+    await tmp_db.save_llm_exchange(
+        call_id=scout_call.id,
+        phase="agent",
+        system_prompt="s",
+        user_message="u",
+        response_text="r",
+        tool_calls=[],
+        input_tokens=2,
+        output_tokens=3,
+        cache_creation_input_tokens=None,
+        cache_read_input_tokens=50,
+    )
+    totals = await tmp_db.get_llm_exchange_totals_for_run(tmp_db.run_id)
+    assert totals == {
+        "input_tokens": 12,
+        "output_tokens": 8,
+        "cache_read_tokens": 250,
+        "cache_create_tokens": 100,
+    }
+
+
+async def test_exchange_totals_for_run_filters_by_run(tmp_db, scout_call):
+    """Exchanges from other runs must not leak into the totals."""
+    await tmp_db.save_llm_exchange(
+        call_id=scout_call.id,
+        phase="agent",
+        system_prompt="s",
+        user_message="u",
+        response_text="r",
+        tool_calls=[],
+        input_tokens=7,
+    )
+
+    other_run_id = str(uuid.uuid4())
+    other = await DB.create(run_id=other_run_id, project_id=str(tmp_db.project_id))
+    other.project_id = tmp_db.project_id
+    try:
+        await other.save_llm_exchange(
+            call_id=scout_call.id,
+            phase="agent",
+            system_prompt="s",
+            user_message="u",
+            response_text="r",
+            tool_calls=[],
+            input_tokens=999,
+        )
+        totals = await tmp_db.get_llm_exchange_totals_for_run(tmp_db.run_id)
+        assert totals["input_tokens"] == 7
+    finally:
+        await other._execute(
+            other.client.table("call_llm_exchanges").delete().eq("run_id", other_run_id)
+        )
+        await other.close()
+
+
+async def test_trace_tree_surfaces_run_token_totals(api_client, tmp_db, scout_call):
+    """Trace-tree should report run-level token + cache totals when exchanges exist."""
+    await tmp_db.save_llm_exchange(
+        call_id=scout_call.id,
+        phase="agent",
+        system_prompt="s",
+        user_message="u",
+        response_text="r",
+        tool_calls=[],
+        input_tokens=11,
+        output_tokens=22,
+        cache_creation_input_tokens=33,
+        cache_read_input_tokens=44,
+    )
+    await tmp_db.create_run(name="trace-token-totals", question_id=None, config={})
+
+    resp = await api_client.get(f"/api/runs/{tmp_db.run_id}/trace-tree")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["input_tokens"] == 11
+    assert body["output_tokens"] == 22
+    assert body["cache_create_tokens"] == 33
+    assert body["cache_read_tokens"] == 44
+
+
+async def test_trace_tree_no_exchanges_returns_null_token_totals(api_client, tmp_db):
+    """Runs with no exchanges get null token fields so the UI knows to omit the rollup."""
+    await tmp_db.create_run(name="no-exchanges", question_id=None, config={})
+
+    resp = await api_client.get(f"/api/runs/{tmp_db.run_id}/trace-tree")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["input_tokens"] is None
+    assert body["output_tokens"] is None
+    assert body["cache_read_tokens"] is None
+    assert body["cache_create_tokens"] is None
+
+
+async def test_list_run_call_experiments_filters_by_entrypoint(tmp_db):
+    """Only rows with entrypoint='run_call' in this project should come back."""
+    project_id = tmp_db.project_id
+    await tmp_db.create_run(
+        name="visible",
+        question_id=None,
+        config={"model": "test-model"},
+        entrypoint="run_call",
+    )
+
+    # Untagged sibling run in the same project should be ignored.
+    other_run_id = str(uuid.uuid4())
+    other = await DB.create(run_id=other_run_id, project_id=str(project_id))
+    other.project_id = project_id
+    await other.create_run(name="untagged", question_id=None, config={})
+
+    # A run_call run in a different project should not leak in.
+    foreign_run_id = str(uuid.uuid4())
+    foreign = await DB.create(run_id=foreign_run_id)
+    foreign_project = await foreign.get_or_create_project(f"test-foreign-{foreign_run_id[:8]}")
+    foreign.project_id = foreign_project.id
+    try:
+        await foreign.create_run(
+            name="foreign",
+            question_id=None,
+            config={},
+            entrypoint="run_call",
+        )
+
+        rows = await tmp_db.list_run_call_experiments()
+        names = {r["name"] for r in rows}
+        assert "visible" in names
+        assert "untagged" not in names
+        assert "foreign" not in names
+    finally:
+        await foreign.delete_run_data(delete_project=True)
+        await foreign.close()
+        # Drop the sibling run so tmp_db's project teardown doesn't FK-fail.
+        await other.delete_run_data()
+        await other.close()
+
+
+async def test_list_experiments_merges_kinds_sorted_desc(api_client, tmp_db):
+    """/api/experiments returns ab_eval and run_call rows together, newest first."""
+    project_id = str(tmp_db.project_id)
+
+    # Older run_call row.
+    older_run_id = str(uuid.uuid4())
+    older = await DB.create(run_id=older_run_id, project_id=project_id)
+    older.project_id = tmp_db.project_id
+    await older.create_run(
+        name="older-run-call",
+        question_id=None,
+        config={"model": "haiku"},
+        entrypoint="run_call",
+    )
+
+    # AB eval report (auto-stamped created_at, will be later).
+    report_id = await tmp_db.save_ab_eval_report(
+        run_id_a=str(uuid.uuid4()),
+        run_id_b=str(uuid.uuid4()),
+        question_id_a="",
+        question_id_b="",
+        overall_assessment="this is the assessment body",
+        dimension_reports=[
+            {"name": "clarity", "display_name": "Clarity", "preference": "A slightly", "report": ""}
+        ],
+    )
+
+    resp = await api_client.get(f"/api/experiments?project_id={project_id}")
+    assert resp.status_code == 200
+    items = resp.json()
+
+    kinds = [it["kind"] for it in items]
+    assert "ab_eval" in kinds
+    assert "run_call" in kinds
+
+    # Sorted desc by created_at: ab_eval (just inserted) should precede the run_call.
+    ab = next(it for it in items if it["kind"] == "ab_eval")
+    rc = next(it for it in items if it["kind"] == "run_call" and it["name"] == "older-run-call")
+    assert ab["created_at"] >= rc["created_at"]
+    assert items.index(ab) < items.index(rc)
+
+    # Run-call row exposes the trace-link fields the frontend uses.
+    assert rc["run_id"] == older_run_id
+    assert rc["config_summary"].get("model") == "haiku"
+
+    # AB eval row preserves its identity for the detail-page link.
+    assert ab["id"] == report_id
+
+    # Drop the sibling run + report so tmp_db's project teardown doesn't FK-fail.
+    await tmp_db._execute(tmp_db.client.table("ab_eval_reports").delete().eq("id", report_id))
+    await older.delete_run_data()
+    await older.close()
+
+
+async def test_list_experiments_requires_admin(api_client, monkeypatch):
+    """Non-admin users get 403 from /api/experiments."""
+    from fastapi import HTTPException
+
+    from rumil.api.app import app, require_admin
+
+    def deny():
+        raise HTTPException(status_code=403, detail="not admin")
+
+    app.dependency_overrides[require_admin] = deny
+    try:
+        resp = await api_client.get("/api/experiments")
+        assert resp.status_code == 403
+    finally:
+        # Restore the admin override the api_client fixture installed.
+        from rumil.api.auth import AuthUser
+
+        app.dependency_overrides[require_admin] = lambda: AuthUser(
+            user_id="", email="test@example.com"
+        )

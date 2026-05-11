@@ -1,8 +1,6 @@
 """Max-effort variant of create_view: same logic, but the ContextBuilder is
 wrapped with the impact-percentile filter."""
 
-from __future__ import annotations
-
 from rumil.calls.context_builders import CreateViewContext
 from rumil.calls.create_view import CreateViewCall
 from rumil.calls.impact_filtered_context import ImpactFilteredContext

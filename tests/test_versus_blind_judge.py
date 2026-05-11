@@ -13,9 +13,8 @@ The two backends covered:
 1. Blind judge (OpenRouter + Anthropic-direct): both share
    ``versus/judge.py::render_judge_prompt`` — only the transport
    differs.
-2. rumil:ws / rumil:orch: ``versus_bridge._format_pair_content``,
-   ``_versus_extra``, ``ensure_versus_question``, and the inline
-   ws/orch user prompts.
+2. rumil:orch: ``versus_bridge._format_pair_content``,
+   ``_versus_extra``, ``ensure_versus_question``.
 
 The continuation *bodies* (``continuation_a_text`` / ``continuation_b_text``)
 may legitimately contain the literal word "human" as essay prose — the
@@ -23,8 +22,6 @@ invariant is about *ids*, not about word choice in the continuation. So
 we use sentinel ids (guaranteed not to appear in prose) and keep the
 continuation-body text simple.
 """
-
-from __future__ import annotations
 
 import asyncio
 import sys
@@ -35,7 +32,6 @@ import pytest
 
 from rumil.versus_bridge import (
     PairContext,
-    _build_ws_user_prompt,
     _versus_extra,
     ensure_versus_question,
 )
@@ -45,7 +41,6 @@ if str(_VERSUS_SRC) not in sys.path:
     sys.path.insert(0, str(_VERSUS_SRC))
 
 from versus.judge import render_judge_prompt  # noqa: E402
-from versus.rumil_judge import _PendingPair  # noqa: E402
 
 SENTINEL_A = "__SOURCE_A_SENTINEL_7x3q1z__"
 SENTINEL_B = "__SOURCE_B_SENTINEL_9k2mvp__"
@@ -72,27 +67,6 @@ def _make_pair_context(
         source_a_id=source_a_id,
         source_b_id=source_b_id,
         task_name=task_name,
-    )
-
-
-def _make_pending_pair(
-    source_a_id: str = SENTINEL_A,
-    source_b_id: str = SENTINEL_B,
-) -> _PendingPair:
-    return _PendingPair(
-        essay_id=SENTINEL_ESSAY,
-        prefix_hash=SENTINEL_PREFIX_HASH,
-        prefix_text=SENTINEL_PREFIX_TEXT,
-        source_a_id=source_a_id,
-        source_a_text=SENTINEL_A_TEXT,
-        source_a_text_id="text-a-uuid",
-        source_b_id=source_b_id,
-        source_b_text=SENTINEL_B_TEXT,
-        source_b_text_id="text-b-uuid",
-        display_first_id=source_a_id,
-        display_first_text=SENTINEL_A_TEXT,
-        display_second_id=source_b_id,
-        display_second_text=SENTINEL_B_TEXT,
     )
 
 
@@ -155,10 +129,10 @@ def test_anthropic_text_judge_does_not_leak_source_ids(source_a_id, source_b_id)
 
 
 @pytest.mark.parametrize(("source_a_id", "source_b_id"), ID_PAIRS)
-def test_rumil_ws_orch_agent_visible_surfaces_do_not_leak_source_ids(source_a_id, source_b_id):
-    """Backend 4: rumil:ws / rumil:orch agent-visible surfaces.
+def test_rumil_orch_agent_visible_surfaces_do_not_leak_source_ids(source_a_id, source_b_id):
+    """Backend 3: rumil:orch agent-visible surfaces.
 
-    Covers everything a ws/orch agent can read without hitting the DB
+    Covers everything an orch agent can read without hitting the DB
     for unrelated pages:
 
     - Question page ``content`` (``_format_pair_content``)
@@ -174,12 +148,6 @@ def test_rumil_ws_orch_agent_visible_surfaces_do_not_leak_source_ids(source_a_id
 
     extra_rendered = "\n".join(f"{k}: {v}" for k, v in (page.extra or {}).items())
     _assert_no_id_leak(extra_rendered, source_a_id, source_b_id)
-
-    # The inline user message the SDK agent receives in ws runs. Reads
-    # the pair via load_page on the scope question, so ids must not
-    # appear in the instruction shell either.
-    ws_user = _build_ws_user_prompt(pair, question_id=page.id)
-    _assert_no_id_leak(ws_user, source_a_id, source_b_id)
 
 
 def _build_versus_question_page(pair: PairContext):
@@ -252,7 +220,7 @@ def test_page_extra_keys_are_exactly_the_allowed_set():
 BLIND_JUDGE_BACKEND_TESTS = (
     ("openrouter_text", "test_openrouter_text_judge_does_not_leak_source_ids"),
     ("anthropic_text", "test_anthropic_text_judge_does_not_leak_source_ids"),
-    ("rumil_ws_orch", "test_rumil_ws_orch_agent_visible_surfaces_do_not_leak_source_ids"),
+    ("rumil_orch", "test_rumil_orch_agent_visible_surfaces_do_not_leak_source_ids"),
 )
 
 

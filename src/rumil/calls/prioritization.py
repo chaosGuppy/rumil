@@ -49,6 +49,8 @@ async def run_prioritization_call(
         call.id[:8],
         call.scope_page_id[:8] if call.scope_page_id else None,
     )
+    if call.scope_page_id and db.scope_question_id != call.scope_page_id:
+        db = db.with_scope(call.scope_page_id)
     await db.update_call_status(call.id, CallStatus.RUNNING)
 
     if available_moves is None:

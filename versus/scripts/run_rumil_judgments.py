@@ -1,6 +1,6 @@
 """Run pairwise versus judgments.
 
-Three modes:
+Two modes:
 
 - **Blind** (default, no ``--variant``): single-turn LLM call with the
   blind shell — no tools, no DB, no workspace. Each ``--model`` is
@@ -8,13 +8,12 @@ Three modes:
   OpenRouter. This subsumes the previous ``text`` / ``rumil-text`` /
   OpenRouter judge paths into one entry point.
 
-- ``--variant ws``: one VERSUS_JUDGE agent call per pair via rumil's
-  SDK agent, with single-arm workspace-exploration tools against a
-  user-chosen rumil workspace. Requires ``--workspace`` + running
-  Supabase.
-
 - ``--variant orch``: full TwoPhaseOrchestrator run per pair + closing
   call. Expensive. Requires ``--workspace`` + running Supabase.
+
+The earlier ``--variant ws`` path was removed; a low-budget orch run
+covers the agentic-baseline use case. Historical ``rumil:ws:*`` rows
+in ``versus_judgments`` are preserved.
 
 Env resolution for ANTHROPIC_API_KEY / OPENROUTER_API_KEY: versus/.env,
 then <rumil-root>/.env, then the process environment.
@@ -48,7 +47,14 @@ except ModuleNotFoundError:
 from versus import envcascade  # noqa: E402
 
 envcascade.apply(
-    ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"),
+    (
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_HOST",
+        "LANGFUSE_BASE_URL",
+    ),
     versus_root=VERSUS_ROOT,
     rumil_root=RUMIL_ROOT,
 )
@@ -71,11 +77,14 @@ def main() -> None:
     ap.add_argument("--config", default=str(VERSUS_ROOT / "config.yaml"))
     ap.add_argument(
         "--variant",
-        choices=("ws", "orch"),
+        choices=("orch", "reflective"),
         default=None,
         help=(
-            "Tool-using variant. Omit for the default blind judge path. "
-            "ws/orch require --workspace and running Supabase."
+            "Workflow variant. Omit for the default blind judge path. "
+            "orch fires TwoPhaseOrchestrator (research + closer); "
+            "reflective fires ReflectiveJudgeWorkflow (read → reflect → "
+            "verdict, no research). Both require --workspace and "
+            "running Supabase."
         ),
     )
     ap.add_argument(
@@ -88,14 +97,14 @@ def main() -> None:
             "(claude-*), or an OpenRouter id (provider/model). For the "
             "default blind path: repeat to judge with multiple models; "
             "claude-* go direct to Anthropic, others via OpenRouter; "
-            "defaults to cfg.judging.models. For ws/orch: pass at most "
+            "defaults to cfg.judging.models. For orch: pass at most "
             "one (default: opus)."
         ),
     )
     ap.add_argument(
         "--workspace",
-        default=None,
-        help="Rumil workspace (project) name for ws/orch variants. Required for those variants; no default.",
+        default="versus",
+        help="Rumil workspace (project) name for the orch variant. Default: versus.",
     )
     ap.add_argument(
         "--dimension",
@@ -123,7 +132,7 @@ def main() -> None:
         help=(
             "Concurrent judgments per LLM call. If unset, the variant picks "
             "its own default: blind path = cfg.per_model_concurrency per "
-            "model (usually 8); ws = 2."
+            "model (usually 8); orch = 1 (serial)."
         ),
     )
     ap.add_argument("--limit", type=int, default=None, help="Cap on number of judgments.")
@@ -132,15 +141,17 @@ def main() -> None:
         "--essay",
         action="append",
         default=None,
-        help="Restrict planning to specified essay_id(s). Repeatable. Honored on blind, ws, and orch.",
+        help="Restrict planning to specified essay_id(s). Repeatable. Honored on blind and orch.",
     )
     ap.add_argument(
-        "--active",
+        "--include-stale",
         action="store_true",
         help=(
-            "Restrict to the canonical active set: current schema_version "
-            "and not in cfg.essays.exclude_ids. Same gate /versus applies. "
-            "Composes with --essay (intersected)."
+            "Default behavior is the canonical active set (current "
+            "schema_version, not in cfg.essays.exclude_ids — same gate "
+            "/versus applies). Pass this to plan against every essay "
+            "with rows in versus_texts instead, including off-feed or "
+            "old-schema rows. Composes with --essay (intersected)."
         ),
     )
     ap.add_argument(
@@ -148,13 +159,13 @@ def main() -> None:
         default=None,
         help=(
             "Comma-separated source_ids; only emit pairs where both sides "
-            "are in this list. Honored on blind, ws, and orch."
+            "are in this list. Honored on blind and orch."
         ),
     )
     ap.add_argument(
         "--vs-human",
         action="store_true",
-        help="Only emit pairs where one side is 'human'. ws/orch only.",
+        help="Only emit pairs where one side is 'human'. orch only.",
     )
     ap.add_argument(
         "--current-only",
@@ -177,7 +188,7 @@ def main() -> None:
             "variant are excluded too. Without this flag, every prefix_hash "
             "present in versus_texts is eligible. Sibling variants live "
             "under `prefix_variants:` in config.yaml; pass their `id`. "
-            "ws/orch variants currently take at most one --prefix-label."
+            "orch currently takes at most one --prefix-label."
         ),
     )
     ap.add_argument(
@@ -185,8 +196,12 @@ def main() -> None:
         action="store_true",
         help=(
             "Target the production Supabase database for versus_texts / "
-            "versus_judgments (default: local). Blind path only — ws/orch "
-            "still hit local rumil DB."
+            "versus_judgments AND, on orch, the rumil workspace + run "
+            "tables (default: local for both). On orch, the workspace "
+            "named via --workspace must already exist on the target DB "
+            "(typo protection — create via rumil main.py first). orch "
+            "runs are still staged by default; pass --persist to write the "
+            "per-pair Question + research subtree to baseline."
         ),
     )
     ap.add_argument(
@@ -194,11 +209,48 @@ def main() -> None:
         action="store_true",
         help=(
             "Persist versus-created pages to the workspace baseline instead "
-            "of staging them (ws/orch only). Default is staged: the agent "
+            "of staging them (orch only). Default is staged: the agent "
             "still reads baseline workspace material but its Question pages "
-            "and (for orch) research subtree are scoped to the run's staged "
+            "and the orch research subtree are scoped to the run's staged "
             "view -- invisible to other readers of the workspace."
         ),
+    )
+    # Reflective-variant per-stage knobs. All optional; default None
+    # inherits the workflow's built-in prompts and the bridge-set
+    # rumil_model_override for the model. Ignored on --variant orch.
+    ap.add_argument(
+        "--reader-model",
+        default=None,
+        help="Reflective: override the read-stage model. Anthropic id or short alias.",
+    )
+    ap.add_argument(
+        "--reflector-model",
+        default=None,
+        help="Reflective: override the reflect-stage model.",
+    )
+    ap.add_argument(
+        "--verdict-model",
+        default=None,
+        help="Reflective: override the verdict-stage model.",
+    )
+    ap.add_argument(
+        "--read-prompt-path",
+        default=None,
+        help=(
+            "Reflective: path to a markdown file replacing the built-in "
+            "read prompt. Loaded at construction; the loaded text is "
+            "what fingerprints. Empty / whitespace-only files are rejected."
+        ),
+    )
+    ap.add_argument(
+        "--reflect-prompt-path",
+        default=None,
+        help="Reflective: path to a markdown file replacing the built-in reflect prompt.",
+    )
+    ap.add_argument(
+        "--verdict-prompt-path",
+        default=None,
+        help="Reflective: path to a markdown file replacing the built-in verdict prompt.",
     )
     args = ap.parse_args()
 
@@ -212,13 +264,13 @@ def main() -> None:
     if not cfg.essays.cache_dir.is_absolute():
         cfg.essays.cache_dir = VERSUS_ROOT / cfg.essays.cache_dir
 
-    if args.active:
+    if args.include_stale:
+        essay_ids = args.essay
+    else:
         active = prepare.active_essay_ids(
             cfg.essays.exclude_ids, client=versus_db.get_client(prod=args.prod)
         )
         essay_ids = sorted(active & set(args.essay)) if args.essay else sorted(active)
-    else:
-        essay_ids = args.essay
 
     prefix_cfgs = (
         [prepare.resolve_prefix_cfg(cfg, label) for label in args.prefix_label]
@@ -262,13 +314,6 @@ def main() -> None:
     if not args.workspace:
         ap.error(f"--workspace is required for --variant {args.variant}")
 
-    if args.prod:
-        ap.error(
-            f"--prod is not yet wired through --variant {args.variant}; "
-            "the blind path is the only prod-aware judge today. ws/orch "
-            "would need DB.create(prod=...) plumbing in rumil_judge.py too."
-        )
-
     if prefix_cfgs is not None and len(prefix_cfgs) > 1:
         ap.error(
             f"--variant {args.variant} takes at most one --prefix-label "
@@ -278,43 +323,50 @@ def main() -> None:
 
     dimensions = tuple(args.dimension) if args.dimension else DEFAULT_DIMENSIONS
 
-    if args.variant == "ws":
-        asyncio.run(
-            rumil_judge.run_ws(
-                cfg,
-                workspace=args.workspace,
-                model=model_id,
-                dimensions=dimensions,
-                limit=args.limit,
-                dry_run=args.dry_run,
-                concurrency=args.concurrency,
-                essay_ids=essay_ids,
-                contestants=contestants,
-                vs_human=args.vs_human,
-                current_only=args.current_only,
-                prefix_cfg=prefix_cfg_one,
-                persist=args.persist,
-            )
+    # Reflective-only flags must be unset on the orch path so the
+    # CLI surface stays unambiguous about which variant they apply to.
+    if args.variant == "orch":
+        for flag, value in (
+            ("--reader-model", args.reader_model),
+            ("--reflector-model", args.reflector_model),
+            ("--verdict-model", args.verdict_model),
+            ("--read-prompt-path", args.read_prompt_path),
+            ("--reflect-prompt-path", args.reflect_prompt_path),
+            ("--verdict-prompt-path", args.verdict_prompt_path),
+        ):
+            if value is not None:
+                ap.error(f"{flag} is only valid with --variant reflective")
+
+    reader_model = resolve_model_alias(args.reader_model) if args.reader_model else None
+    reflector_model = resolve_model_alias(args.reflector_model) if args.reflector_model else None
+    verdict_model = resolve_model_alias(args.verdict_model) if args.verdict_model else None
+
+    asyncio.run(
+        rumil_judge.run_orch(
+            cfg,
+            workspace=args.workspace,
+            model=model_id,
+            dimensions=dimensions,
+            budget=args.budget,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            concurrency=args.concurrency,
+            essay_ids=essay_ids,
+            contestants=contestants,
+            vs_human=args.vs_human,
+            current_only=args.current_only,
+            prefix_cfg=prefix_cfg_one,
+            persist=args.persist,
+            prod=args.prod,
+            variant=args.variant,
+            reader_model=reader_model,
+            reflector_model=reflector_model,
+            verdict_model=verdict_model,
+            read_prompt_path=args.read_prompt_path,
+            reflect_prompt_path=args.reflect_prompt_path,
+            verdict_prompt_path=args.verdict_prompt_path,
         )
-    elif args.variant == "orch":
-        asyncio.run(
-            rumil_judge.run_orch(
-                cfg,
-                workspace=args.workspace,
-                model=model_id,
-                dimensions=dimensions,
-                budget=args.budget,
-                limit=args.limit,
-                dry_run=args.dry_run,
-                concurrency=args.concurrency,
-                essay_ids=essay_ids,
-                contestants=contestants,
-                vs_human=args.vs_human,
-                current_only=args.current_only,
-                prefix_cfg=prefix_cfg_one,
-                persist=args.persist,
-            )
-        )
+    )
 
 
 if __name__ == "__main__":

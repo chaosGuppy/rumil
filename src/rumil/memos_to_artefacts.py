@@ -14,8 +14,6 @@ both a workspace ARTEFACT page (via the existing pipeline) and a markdown
 file under pages/memos/.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import re

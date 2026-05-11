@@ -4,7 +4,13 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from voyageai.client_async import AsyncClient
+import httpx
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 from rumil.database import DB, _row_to_page, _Rows, _rows
 from rumil.models import Page, Workspace
@@ -14,13 +20,17 @@ log = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = "voyage-4-large"
 EMBEDDING_DIMENSIONS = 1024
+VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings"
+_DEFAULT_TIMEOUT = httpx.Timeout(120.0)
+_MAX_RETRIES = 5
 
 
-def _get_client() -> AsyncClient:
-    key = get_settings().voyage_ai_api_key
-    if not key:
-        raise OSError("VOYAGE_AI_API_KEY not set. Add it to .env to use embeddings.")
-    return AsyncClient(api_key=key)
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in (408, 429, 500, 502, 503, 504)
+    return False
 
 
 async def embed_texts(
@@ -34,14 +44,31 @@ async def embed_texts(
     """
     if not texts:
         return []
-    client = _get_client()
-    result = await client.embed(
-        texts,
-        model=EMBEDDING_MODEL,
-        input_type=input_type,
-        output_dimension=EMBEDDING_DIMENSIONS,
+    key = get_settings().voyage_ai_api_key
+    if not key:
+        raise OSError("VOYAGE_AI_API_KEY not set. Add it to .env to use embeddings.")
+    payload = {
+        "input": texts,
+        "model": EMBEDDING_MODEL,
+        "input_type": input_type,
+        "output_dimension": EMBEDDING_DIMENSIONS,
+    }
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    retry = AsyncRetrying(
+        reraise=True,
+        stop=stop_after_attempt(_MAX_RETRIES),
+        wait=wait_exponential_jitter(initial=1, max=16),
+        retry=retry_if_exception(_is_retryable),
     )
-    return result.embeddings
+    data: dict[str, Any] | None = None
+    async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT) as client:
+        async for attempt in retry:
+            with attempt:
+                response = await client.post(VOYAGE_API_URL, json=payload, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+    assert data is not None
+    return [item["embedding"] for item in data["data"]]
 
 
 async def embed_query(text: str, input_type: str = "query") -> Sequence[float]:
@@ -186,6 +213,8 @@ async def search_pages_by_vector(
         params["filter_staged_run_id"] = db.run_id
     if include_hidden:
         params["filter_include_hidden"] = True
+    if db.scope_question_id is not None:
+        params["filter_scope_question_id"] = db.scope_question_id
     rows: _Rows = _rows(await db.client.rpc("match_pages", params).execute())
     results: list[tuple[Page, float]] = []
     for row in rows:

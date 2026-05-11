@@ -1,7 +1,5 @@
 """Tests for rumil_skills.apply_move — cc-mediated move application."""
 
-from __future__ import annotations
-
 import json
 import uuid
 

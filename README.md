@@ -438,6 +438,23 @@ uv run python scripts/run_call.py find-considerations "Test question" --name "co
 
 The `--up-to-stage` flag truncates the call lifecycle. Each call runs three stages in order: `build_context` → `update_workspace` → `closing_review`. Passing `--up-to-stage build_context` runs only context assembly; `--up-to-stage update_workspace` skips the closing review. Useful for inspecting context or page output in isolation.
 
+### Comparing context builders
+
+`scripts/run_context_eval.py` compares what two context builders pull into the prompt for a given question. The gold standard is `ImpactFilteredContext` (cached per-question in the runs table); the candidate defaults to `EmbeddingContext`. Both arms run only the `build_context` phase, so neither writes pages to the workspace. The script prints a comparison URL pointing at the diff page in the frontend.
+
+```bash
+# Default: compare EmbeddingContext (candidate) against ImpactFilteredContext (gold)
+uv run python scripts/run_context_eval.py <QUESTION_ID>
+
+# Force a fresh gold run (ignores any cached one)
+uv run python scripts/run_context_eval.py <QUESTION_ID> --refresh-gold-standard
+
+# Compare a different candidate builder
+uv run python scripts/run_context_eval.py <QUESTION_ID> --builder ImpactFilteredContext
+```
+
+The diff page (`/context-evals/<gold_run_id>/vs/<candidate_run_id>`) shows the page-load diff in three buckets (gold-only, both, candidate-only) and renders the standard `context_built` event side-by-side for both arms.
+
 ## Frontend
 
 The frontend is a Next.js app that reads from a FastAPI server.

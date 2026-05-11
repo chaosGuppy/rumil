@@ -6,8 +6,6 @@ on re-import; otherwise cached rows silently render against the new
 essay text while keying as if nothing changed.
 """
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

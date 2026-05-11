@@ -105,6 +105,20 @@ class JudgementView(View):
         parts.append(latest.abstract or latest.headline)
         return "\n".join(parts)
 
+    async def render_for_scout(self, question_id: str, db: DB) -> str | None:
+        body = await self.render_for_prioritization(question_id, db)
+        if body is None:
+            return None
+        callout = (
+            "### Notes for scouts\n\n"
+            "This is the workspace's standing answer. Use it to identify "
+            "what still needs examining — places where the judgement leans "
+            "on assumptions, where confidence is low, or where the reasoning "
+            "would change if a key consideration moved. Generate subquestions "
+            "that target those leverage points."
+        )
+        return f"## Current take on this question\n\n{body}\n\n{callout}"
+
     async def render_for_child_investigation_results(
         self,
         question_id: str,

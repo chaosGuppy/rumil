@@ -19,8 +19,6 @@ Usage:
         --prompt-file "C:/Users/scath/OneDrive/Documents/Rumil Tara prompt.md"
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import logging

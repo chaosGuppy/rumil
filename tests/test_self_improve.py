@@ -14,8 +14,6 @@ Covers:
 - --self-improve CLI flag: parsed, shown in --help, dispatched
 """
 
-from __future__ import annotations
-
 import subprocess
 import uuid
 from pathlib import Path

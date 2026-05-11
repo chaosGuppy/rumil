@@ -98,18 +98,33 @@ export default async function TracePage({
         <div className="trace-title-row">
           <h1 className="trace-title">Execution Trace</h1>
           <span className="trace-run-id">{runId.slice(0, 8)}</span>
+          <span
+            className={`trace-status-badge trace-status-${trace.staged ? "staged" : "committed"}`}
+          >
+            {trace.staged ? "STAGED" : "COMMITTED"}
+          </span>
         </div>
       </header>
       {configEntries.length > 0 && (
         <div className="trace-config">
           <div className="trace-config-label">configuration</div>
           <div className="trace-config-table">
-            {configEntries.map(([key, val]) => (
-              <Fragment key={key}>
-                <span className="trace-config-key">{key}</span>
-                <span className="trace-config-val">{String(val)}</span>
-              </Fragment>
-            ))}
+            {configEntries.map(([key, val]) => {
+              const isObj = val !== null && typeof val === "object";
+              return (
+                <Fragment key={key}>
+                  <span className="trace-config-key">{key}</span>
+                  {isObj ? (
+                    <details className="trace-config-val trace-config-obj">
+                      <summary>{`{${Object.keys(val as object).length} keys}`}</summary>
+                      <pre>{JSON.stringify(val, null, 2)}</pre>
+                    </details>
+                  ) : (
+                    <span className="trace-config-val">{String(val)}</span>
+                  )}
+                </Fragment>
+              );
+            })}
           </div>
         </div>
       )}

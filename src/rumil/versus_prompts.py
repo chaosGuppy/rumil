@@ -6,8 +6,6 @@ DB / orchestrator / sdk-agent modules at import time. The bridge
 re-exports everything here for back-compat.
 """
 
-from __future__ import annotations
-
 import hashlib
 from collections.abc import Sequence
 

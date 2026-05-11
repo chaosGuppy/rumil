@@ -88,6 +88,9 @@
   max-width: 1600px;
   margin: 0 auto;
 }
+.versus-main.versus-main-full {
+  max-width: none;
+}
 
 .versus-pill {
   display: inline-block;
@@ -283,6 +286,52 @@
   align-items: center;
   gap: 14px;
   margin: 4px 0 12px;
+}
+
+.recent-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.recent-tabs .grow { flex: 1; }
+.recent-tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  text-decoration: none;
+  color: var(--color-muted);
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  margin-bottom: -1px;
+}
+.recent-tab:hover { color: var(--foreground); background: var(--vaccent-dim); }
+.recent-tab.active {
+  color: var(--foreground);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  font-weight: 500;
+}
+.recent-tab-count {
+  font-size: 11px;
+  color: var(--color-muted);
+  font-weight: 400;
+}
+.recent-limit-form {
+  margin-right: 4px;
+}
+.recent-limit-form input[type="number"] {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-surface);
+  color: var(--foreground);
 }
 .results-topbar h2 {
   margin: 0;

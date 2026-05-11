@@ -29,19 +29,59 @@ Tools are a full replacement — to remove a tool, omit it; to add or edit
 one, include the desired Anthropic tool dict.
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import getpass
 import json
 import logging
+import os
 import sys
 import uuid
 from pathlib import Path
 
-from rumil.database import DB
-from rumil.forks import (
+
+def _apply_env_cascade() -> None:
+    """Pull the standard set of keys from .env files into os.environ.
+
+    Without this, ``rumil.settings`` (loaded by ``rumil.forks``) reads
+    pydantic-settings priority — shell env wins over .env — and a stale
+    ``ANTHROPIC_API_KEY`` exported in the user's shell can silently
+    redirect fork billing away from the project key.
+
+    Mirrors the cascade the versus scripts apply at module top.
+    """
+    keys = (
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_HOST",
+        "LANGFUSE_BASE_URL",
+    )
+    rumil_root = Path(__file__).resolve().parent.parent
+    versus_root = rumil_root / "versus"
+    for env_path in (versus_root / ".env", rumil_root / ".env"):
+        if not env_path.is_file():
+            continue
+        for raw in env_path.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            if k not in keys:
+                continue
+            v = v.strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
+                v = v[1:-1]
+            os.environ[k] = v
+
+
+_apply_env_cascade()
+
+
+from rumil.database import DB  # noqa: E402  — env must be cascaded before rumil imports
+from rumil.forks import (  # noqa: E402
     ForkOverrides,
     fire_fork,
     hash_overrides,

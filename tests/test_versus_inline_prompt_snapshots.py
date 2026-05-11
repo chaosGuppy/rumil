@@ -18,8 +18,6 @@ silent: change the string, either update the pin AND bump the version,
 or revert.
 """
 
-from __future__ import annotations
-
 import hashlib
 import sys
 from pathlib import Path

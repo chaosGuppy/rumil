@@ -13,8 +13,6 @@ Data types: Tool, ToolCall, RoundRecord, AgentResult, APIResponse,
             LLMExchangeMetadata.
 """
 
-from __future__ import annotations
-
 import contextvars
 import json
 import logging
@@ -22,14 +20,16 @@ import re
 import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
+from typing import Any, overload
 
 import anthropic
 from anthropic.types import (
+    RedactedThinkingBlock,
     ServerToolUseBlock,
     TextBlock,
+    ThinkingBlock,
     ToolUseBlock,
     WebSearchToolResultBlock,
 )
@@ -43,6 +43,9 @@ from tenacity import (
     wait_exponential,
 )
 
+from rumil.database import DB
+from rumil.model_config import ModelConfig
+from rumil.models import CallType, ScoutScope, scout_scope
 from rumil.pricing import compute_cost
 from rumil.prompts import PROMPTS_DIR
 from rumil.settings import get_settings
@@ -54,9 +57,6 @@ from rumil.tracing import (
 from rumil.tracing.trace_events import ErrorEvent, LLMExchangeEvent
 from rumil.tracing.tracer import get_trace
 
-if TYPE_CHECKING:
-    from rumil.database import DB
-
 DEFAULT_MAX_TOKENS = 20_000
 DEFAULT_TEMPERATURE = 0.15
 
@@ -67,10 +67,10 @@ def _supports_sampling_params(model: str) -> bool:
     # 1.0 — we'd rather skip it than set 1.0, so gate on thinking being off.
     if model.startswith("claude-opus-4-7"):
         return False
-    return _thinking_config(model) is None
+    return thinking_config(model) is None
 
 
-def _thinking_config(model: str) -> dict | None:
+def thinking_config(model: str) -> dict | None:
     # Adaptive thinking: Opus 4.7/4.6 and Sonnet 4.6. Haiku and older Sonnet
     # don't support adaptive. On 4.7, thinking text is omitted by default —
     # ask for summarized so sdk_agent can still capture it.
@@ -81,7 +81,24 @@ def _thinking_config(model: str) -> dict | None:
     return None
 
 
-def _effort_level(model: str) -> str | None:
+def derive_model_config(model: str, *, max_tokens: int | None = None) -> ModelConfig:
+    """Default ``ModelConfig`` for ``model``, derived from rumil rules.
+
+    What rumil's call paths use when no explicit override is passed:
+    sampling defaults from ``_supports_sampling_params`` /
+    ``DEFAULT_TEMPERATURE``, plus thinking + effort from the
+    model-id-driven helpers. ``max_tokens`` overrides the default cap
+    when provided.
+    """
+    return ModelConfig(
+        temperature=DEFAULT_TEMPERATURE if _supports_sampling_params(model) else None,
+        max_tokens=max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
+        thinking=thinking_config(model),
+        effort=effort_level(model),
+    )
+
+
+def effort_level(model: str) -> str | None:
     # xhigh is Opus 4.7-only; high is the best shared setting elsewhere.
     # Haiku and Sonnet 4.5 don't support the effort parameter at all.
     if model.startswith("claude-opus-4-7"):
@@ -109,25 +126,73 @@ def _exc_status(exc: BaseException | None) -> int | None:
     return status if isinstance(status, int) else None
 
 
+_CONNECTION_ERROR_NAME_MARKERS = (
+    "readerror",
+    "writeerror",
+    "connecterror",
+    "readtimeout",
+    "writetimeout",
+    "connecttimeout",
+    "pooltimeout",
+)
+
+
+def _is_connection_error(exc: BaseException | None) -> bool:
+    """True for httpx/httpcore connection-class transients.
+
+    These are real transients (mid-stream connection drops), but they
+    can also fire on destined-to-fail generations — e.g. very long
+    streams the edge can't sustain. They get a separate, smaller retry
+    budget (``max_api_retries_connection_error``) so we don't retry 60
+    times and burn money on every attempt.
+    """
+    if exc is None:
+        return False
+    name = type(exc).__name__.lower()
+    return any(marker in name for marker in _CONNECTION_ERROR_NAME_MARKERS)
+
+
 def _is_retryable(exc: BaseException) -> bool:
     """Return True if the exception represents a transient API error."""
     status = _exc_status(exc)
     name = type(exc).__name__.lower()
+    msg = str(exc).lower()
     return (
         status in (429, 500, 502, 503, 529)
         or "overloaded" in name
         or "ratelimit" in name
         or "internalserver" in name
-        or "overloaded" in str(exc).lower()
+        or "overloaded" in msg
+        # httpx RemoteProtocolError + variants — Anthropic edge sometimes
+        # closes the chunked-streaming connection mid-response; not a real
+        # refusal, transient. Observed on a v3 d&e workflow run as
+        # "RemoteProtocolError: peer closed connection without sending
+        # complete message body (incomplete chunked read)" — wedged the
+        # workflow because the error wasn't classified retryable.
+        or "remoteprotocol" in name
+        or "incomplete chunked read" in msg
+        or "peer closed connection" in msg
+        or _is_connection_error(exc)
     )
+
+
+def _max_retries_for_exc(exc: BaseException | None) -> int:
+    """Pick the retry-budget for *exc*.
+
+    Connection-class errors get the smaller ``max_api_retries_connection_error``
+    cap. Everything else routes through the per-status defaults.
+    """
+    settings = get_settings()
+    if _is_connection_error(exc):
+        cap = settings.max_api_retries_connection_error
+        return min(cap, 3) if settings.is_test_mode else cap
+    return settings.get_max_retries(_exc_status(exc))
 
 
 def _stop_after_status_retries(retry_state: RetryCallState) -> bool:
     """Stop callback that respects per-status retry limits from settings."""
     exc = retry_state.outcome.exception() if retry_state.outcome else None
-    status = _exc_status(exc)
-    max_retries = get_settings().get_max_retries(status)
-    return retry_state.attempt_number >= max_retries
+    return retry_state.attempt_number >= _max_retries_for_exc(exc)
 
 
 def _log_before_retry(retry_state: RetryCallState) -> None:
@@ -137,7 +202,7 @@ def _log_before_retry(retry_state: RetryCallState) -> None:
     name = type(exc).__name__.lower() if exc else "unknown"
     label = f"HTTP {status}" if status else name
     wait = retry_state.next_action.sleep if retry_state.next_action else 0
-    max_retries = get_settings().get_max_retries(status)
+    max_retries = _max_retries_for_exc(exc)
     log.warning(
         "API temporarily unavailable (%s), retrying in %gs (attempt %d/%d)",
         label,
@@ -186,20 +251,6 @@ def reset_experimental_scout_budget(token: contextvars.Token) -> None:
     _experimental_scout_budget.reset(token)
 
 
-_SCOUT_BUDGET_CALL_TYPES: frozenset[str] = frozenset(
-    {
-        "scout_subquestions",
-        "scout_estimates",
-        "scout_hypotheses",
-        "scout_analogies",
-        "scout_paradigm_cases",
-        "scout_factchecks",
-        "scout_web_questions",
-        "scout_deep_questions",
-    }
-)
-
-
 def build_system_prompt(
     call_type: str,
     *,
@@ -243,11 +294,16 @@ def build_system_prompt(
         parts.append(_load_file("citations.md"))
     parts.append(grounding)
     budget = _experimental_scout_budget.get()
-    if budget is not None and call_type in _SCOUT_BUDGET_CALL_TYPES:
-        budget_awareness = _load_file("scout_budget_awareness_experimental.md").format(
-            budget=budget
-        )
-        parts.append(budget_awareness)
+    if budget is not None:
+        try:
+            ct_enum = CallType(call_type)
+        except ValueError:
+            ct_enum = None
+        if ct_enum is not None and scout_scope(ct_enum) == ScoutScope.QUESTION:
+            budget_awareness = _load_file("scout_budget_awareness_experimental.md").format(
+                budget=budget
+            )
+            parts.append(budget_awareness)
     return "\n\n---\n\n".join(parts)
 
 
@@ -417,6 +473,150 @@ class AgentResult:
     messages: list[dict] = field(default_factory=list)
 
 
+def _capture_request_kwargs(cfg: ModelConfig) -> dict:
+    """Persist the ``ModelConfig`` that was applied on the wire.
+
+    Stored in the ``request_kwargs`` column on ``call_llm_exchanges``.
+    ``ModelConfig.to_record_dict()`` is null-preserving so the same
+    config produces the same JSONB regardless of how it landed on the
+    wire. Forks read this back via :func:`model_config_from_record`.
+    """
+    return cfg.to_record_dict()
+
+
+def _jsonable(obj: Any) -> Any:
+    """Recursively replace Pydantic instances with their JSON-mode dump.
+
+    Goal is byte-faithful storage for the ``request`` JSONB column: plain
+    dicts/lists/scalars travel through untouched, and any SDK Pydantic
+    object (e.g. ``ThinkingBlock`` echoed back on an assistant turn under
+    Opus extended thinking) gets ``model_dump(mode="json")`` — the same
+    wire-format dict the Anthropic API would accept on replay.
+
+    ``type`` objects (e.g. the structured-call ``output_format`` class)
+    are left for the caller to rewrite; this helper only flattens
+    instances.
+    """
+    if isinstance(obj, BaseModel):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, dict):
+        return {k: _jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_jsonable(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [_jsonable(v) for v in obj]
+    return obj
+
+
+def _serialize_request_for_storage(kwargs: dict) -> dict:
+    """Make the full request kwargs JSONB-safe for the ``request`` column.
+
+    Two rewrites:
+
+    - Pydantic instances anywhere in the tree (``messages`` often carries
+      SDK ``ContentBlock`` objects on echoed assistant turns) are replaced
+      with their ``model_dump(mode="json")`` dict — same wire format the
+      API would accept on replay.
+    - ``output_format`` on the structured-call path is a
+      ``type[BaseModel]`` (class, not instance); replace it with
+      ``{"name", "schema"}`` so the schema travels with the snapshot
+      rather than the class reference.
+    """
+    out: dict = _jsonable(dict(kwargs))
+    output_format = kwargs.get("output_format")
+    if output_format is not None and hasattr(output_format, "model_json_schema"):
+        out["output_format"] = {
+            "name": output_format.__name__,
+            "schema": output_format.model_json_schema(),
+        }
+    return out
+
+
+def _capture_response_schema(response_model: type[BaseModel] | None) -> dict | None:
+    """Extract the JSON Schema the model is constrained to produce.
+
+    Returned in our internal ``{"name", "schema"}`` shape. ``None`` for
+    unstructured calls so the column stays NULL — both ``_save_exchange``
+    and the Langfuse enrichment skip persistence on None.
+    """
+    if response_model is None:
+        return None
+    return {"name": response_model.__name__, "schema": response_model.model_json_schema()}
+
+
+@dataclass
+class ParsedAnthropicResponse:
+    """Decomposition of an Anthropic Message's content blocks.
+
+    One pass over ``response.content`` so every call path reaches the
+    same shape regardless of model generation. ``thinking`` is populated
+    when the model returns ``ThinkingBlock``s — Opus 4.7 with
+    ``display="summarized"`` and Opus 4.6 / Sonnet 4.6 with adaptive
+    thinking emit summarized CoT here. ``redacted_thinking`` is
+    Anthropic's encrypted-content variant. Both stay empty for models
+    without thinking (e.g. Haiku).
+    """
+
+    text_parts: list[str]
+    tool_calls: list[dict]
+    thinking: list[dict]
+    redacted_thinking: list[dict]
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.text_parts)
+
+    @property
+    def has_thinking(self) -> bool:
+        return bool(self.thinking) or bool(self.redacted_thinking)
+
+    def thinking_blocks_for_storage(self) -> dict | None:
+        """JSONB shape for ``call_llm_exchanges.thinking_blocks``.
+
+        ``None`` (not ``{}``) when there's nothing to store so non-thinking
+        models don't pollute the column.
+        """
+        if not self.has_thinking:
+            return None
+        out: dict = {}
+        if self.thinking:
+            out["thinking"] = self.thinking
+        if self.redacted_thinking:
+            out["redacted_thinking"] = self.redacted_thinking
+        return out
+
+
+def parse_anthropic_response(content: Sequence[Any]) -> ParsedAnthropicResponse:
+    """Walk ``response.content`` once and bucket blocks by type."""
+    text_parts: list[str] = []
+    tool_calls: list[dict] = []
+    thinking: list[dict] = []
+    redacted_thinking: list[dict] = []
+    for block in content:
+        if isinstance(block, TextBlock):
+            text_parts.append(block.text)
+        elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
+            tool_calls.append({"name": block.name, "input": block.input})
+        elif isinstance(block, WebSearchToolResultBlock):
+            tool_calls.append(
+                {
+                    "type": "web_search_tool_result",
+                    "tool_use_id": block.tool_use_id,
+                    "content": block.model_dump(mode="json")["content"],
+                }
+            )
+        elif isinstance(block, ThinkingBlock):
+            thinking.append({"content": block.thinking, "signature": block.signature})
+        elif isinstance(block, RedactedThinkingBlock):
+            redacted_thinking.append({"data": block.data})
+    return ParsedAnthropicResponse(
+        text_parts=text_parts,
+        tool_calls=tool_calls,
+        thinking=thinking,
+        redacted_thinking=redacted_thinking,
+    )
+
+
 @dataclass
 class LLMExchangeMetadata:
     """Context for automatically saving an LLM exchange to the database.
@@ -449,8 +649,22 @@ async def _save_exchange(
     cache_creation_input_tokens: int = 0,
     cache_read_input_tokens: int = 0,
     user_messages: Sequence[dict] | None = None,
+    request_kwargs: dict | None = None,
+    thinking_blocks: dict | None = None,
+    available_tools: Sequence[dict] | None = None,
+    response_schema: dict | None = None,
+    error: str | None = None,
+    request: dict | None = None,
+    response: dict | None = None,
+    provider_request_id: str | None = None,
 ) -> None:
-    """Persist an LLM exchange and record a trace event."""
+    """Persist an LLM exchange and record a trace event.
+
+    Pass ``error`` to mark this exchange as a recovered failure — the row
+    still carries any partial ``response_text`` we managed to capture, but
+    consumers (trace UI, find_confusion, forks) can distinguish it from a
+    successful exchange via the non-null error column.
+    """
     exchange_id = await db.save_llm_exchange(
         call_id=metadata.call_id,
         phase=metadata.phase,
@@ -465,6 +679,15 @@ async def _save_exchange(
         cache_creation_input_tokens=cache_creation_input_tokens or None,
         cache_read_input_tokens=cache_read_input_tokens or None,
         user_messages=user_messages,
+        model=model,
+        request_kwargs=request_kwargs,
+        thinking_blocks=thinking_blocks,
+        available_tools=available_tools,
+        response_schema=response_schema,
+        error=error,
+        request=request,
+        response=response,
+        provider_request_id=provider_request_id,
     )
     cost_usd = compute_cost(
         model=model,
@@ -486,9 +709,122 @@ async def _save_exchange(
                 cache_read_input_tokens=cache_read_input_tokens or None,
                 duration_ms=duration_ms,
                 cost_usd=cost_usd or None,
+                has_thinking=thinking_blocks is not None,
                 langfuse_trace_url=langfuse_trace_url_for_current_observation(),
+                error=error,
             )
         )
+
+
+_PARTIAL_FAILURE_ERROR_MAX = 5000
+_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX = 200_000
+
+
+def _partial_from_validation_error(exc: ValidationError) -> str | None:
+    """Pull the full malformed input string out of a pydantic ValidationError.
+
+    Pydantic v2's ``str(exc)`` truncates the ``input_value`` repr to ~80
+    chars, but ``exc.errors()[0]["input"]`` carries the full original
+    string. The Anthropic SDK's ``messages.parse`` raises this exception
+    inside its post-parser when ``model_validate_json`` rejects the
+    response — that's the only place we can recover the malformed text.
+    """
+    try:
+        first = exc.errors()[0]
+        inp = first.get("input")
+    except IndexError, KeyError:
+        return None
+    return inp if isinstance(inp, str) else None
+
+
+async def _record_partial_failure(
+    *,
+    exc: BaseException,
+    partial_text: str | None,
+    partial_tool_calls: list[dict] | None,
+    metadata: LLMExchangeMetadata | None,
+    db: DB | None,
+    model: str,
+    system_prompt: str,
+    messages: Sequence[dict],
+    elapsed_ms: int,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cache_creation_input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
+    request_kwargs: dict | None = None,
+    thinking_blocks: dict | None = None,
+    available_tools: Sequence[dict] | None = None,
+    response_schema: dict | None = None,
+    request: dict | None = None,
+    provider_request_id: str | None = None,
+) -> None:
+    """Persist whatever forensics we have for a failed LLM call.
+
+    Two writes, both clearly marked as error state:
+
+    - ``call_llm_exchanges`` row with non-null ``error`` and any partial
+      response_text we managed to recover. Skipped if metadata/db missing.
+    - ``update_current_generation(output=partial)`` on the active langfuse
+      span. ``@observe`` already sets ``level=ERROR`` and
+      ``status_message`` when the wrapped call re-raises, so we only need
+      to attach the partial output here — don't double-set level.
+
+    Both writes are best-effort; an exception in either is logged and
+    swallowed so the original failure still propagates cleanly.
+    """
+    error_str = f"{type(exc).__name__}: {exc}"[:_PARTIAL_FAILURE_ERROR_MAX]
+
+    if metadata and db:
+        try:
+            serialized = _serialize_messages(messages) if len(messages) > 1 else None
+            await _save_exchange(
+                metadata,
+                db=db,
+                model=model,
+                system_prompt=system_prompt,
+                response_text=partial_text,
+                tool_calls=partial_tool_calls or [],
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                duration_ms=elapsed_ms,
+                cache_creation_input_tokens=cache_creation_input_tokens,
+                cache_read_input_tokens=cache_read_input_tokens,
+                user_messages=serialized,
+                request_kwargs=request_kwargs,
+                thinking_blocks=thinking_blocks,
+                available_tools=available_tools,
+                response_schema=response_schema,
+                error=error_str,
+                request=request,
+                provider_request_id=provider_request_id,
+            )
+        except Exception as save_exc:
+            log.warning(
+                "Failed to persist partial-failure exchange for call %s: %s",
+                metadata.call_id[:8],
+                save_exc,
+            )
+
+    client = get_langfuse()
+    if client is not None:
+        try:
+            client.update_current_generation(
+                model=model,
+                input=_langfuse_input_for(
+                    system_prompt,
+                    messages,
+                    tools=available_tools,
+                    response_schema=response_schema,
+                ),
+                output=(
+                    partial_text[:_PARTIAL_FAILURE_LANGFUSE_OUTPUT_MAX] if partial_text else None
+                ),
+                model_parameters=_extract_model_parameters(request_kwargs or {}),
+                metadata={"duration_ms": elapsed_ms},
+            )
+        except Exception as lf_exc:
+            log.debug("Langfuse partial-failure enrichment failed: %s", lf_exc)
 
 
 def _extract_model_parameters(api_kwargs: dict) -> dict:
@@ -515,13 +851,143 @@ def _extract_model_parameters(api_kwargs: dict) -> dict:
     return params
 
 
+def _anthropic_tool_calls_to_openai(tool_calls: Sequence[dict]) -> list[dict]:
+    """Translate the model's tool-use blocks into Langfuse's expected shape.
+
+    Langfuse's IOPreview pairs each tool call with the matching tool
+    definition (rendering counts on the def, vs. "not called") by reading
+    a ``tool_calls`` array on the assistant message in the OpenAI shape:
+    ``[{"name": ..., "arguments": "<json string>"}]``. We translate from
+    Anthropic's ``{"name", "input"}`` shape — and drop server-side blocks
+    (e.g. ``web_search_tool_result``) which carry a ``type`` field and
+    aren't model-issued calls.
+    """
+    out: list[dict] = []
+    for tc in tool_calls:
+        if tc.get("type"):
+            continue
+        out.append(
+            {
+                "name": tc.get("name"),
+                "arguments": json.dumps(tc.get("input", {})),
+            }
+        )
+    return out
+
+
+def _langfuse_output_for(parsed: ParsedAnthropicResponse) -> str | dict | None:
+    """Render the assistant turn for Langfuse's IOPreview.
+
+    When the response contains thinking, redacted-thinking, or tool-use
+    blocks, we return a ChatML-shaped assistant message so Langfuse's
+    ``ThinkingBlock`` / ``RedactedThinkingBlock`` UI components light up
+    and the tool-definition cards count actual invocations. Otherwise we
+    return the joined text (or ``None``) to preserve the existing string
+    output for plain text responses.
+    """
+    invoked = _anthropic_tool_calls_to_openai(parsed.tool_calls)
+    if not parsed.has_thinking and not invoked:
+        return parsed.text or None
+    output: dict = {"role": "assistant", "content": parsed.text}
+    if parsed.thinking:
+        # Langfuse renders {content, summary?}. Drop signature — it's
+        # opaque to the UI; we keep it in our own DB column.
+        output["thinking"] = [{"content": t["content"]} for t in parsed.thinking]
+    if parsed.redacted_thinking:
+        output["redacted_thinking"] = [{"data": r["data"]} for r in parsed.redacted_thinking]
+    if invoked:
+        output["tool_calls"] = invoked
+    return output
+
+
+def _anthropic_tool_to_openai(tool: dict) -> dict:
+    """Translate one Anthropic tool def into the OpenAI/ChatML shape.
+
+    Langfuse's IOPreview parses tool definitions from the OpenAI shape
+    (``{"type": "function", "function": {"name", "description",
+    "parameters"}}``); fed Anthropic's native shape it falls back to a
+    raw JSON dump. The translation is mechanical — ``input_schema`` and
+    ``parameters`` are both JSON Schema — so we render here in the shape
+    Langfuse understands while keeping the DB row in Anthropic's literal
+    shape (that's what was on the wire).
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.get("name"),
+            "description": tool.get("description"),
+            "parameters": tool.get("input_schema"),
+        },
+    }
+
+
+def _response_schema_to_openai(schema: dict) -> dict:
+    """Translate our internal {name, schema} shape to OpenAI's response_format.
+
+    OpenAI's chat completion API accepts ``response_format = {"type":
+    "json_schema", "json_schema": {"name", "schema", "strict"}}``.
+    Mirroring that shape on the Langfuse generation lets the trace UI
+    surface the schema in the same way it does for OpenAI calls.
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": schema.get("name"),
+            "schema": schema.get("schema"),
+            "strict": True,
+        },
+    }
+
+
+def _langfuse_input_for(
+    system_prompt: str,
+    messages: Sequence[dict],
+    *,
+    tools: Sequence[dict] | None = None,
+    response_schema: dict | None = None,
+) -> list[dict] | dict:
+    """Shape the ``input`` payload for Langfuse generations.
+
+    Langfuse has no dedicated ``system`` field. Folding system into a
+    nested ``{"system": ..., "messages": [...]}`` dict renders nicely in
+    the trace UI but the playground reads only ``messages`` and drops
+    the system prompt. Prepending a ``{"role": "system", ...}`` entry to
+    a flat ChatML list keeps both viewers happy: the trace UI shows the
+    system message at the top, and "Open in Playground" pre-fills it
+    correctly.
+
+    When ``tools`` or ``response_schema`` are present we wrap the same
+    flat ChatML list in a ``{"messages": [...], "tools": [...],
+    "response_format": {...}}`` dict — the shape the langfuse OpenAI
+    integration emits — translating each Anthropic tool def to OpenAI
+    ``{"type": "function", "function": {...}}`` and the schema to
+    OpenAI ``response_format`` so the trace UI surfaces both rather
+    than dumping raw JSON.
+    """
+    serialized = list(_serialize_messages(messages))
+    flat: list[dict] = (
+        [{"role": "system", "content": system_prompt}, *serialized] if system_prompt else serialized
+    )
+    if not tools and not response_schema:
+        return flat
+    payload: dict = {"messages": flat}
+    if tools:
+        payload["tools"] = [_anthropic_tool_to_openai(t) for t in tools]
+    if response_schema:
+        payload["response_format"] = _response_schema_to_openai(response_schema)
+    return payload
+
+
 def _enrich_langfuse_generation(
     *,
     model: str,
+    system_prompt: str,
     messages: Sequence[dict],
     response: anthropic.types.Message,
     elapsed_ms: int,
+    parsed: ParsedAnthropicResponse,
     api_kwargs: dict | None = None,
+    response_schema: dict | None = None,
 ) -> None:
     """Populate the active Langfuse generation span with model, IO, and usage.
 
@@ -541,13 +1007,15 @@ def _enrich_langfuse_generation(
             cache_creation_input_tokens=cache_creation,
             cache_read_input_tokens=cache_read,
         )
-        output_text = "".join(
-            block.text for block in response.content if isinstance(block, TextBlock)
-        )
         client.update_current_generation(
             model=model,
-            input=_serialize_messages(messages),
-            output=output_text or None,
+            input=_langfuse_input_for(
+                system_prompt,
+                messages,
+                tools=(api_kwargs or {}).get("tools"),
+                response_schema=response_schema,
+            ),
+            output=_langfuse_output_for(parsed),
             model_parameters=_extract_model_parameters(api_kwargs or {}),
             usage_details={
                 "input": usage.input_tokens,
@@ -565,7 +1033,7 @@ def _enrich_langfuse_generation(
         log.debug("Langfuse enrichment failed: %s", exc)
 
 
-@observe(as_type="generation", name="anthropic.messages.create")
+@observe(as_type="generation", name="anthropic.messages.create", capture_output=False)
 async def call_anthropic_api(
     client: anthropic.AsyncAnthropic,
     model: str,
@@ -577,32 +1045,40 @@ async def call_anthropic_api(
     db: DB | None = None,
     cache: bool = False,
     effort: str | None = None,
+    model_config: ModelConfig | None = None,
+    response_schema: dict | None = None,
 ) -> APIResponse:
     """Make a single Anthropic API call with retry logic.
 
     If metadata and db are provided, the exchange is automatically saved
     to the database and a trace event is recorded.
+
+    Pass ``model_config`` to override the per-model defaults that
+    :func:`derive_model_config` would otherwise pick (sampling, thinking,
+    effort). The legacy ``effort`` kwarg is honored only when
+    ``model_config`` is None — pass effort via ``model_config.effort``
+    in new code.
     """
     if bool(metadata) != bool(db):
         raise ValueError("metadata and db must be provided together")
+    if model_config is not None and effort is not None:
+        raise ValueError("pass effort via model_config.effort, not both")
+    if model_config is None:
+        cfg = derive_model_config(model)
+        # Caller can override effort only when the model actually supports it;
+        # for Haiku/older Sonnet effort_level returns None and the API rejects
+        # the param.
+        if effort is not None and cfg.effort is not None:
+            cfg = replace(cfg, effort=effort)
+    else:
+        cfg = model_config
     system_prompt = _with_date_suffix(system_prompt)
     kwargs: dict = {
         "model": model,
-        "max_tokens": DEFAULT_MAX_TOKENS,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(messages) if cache else messages,
+        **cfg.to_anthropic_kwargs(),
     }
-    if _supports_sampling_params(model):
-        kwargs["temperature"] = DEFAULT_TEMPERATURE
-    if (thinking := _thinking_config(model)) is not None:
-        kwargs["thinking"] = thinking
-    base_effort = _effort_level(model)
-    # Caller can override only when the model actually supports `effort`;
-    # for Haiku/older Sonnet `_effort_level` returns None and the param is
-    # not accepted by the API.
-    effective_effort = effort if (effort is not None and base_effort is not None) else base_effort
-    if effective_effort is not None:
-        kwargs["output_config"] = {"effort": effective_effort}
     if tools:
         kwargs["tools"] = tools
 
@@ -615,18 +1091,72 @@ async def call_anthropic_api(
         len(messages),
     )
 
+    # Partial-state container populated by ``_do_api_call`` on failure.
+    # Re-populated each retry; reflects only the final failed attempt.
+    partial_state: dict[str, Any] = {}
+
     @_api_retry
     async def _do_api_call() -> anthropic.types.Message:
         start = time.monotonic()
-        response = await client.messages.create(**kwargs)
+        # Stream and aggregate to the same Message shape `create` returns.
+        # The SDK rejects non-streaming calls whose predicted duration
+        # exceeds 10 minutes (Anthropic#long-requests), which breaks any
+        # call with large context + high max_tokens — e.g. d&e's editor
+        # stage on a long essay.
+        async with client.messages.stream(**kwargs) as stream:
+            try:
+                response = await stream.get_final_message()
+            except Exception:
+                # Capture whatever was decoded before the stream raised —
+                # ``current_message_snapshot`` / ``request_id`` are only
+                # valid while the context manager is open, so do this
+                # here, not in the outer except. Asserting access on an
+                # empty stream raises AssertionError; treat as no partial.
+                snapshot_content: list | None = None
+                try:
+                    snapshot_content = stream.current_message_snapshot.content
+                except Exception:
+                    snapshot_content = None
+                partial_state["snapshot_content"] = snapshot_content
+                partial_state["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+                try:
+                    partial_state["request_id"] = stream.request_id
+                except Exception:
+                    partial_state["request_id"] = None
+                raise
+            stream_request_id = stream.request_id
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
+        response._request_id = stream_request_id  # type: ignore[attr-defined]
         return response
 
     try:
         response = await _do_api_call()
     except Exception as e:
         log.error("API call failed: %s", e, exc_info=True)
+        snapshot_content = partial_state.get("snapshot_content")
+        partial_text: str | None = None
+        partial_tool_calls: list[dict] | None = None
+        if snapshot_content is not None:
+            partial_parsed = parse_anthropic_response(snapshot_content)
+            partial_text = partial_parsed.text or None
+            partial_tool_calls = partial_parsed.tool_calls or None
+        await _record_partial_failure(
+            exc=e,
+            partial_text=partial_text,
+            partial_tool_calls=partial_tool_calls,
+            metadata=metadata,
+            db=db,
+            model=model,
+            system_prompt=system_prompt,
+            messages=messages,
+            elapsed_ms=partial_state.get("elapsed_ms", 0),
+            request_kwargs=_capture_request_kwargs(cfg),
+            available_tools=tools,
+            response_schema=response_schema,
+            request=_serialize_request_for_storage(kwargs),
+            provider_request_id=partial_state.get("request_id"),
+        )
         trace = get_trace()
         if trace:
             phase = metadata.phase if metadata else "api_call"
@@ -647,22 +1177,8 @@ async def call_anthropic_api(
         elapsed_ms,
         response.usage,
     )
+    parsed = parse_anthropic_response(response.content)
     if metadata and db:
-        text_parts = []
-        tool_call_data = []
-        for block in response.content:
-            if isinstance(block, TextBlock):
-                text_parts.append(block.text)
-            elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
-                tool_call_data.append({"name": block.name, "input": block.input})
-            elif isinstance(block, WebSearchToolResultBlock):
-                tool_call_data.append(
-                    {
-                        "type": "web_search_tool_result",
-                        "tool_use_id": block.tool_use_id,
-                        "content": block.model_dump(mode="json")["content"],
-                    }
-                )
         serialized = _serialize_messages(messages) if len(messages) > 1 else None
         try:
             await _save_exchange(
@@ -670,8 +1186,8 @@ async def call_anthropic_api(
                 db=db,
                 model=model,
                 system_prompt=system_prompt,
-                response_text="\n".join(text_parts) or None,
-                tool_calls=tool_call_data,
+                response_text=parsed.text or None,
+                tool_calls=parsed.tool_calls,
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
                 duration_ms=elapsed_ms,
@@ -681,6 +1197,13 @@ async def call_anthropic_api(
                 or 0,
                 cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
                 user_messages=serialized,
+                request_kwargs=_capture_request_kwargs(cfg),
+                thinking_blocks=parsed.thinking_blocks_for_storage(),
+                available_tools=tools,
+                response_schema=response_schema,
+                request=_serialize_request_for_storage(kwargs),
+                response=response.model_dump(mode="json"),
+                provider_request_id=getattr(response, "_request_id", None),
             )
         except Exception as exc:
             log.error(
@@ -699,10 +1222,13 @@ async def call_anthropic_api(
                 )
     _enrich_langfuse_generation(
         model=model,
+        system_prompt=system_prompt,
         messages=messages,
         response=response,
         elapsed_ms=elapsed_ms,
+        parsed=parsed,
         api_kwargs=kwargs,
+        response_schema=response_schema,
     )
     return APIResponse(message=response, duration_ms=elapsed_ms)
 
@@ -780,6 +1306,7 @@ def _to_google_contents(messages: Sequence[dict]) -> list[Any]:
 def _enrich_langfuse_generation_google(
     *,
     model: str,
+    system_prompt: str,
     messages: Sequence[dict],
     response: Any,
     elapsed_ms: int,
@@ -804,7 +1331,7 @@ def _enrich_langfuse_generation_google(
         output_text = getattr(response, "text", None) or ""
         client.update_current_generation(
             model=model,
-            input=_serialize_messages(messages),
+            input=_langfuse_input_for(system_prompt, messages),
             output=output_text or None,
             model_parameters=config or {},
             usage_details={
@@ -819,7 +1346,7 @@ def _enrich_langfuse_generation_google(
         log.debug("Langfuse enrichment (google) failed: %s", exc)
 
 
-@observe(as_type="generation", name="google.generate_content")
+@observe(as_type="generation", name="google.generate_content", capture_output=False)
 async def call_google_api(
     model: str,
     system_prompt: str,
@@ -865,14 +1392,20 @@ async def call_google_api(
         len(messages),
     )
 
+    partial_state: dict[str, Any] = {}
+
     @_api_retry
     async def _do_api_call() -> Any:
         start = time.monotonic()
-        response = await client.aio.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config,
-        )
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+        except Exception:
+            partial_state["elapsed_ms"] = int((time.monotonic() - start) * 1000)
+            raise
         elapsed = int((time.monotonic() - start) * 1000)
         response._elapsed_ms = elapsed  # type: ignore[attr-defined]
         return response
@@ -881,6 +1414,20 @@ async def call_google_api(
         response = await _do_api_call()
     except Exception as e:
         log.error("Google API call failed: %s", e, exc_info=True)
+        # Non-streaming path — no partial response to recover from the
+        # google-genai SDK. Still record a forensic row so the trace UI
+        # / find_confusion see the failed exchange.
+        await _record_partial_failure(
+            exc=e,
+            partial_text=None,
+            partial_tool_calls=None,
+            metadata=metadata,
+            db=db,
+            model=model,
+            system_prompt=system_prompt,
+            messages=messages,
+            elapsed_ms=partial_state.get("elapsed_ms", 0),
+        )
         trace = get_trace()
         if trace:
             phase = metadata.phase if metadata else "api_call"
@@ -940,6 +1487,7 @@ async def call_google_api(
 
     _enrich_langfuse_generation_google(
         model=model,
+        system_prompt=system_prompt,
         messages=messages,
         response=response,
         elapsed_ms=elapsed_ms,
@@ -965,6 +1513,8 @@ async def text_call(
     model: str | None = None,
     cache: bool = False,
     effort: str | None = None,
+    max_tokens: int | None = None,
+    model_config: ModelConfig | None = None,
 ) -> str:
     """Make a plain text LLM call. Returns the raw text response.
 
@@ -976,7 +1526,13 @@ async def text_call(
     a prompt-cache breakpoint on the last message (Anthropic only — the Google
     branch ignores it). Pass `effort` (e.g. ``"max"``) to override the default
     effort level derived from the model; ignored for models that do not support
-    the effort parameter.
+    the effort parameter. Pass ``max_tokens`` to override the default output
+    cap (``DEFAULT_MAX_TOKENS``); needed for long-form generations like d&e
+    editor revisions where the default 20k cap silently truncates and breaks
+    downstream parsing. Pass ``model_config`` to fully override sampling /
+    thinking / effort / max_thinking_tokens / service_tier — takes precedence
+    over the per-model defaults that ``derive_model_config`` would pick.
+    Mutually exclusive with the discrete ``effort`` / ``max_tokens`` kwargs.
     """
     settings = get_settings()
     effective_model = model or settings.model
@@ -986,6 +1542,18 @@ async def text_call(
     log.debug("text_call: messages=%d, model=%s", len(msg_list), effective_model)
 
     if is_google_model(effective_model):
+        if max_tokens is not None:
+            raise NotImplementedError(
+                "text_call(max_tokens=...) is not yet plumbed through the "
+                "Google branch; only the Anthropic path supports an explicit "
+                "max_tokens override."
+            )
+        if model_config is not None:
+            raise NotImplementedError(
+                "text_call(model_config=...) is not yet plumbed through the "
+                "Google branch; only the Anthropic path applies model_config "
+                "overrides."
+            )
         google_resp = await call_google_api(
             effective_model,
             system_prompt,
@@ -998,16 +1566,47 @@ async def text_call(
 
     api_key = settings.require_anthropic_key()
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    api_resp = await call_anthropic_api(
-        client,
-        effective_model,
-        system_prompt,
-        msg_list,
-        metadata=metadata,
-        db=db,
-        cache=cache,
-        effort=effort,
-    )
+    if model_config is not None:
+        if effort is not None or max_tokens is not None:
+            raise ValueError(
+                "text_call: pass either model_config OR effort/max_tokens, "
+                "not both — model_config carries effort and max_tokens already"
+            )
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            model_config=model_config,
+        )
+    elif max_tokens is not None:
+        cfg = derive_model_config(effective_model, max_tokens=max_tokens)
+        if effort is not None and cfg.effort is not None:
+            cfg = replace(cfg, effort=effort)
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            model_config=cfg,
+        )
+    else:
+        api_resp = await call_anthropic_api(
+            client,
+            effective_model,
+            system_prompt,
+            msg_list,
+            metadata=metadata,
+            db=db,
+            cache=cache,
+            effort=effort,
+        )
     for block in api_resp.message.content:
         if isinstance(block, TextBlock):
             log.debug("text_call returned %d chars", len(block.text))
@@ -1016,11 +1615,8 @@ async def text_call(
     return ""
 
 
-T = TypeVar("T", bound=BaseModel)
-
-
 @dataclass
-class StructuredCallResult(Generic[T]):
+class StructuredCallResult[T: BaseModel]:
     """Result of a structured_call invocation.
 
     `parsed` holds the validated pydantic instance, or None if the model
@@ -1035,7 +1631,7 @@ class StructuredCallResult(Generic[T]):
     duration_ms: int | None = None
 
 
-async def _structured_call_cached(
+async def _structured_call_cached[T: BaseModel](
     system_prompt: str,
     response_model: type[T],
     msg_list: list[dict],
@@ -1057,6 +1653,7 @@ async def _structured_call_cached(
     schema_text = _schema_instruction(response_model)
     inject_msgs = _inject_into_last_user_message(msg_list, schema_text)
     effective_model = model or settings.model
+    response_schema = _capture_response_schema(response_model)
 
     max_parse_attempts = 2
     for parse_attempt in range(max_parse_attempts):
@@ -1069,6 +1666,7 @@ async def _structured_call_cached(
             metadata=metadata,
             db=db,
             cache=cache,
+            response_schema=response_schema,
         )
         response_text = ""
         for block in api_resp.message.content:
@@ -1140,7 +1738,7 @@ async def _structured_call_cached(
     raise RuntimeError("Unreachable: parse retry loop exhausted")
 
 
-async def _structured_call_google(
+async def _structured_call_google[T: BaseModel](
     system_prompt: str,
     response_model: type[T] | None,
     msg_list: list[dict],
@@ -1253,8 +1851,149 @@ def _inject_into_last_user_message(
     return msgs
 
 
-@observe(as_type="generation", name="anthropic.messages.parse")
-async def _structured_call_parse(
+_CONTINUATION_NUDGE = (
+    "Your previous response was truncated. The text shown above is the "
+    "portion that completed cleanly — everything after the last "
+    "successfully-closed element was lost. Continue the JSON from "
+    "exactly where it ends: emit any remaining elements (with leading "
+    "comma if appropriate) and the closing brackets needed to make the "
+    "concatenation a valid JSON object matching the schema. Output ONLY "
+    "the continuation text — do not restate or repeat the portion shown."
+)
+
+
+def _safe_truncate_partial_json(partial: str) -> str | None:
+    """Trim partial JSON to the last clean structural boundary.
+
+    Walks ``partial`` tracking quote/escape state and brace depth,
+    recording every position where a ``}`` or ``]`` closes a
+    non-outermost element (depth-after-close > 0). Returns the prefix
+    up to and including the last such close — a "between elements"
+    state where a continuation can splice cleanly without landing inside
+    a string or mid-escape.
+
+    Returns ``None`` if no such boundary exists (e.g. truncation
+    happened inside the first sub-element, or the partial is a flat
+    object with no sub-element closes).
+    """
+    in_string = False
+    escape = False
+    depth = 0
+    last_boundary = -1
+    for i, c in enumerate(partial):
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            continue
+        if c == '"':
+            in_string = True
+        elif c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+            if depth > 0:
+                last_boundary = i + 1
+    if last_boundary == -1:
+        return None
+    return partial[:last_boundary]
+
+
+async def _continuation_recovery_for_parse[T: BaseModel](
+    *,
+    response_model: type[T],
+    system_prompt: str,
+    msg_list: Sequence[dict],
+    partial_text: str,
+    model: str,
+    cfg: ModelConfig,
+    cache: bool,
+    metadata: LLMExchangeMetadata | None,
+    db: DB | None,
+    max_attempts: int = 2,
+) -> tuple[T, str] | None:
+    """Try to recover a clean parse by asking the model to complete the JSON.
+
+    Mirrors the multi-turn pattern from
+    ``draft_and_edit._continue_editor_until_complete``: send the partial
+    response back as an assistant turn, append a user nudge asking the
+    model to finish from where it stopped, concatenate the new fragment
+    onto the partial, and re-validate. Bounded by ``max_attempts``.
+
+    Returns ``(parsed, full_text)`` on success — the reconstructed
+    `partial + continuation` JSON, valid against ``response_model`` —
+    so callers can persist it as the assistant turn in conversation
+    history without poisoning later turns with the original truncated
+    string. Returns ``None`` if all attempts fail (the caller is
+    expected to re-raise the original error). Each continuation
+    attempt routes through ``call_anthropic_api`` so it gets its own
+    ``call_llm_exchanges`` row tagged ``phase="<original>:continueN"``
+    for trace visibility.
+    """
+    trimmed = _safe_truncate_partial_json(partial_text)
+    if trimmed is None:
+        log.debug(
+            "Continuation recovery: no clean splice boundary in partial "
+            "(truncation likely inside first sub-element); aborting"
+        )
+        return None
+    settings = get_settings()
+    client = anthropic.AsyncAnthropic(api_key=settings.require_anthropic_key())
+    for attempt in range(max_attempts):
+        # Reset each attempt to the clean trimmed prefix — compounding
+        # a failed continuation across retries just sends the model
+        # invalid mid-stream context. Re-sample from the same splice
+        # point instead.
+        cont_messages: list[dict] = [
+            *msg_list,
+            {"role": "assistant", "content": trimmed},
+            {"role": "user", "content": _CONTINUATION_NUDGE},
+        ]
+        cont_metadata = (
+            replace(metadata, phase=f"{metadata.phase}:continue{attempt + 1}")
+            if metadata is not None
+            else None
+        )
+        try:
+            api_resp = await call_anthropic_api(
+                client,
+                model,
+                system_prompt,
+                cont_messages,
+                metadata=cont_metadata,
+                db=db,
+                cache=cache,
+                model_config=cfg,
+            )
+        except Exception as exc:
+            log.warning(
+                "Continuation attempt %d/%d raised %s; aborting recovery",
+                attempt + 1,
+                max_attempts,
+                type(exc).__name__,
+            )
+            return None
+        more = "".join(b.text for b in api_resp.message.content if isinstance(b, TextBlock))
+        if not more:
+            log.debug("Continuation attempt %d produced no text; aborting", attempt + 1)
+            return None
+        full = trimmed + more
+        try:
+            return response_model.model_validate_json(full), full
+        except ValidationError:
+            log.debug(
+                "Continuation attempt %d still didn't parse cleanly; retrying",
+                attempt + 1,
+            )
+    return None
+
+
+@observe(as_type="generation", name="anthropic.messages.parse", capture_output=False)
+async def _structured_call_parse[T: BaseModel](
     system_prompt: str,
     response_model: type[T] | None,
     msg_list: list[dict],
@@ -1267,6 +2006,7 @@ async def _structured_call_parse(
     max_tokens: int | None = None,
     disable_thinking: bool = False,
     cache: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]:
     """Structured output via messages.parse.
 
@@ -1280,25 +2020,22 @@ async def _structured_call_parse(
     model = model or settings.model
     system_prompt = _with_date_suffix(system_prompt)
 
+    cfg = derive_model_config(model, max_tokens=max_tokens)
+    if disable_thinking:
+        cfg = replace(cfg, thinking=None, effort=None)
     parse_kwargs: dict = {
         "model": model,
-        "max_tokens": max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
         "system": system_prompt,
         "messages": _add_cache_breakpoint(msg_list) if cache else msg_list,
+        **cfg.to_anthropic_kwargs(),
     }
-    if _supports_sampling_params(model):
-        parse_kwargs["temperature"] = DEFAULT_TEMPERATURE
-    if not disable_thinking:
-        if (thinking := _thinking_config(model)) is not None:
-            parse_kwargs["thinking"] = thinking
-        if (effort := _effort_level(model)) is not None:
-            parse_kwargs["output_config"] = {"effort": effort}
     if response_model is not None:
         parse_kwargs["output_format"] = response_model
     if tools is not None:
         parse_kwargs["tools"] = tools
     if tool_choice is not None:
         parse_kwargs["tool_choice"] = tool_choice
+    response_schema = _capture_response_schema(response_model)
 
     @_api_retry
     async def _do_parse() -> Any:
@@ -1307,18 +2044,80 @@ async def _structured_call_parse(
         resp._elapsed_ms = int((time.monotonic() - t0) * 1000)  # type: ignore[attr-defined]
         return resp
 
-    response: Any = await _do_parse()
-    elapsed_ms: int = getattr(response, "_elapsed_ms", 0)
-    response_text = ""
-    for block in response.content:
-        if isinstance(block, TextBlock):
-            response_text += block.text
+    parse_start = time.monotonic()
+    try:
+        response: Any = await _do_parse()
+    except Exception as exc:
+        # Cover both shapes of failure: (a) ``messages.parse`` runs
+        # ``model_validate_json`` on the response text inside the SDK's
+        # post-parser — on failure the response object is discarded but
+        # the malformed text is preserved on the ``ValidationError`` via
+        # ``errors()[0]["input"]`` (#444 / #446); (b) any other exception
+        # (API error after retries, network failure, etc.) — no partial
+        # text to recover, but we still want a forensic row so the trace
+        # UI / find_confusion can see the failed exchange.
+        partial_text = (
+            _partial_from_validation_error(exc) if isinstance(exc, ValidationError) else None
+        )
+        elapsed_ms = int((time.monotonic() - parse_start) * 1000)
+        await _record_partial_failure(
+            exc=exc,
+            partial_text=partial_text,
+            partial_tool_calls=None,
+            metadata=metadata,
+            db=db,
+            model=model,
+            system_prompt=system_prompt,
+            messages=msg_list,
+            elapsed_ms=elapsed_ms,
+            request_kwargs=_capture_request_kwargs(cfg),
+            available_tools=tools,
+            response_schema=response_schema,
+            request=_serialize_request_for_storage(parse_kwargs),
+            provider_request_id=getattr(exc, "request_id", None),
+        )
+        if (
+            continuation_recovery
+            and response_model is not None
+            and isinstance(exc, ValidationError)
+            and partial_text
+        ):
+            recovered = await _continuation_recovery_for_parse(
+                response_model=response_model,
+                system_prompt=system_prompt,
+                msg_list=msg_list,
+                partial_text=partial_text,
+                model=model,
+                cfg=cfg,
+                cache=cache,
+                metadata=metadata,
+                db=db,
+            )
+            if recovered is not None:
+                parsed_model, full_text = recovered
+                log.info(
+                    "structured_call_parse: recovered via continuation after "
+                    "ValidationError (phase=%s)",
+                    metadata.phase if metadata else "structured_call",
+                )
+                return StructuredCallResult(
+                    parsed=parsed_model,
+                    response_text=full_text,
+                    duration_ms=elapsed_ms,
+                )
+        raise
+    elapsed_ms = getattr(response, "_elapsed_ms", 0)
+    parsed = parse_anthropic_response(response.content)
+    response_text = parsed.text
     _enrich_langfuse_generation(
         model=model,
+        system_prompt=system_prompt,
         messages=msg_list,
         response=response,
         elapsed_ms=elapsed_ms,
+        parsed=parsed,
         api_kwargs=parse_kwargs,
+        response_schema=response_schema,
     )
     if metadata and db:
         serialized: Sequence[dict] | None = None
@@ -1342,6 +2141,13 @@ async def _structured_call_parse(
             or 0,
             cache_read_input_tokens=getattr(response.usage, "cache_read_input_tokens", 0) or 0,
             user_messages=serialized,
+            request_kwargs=_capture_request_kwargs(cfg),
+            thinking_blocks=parsed.thinking_blocks_for_storage(),
+            available_tools=tools,
+            response_schema=response_schema,
+            request=_serialize_request_for_storage(parse_kwargs),
+            response=response.model_dump(mode="json"),
+            provider_request_id=getattr(response, "_request_id", None),
         )
     if response.parsed_output is not None:
         log.debug(
@@ -1371,7 +2177,7 @@ async def _structured_call_parse(
 
 
 @overload
-async def structured_call(
+async def structured_call[T: BaseModel](
     system_prompt: str,
     user_message: str,
     response_model: type[T],
@@ -1386,11 +2192,12 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
 @overload
-async def structured_call(
+async def structured_call[T: BaseModel](
     system_prompt: str,
     user_message: str = "",
     *,
@@ -1405,6 +2212,7 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T]: ...
 
 
@@ -1427,7 +2235,7 @@ async def structured_call(
 ) -> StructuredCallResult[BaseModel]: ...
 
 
-async def structured_call(
+async def structured_call[T: BaseModel](
     system_prompt: str,
     user_message: str = "",
     response_model: type[T] | None = None,
@@ -1442,6 +2250,7 @@ async def structured_call(
     model: str | None = None,
     max_tokens: int | None = None,
     disable_thinking: bool = False,
+    continuation_recovery: bool = False,
 ) -> StructuredCallResult[T] | StructuredCallResult[BaseModel]:
     """Run an LLM call that returns structured output matching response_model.
 
@@ -1535,4 +2344,5 @@ async def structured_call(
         max_tokens=max_tokens,
         disable_thinking=disable_thinking,
         cache=cache,
+        continuation_recovery=continuation_recovery,
     )

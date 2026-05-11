@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import batched
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -22,6 +23,7 @@ from tenacity import (
 )
 
 from rumil.models import (
+    SCOUT_CALL_TYPES,
     Call,
     CallSequence,
     CallStatus,
@@ -131,7 +133,7 @@ def _is_retryable_api_error(exc: BaseException) -> bool:
         return False
     try:
         status = int(code)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     return 500 <= status < 600
 
@@ -207,14 +209,14 @@ _db_retry = retry(
 _LINK_COLUMNS = (
     "id,from_page_id,to_page_id,link_type,direction,"
     "strength,reasoning,role,importance,section,position,"
-    "impact_on_parent_question,created_at,run_id"
+    "impact_on_parent_question,created_at,run_id,scope_question_id"
 )
 
 _SLIM_PAGE_COLUMNS = (
     "id,page_type,layer,workspace,headline,abstract,"
     "epistemic_status,epistemic_type,credence,credence_reasoning,"
     "robustness,robustness_reasoning,extra,is_superseded,"
-    "project_id,created_at,superseded_by,run_id,hidden"
+    "project_id,created_at,superseded_by,run_id,hidden,scope_question_id"
 )
 
 
@@ -246,6 +248,7 @@ def _row_to_page(row: dict[str, Any]) -> Page:
         meta_type=row.get("meta_type"),
         run_id=row.get("run_id") or "",
         hidden=bool(row.get("hidden", False)),
+        scope_question_id=row.get("scope_question_id"),
     )
 
 
@@ -265,6 +268,7 @@ def _row_to_link(row: dict[str, Any]) -> PageLink:
         impact_on_parent_question=row.get("impact_on_parent_question"),
         created_at=datetime.fromisoformat(row["created_at"]),
         run_id=row.get("run_id") or "",
+        scope_question_id=row.get("scope_question_id"),
     )
 
 
@@ -339,6 +343,31 @@ class MutationState:
         self.hidden_overrides: dict[str, bool] = {}
 
 
+# Mutation events are scoped to a run, not a DB instance — the cache must be
+# shared across every DB.fork() (and view_as_staged sibling) of the same run.
+# Otherwise a child call writing a mutation on its forked DB never invalidates
+# the parent orchestrator's cache, and reads on the parent return stale state.
+# Keying on run_id ensures invalidation propagates to every fork automatically.
+_MUTATION_CACHES: dict[str, MutationState] = {}
+# Non-staged runs have no events to overlay; share one empty state so we
+# don't allocate a fresh one per page-read batch.
+_EMPTY_MUTATION_STATE = MutationState()
+
+
+def clear_mutation_caches() -> None:
+    """Drop all per-run mutation caches. For test teardown."""
+    _MUTATION_CACHES.clear()
+
+
+class _Unset:
+    """Sentinel type so callers can pass ``None`` explicitly without it being
+    confused with 'argument omitted'. Used by ``DB.fork`` to distinguish
+    'inherit the parent's scope' from 'clear the scope'."""
+
+
+_UNSET = _Unset()
+
+
 class DB:
     def __init__(
         self,
@@ -346,14 +375,15 @@ class DB:
         client: AsyncClient,
         project_id: str = "",
         staged: bool = False,
+        scope_question_id: str | None = None,
     ):
         self.run_id = run_id
         self.client = client
         self.project_id = project_id
         self.staged = staged
+        self.scope_question_id = scope_question_id
         self._semaphore = asyncio.Semaphore(get_settings().db_max_concurrent_queries)
         self._prod: bool = False
-        self._mutation_cache: MutationState | None = None
 
     @classmethod
     async def create(
@@ -363,7 +393,8 @@ class DB:
         project_id: str = "",
         client: AsyncClient | None = None,
         staged: bool = False,
-    ) -> "DB":
+        scope_question_id: str | None = None,
+    ) -> DB:
         if client is None:
             url, key = get_settings().get_supabase_credentials(prod)
             client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
@@ -372,29 +403,39 @@ class DB:
             client=client,
             project_id=project_id,
             staged=staged,
+            scope_question_id=scope_question_id,
         )
         db._prod = prod
         return db
 
-    async def fork(self) -> "DB":
+    async def fork(self, scope_question_id: str | None | _Unset = _UNSET) -> DB:
         """Create a new DB instance with a fresh Supabase client.
 
         Shares run_id, project_id, and staged flag with the parent but gets
         its own HTTP connection. Use this to scope connections to a single
         call, avoiding HTTP/2 stream exhaustion on long-running jobs.
+
+        Pass ``scope_question_id`` to enter a scoped view: reads will be
+        filtered to rows where ``scope_question_id IS NULL`` or matches the
+        passed value. Pass ``None`` explicitly to clear an inherited scope.
+        Omit the argument to inherit the parent's scope unchanged.
         """
         url, key = get_settings().get_supabase_credentials(self._prod)
         client = await acreate_client(url, key, options=AsyncClientOptions(schema="public"))
+        resolved_scope = (
+            self.scope_question_id if isinstance(scope_question_id, _Unset) else scope_question_id
+        )
         db = DB(
             run_id=self.run_id,
             client=client,
             project_id=self.project_id,
             staged=self.staged,
+            scope_question_id=resolved_scope,
         )
         db._prod = self._prod
         return db
 
-    def view_as_staged(self, run_id: str) -> "DB":
+    def view_as_staged(self, run_id: str) -> DB:
         """Return a sibling DB with staged visibility for ``run_id``.
 
         Reuses the same Supabase client (no new HTTP connection, no close
@@ -407,6 +448,26 @@ class DB:
             client=self.client,
             project_id=self.project_id,
             staged=True,
+            scope_question_id=self.scope_question_id,
+        )
+        db._prod = self._prod
+        return db
+
+    def with_scope(self, scope_question_id: str | None) -> DB:
+        """Return a sibling DB with a different page-scope visibility.
+
+        Reuses the same Supabase client (no new HTTP connection, no close
+        needed) and only swaps the scope filter. Use this when a call entry
+        point already runs on a parent's HTTP client and just needs to
+        narrow its read visibility — e.g. ``run_prioritization_call``
+        scoping reads to its target question.
+        """
+        db = DB(
+            run_id=self.run_id,
+            client=self.client,
+            project_id=self.project_id,
+            staged=self.staged,
+            scope_question_id=scope_question_id,
         )
         db._prod = self._prod
         return db
@@ -434,13 +495,26 @@ class DB:
             return query.or_(f"staged.eq.false,run_id.eq.{self.run_id}")
         return query.eq("staged", False)
 
+    def _scope_filter(self, query: Any) -> Any:
+        """Apply page-scope visibility filter to a query.
+
+        Unscoped DBs (``scope_question_id is None``) see every row — no
+        filter is applied. Scoped DBs see rows where ``scope_question_id``
+        is NULL (unscoped row) or matches the DB's scope. Mirrors the SQL
+        predicate used by the discovery RPCs (match_pages,
+        get_root_questions).
+        """
+        if self.scope_question_id is None:
+            return query
+        return query.or_(f"scope_question_id.is.null,scope_question_id.eq.{self.scope_question_id}")
+
     async def _load_mutation_state(self) -> MutationState:
         """Fetch and cache mutation events for this staged run."""
-        if self._mutation_cache is not None:
-            return self._mutation_cache
         if not self.staged:
-            self._mutation_cache = MutationState()
-            return self._mutation_cache
+            return _EMPTY_MUTATION_STATE
+        cached = _MUTATION_CACHES.get(self.run_id)
+        if cached is not None:
+            return cached
         rows = _rows(
             await self._execute(
                 self.client.table("mutation_events")
@@ -484,11 +558,11 @@ class DB:
                         state.robustness_source[tid] = source
             elif et == "set_hidden" and "hidden" in payload:
                 state.hidden_overrides[tid] = bool(payload["hidden"])
-        self._mutation_cache = state
+        _MUTATION_CACHES[self.run_id] = state
         return state
 
     def _invalidate_mutation_cache(self) -> None:
-        self._mutation_cache = None
+        _MUTATION_CACHES.pop(self.run_id, None)
 
     async def _apply_page_events(self, pages: Sequence[Page]) -> list[Page]:
         """Overlay mutation events onto a batch of pages."""
@@ -710,6 +784,7 @@ class DB:
                     "staged": self.staged,
                     "abstract": page.abstract,
                     "hidden": page.hidden,
+                    "scope_question_id": page.scope_question_id,
                 }
             )
         )
@@ -788,7 +863,7 @@ class DB:
 
     async def get_page(self, page_id: str) -> Page | None:
         query = self.client.table("pages").select("*").eq("id", page_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         if not rows:
             return None
@@ -823,13 +898,14 @@ class DB:
         if not page_ids:
             return {}
         result: dict[str, Page] = {}
-        id_list = list(page_ids)
-        batch_size = 200
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(page_ids, 200, strict=False):
             rows = _rows(
                 await self._execute(
-                    self._staged_filter(self.client.table("pages").select("*").in_("id", batch))
+                    self._scope_filter(
+                        self._staged_filter(
+                            self.client.table("pages").select("*").in_("id", list(batch))
+                        )
+                    )
                 )
             )
             for r in rows:
@@ -888,7 +964,13 @@ class DB:
 
     async def resolve_page_id(self, page_id: str) -> str | None:
         """Resolve a page ID to a full UUID. Handles both full UUIDs and
-        8-char short IDs. Returns the full UUID if found, or None."""
+        8-char short IDs. Returns the full UUID if found, or None.
+
+        For longer strings that miss exact match, falls back to a prefix
+        match on the first 8 characters — this catches UUID-mistyping
+        (e.g. an LLM transposing a middle segment) so long as the first
+        8 hex chars are correct and unambiguous.
+        """
         if not page_id:
             log.debug("resolve_page_id: empty page_id")
             return None
@@ -897,29 +979,40 @@ class DB:
         if rows:
             log.debug("resolve_page_id: exact match for %s", page_id[:8])
             return rows[0]["id"]
-        # Try prefix match for short IDs
-        if len(page_id) <= 8:
+        # Try prefix match for short IDs, or fall back to first-8-char
+        # prefix for longer inputs that just missed exact match.
+        if len(page_id) <= 8 or not page_id.startswith("http"):
+            prefix = page_id if len(page_id) <= 8 else page_id[:8]
             rows = _rows(
                 await self._execute(
-                    self.client.table("pages").select("id").like("id", f"{page_id}%")
+                    self.client.table("pages").select("id").like("id", f"{prefix}%")
                 )
             )
             if len(rows) == 1:
-                log.debug(
-                    "resolve_page_id: prefix match %s -> %s",
-                    page_id,
-                    rows[0]["id"][:8],
-                )
-                return rows[0]["id"]
+                resolved = rows[0]["id"]
+                if len(page_id) > 8 and resolved != page_id:
+                    log.info(
+                        "resolve_page_id: %s missed exact, recovered via first-8-char prefix to %s",
+                        page_id,
+                        resolved[:8],
+                    )
+                else:
+                    log.debug(
+                        "resolve_page_id: prefix match %s -> %s",
+                        prefix,
+                        resolved[:8],
+                    )
+                return resolved
             if len(rows) > 1:
                 log.warning(
                     "Ambiguous short ID '%s' matches %d pages",
-                    page_id,
+                    prefix,
                     len(rows),
                 )
-            else:
+                return None
+            if len(page_id) <= 8:
                 log.debug("resolve_page_id: no prefix match for %s", page_id)
-            return None
+                return None
         if page_id.startswith("http"):
             rows = _rows(
                 await self._execute(
@@ -1014,7 +1107,7 @@ class DB:
             query = query.eq("is_superseded", False)
         if not include_hidden:
             query = query.eq("hidden", False)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         pages = [
             _row_to_page(r)
             for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
@@ -1042,7 +1135,7 @@ class DB:
             query = query.eq("is_superseded", False)
         if not include_hidden:
             query = query.eq("hidden", False)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         pages = [
             _row_to_page(r)
             for r in _rows(await self._execute(query.order("created_at", desc=True).limit(10000)))
@@ -1120,7 +1213,7 @@ class DB:
             query = query.eq("hidden", False)
         if search:
             query = query.or_(f"headline.ilike.%{search}%,content.ilike.%{search}%")
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         query = query.order(
             "is_human_created",
             desc=True,
@@ -1248,6 +1341,7 @@ class DB:
                     "created_at": link.created_at.isoformat(),
                     "run_id": self.run_id,
                     "staged": self.staged,
+                    "scope_question_id": link.scope_question_id,
                 }
             )
         )
@@ -1279,7 +1373,7 @@ class DB:
 
     async def get_link(self, link_id: str) -> PageLink | None:
         query = self.client.table("page_links").select("*").eq("id", link_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         if not rows:
             return None
@@ -1288,7 +1382,7 @@ class DB:
 
     async def get_links_to(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("to_page_id", page_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
@@ -1300,7 +1394,7 @@ class DB:
             .eq("to_page_id", question_id)
             .eq("link_type", LinkType.VIEW_OF.value)
         )
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         links = await self._apply_link_events([_row_to_link(r) for r in rows])
         if not links:
@@ -1390,7 +1484,7 @@ class DB:
 
     async def get_links_from(self, page_id: str) -> list[PageLink]:
         query = self.client.table("page_links").select("*").eq("from_page_id", page_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
@@ -1402,18 +1496,17 @@ class DB:
         result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
         if not page_ids:
             return result
-        id_list = list(dict.fromkeys(page_ids))
-        batch_size = 100
         page_size = 2000
         all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(dict.fromkeys(page_ids), 100, strict=False):
             offset = 0
             while True:
                 query = (
-                    self.client.table("page_links").select(_LINK_COLUMNS).in_("from_page_id", batch)
+                    self.client.table("page_links")
+                    .select(_LINK_COLUMNS)
+                    .in_("from_page_id", list(batch))
                 )
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
@@ -1432,18 +1525,17 @@ class DB:
         result: dict[str, list[PageLink]] = {pid: [] for pid in page_ids}
         if not page_ids:
             return result
-        id_list = list(dict.fromkeys(page_ids))
-        batch_size = 100
         page_size = 2000
         all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(dict.fromkeys(page_ids), 100, strict=False):
             offset = 0
             while True:
                 query = (
-                    self.client.table("page_links").select(_LINK_COLUMNS).in_("to_page_id", batch)
+                    self.client.table("page_links")
+                    .select(_LINK_COLUMNS)
+                    .in_("to_page_id", list(batch))
                 )
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
@@ -1454,7 +1546,7 @@ class DB:
             result.setdefault(link.to_page_id, []).append(link)
         return result
 
-    async def get_latest_summary_for_question(self, question_id: str) -> "Page | None":
+    async def get_latest_summary_for_question(self, question_id: str) -> Page | None:
         """Return the most recent active SUMMARY page linked to a question."""
         links = await self.get_links_to(question_id)
         summary_links = [l for l in links if l.link_type == LinkType.SUMMARIZES]
@@ -1636,21 +1728,18 @@ class DB:
         result: dict[str, list[Page]] = {qid: [] for qid in question_ids}
         if not question_ids:
             return result
-        id_list = list(dict.fromkeys(question_ids))
-        batch_size = 100
         page_size = 2000
         all_links: list[PageLink] = []
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(dict.fromkeys(question_ids), 100, strict=False):
             offset = 0
             while True:
                 query = (
                     self.client.table("page_links")
                     .select(_LINK_COLUMNS)
-                    .in_("to_page_id", batch)
+                    .in_("to_page_id", list(batch))
                     .eq("link_type", LinkType.ANSWERS.value)
                 )
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
@@ -1718,7 +1807,7 @@ class DB:
         page_size = 1000
         while True:
             query = self.client.table("pages").select("id").eq("project_id", self.project_id)
-            query = self._staged_filter(query)
+            query = self._scope_filter(self._staged_filter(query))
             rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
             page_ids.update(r["id"] for r in rows)
             if len(rows) < page_size:
@@ -1738,20 +1827,17 @@ class DB:
         """
         all_links: list[PageLink] = []
         if page_ids is not None:
-            id_list = list(page_ids)
-            batch_size = 100
             page_size = 1000
-            for start in range(0, len(id_list), batch_size):
-                batch = id_list[start : start + batch_size]
+            for batch in batched(page_ids, 100, strict=False):
                 offset = 0
                 while True:
                     query = (
                         self.client.table("page_links")
                         .select("*")
                         .eq("link_type", "depends_on")
-                        .in_("from_page_id", batch)
+                        .in_("from_page_id", list(batch))
                     )
-                    query = self._staged_filter(query)
+                    query = self._scope_filter(self._staged_filter(query))
                     rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                     all_links.extend(_row_to_link(r) for r in rows)
                     if len(rows) < page_size:
@@ -1762,7 +1848,7 @@ class DB:
             page_size = 1000
             while True:
                 query = self.client.table("page_links").select("*").eq("link_type", "depends_on")
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_links.extend(_row_to_link(r) for r in rows)
                 if len(rows) < page_size:
@@ -2125,6 +2211,29 @@ class DB:
             )
         )
 
+    async def qbp_refund(
+        self,
+        parent_question_id: str,
+        child_question_id: str,
+        amount: int,
+    ) -> None:
+        """Inverse of ``qbp_recurse``: return ``amount`` from a failed child
+        cycle's allocation back to the parent pool. No-op when amount<=0.
+        """
+        if amount <= 0:
+            return
+        await self._execute(
+            self.client.rpc(
+                "qbp_refund",
+                {
+                    "rid": self.run_id,
+                    "parent_qid": parent_question_id,
+                    "child_qid": child_question_id,
+                    "amount": amount,
+                },
+            )
+        )
+
     async def get_active_calls_for_question(
         self,
         question_id: str,
@@ -2176,7 +2285,7 @@ class DB:
             .eq("from_page_id", from_page_id)
             .eq("to_page_id", to_page_id)
         )
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         return await self._apply_link_events([_row_to_link(r) for r in rows])
 
@@ -2194,8 +2303,10 @@ class DB:
             return await self._get_links_for_pages(page_ids)
         page_size = 2000
         if self.project_id:
-            page_ids_query = self._staged_filter(
-                self.client.table("pages").select("id").eq("project_id", self.project_id)
+            page_ids_query = self._scope_filter(
+                self._staged_filter(
+                    self.client.table("pages").select("id").eq("project_id", self.project_id)
+                )
             )
             page_ids_rows = _rows(await self._execute(page_ids_query.limit(50000)))
             proj_page_ids = {r["id"] for r in page_ids_rows}
@@ -2203,7 +2314,7 @@ class DB:
             offset = 0
             while True:
                 query = self.client.table("page_links").select(_LINK_COLUMNS)
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_rows.extend(rows)
                 if len(rows) < page_size:
@@ -2219,7 +2330,7 @@ class DB:
             offset = 0
             while True:
                 query = self.client.table("page_links").select(_LINK_COLUMNS)
-                query = self._staged_filter(query)
+                query = self._scope_filter(self._staged_filter(query))
                 rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                 all_rows.extend(rows)
                 if len(rows) < page_size:
@@ -2238,16 +2349,16 @@ class DB:
         within each batch to avoid PostgREST response-size failures.
         """
         all_links: dict[str, PageLink] = {}
-        id_list = list(page_ids)
-        batch_size = 100
         page_size = 2000
-        for start in range(0, len(id_list), batch_size):
-            batch = id_list[start : start + batch_size]
+        for batch in batched(page_ids, 100, strict=False):
+            batch_list = list(batch)
             for col in ("from_page_id", "to_page_id"):
                 offset = 0
                 while True:
-                    query = self.client.table("page_links").select(_LINK_COLUMNS).in_(col, batch)
-                    query = self._staged_filter(query)
+                    query = (
+                        self.client.table("page_links").select(_LINK_COLUMNS).in_(col, batch_list)
+                    )
+                    query = self._scope_filter(self._staged_filter(query))
                     rows = _rows(await self._execute(query.range(offset, offset + page_size - 1)))
                     for r in rows:
                         link = _row_to_link(r)
@@ -2261,10 +2372,21 @@ class DB:
         """Delete a page link by ID."""
         rows = _rows(
             await self._execute(
-                self._staged_filter(self.client.table("page_links").select("*").eq("id", link_id))
+                self._scope_filter(
+                    self._staged_filter(
+                        self.client.table("page_links").select("*").eq("id", link_id)
+                    )
+                )
             )
         )
-        link_snapshot = rows[0] if rows else {}
+        if not rows:
+            # Link is invisible to this DB's staged/scope view. Recording an
+            # empty mutation event would corrupt the log (retroactive staging
+            # cannot restore from an empty payload), and the DELETE below is
+            # unfiltered — proceeding would silently bypass the visibility
+            # filter the snapshot fetch just enforced.
+            return
+        link_snapshot = rows[0]
         await self.record_mutation_event("delete_link", link_id, link_snapshot)
         if not self.staged:
             await self._execute(self.client.table("page_links").delete().eq("id", link_id))
@@ -2338,7 +2460,7 @@ class DB:
                 .select("call_type, completed_at, review_json")
                 .eq("scope_page_id", question_id)
                 .eq("status", "complete")
-                .like("call_type", "scout_%")
+                .in_("call_type", [ct.value for ct in SCOUT_CALL_TYPES])
                 .order("completed_at", desc=True)
             )
         )
@@ -2659,6 +2781,8 @@ class DB:
             params["p_staged_run_id"] = self.run_id
         if include_hidden:
             params["p_include_hidden"] = True
+        if self.scope_question_id is not None:
+            params["p_scope_question_id"] = self.scope_question_id
         rows = _rows(await self._execute(self.client.rpc("get_root_questions", params)))
         pages = [_row_to_page(r) for r in rows]
         pages = await self._apply_page_events(pages)
@@ -2688,7 +2812,7 @@ class DB:
             query = query.eq("project_id", self.project_id)
         if not include_hidden:
             query = query.eq("hidden", False)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         rows = _rows(await self._execute(query))
         pages = [_row_to_page(r) for r in rows]
         pages = await self._apply_page_events(pages)
@@ -2774,7 +2898,7 @@ class DB:
             .select(_LINK_COLUMNS)
             .in_("to_page_id", list(question_ids))
         )
-        links_query = self._staged_filter(links_query)
+        links_query = self._scope_filter(self._staged_filter(links_query))
         links_result = await self._execute(links_query)
         links = [_row_to_link(r) for r in _rows(links_result)]
         links = await self._apply_link_events(links)
@@ -2805,7 +2929,7 @@ class DB:
         )
         if self.project_id:
             query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         result = await self._execute(query)
         return result.count or 0
 
@@ -2825,6 +2949,14 @@ class DB:
         cache_creation_input_tokens: int | None = None,
         cache_read_input_tokens: int | None = None,
         user_messages: Sequence[dict] | None = None,
+        model: str | None = None,
+        request_kwargs: dict[str, Any] | None = None,
+        thinking_blocks: dict[str, Any] | None = None,
+        available_tools: Sequence[dict[str, Any]] | None = None,
+        response_schema: dict[str, Any] | None = None,
+        request: dict[str, Any] | None = None,
+        response: dict[str, Any] | None = None,
+        provider_request_id: str | None = None,
     ) -> str:
         exchange_id = str(uuid.uuid4())
         row: dict[str, Any] = {
@@ -2843,9 +2975,24 @@ class DB:
             "duration_ms": duration_ms,
             "cache_creation_input_tokens": cache_creation_input_tokens,
             "cache_read_input_tokens": cache_read_input_tokens,
+            "model": model,
         }
         if user_messages is not None:
             row["user_messages"] = user_messages
+        if request_kwargs is not None:
+            row["request_kwargs"] = request_kwargs
+        if thinking_blocks is not None:
+            row["thinking_blocks"] = thinking_blocks
+        if available_tools is not None:
+            row["available_tools"] = list(available_tools)
+        if response_schema is not None:
+            row["response_schema"] = response_schema
+        if request is not None:
+            row["request"] = request
+        if response is not None:
+            row["response"] = response
+        if provider_request_id is not None:
+            row["provider_request_id"] = provider_request_id
         await self._execute(self.client.table("call_llm_exchanges").insert(row))
         return exchange_id
 
@@ -2861,6 +3008,33 @@ class DB:
             )
         )
         return rows
+
+    async def get_llm_exchange_totals_for_run(self, run_id: str) -> dict[str, int]:
+        """Sum token counts across every llm exchange in the run.
+
+        Returns a dict with ``input_tokens``, ``output_tokens``,
+        ``cache_read_tokens``, ``cache_create_tokens`` — zero when the run has
+        no exchanges or no rows match. Used by ``/api/runs/{id}/trace-tree``
+        to render a run-level token/cache rollup alongside total cost.
+        """
+        rows = _rows(
+            await self._execute(
+                self.client.table("call_llm_exchanges")
+                .select(
+                    "input_tokens, output_tokens, "
+                    "cache_creation_input_tokens, cache_read_input_tokens"
+                )
+                .eq("run_id", run_id)
+            )
+        )
+        return {
+            "input_tokens": sum(int(r.get("input_tokens") or 0) for r in rows),
+            "output_tokens": sum(int(r.get("output_tokens") or 0) for r in rows),
+            "cache_read_tokens": sum(int(r.get("cache_read_input_tokens") or 0) for r in rows),
+            "cache_create_tokens": sum(
+                int(r.get("cache_creation_input_tokens") or 0) for r in rows
+            ),
+        }
 
     async def get_llm_exchange(self, exchange_id: str) -> dict[str, Any] | None:
         rows = _rows(
@@ -2889,7 +3063,7 @@ class DB:
         cost_usd: float | None,
         error: str | None,
         created_by: str | None,
-    ) -> "ForkRow":
+    ) -> ForkRow:
         from rumil.forks import ForkRow
 
         base_row: dict[str, Any] = {
@@ -3058,6 +3232,7 @@ class DB:
         name: str,
         question_id: str | None,
         config: dict | None = None,
+        entrypoint: str | None = None,
     ) -> None:
         """Insert a row in the runs table for this DB's run_id."""
         await self._execute(
@@ -3069,6 +3244,7 @@ class DB:
                     "question_id": question_id,
                     "config": config or {},
                     "staged": self.staged,
+                    "entrypoint": entrypoint,
                 }
             )
         )
@@ -3083,7 +3259,7 @@ class DB:
         )
         if self.project_id:
             query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         result = await self._execute(query)
         return result.count or 0
 
@@ -3102,7 +3278,7 @@ class DB:
         )
         if self.project_id:
             query = query.eq("project_id", self.project_id)
-        query = self._staged_filter(query)
+        query = self._scope_filter(self._staged_filter(query))
         result = await self._execute(query)
         pages = [_row_to_page(r) for r in _rows(result)]
         return await self._apply_page_events(pages)
@@ -3164,6 +3340,7 @@ class DB:
                     "created_at": payload.get("created_at"),
                     "run_id": payload.get("run_id", run_id),
                     "staged": was_own_link,
+                    "scope_question_id": payload.get("scope_question_id"),
                 }
                 await self._execute(self.client.table("page_links").upsert(restore_row))
 
@@ -3347,6 +3524,118 @@ class DB:
             rows = [r for r in rows if r.get("project_id") in owned_ids]
         return rows
 
+    async def list_run_call_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List runs created by `scripts/run_call.py`, newest first.
+
+        Filtered by `entrypoint = 'run_call'`. Like `list_ab_eval_reports`,
+        applies `self.project_id` when set and supports an
+        `owner_user_id` cross-user safety filter via
+        `projects.owner_user_id`.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "run_call")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
+    async def list_run_prio_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List runs created by `scripts/run_prio.py`, newest first.
+
+        Filtered by `entrypoint = 'run_prio'`. Mirrors
+        `list_run_call_experiments`: applies `self.project_id` when set
+        and supports an `owner_user_id` cross-user safety filter via
+        `projects.owner_user_id`.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "run_prio")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
+    async def list_context_eval_experiments(
+        self,
+        owner_user_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List context-builder eval gold runs that are paired with a candidate.
+
+        Each context-eval invocation produces two runs (one gold, one
+        candidate) tagged with `entrypoint = 'context_eval'`. Historical
+        runs that predate the tag are backfilled by a migration. We
+        surface only gold rows that have been paired
+        (config.eval.paired_run_id is set), giving one entry per
+        comparison.
+        """
+        q = (
+            self.client.table("runs")
+            .select("id, name, question_id, config, staged, created_at, project_id, entrypoint")
+            .eq("entrypoint", "context_eval")
+            .eq("config->eval->>role", "gold")
+            .order("created_at", desc=True)
+        )
+        if self.project_id:
+            q = q.eq("project_id", str(self.project_id))
+        rows = _rows(await self._execute(q))
+        rows = [r for r in rows if ((r.get("config") or {}).get("eval") or {}).get("paired_run_id")]
+        if owner_user_id:
+            project_ids = {r.get("project_id") for r in rows if r.get("project_id")}
+            if not project_ids:
+                return []
+            owned = _rows(
+                await self._execute(
+                    self.client.table("projects")
+                    .select("id")
+                    .eq("owner_user_id", owner_user_id)
+                    .in_("id", list(project_ids))
+                )
+            )
+            owned_ids = {r["id"] for r in owned}
+            rows = [r for r in rows if r.get("project_id") in owned_ids]
+        return rows
+
     async def get_ab_eval_report(self, report_id: str) -> dict[str, Any] | None:
         """Get a single AB evaluation report by ID."""
         q = self.client.table("ab_eval_reports").select("*").eq("id", report_id)
@@ -3467,6 +3756,140 @@ class DB:
             )
         results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         return results[:limit]
+
+    async def list_recent_runs(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Return recent runs across all projects, newest first, with total count.
+
+        Skips the legacy-calls fallback used by list_runs_for_project — pre-runs-table
+        research is only visible in the per-project view.
+        """
+        end = offset + limit - 1
+        result = await self._execute(
+            self.client.table("runs")
+            .select(
+                "id, name, question_id, project_id, config, created_at, staged",
+                count=CountMethod.exact,
+            )
+            .order("created_at", desc=True)
+            .range(offset, end)
+        )
+        run_rows = _rows(result)
+        total = result.count or 0
+
+        page_ids = {r["question_id"] for r in run_rows if r.get("question_id")}
+        project_ids = {r["project_id"] for r in run_rows if r.get("project_id")}
+        pages_by_id = await self.get_pages_by_ids(list(page_ids)) if page_ids else {}
+
+        projects_by_id: dict[str, str] = {}
+        if project_ids:
+            proj_rows = _rows(
+                await self._execute(
+                    self.client.table("projects").select("id, name").in_("id", list(project_ids))
+                )
+            )
+            projects_by_id = {p["id"]: p["name"] for p in proj_rows}
+
+        results: list[dict[str, Any]] = []
+        for row in run_rows:
+            qid = row.get("question_id")
+            page = pages_by_id.get(qid) if qid else None
+            pid = row.get("project_id")
+            results.append(
+                {
+                    "run_id": row["id"],
+                    "created_at": row["created_at"],
+                    "name": row.get("name", ""),
+                    "config": row.get("config", {}),
+                    "question_summary": page.headline if page else None,
+                    "staged": row.get("staged", False),
+                    "project_id": pid,
+                    "project_name": projects_by_id.get(pid) if pid else None,
+                }
+            )
+        return results, total
+
+    async def find_eval_gold_run(
+        self,
+        question_id: str,
+        builder_name: str = "ImpactFilteredContext",
+    ) -> str | None:
+        """Find the most recent context-eval gold run for this question.
+
+        Looks at runs.config.eval (a tag written by the context-builder
+        evaluation workflow) and returns the run_id of the newest gold-role
+        run for the given builder, scoped to this DB's project. Returns
+        None if no matching run exists.
+        """
+        if not self.project_id:
+            return None
+        rows = _rows(
+            await self._execute(
+                self.client.table("runs")
+                .select("id")
+                .eq("project_id", str(self.project_id))
+                .eq("question_id", question_id)
+                .eq("config->eval->>role", "gold")
+                .eq("config->eval->>context_builder", builder_name)
+                .order("created_at", desc=True)
+                .limit(1)
+            )
+        )
+        return rows[0]["id"] if rows else None
+
+    async def set_run_eval_meta(
+        self,
+        run_id: str,
+        *,
+        role: str,
+        context_builder: str,
+        question_id: str,
+        paired_run_id: str | None = None,
+    ) -> None:
+        """Tag a runs row with the context-builder-eval metadata block.
+
+        Called by the eval workflow only AFTER the call completes
+        successfully — so a run whose build_context phase failed never
+        gets the eval.role tag, and find_eval_gold_run won't surface it
+        as a usable cache hit.
+        """
+        rows = _rows(
+            await self._execute(self.client.table("runs").select("config").eq("id", run_id))
+        )
+        if not rows:
+            return
+        config = dict(rows[0].get("config") or {})
+        config["eval"] = {
+            "role": role,
+            "context_builder": context_builder,
+            "paired_run_id": paired_run_id,
+            "question_id": question_id,
+        }
+        await self._execute(self.client.table("runs").update({"config": config}).eq("id", run_id))
+
+    async def update_run_config_eval_partner(
+        self,
+        run_id: str,
+        partner_run_id: str,
+    ) -> None:
+        """Patch an existing run's config.eval.paired_run_id field.
+
+        Used by the context-builder eval workflow once both arms exist, so
+        the gold row also points at its candidate partner.
+        """
+        rows = _rows(
+            await self._execute(self.client.table("runs").select("config").eq("id", run_id))
+        )
+        if not rows:
+            return
+        config = dict(rows[0].get("config") or {})
+        eval_meta = dict(config.get("eval") or {})
+        eval_meta["paired_run_id"] = partner_run_id
+        config["eval"] = eval_meta
+        await self._execute(self.client.table("runs").update({"config": config}).eq("id", run_id))
 
     async def delete_run_data(self, delete_project: bool = False) -> None:
         """Delete all data for this run_id. Used by test teardown."""

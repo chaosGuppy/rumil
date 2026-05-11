@@ -1,8 +1,8 @@
 ---
 name: rumil-versus-judge
-description: Run pairwise judgments on versus essay-continuation pairs. Default mode is the unified blind path (single-turn LLM call, no tools, no DB) — claude-* models route direct to Anthropic, others through OpenRouter. --variant ws adds a rumil SDK agent with workspace-exploration tools; --variant orch fires a full TwoPhaseOrchestrator run per pair. Use when the user wants to measure how rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare blind judges against workspace-aware ones, or top up pending judgments after adding new dimensions or models.
+description: Run pairwise judgments on versus essay-continuation pairs. Default mode is the unified blind path (single-turn LLM call, no tools, no DB) — claude-* models route direct to Anthropic, others through OpenRouter. --variant orch fires a full TwoPhaseOrchestrator run per pair. Use when the user wants to measure how rumil discriminates on pairs with known ground truth (human continuation vs. model continuations), compare blind judges against workspace-aware ones, or top up pending judgments after adding new dimensions or models.
 allowed-tools: Bash, Read
-argument-hint: "[--variant ws|orch] [--workspace <name>] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
+argument-hint: "[--variant orch] [--workspace <name> (default: versus)] [--model opus|sonnet|haiku|<full-id> ...] [--dimension <name>...] [--essay <id>...] [--include-stale] [--contestants <csv>] [--vs-human] [--budget N] [--limit N] [--concurrency N] [--current-only] [--persist] [--dry-run]"
 ---
 
 # rumil-versus-judge
@@ -13,37 +13,59 @@ Postgres table. The versus UI picks up the new rows automatically;
 rumil paths also store project_id / run_id / rumil_call_id so the
 `/inspect` page can link back to the rumil trace.
 
-## Three modes
+## Two modes
 
 | Mode | What it does | judge_model format | Needs supabase? |
 |---|---|---|---|
-| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `blind:<model>:<dim>:c<hash8>` | no |
-| `ws` | One VERSUS_JUDGE rumil agent call per pair with single-arm workspace-exploration tools (search / load_page / explore_subgraph). Uses the essay-adapted rumil dimension prompt selected via `--dimension`. | `rumil:ws:<model>:<dim>:c<hash8>` | **yes** |
-| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `rumil:orch:<model>:<dim>:c<hash8>` | **yes** |
+| Blind (default, no `--variant`) | Single-turn LLM call, no tools, no DB. Each `--model` routed: `claude-*` direct to Anthropic, others via OpenRouter. Same shell/dimension prompt across providers. | `judge_pair/blind:<model>:c<hash8>` | no |
+| `orch` | Per-pair: create Question page, fire `TwoPhaseOrchestrator` at configurable budget, then a closing call extracts the 7-point label. Produces a full research trace per pair. | `judge_pair/two_phase:<model>:c<hash8>` | **yes** |
 
-`<dim>` is the rumil dimension name selected via `--dimension`
-(e.g. `general_quality`, `grounding`). The trailing `c<hash8>` is the
-first eight hex chars of the row's `judge_inputs_hash` — the dedup
-primitive. The blind shell is **without** tool advertisements (no
-scope-question references, no `load_page`/`search_workspace`
-mentions); ws/orch shell keeps them. Both modes share the same
-template — see `rumil/versus_prompts.py` for the substitution dicts.
+The earlier `--variant ws` path (one SDK agent call with
+workspace-exploration tools, no orchestrator) was removed; for an
+agentic-baseline run, use `--variant orch --budget 4` (the minimum).
+Historical `rumil:ws:*` rows in `versus_judgments` are preserved.
+
+The dimension (`general_quality`, `grounding`, ...) is selected via
+`--dimension` and lives in the structured `judge_inputs.task.dimension`
+field. It's no longer embedded in the display string —
+post-#424 rows use `judge_pair/<workflow>:<model>:c<hash8>`. Historical
+rows still carry the old `blind:<model>:<dim>:c<hash8>` /
+`rumil:orch:<model>:<dim>:c<hash8>` shapes; read-side parsers handle
+both. The trailing `c<hash8>` is the first eight hex chars of the
+row's `judge_inputs_hash` — the dedup primitive. The blind shell is
+**without** tool advertisements (no scope-question references, no
+`load_page`/`search_workspace` mentions); orch shell keeps them. Both
+modes share the same template — see `rumil/versus_prompts.py` for
+the substitution dicts.
 
 Each row carries a structured `judge_inputs: dict`; the DB generates
 `judge_inputs_hash` from its canonical-form JSON. The blob is built by
-`versus.judge_config.make_judge_config` and covers every input the
-judge saw — model, sampling, prompt content, tool descriptions, pair
-surface, code fingerprint, workspace state, budget, closer config —
-plus `text_a_id` / `text_b_id` and `order` added at write time. Any
-change in any of those auto-forks the hash; no manual version bump to
-remember. See `versus/AGENT.md` for the full schema.
+`versus.versus_config.make_versus_config(workflow, task, ...)` (the
+back-compat shim `make_judge_config(variant, ...)` still exists for
+legacy callers and forwards into the new builder). The new shape has
+two component subdicts plus cross-cutting top-level fields:
+
+- `workflow.*` — `kind` (e.g. `blind`, `two_phase`), `budget`, plus a
+  snapshot of every entry in the workflow's `relevant_settings`.
+- `task.*` — `kind` (e.g. `judge_pair`), `dimension`, `prompt_hash`,
+  `tool_prompt_hash`, `pair_surface_hash`, `closer_hash`.
+- top-level: `model`, `model_config` (full `ModelConfig.to_record_dict()`
+  snapshot — sampling, thinking, effort, max_thinking_tokens,
+  service_tier), `workspace_id`, `workspace_state_hash`, plus
+  `shared_code_fingerprint` (harness layer) + `workflow_code_fingerprint`
+  (the workflow's declared `code_paths`) post-#425.
+
+`text_a_id` / `text_b_id` and `order` are added at write time. Editing
+the registry, swapping a prompt, or touching any code the fingerprint
+covers auto-forks the hash; no manual version bump to remember. See
+`versus/AGENT.md` for the full schema and the registry shape.
 
 ## When to use
 
 | Intent | Skill / command |
 |---|---|
 | "run blind judges on versus pairs (any model — claude or otherwise)" | this skill (default mode) |
-| "run rumil ws/orch judges on versus pairs" | this skill (`--variant ws|orch`) |
+| "run rumil orch judges on versus pairs" | this skill (`--variant orch`) |
 | "A/B eval two rumil research runs" | rumil's `main.py --ab-eval A B` — different system |
 
 Versus must already have completions in the `versus_texts` table.
@@ -81,7 +103,7 @@ on in the UI, so `status.py`'s numbers should match what you see there.
 - `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` resolve from `versus/.env`,
   then `<rumil-root>/.env`, then the process environment. Files override
   env so per-project `.env` takes precedence. The blind path may need
-  either or both depending on the models passed; ws/orch only need
+  either or both depending on the models passed; orch only needs
   `ANTHROPIC_API_KEY` (claude models only).
 - All modes take their model via `--model`. Accepts a short alias
   (`opus` / `sonnet` / `haiku`), a bare Anthropic id (`claude-*`), or
@@ -89,7 +111,7 @@ on in the UI, so `status.py`'s numbers should match what you see there.
 - Blind (default): repeat `--model` for multi-model runs. Each model
   routes by id — `claude-*` direct to Anthropic, anything else through
   OpenRouter. Defaults to `cfg.judging.models` in `versus/config.yaml`.
-- `ws` / `orch` variants: pass at most one `--model` (default: `opus`).
+- `orch` variant: pass at most one `--model` (default: `opus`).
   Passed explicitly through the bridge via
   `override_settings(rumil_model_override=...)` — no env-var
   ordering. Picking the model matters: opus and sonnet produce
@@ -105,21 +127,27 @@ on in the UI, so `status.py`'s numbers should match what you see there.
 - `--current-only` — skip groups whose `prefix_config_hash` isn't the
   current one for the essay. Protects against judging stale rows after
   an essay re-import; pair with `scripts/status.py` to detect staleness.
-- `--persist` — ws/orch only. Disables the default staged mode and
+- `--persist` — orch only. Disables the default staged mode and
   writes versus-created pages to the baseline workspace.
 - `--concurrency N` — concurrent LLM calls. Defaults: blind =
-  `cfg.per_model_concurrency` per model (usually 8), `ws` = 2,
-  `orch` = 1 (serial). Raise `orch` concurrency cautiously (each pair
-  fires a full TwoPhaseOrchestrator with lots of DB traffic); 2 is
-  usually fine and roughly halves wall time.
+  `cfg.per_model_concurrency` per model (usually 8), `orch` = 1
+  (serial). Raise `orch` concurrency cautiously (each pair fires a
+  full TwoPhaseOrchestrator with lots of DB traffic); 2 is usually
+  fine and roughly halves wall time.
 
-## Targeted pair selection (ws / orch)
+## Targeted pair selection (orch)
 
 The default planner enumerates every pending pair × task in every
 essay. For focused comparisons (especially expensive paths like orch)
-use these filters — all shared across ws and orch:
+use these filters:
 
 - `--essay <id>` (repeatable) — restrict to specific essays.
+- `--include-stale` — opt out of the active-set default. By default
+  the planner restricts to the canonical active essay set (current
+  `schema_version`, not in `cfg.essays.exclude_ids` — same gate
+  `/versus` applies). Pass this to widen to every essay with rows in
+  `versus_texts`, including off-feed or older-schema rows. Composes
+  with `--essay` (intersected when not stale).
 - `--contestants <csv>` — only pairs where BOTH source_ids are in the
   list. Controls which contestants get compared against each other.
 - `--vs-human` — only pairs where one side is `human`.
@@ -136,24 +164,36 @@ This plans exactly 3 pairs: (flash, human), (gpt-5.4, human),
 (mini, human) — covers the quality spectrum on one essay. Repeat
 `--essay` to span multiple essays on the same pattern.
 
-## Workspace requirement (ws / orch)
+## Workspace (orch)
 
-The `--workspace <name>` argument maps to a rumil Project — no
-default; the user must name one. For the `ws` / `orch` variants to do
-better than text-only judgment, that workspace should have material
-relevant to the essays' topics.
+The `--workspace <name>` argument maps to a rumil Project. **Defaults
+to `versus`** — a dedicated workspace exists locally and on prod;
+reuse it unless the user explicitly wants a separate scratch workspace.
+For the `orch` variant to do better than text-only judgment, the
+workspace should have material relevant to the essays' topics.
 
-By default `ws` / `orch` runs are **staged** (`staged=True` on
-rumil's DB). The agent still reads baseline workspace material
-normally, but any pages versus creates during the run (the per-pair
-Question, plus the orchestrator's research subtree for `orch`) are
-scoped to the run's staged view — invisible to other readers of the
-workspace. Pass `--persist` to disable staging and write pages to the
-baseline. Pages are also tagged `extra.source = "versus"` in both
-modes, so filtering after the fact is possible.
+Pass `--workspace versus --prod` to use the prod versus workspace.
+Reusing one shared workspace keeps staged subtrees from each run
+discoverable in one place. New workspaces must be created explicitly
+via rumil's main.py before a `--prod` orch run — the resolver
+fails-loud on missing names (typo protection).
 
-Supabase must be running locally (`supabase start` in the rumil repo)
-for both `ws` and `orch` variants.
+By default `orch` runs are **staged** (`staged=True` on
+rumil's DB) on both local and prod. The agent still reads baseline
+workspace material normally, but any pages versus creates during the
+run (the per-pair Question plus the orchestrator's research subtree)
+are scoped to the run's staged view — invisible to other readers of
+the workspace. Pass `--persist` to disable staging and write pages to
+the baseline. Pages are also tagged `extra.source = "versus"`, so
+filtering after the fact is possible.
+
+For local runs, Supabase must be running (`supabase start` in the
+rumil repo). For `--prod` runs, no local Supabase needed — the script
+writes to prod versus_db AND prod rumil DB. Note: with prod runs, the
+trace URL printed (`/traces/<run_id>`) points at the local frontend's
+configured `frontend_url` — you may need to point your local frontend
+at the prod API or visit `rumil.ink/traces/<run_id>` directly to see
+the trace.
 
 ## Invocation
 
@@ -168,22 +208,21 @@ Typical invocations (substitute the user's chosen workspace for `<WS>`):
 
 - `--dry-run` — list pending blind judgments (uses `cfg.judging.models`)
 - `--model sonnet --dry-run` — pending blind judgments restricted to sonnet
-- `--variant ws --workspace <WS> --dry-run` — list pending ws judgments
-- `--variant ws --workspace <WS> --limit 5` — run 5 ws judgments
-- `--variant ws --workspace <WS> --model sonnet --limit 5` — run on sonnet instead of opus
-- `--variant ws --workspace <WS> --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
-- `--variant orch --workspace <WS> --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
+- `--variant orch --workspace versus --dry-run` — list pending orch judgments
+- `--variant orch --workspace versus --budget 4 --limit 3` — 3 orch judgments at minimum budget (TwoPhaseOrchestrator rejects budget < 4)
+- `--variant orch --workspace versus --budget 4 --model sonnet --limit 5` — run on sonnet instead of opus
+- `--variant orch --workspace versus --budget 4 --dimension general_quality --dimension grounding --limit 5` — run multiple dimensions
 
 ## What to surface
 
 All modes print:
 - `[plan] N ... judgments ...` — pending count. Use this before confirming cost.
-- `[done i/N] <dedup_key>  label=... trace=<url>` (ws/orch) or `[done ...]` (blind)
-- `[run] <trace_url>` (ws session-level; orch per-pair)
+- `[done i/N] <dedup_key>  label=... trace=<url>` (orch) or `[done ...]` (blind)
+- `[run] <trace_url>` (orch per-pair)
 - `[err ] <key>: <msg>` on failure (run continues for other pairs)
 
-Surface any printed trace URLs to the user immediately. For `ws` and
-`orch` runs this is a hard requirement, not a nice-to-have — the user
+Surface any printed trace URLs to the user immediately. For `orch`
+runs this is a hard requirement, not a nice-to-have — the user
 wants to follow along live. Specifically:
 
 - If foregrounded, report `[run] <url>` lines as they stream.
@@ -212,23 +251,20 @@ are extrapolations.
 | blind | sonnet (4-6) | $0.03-0.10 | $3-10 |
 | blind | opus (4-7) | $0.20-0.45 | $20-45 |
 | blind | gemini / gpt-5.4 (via OpenRouter) | ~$0.01-0.05 depending on model | $1-5 |
-| ws | haiku (4-5) | $0.05-0.25 | $5-25 |
-| ws | sonnet (4-6) | **~$0.12** (observed; range $0.09-0.14) | ~$12 |
-| ws | opus (4-7) | **~$0.53** (observed; range $0.35-0.73) | ~$53 |
 | orch | sonnet, budget=4 | ~$1-3 (varies with tool use + subtree depth) | $100-300 |
 | orch | opus, budget=4 | ~$3-10 | $300-1000 |
 
-Practical guidance: pair `--model sonnet` with the `ws` variant
-for a much cheaper first pass that's still a real test of
-workspace-access discrimination (opus judges differently — see the
-methodology note below). For expensive paths, always start with
-`--limit 3` or `--limit 5` and confirm actual per-judgment cost from
-the first results before scaling. Use `--essay` + `--vs-human` +
-`--contestants` to keep scope deliberate instead of fanning out.
+Practical guidance: pair `--model sonnet` with `--variant orch`
+`--budget 4` for a cheaper first pass than opus — orch judges
+meaningfully differently across opus and sonnet (see the methodology
+note below). For expensive paths, always start with `--limit 3` or
+`--limit 5` and confirm actual per-judgment cost from the first
+results before scaling. Use `--essay` + `--vs-human` + `--contestants`
+to keep scope deliberate instead of fanning out.
 
 ## Running long batches in the background
 
-Large ws/orch runs can take 10+ minutes. If you want to background the
+Large orch runs can take 10+ minutes. If you want to background the
 run, fire it with `run_in_background: true` from the start on a single
 non-compound command; do NOT fire a compound `scrub && uv run ...` and
 manually background it mid-flight — when Claude Code's foreground
@@ -254,17 +290,18 @@ These are worth mentioning to users interpreting results so they don't
 over-read any single number:
 
 - **The "ground truth = human wins" framing is weaker than expected.**
-  On the forethought essays, all non-opus judges (OpenRouter gemini /
-  gpt-5.4 / gpt-5.4-mini AND rumil sonnet ws) reliably pick the
-  gpt-5.4 continuation over the human author's on multiple essays.
-  Rumil opus ws is the outlier that stays close to always picking
-  human. If "did the judge pick human?" is the metric, opus always
-  looks best — but that might be measuring opus's human-bias, not
-  discrimination.
+  Earlier ws-variant runs on the forethought essays found that
+  non-opus judges (OpenRouter gemini / gpt-5.4 / gpt-5.4-mini AND
+  rumil sonnet) reliably picked the gpt-5.4 continuation over the
+  human author's on multiple essays; rumil opus was the outlier that
+  stayed close to always picking human. If "did the judge pick human?"
+  is the metric, opus always looks best — but that might be measuring
+  opus's human-bias, not discrimination.
 - **Opus and sonnet produce meaningfully different verdicts on the
-  same pairs through ws.** Sonnet tracks OpenRouter consensus more
-  closely; opus is more human-biased. Treat `--model` as part
-  of the judge identity, not an implementation detail.
+  same pairs through workspace-aware judging.** Sonnet tracks
+  OpenRouter consensus more closely; opus is more human-biased. Treat
+  `--model` as part of the judge identity, not an implementation
+  detail.
 - **Rumil systematically disagrees with OpenRouter on the mini vs
   human pairs** (rumil prefers human, OpenRouter mostly picks mini)
   — consistent across sonnet and opus. This is a real signal worth
@@ -272,20 +309,23 @@ over-read any single number:
 
 ## Other caveats
 
-- **`ws` / `orch` stage their workspace additions by default.** Versus
-  Question pages (and, for `orch`, the orchestrator's research
-  subtree) are scoped to the staged run and invisible to baseline
-  readers of the workspace. Pass `--persist` to write them to the
-  baseline instead. Either way they're tagged `extra.source = "versus"`.
+- **`orch` stages its workspace additions by default.** Versus
+  Question pages and the orchestrator's research subtree are scoped
+  to the staged run and invisible to baseline readers of the
+  workspace. Pass `--persist` to write them to the baseline instead.
+  Either way they're tagged `extra.source = "versus"`.
 - **`orch` creates a rumil Run per pair.** Each shows up on
   `/traces`. Use a low `--limit` initially. Minimum budget is 4
   (`TwoPhaseOrchestrator` rejects anything smaller with a clear
   error).
 - **Re-running is free.** Dedup keys include the variant, model,
-  workspace, dimension (or versus criterion), budget, sampling params
-  (via `:s<hash>`), tool-prompt contents (via `:t<hash>` for ws/orch),
+  workspace, dimension (or versus criterion), budget, the full
+  per-model `model_config` snapshot from the registry (via
+  `:m<hash>`), tool-prompt contents (via `:t<hash>` for orch),
   and `order` slot — so any combination change produces fresh rows
-  without clobbering existing ones. `order` is currently always
+  without clobbering existing ones. Editing `versus/config.yaml`
+  `models:` for the judge model forks the hash naturally; old rows
+  stay valid as the prior config. `order` is currently always
   single-order; the slot exists so mirror-mode can be switched on
   without a migration.
 - **Rumil trace UI requires rumil's frontend** (`./scripts/dev-api.sh`
@@ -296,26 +336,45 @@ over-read any single number:
 
 `config_hash` is what `judgment_key` keys on. Anything in the
 structured config dict produced by
-`versus.judge_config.make_judge_config` flows into it. So forking is
-automatic for:
+`versus.versus_config.make_versus_config(workflow, task, ...)` flows
+into it (the legacy back-compat shim `make_judge_config(variant, ...)`
+forwards into the same builder). The dict has two component subdicts
+plus cross-cutting top-level fields; forking is automatic for:
 
+`task.*` — covers prompt / pair / closer surfaces:
 - Edits to `prompts/versus-judge-shell.md` or
-  `prompts/versus-<dim>.md` (covered via the rendered prompt's sha).
-- Sampling-dict changes (temperature / max_tokens).
+  `prompts/versus-<dim>.md` — `task.prompt_hash` (rendered prompt sha).
 - Tool-description / docstring edits on `search_workspace` /
-  `load_page` / `explore_subgraph` (ws/orch only).
+  `load_page` / `explore_subgraph` (orch only) — `task.tool_prompt_hash`.
 - Edits to the agent-visible Question page surface
-  (`_format_pair_content`, `_build_headline`, `_versus_extra` key
-  schema) — `pair_surface_hash` covers them.
-- Edits to bridge / orchestrator / call code under the
-  `JUDGE_CODE_FINGERPRINT_DIRS` and `JUDGE_CODE_FINGERPRINT_FILES`
-  paths — `code_fingerprint` covers them per file/directory.
-- Mutations to baseline workspace pages or links between runs —
-  `workspace_state_hash` is a cheap watermark that bumps on any
-  change visible to the agent's tools.
+  (`_build_headline`, `_format_pair_content`, `_build_abstract`,
+  `_versus_extra` key schema) — `task.pair_surface_hash` covers them.
 - Orch closer config (max_turns, disallowed_tools, render knobs) —
-  `closer_hash` covers it.
+  `task.closer_hash`.
+
+`workflow.*` — covers orchestrator-level knobs:
+- `kind` (e.g. `blind`, `two_phase`) and `budget`.
+- Snapshot of every entry in the workflow's `relevant_settings`
+  (assess_call_variant, available_moves, enable_red_team, etc.).
+  Flipping any of those settings forks the hash naturally.
+
+Top-level cross-cutting fields:
+- `model` and full `model_config` (sampling / thinking / effort /
+  max_thinking_tokens / service_tier from the per-model registry).
+- `workspace_id` and `workspace_state_hash` — a cheap watermark over
+  baseline pages + links that bumps on any change visible to the
+  agent's tools.
+- `shared_code_fingerprint` (harness layer, post-#425) +
+  `workflow_code_fingerprint` (the workflow's declared `code_paths`).
+  Edits to bridge / orchestrator / call / per-call-prompt code under
+  those paths fork the hash. Pre-#425 this was a single fat
+  `code_fingerprint` over `JUDGE_CODE_FINGERPRINT_DIRS` + `_FILES`;
+  post-#425 the harness slice is small and per-workflow code paths
+  give finer-grained forking (a TwoPhase prompt edit doesn't fork
+  blind rows).
 
 If a surface isn't on this list and you suspect it should fork the
-key, the right fix is to extend `make_judge_config` (and the matching
-axis in `project_config_to_axes`), not to add a willpower knob.
+key, the right fix is to extend `make_versus_config` (or the
+relevant `task.fingerprint()` / `workflow.fingerprint()`) and the
+matching axis in `project_config_to_axes`, not to add a willpower
+knob.

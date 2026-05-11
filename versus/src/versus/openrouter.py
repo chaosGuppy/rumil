@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 import httpx
+
+from versus._langfuse import observe, update_generation
+
+log = logging.getLogger(__name__)
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -29,6 +34,7 @@ def _headers() -> dict[str, str]:
     }
 
 
+@observe(as_type="generation", name="versus.openrouter.chat")
 def chat(
     model: str,
     messages: list[dict],
@@ -59,20 +65,62 @@ def chat(
     client = client or httpx.Client(timeout=timeout)
     try:
         last_resp: dict | None = None
-        for attempt in range(retries + 1):
-            r = client.post(API_URL, headers=_headers(), json=payload)
-            r.raise_for_status()
-            last_resp = r.json()
-            content = last_resp["choices"][0]["message"].get("content")
-            if content is not None and content != "":
-                return last_resp
-            # empty content: transient upstream failure — backoff + retry
-            if attempt < retries:
-                _time.sleep(1.5 * (attempt + 1))
-        return last_resp  # caller's extract_text will raise a clean error
+        try:
+            for attempt in range(retries + 1):
+                r = client.post(API_URL, headers=_headers(), json=payload)
+                r.raise_for_status()
+                last_resp = r.json()
+                content = last_resp["choices"][0]["message"].get("content")
+                if content is not None and content != "":
+                    _enrich_openrouter_generation(model, messages, payload, last_resp)
+                    return last_resp
+                # empty content: transient upstream failure — backoff + retry
+                if attempt < retries:
+                    _time.sleep(1.5 * (attempt + 1))
+            if last_resp is not None:
+                _enrich_openrouter_generation(model, messages, payload, last_resp)
+            return last_resp  # caller's extract_text will raise a clean error
+        except Exception:
+            # Enrich the active langfuse generation with whatever request
+            # context we have so the failed span isn't bare. ``@observe``
+            # will layer ``level=ERROR`` + ``status_message`` on re-raise.
+            _enrich_openrouter_generation(model, messages, payload, last_resp or {})
+            raise
     finally:
         if close:
             client.close()
+
+
+def _enrich_openrouter_generation(
+    model: str, messages: list[dict], payload: dict, resp: dict
+) -> None:
+    try:
+        usage = resp.get("usage") or {}
+        details = usage.get("completion_tokens_details") or {}
+        choices = resp.get("choices") or []
+        choice = choices[0] if choices else {}
+        message = choice.get("message") or {}
+        params = {
+            k: payload.get(k)
+            for k in ("temperature", "top_p", "max_tokens", "provider")
+            if payload.get(k) is not None
+        }
+        cost = usage.get("cost")
+        update_generation(
+            model=model,
+            input=messages,
+            output=message.get("content"),
+            model_parameters=params or None,
+            usage_details={
+                "input": usage.get("prompt_tokens") or 0,
+                "output": usage.get("completion_tokens") or 0,
+                "reasoning": details.get("reasoning_tokens") or 0,
+            },
+            cost_details=({"total": float(cost)} if isinstance(cost, (int, float)) else None),
+            metadata={"finish_reason": choice.get("finish_reason")},
+        )
+    except Exception as exc:
+        log.debug("Langfuse enrichment (versus.openrouter) failed: %s", exc)
 
 
 def extract_text(resp: dict) -> str:

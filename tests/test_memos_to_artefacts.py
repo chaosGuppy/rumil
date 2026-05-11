@@ -6,8 +6,6 @@ and reported on by the user; here we stick to pure helpers + structural
 guarantees that protect against regressions in shared classes.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 from collections.abc import Sequence

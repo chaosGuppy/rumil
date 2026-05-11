@@ -4,7 +4,6 @@ ClaimInvestigationOrchestrator: two-phase orchestrator for investigating claims.
 
 import asyncio
 import logging
-from collections.abc import Sequence
 
 from rumil.available_calls import get_available_calls_preset
 from rumil.calls.common import embed_task_for_page, mark_call_completed
@@ -66,7 +65,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         self,
         db: DB,
         broadcaster: Broadcaster | None = None,
-        budget_cap: int | None = None,
+        assigned_budget: int | None = None,
         pool_pre_registered: bool = False,
     ):
         super().__init__(db, broadcaster)
@@ -74,25 +73,22 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         self._call_id: str | None = None
 
         self._executed_since_last_plan: bool = False
-        self._budget_cap: int | None = budget_cap
-        self._consumed: int = 0
+        # See TwoPhaseOrchestrator for the semantics of these two fields.
+        self._assigned_budget: int | None = assigned_budget
         self._initial_call: Call | None = None
         self._parent_call_id: str | None = None
         self._sequence_id: str | None = None
         self._seq_position: int = 0
-        # See TwoPhaseOrchestrator for why this exists. When True, the
-        # parent already registered our contribution via qbp_recurse, so
-        # run() must not double-register.
         self._pool_pre_registered: bool = pool_pre_registered
 
     def _effective_budget(self, global_remaining: int) -> int:
-        if self._budget_cap is not None:
-            return min(global_remaining, self._budget_cap - self._consumed)
         return global_remaining
 
     async def _pacing_params(self) -> tuple[int, int]:
-        if self._budget_cap is not None:
-            return self._budget_cap, self._consumed
+        if self.pool_question_id:
+            pool = await self.db.qbp_get(self.pool_question_id)
+            if pool.registered:
+                return pool.contributed, pool.consumed
         return await self.db.get_budget()
 
     async def create_initial_call(
@@ -101,7 +97,11 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None = None,
     ) -> str:
         """Eagerly create the phase-1 prioritization call record."""
-        budget = self._effective_budget(await self.db.budget_remaining())
+        budget = (
+            self._assigned_budget
+            if self._assigned_budget is not None
+            else await self.db.budget_remaining()
+        )
         budget = await self._paced_budget(budget)
         phase1_budget = budget
         p_call = await self.db.create_call(
@@ -121,8 +121,12 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         own_db = await self.db.fork()
         self.db = own_db
         await self._setup()
-        remaining = await self.db.budget_remaining()
-        effective = self._effective_budget(remaining)
+        if self._pool_pre_registered:
+            pool = await self.db.qbp_get(claim_id)
+            effective = max(pool.remaining, 0)
+        else:
+            remaining = await self.db.budget_remaining()
+            effective = self._effective_budget(remaining)
         if effective < MIN_TWOPHASE_BUDGET:
             raise ValueError(
                 "ClaimInvestigationOrchestrator requires a budget of at least "
@@ -137,7 +141,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
             self._seq_position = 0
         self.pool_question_id = claim_id
         if not self._pool_pre_registered:
-            contribution = self._budget_cap if self._budget_cap is not None else effective
+            contribution = self._assigned_budget if self._assigned_budget is not None else effective
             await self.db.qbp_register(claim_id, contribution)
         try:
             while True:
@@ -193,25 +197,6 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 await self._teardown()
                 await own_db.close()
 
-    async def _run_dispatch_sequence(
-        self,
-        sequence: Sequence[Dispatch],
-        scope_question_id: str,
-        parent_call_id: str | None,
-        base_index: int,
-        position_in_batch: int = 0,
-    ) -> bool:
-        result = await super()._run_dispatch_sequence(
-            sequence,
-            scope_question_id,
-            parent_call_id,
-            base_index,
-            position_in_batch=position_in_batch,
-        )
-        if result:
-            self._consumed += len(sequence)
-        return result
-
     async def _is_new_claim(self, claim_id: str) -> bool:
         """A claim is 'new' if no other page depends on it yet."""
         links = await self.db.get_links_to(claim_id)
@@ -249,7 +234,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None = None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> "PrioritizationResult":
+    ) -> PrioritizationResult:
         claim_id = root_question_id
 
         if self._invocation == 0:
@@ -285,7 +270,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> "PrioritizationResult":
+    ) -> PrioritizationResult:
 
         phase1_budget = budget
         log.info(
@@ -429,7 +414,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
         parent_call_id: str | None,
         total_remaining: int | None = None,
         last_call: bool = False,
-    ) -> "PrioritizationResult":
+    ) -> PrioritizationResult:
         from rumil.orchestrators.common import PrioritizationResult
         from rumil.orchestrators.two_phase import TwoPhaseOrchestrator
 
@@ -621,7 +606,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 child = ClaimInvestigationOrchestrator(
                     self.db,
                     self.broadcaster,
-                    budget_cap=d.payload.budget,
+                    assigned_budget=d.payload.budget,
                     pool_pre_registered=True,
                 )
                 child._parent_call_id = p_call.id
@@ -644,7 +629,7 @@ class ClaimInvestigationOrchestrator(BaseOrchestrator):
                 child = TwoPhaseOrchestrator(
                     self.db,
                     self.broadcaster,
-                    budget_cap=d.payload.budget,
+                    assigned_budget=d.payload.budget,
                     pool_pre_registered=True,
                 )
                 child._parent_call_id = p_call.id

@@ -5,8 +5,6 @@ the legacy field names), so they need pinned coverage even though they're
 boring shape-conversions.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from rumil.api.versus_router import (
@@ -66,7 +64,15 @@ def _judgment_row(**overrides):
         "response": None,
         "judge_inputs": {
             "model": "google/gemini-3-flash-preview",
-            "sampling": {"temperature": 0.0, "max_tokens": 2048},
+            "model_config": {
+                "temperature": 0.0,
+                "max_tokens": 2048,
+                "top_p": None,
+                "thinking": None,
+                "effort": None,
+                "max_thinking_tokens": None,
+                "service_tier": None,
+            },
             "variant": "blind",
         },
         "judge_inputs_hash": "deadbeef",

@@ -25,8 +25,6 @@ lifecycle points happens in follow-up work. The default bus ships with no
 handlers, so importing this module has no runtime effect.
 """
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -107,11 +105,11 @@ class EventBus:
 _default_bus = EventBus()
 
 
-def register(event_class: type[E], handler: Handler[E]) -> None:
+def register[E: Event](event_class: type[E], handler: Handler[E]) -> None:
     _default_bus.register(event_class, handler)
 
 
-def unregister(event_class: type[E], handler: Handler[E]) -> None:
+def unregister[E: Event](event_class: type[E], handler: Handler[E]) -> None:
     _default_bus.unregister(event_class, handler)
 
 

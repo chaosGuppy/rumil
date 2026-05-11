@@ -1,8 +1,8 @@
 ---
 name: rumil-versus-generate
-description: Run versus's generation scripts — completions and paraphrases — via versus/scripts/run_{completions,paraphrases}.py. Each model in the config routes to its provider (OpenRouter for non-claude ids today; claude-* may route direct to Anthropic in future iterations). Handles the uv --with dance, --config / path anchoring, and --active. Use when the user wants to produce or top up versus completion/paraphrase rows. **Judgments are not in this skill** — the unified judge entry point lives in rumil-versus-judge.
+description: Run versus's generation scripts — completions and paraphrases — via versus/scripts/run_{completions,paraphrases}.py. Each model in the config routes to its provider (OpenRouter for non-claude ids today; claude-* may route direct to Anthropic in future iterations). Handles the uv --with dance and --config / path anchoring. Default scope is the canonical active essay set; pass --include-stale to widen. Use when the user wants to produce or top up versus completion/paraphrase rows. **Judgments are not in this skill** — the unified judge entry point lives in rumil-versus-judge.
 allowed-tools: Bash, Read
-argument-hint: "--op completions|paraphrases [--model <id>...] [--essay <id>...] [--active] [--limit N] [--current-only] [--dry-run]"
+argument-hint: "--op completions|paraphrases [--model <id>...] [--essay <id>...] [--include-stale] [--limit N] [--current-only] [--dry-run]"
 ---
 
 # rumil-versus-generate
@@ -23,11 +23,20 @@ OpenRouter-only judgment script.
 
 | Intent | This skill? |
 |---|---|
-| "run a flash / gpt-5.4 / gemini completion on essay X" | yes |
+| "run a flash / gpt-5.4 / gemini completion on essay X" | yes (single-shot path) |
 | "regenerate paraphrases after a prompt bump" | yes |
+| "run an orch-driven completion (TwoPhase / DraftAndEdit)" | **no** — use `rumil-versus-complete` |
 | "top up judgments (any model)" | **no** — use `rumil-versus-judge` |
-| "run a rumil:ws / rumil:orch judge" | **no** — use `rumil-versus-judge` |
+| "run a rumil:orch judge" | **no** — use `rumil-versus-judge` |
 | "pre-flight check before a topup" | **no** — see `status.py` below |
+
+This skill fires **single-shot** completions: one LLM call per essay
+× prefix × model, no orchestrator, no workflow. For
+orchestrator-driven completions (a full rumil workflow per essay,
+budget-bounded research loop, dedup by `config_hash`) use
+**`rumil-versus-complete`**. Both write into `versus_texts` and are
+pairable in judging — single-shot rows carry the bare model id as
+`source_id`; orch rows carry `orch:<workflow>:<model>:c<hash8>`.
 
 ## Before any run: check staleness
 
@@ -42,20 +51,20 @@ rows reference OLD essay text or outdated prompts. Topups against stale
 rows silently extend that staleness — re-run paraphrases + completions
 first if the user isn't explicit. Same gate `/versus` uses in the UI.
 
-## The `--active` flag
+## Active-set default and `--include-stale`
 
-Both scripts support `--active` — restrict to the canonical eval set:
-current `schema_version` and not in `cfg.essays.exclude_ids`. This is
-the 25-essay set `/versus` enumerates.
+Both scripts default to the canonical eval set: current
+`schema_version` and not in `cfg.essays.exclude_ids` — the same gate
+`/versus` applies in the UI (currently a 25-essay set).
 
-Without `--active`, the scripts still honor `exclude_ids` (so excluded
-essays never get rows), but they'll happily touch older-schema essays
-if those are still in the cache. Use `--active` to mirror what the UI
-sees — the default for "run flash across the active set" style tasks.
+Pass `--include-stale` to widen scope to every essay returned by the
+source fetchers (still minus `exclude_ids`). This pulls in off-feed
+or older-schema rows — useful for backfill or debugging, but those
+won't surface in `/versus`.
 
-`--active` composes with `--essay`: both act as filters (AND). So
-`--active --essay forethought__broad-timelines` means "the essay, only
-if it's also in the active set."
+Default scope composes with `--essay` (AND): `--essay forethought__broad-timelines`
+means "that essay, only if it's also in the active set". With
+`--include-stale`, `--essay` is the only filter.
 
 ## Invocation
 
@@ -72,17 +81,17 @@ scripts fail with `ModuleNotFoundError: httpx` or similar.
 
 ## Typical invocations
 
-**Flash completion across the active set** (the 25-essay canonical
-set, ~30 API calls at flash rates):
+**Flash completion across the active set** (the canonical 25-essay
+set is the default):
 
 ```
---op completions --active --model google/gemini-3-flash-preview
+--op completions --model google/gemini-3-flash-preview
 ```
 
 **Top up paraphrases** (when prompt is bumped or new essays land):
 
 ```
---op paraphrases --active
+--op paraphrases
 ```
 
 Default configured models come from `versus/config.yaml` `completion.models`
@@ -96,7 +105,7 @@ Override with `--model` (repeatable).
 ## Filter flags
 
 - `--essay <id>` (repeatable) — restrict to specific essays.
-- `--active` — the 25-essay canonical set.
+- `--include-stale` — opt out of the active-set default; widen to every fetched essay (still minus `exclude_ids`).
 - `--limit N` — cap number of calls.
 - `--dry-run` — print the plan and exit.
 
@@ -137,12 +146,15 @@ config and re-running fills gaps without clobbering.
 
 ## Env
 
-- `OPENROUTER_API_KEY` — required for all three. Not in any `.env`
-  in the repo; must be in the shell environment. If the user hits
-  `RuntimeError: OPENROUTER_API_KEY not set`, point at their shell
-  profile — don't try to write it into `.env`.
-- `ANTHROPIC_API_KEY` — only needed by `rumil-versus-judge`, not this
-  skill.
+Both keys are needed depending on which models run:
+
+- `OPENROUTER_API_KEY` — required for any non-claude model
+  (gemini, gpt-5.4, etc.). Routed via OpenRouter.
+- `ANTHROPIC_API_KEY` — required for any `claude-*` / `anthropic/...`
+  model. Both `run_completions.py` and `run_paraphrases.py` apply
+  the env cascade (versus/.env, then rumil/.env, then process env),
+  matching what `run_rumil_judgments.py` does, so per-project `.env`
+  files take precedence over the shell env.
 
 ## Common gotchas
 

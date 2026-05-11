@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS build
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS build
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
@@ -9,7 +9,7 @@ COPY versus/pyproject.toml ./versus/
 COPY versus/src ./versus/src
 RUN uv sync --frozen --no-dev --no-editable
 
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 ENV PATH="/app/.venv/bin:$PATH"
 # The /versus router resolves config via VERSUS_CONFIG_PATH, falling back

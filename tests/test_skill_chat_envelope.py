@@ -1,7 +1,5 @@
 """Tests for rumil_skills.chat_envelope and _runctx.ensure_chat_envelope."""
 
-from __future__ import annotations
-
 import uuid
 
 import pytest

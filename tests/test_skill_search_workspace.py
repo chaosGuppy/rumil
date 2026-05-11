@@ -1,7 +1,5 @@
 """Tests for the search_workspace skill module (embedding-based)."""
 
-from __future__ import annotations
-
 import pytest
 from rumil_skills import _runctx, search_workspace
 

@@ -4,8 +4,6 @@ Uses a pre-existing Source page via --from-page to skip the fetch step.
 The ingest call exercises real Haiku through the rumil ingest pipeline.
 """
 
-from __future__ import annotations
-
 import pytest
 import pytest_asyncio
 from rumil_skills import _runctx, ingest_source

@@ -94,6 +94,19 @@ class SectionedView(View):
     async def render_for_parent_scoring(self, question_id: str, db: DB) -> str | None:
         return await self._render_view(question_id, db, min_importance=2)
 
+    async def render_for_scout(self, question_id: str, db: DB) -> str | None:
+        body = await self._render_view(question_id, db, min_importance=2)
+        if body is None:
+            return None
+        callout = (
+            "### Notes for scouts\n\n"
+            "The **Live Hypotheses** and **Key Uncertainties** sections above "
+            "are the most fertile sources for new subquestions — each item "
+            "names a candidate axis of investigation. Treat them as inspiration; "
+            "merge with or strengthen existing items rather than restating them."
+        )
+        return f"## Current view on this question\n\n{body}\n\n{callout}"
+
     async def render_for_child_investigation_results(
         self,
         question_id: str,

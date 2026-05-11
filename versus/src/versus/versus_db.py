@@ -26,7 +26,10 @@ from rumil.settings import get_settings
 from supabase import Client, create_client
 
 TextKind = Literal["human", "completion"]
-JudgmentVariant = Literal["blind", "ws", "orch"]
+# Writer-side type. Historical "ws" rows still live in the DB and are
+# read back fine through the read paths; the variant column itself
+# (DB-side CHECK) still permits "ws" so existing rows remain valid.
+JudgmentVariant = Literal["blind", "orch", "reflective"]
 Verdict = Literal["A", "B", "tie"]
 
 
@@ -297,7 +300,8 @@ def find_judgments(
 #     response_words for /results — that count now lives in the generated
 #     response_words column on versus_texts.
 _TEXT_LIGHT_SELECT = (
-    "id,essay_id,kind,source_id,prefix_hash,model_id,response_words,params,request_hash,created_at"
+    "id,essay_id,kind,source_id,prefix_hash,model_id,response_words,params,request_hash,"
+    "model_config_hash,created_at"
 )
 _JUDGMENT_LIGHT_SELECT = (
     "id,essay_id,prefix_hash,source_a,source_b,display_first,text_a_id,text_b_id,"

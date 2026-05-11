@@ -27,8 +27,6 @@ ignored in that case. The refiner picks up exactly where the DB left off
 (current spec + last-N iteration triples) but with fresh agent-loop state.
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import logging

@@ -8,8 +8,6 @@ SDK reference (ai.google.dev page 404s; source is the canonical doc):
   https://github.com/googleapis/python-genai/tree/main/google/genai/_interactions
 """
 
-from __future__ import annotations
-
 import base64
 import json
 import mimetypes

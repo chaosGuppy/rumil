@@ -1,0 +1,62 @@
+# Variants for ReflectiveJudgeWorkflow.
+#
+# Read by /rumil-versus-iterate. For each entry, the iterate skill
+# fires one rumil-versus-judge invocation, parallelized across
+# variants. Output rows land in versus_judgments tagged with the
+# variant's source_id (auto-derived from the workflow's fingerprint),
+# so trace+fork analysis can compare variants directly.
+#
+# Each variant maps to constructor kwargs for ReflectiveJudgeWorkflow
+# + CLI flags on versus/scripts/run_rumil_judgments.py.
+# Path overrides are resolved relative to the repo root.
+#
+# Naming convention: lower_snake_case, descriptive. The first variant
+# is conventionally `baseline` — defaults across the board. Subsequent
+# variants change one knob at a time so trace deltas are interpretable.
+#
+# Optional top-level `default_contestants:` field — if set, every
+# variant invocation locks to that pair (`source_a,source_b`). The
+# fan_out helper's `--contestants` CLI flag overrides if both are
+# present. Without either, each variant picks the next pending pair
+# the planner finds, which usually means variants drift to different
+# pairs and become non-comparable. Example:
+#
+#     default_contestants: anthropic/claude-haiku-4-5,anthropic/claude-opus-4-7
+#
+# Leave commented out for "use whatever pair is pending" behavior
+# (legitimate for first-time backfill of a new variant set).
+
+# default_contestants: <source_a>,<source_b>
+
+variants:
+  - name: baseline
+    description: |
+      All defaults — sonnet across all stages, built-in prompts.
+      Reference point for every other variant in this file.
+
+  - name: terse_read
+    description: |
+      Replaces the read prompt with a tighter, no-padding version.
+      Tests whether brevity (forced to commit per criterion, no hedging
+      vocabulary) produces a sharper input for the reflect stage.
+    read_prompt_path: .claude/skills/rumil-versus-iterate/prompts/reflective_judge/read_terse.md
+
+  - name: skeptical_reflect
+    description: |
+      Replaces the reflect prompt with one that biases harder toward
+      pushback. Tests whether more aggressive self-criticism flips
+      verdicts on close pairs (and whether it manufactures
+      disagreement on clearly-asymmetric pairs — that would be a
+      regression).
+    reflect_prompt_path: .claude/skills/rumil-versus-iterate/prompts/reflective_judge/reflect_skeptical.md
+
+  - name: read_no_verdict
+    description: |
+      Replaces the read prompt with a version that explicitly
+      forbids "X is stronger overall" / "X wins" phrasing and forces
+      symmetric per-criterion strength/weakness bullets. Tests
+      whether removing the read's implicit verdict gives the reflect
+      stage real room to push back (round-1 trace investigation found
+      the default read commits to a verdict despite being told not
+      to, neutralizing the step-down discipline downstream).
+    read_prompt_path: .claude/skills/rumil-versus-iterate/prompts/reflective_judge/read_no_verdict.md

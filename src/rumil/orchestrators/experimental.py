@@ -6,7 +6,6 @@ Currently an exact copy of TwoPhaseOrchestrator.
 
 import asyncio
 import logging
-from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from rumil.available_calls import get_available_calls_preset
@@ -71,7 +70,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         self,
         db: DB,
         broadcaster: Broadcaster | None = None,
-        budget_cap: int | None = None,
+        assigned_budget: int | None = None,
         pool_pre_registered: bool = False,
     ):
         super().__init__(db, broadcaster)
@@ -79,24 +78,23 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         self._call_id: str | None = None
 
         self._executed_since_last_plan: bool = False
-        self._budget_cap: int | None = budget_cap
-        self._consumed: int = 0
+        # See TwoPhaseOrchestrator for the semantics of these two fields.
+        self._assigned_budget: int | None = assigned_budget
         self._initial_call: Call | None = None
         self._parent_call_id: str | None = None
         self._sequence_id: str | None = None
         self._seq_position: int = 0
         self._last_linker_eval_at: datetime | None = None
-        # See TwoPhaseOrchestrator for why this exists.
         self._pool_pre_registered: bool = pool_pre_registered
 
     def _effective_budget(self, global_remaining: int) -> int:
-        if self._budget_cap is not None:
-            return min(global_remaining, self._budget_cap - self._consumed)
         return global_remaining
 
     async def _pacing_params(self) -> tuple[int, int]:
-        if self._budget_cap is not None:
-            return self._budget_cap, self._consumed
+        if self.pool_question_id:
+            pool = await self.db.qbp_get(self.pool_question_id)
+            if pool.registered:
+                return pool.contributed, pool.consumed
         return await self.db.get_budget()
 
     async def create_initial_call(
@@ -110,7 +108,11 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         before ``run()`` begins. ``_initial_prioritization`` reuses the
         pre-created call.
         """
-        budget = self._effective_budget(await self.db.budget_remaining())
+        budget = (
+            self._assigned_budget
+            if self._assigned_budget is not None
+            else await self.db.budget_remaining()
+        )
         budget = await self._paced_budget(budget)
         initial_prioritization_budget = budget
         p_call = await self.db.create_call(
@@ -147,7 +149,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         budget_token = set_experimental_scout_budget(effective)
         self.pool_question_id = root_question_id
         if not self._pool_pre_registered:
-            contribution = self._budget_cap if self._budget_cap is not None else effective
+            contribution = self._assigned_budget if self._assigned_budget is not None else effective
             await self.db.qbp_register(root_question_id, contribution)
         try:
             while True:
@@ -196,25 +198,6 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 reset_experimental_scout_budget(budget_token)
                 await self._teardown()
                 await own_db.close()
-
-    async def _run_dispatch_sequence(
-        self,
-        sequence: Sequence[Dispatch],
-        scope_question_id: str,
-        parent_call_id: str | None,
-        base_index: int,
-        position_in_batch: int = 0,
-    ) -> bool:
-        result = await super()._run_dispatch_sequence(
-            sequence,
-            scope_question_id,
-            parent_call_id,
-            base_index,
-            position_in_batch=position_in_batch,
-        )
-        if result:
-            self._consumed += len(sequence)
-        return result
 
     async def _needs_initial_prioritization(self, question_id: str) -> bool:
         """Run initial_prioritization iff no view answers the question yet."""
@@ -394,6 +377,16 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         if get_settings().subquestion_linker_enabled:
             await self._run_subquestion_linker(question_id, p_call.id)
 
+        view = get_active_view()
+        await view.refresh(
+            question_id,
+            self.db,
+            parent_call_id=p_call.id,
+            broadcaster=self.broadcaster,
+            force=True,
+            pool_question_id=self.pool_question_id,
+        )
+
         context_text, short_id_map = await build_prioritization_context(
             self.db,
             scope_question_id=question_id,
@@ -403,11 +396,12 @@ class ExperimentalOrchestrator(BaseOrchestrator):
         set_trace(trace)
         await trace.record(ContextBuiltEvent(budget=initial_prioritization_budget))
 
+        dispatch_budget = max(initial_prioritization_budget - 1, 1)
         budget_line = (
-            f"You have a budget of **{initial_prioritization_budget} research calls** "
+            f"You have a budget of **{dispatch_budget} research calls** "
             "to distribute among the dispatch tools below."
         )
-        if total_remaining is not None and total_remaining > initial_prioritization_budget:
+        if total_remaining is not None and total_remaining > dispatch_budget:
             budget_line += (
                 f" The overall question has **{total_remaining} budget remaining** "
                 "across future rounds."
@@ -455,7 +449,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 question_id[:8],
             )
             preset = get_available_calls_preset()
-            for ct in preset.initial_prioritization_scouts[:initial_prioritization_budget]:
+            for ct in preset.initial_prioritization_scouts[:dispatch_budget]:
                 ddef = DISPATCH_DEFS[ct]
                 dispatches.append(
                     Dispatch(
@@ -688,7 +682,7 @@ class ExperimentalOrchestrator(BaseOrchestrator):
                 child = ExperimentalOrchestrator(
                     self.db,
                     self.broadcaster,
-                    budget_cap=d.payload.budget,
+                    assigned_budget=d.payload.budget,
                     pool_pre_registered=True,
                 )
                 child._parent_call_id = p_call.id

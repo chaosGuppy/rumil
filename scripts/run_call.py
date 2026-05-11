@@ -65,23 +65,32 @@ from rumil.calls.scout_web_questions import ScoutWebQuestionsCall
 from rumil.calls.stages import CallRunner
 from rumil.calls.web_research import WebResearchCall
 from rumil.database import DB
-from rumil.models import CallStage, CallType
+from rumil.models import SCOUT_CALL_TYPES, CallStage, CallType, ScoutScope
 from rumil.orchestrators import create_root_question
 from rumil.orchestrators.robustify import RobustifyOrchestrator
 from rumil.settings import get_settings
 from rumil.tracing import get_langfuse
 from rumil.views import get_active_view
 
-_SCOUT_CALL_TYPES: dict[str, tuple[CallType, type[CallRunner]]] = {
-    "scout-subquestions": (CallType.SCOUT_SUBQUESTIONS, ScoutSubquestionsCall),
-    "scout-estimates": (CallType.SCOUT_ESTIMATES, ScoutEstimatesCall),
-    "scout-hypotheses": (CallType.SCOUT_HYPOTHESES, ScoutHypothesesCall),
-    "scout-analogies": (CallType.SCOUT_ANALOGIES, ScoutAnalogiesCall),
-    "scout-paradigm-cases": (CallType.SCOUT_PARADIGM_CASES, ScoutParadigmCasesCall),
-    "scout-factchecks": (CallType.SCOUT_FACTCHECKS, ScoutFactchecksCall),
-    "scout-web-questions": (CallType.SCOUT_WEB_QUESTIONS, ScoutWebQuestionsCall),
-    "scout-deep-questions": (CallType.SCOUT_DEEP_QUESTIONS, ScoutDeepQuestionsCall),
+# CallRunner class for each question-scoped scout that this script can fire.
+# Claim-scoped scouts (see SCOUT_CALL_TYPES in models.py) are excluded because
+# this script only takes question scopes. CLI subcommand for each is derived
+# as ct.value.replace("_", "-") at usage sites.
+_SCOUT_RUNNERS: dict[CallType, type[CallRunner]] = {
+    CallType.SCOUT_SUBQUESTIONS: ScoutSubquestionsCall,
+    CallType.SCOUT_ESTIMATES: ScoutEstimatesCall,
+    CallType.SCOUT_HYPOTHESES: ScoutHypothesesCall,
+    CallType.SCOUT_ANALOGIES: ScoutAnalogiesCall,
+    CallType.SCOUT_PARADIGM_CASES: ScoutParadigmCasesCall,
+    CallType.SCOUT_FACTCHECKS: ScoutFactchecksCall,
+    CallType.SCOUT_WEB_QUESTIONS: ScoutWebQuestionsCall,
+    CallType.SCOUT_DEEP_QUESTIONS: ScoutDeepQuestionsCall,
 }
+assert set(_SCOUT_RUNNERS) == {
+    ct for ct, scope in SCOUT_CALL_TYPES.items() if scope == ScoutScope.QUESTION
+}, "run_call.py _SCOUT_RUNNERS is out of sync with models.SCOUT_CALL_TYPES"
+
+_SCOUT_CLI_LOOKUP: dict[str, CallType] = {ct.value.replace("_", "-"): ct for ct in _SCOUT_RUNNERS}
 
 
 async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
@@ -132,8 +141,9 @@ async def run_call(args: argparse.Namespace, db: DB, question_id: str) -> None:
         )
         await web_research.run()
 
-    elif call_type in _SCOUT_CALL_TYPES:
-        scout_ct, cls = _SCOUT_CALL_TYPES[call_type]
+    elif call_type in _SCOUT_CLI_LOOKUP:
+        scout_ct = _SCOUT_CLI_LOOKUP[call_type]
+        cls = _SCOUT_RUNNERS[scout_ct]
         call = await db.create_call(scout_ct, scope_page_id=question_id)
         instance = cls(
             question_id,
@@ -269,7 +279,9 @@ async def _prepare_task(
     name = args.name or resolved_text
     config = settings.capture_config()
     if not adopted_run_id:
-        await db.create_run(name=name, question_id=resolved_qid, config=config)
+        await db.create_run(
+            name=name, question_id=resolved_qid, config=config, entrypoint="run_call"
+        )
 
     langfuse_url: str | None = None
     if get_langfuse() is not None:
@@ -365,7 +377,7 @@ def main() -> None:
             "web-research",
             "link-subquestions",
             "refresh-view",
-            *_SCOUT_CALL_TYPES,
+            *_SCOUT_CLI_LOOKUP,
         ],
         help="Type of call to run",
     )
